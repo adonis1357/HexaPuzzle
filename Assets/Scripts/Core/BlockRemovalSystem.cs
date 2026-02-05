@@ -23,17 +23,15 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private float cascadeDelay = 0.1f;
 
         [Header("Fall Physics")]
-        [SerializeField] private float gravity = 2500f;           // 중력 가속도 (픽셀/초²)
-        [SerializeField] private float maxFallSpeed = 1500f;      // 최대 낙하 속도
-        [SerializeField] private float bounceRatio = 0.3f;        // 바운스 비율 (0 = 바운스 없음)
-        [SerializeField] private float bounceThreshold = 50f;     // 바운스 발생 최소 속도
-        [SerializeField] private float staggerDelay = 0.03f;      // 블록 간 낙하 시작 딜레이
+        [SerializeField] private float gravity = 2500f;
+        [SerializeField] private float maxFallSpeed = 1500f;
+        [SerializeField] private float bounceRatio = 0.3f;
+        [SerializeField] private float bounceThreshold = 50f;
+        [SerializeField] private float staggerDelay = 0.03f;
 
         private bool isProcessing = false;
 
-        // 열 캐시: 화면 X좌표 기준으로 그룹화된 블록들
         private Dictionary<int, List<HexBlock>> columnCache = null;
-        // 각 블록의 원래 위치 저장
         private Dictionary<HexBlock, Vector2> originalPositions = new Dictionary<HexBlock, Vector2>();
 
         public event System.Action<int> OnBlocksRemoved;
@@ -58,9 +56,6 @@ namespace JewelsHexaPuzzle.Core
                 drillSystem = FindObjectOfType<DrillBlockSystem>();
         }
 
-        /// <summary>
-        /// 열 캐시 및 원래 위치 저장
-        /// </summary>
         private void BuildColumnCache()
         {
             if (hexGrid == null) return;
@@ -73,7 +68,6 @@ namespace JewelsHexaPuzzle.Core
                 Vector2 pos = GetBlockAnchoredPosition(block);
                 originalPositions[block] = pos;
 
-                // 화면 X좌표를 정수로 반올림하여 열 키로 사용
                 int colKey = Mathf.RoundToInt(pos.x);
 
                 if (!columnCache.ContainsKey(colKey))
@@ -82,7 +76,6 @@ namespace JewelsHexaPuzzle.Core
                 columnCache[colKey].Add(block);
             }
 
-            // 각 열을 Y좌표 기준으로 정렬 (아래→위, Y가 작을수록 아래)
             foreach (var key in columnCache.Keys.ToList())
             {
                 columnCache[key] = columnCache[key]
@@ -108,18 +101,13 @@ namespace JewelsHexaPuzzle.Core
                 block.transform.localPosition = new Vector3(pos.x, pos.y, 0);
         }
 
-        /// <summary>
-        /// 블록을 원래 위치로 복원
-        /// </summary>
         private void RestoreBlockPosition(HexBlock block)
         {
             if (block == null) return;
-
             if (originalPositions.TryGetValue(block, out Vector2 origPos))
             {
                 SetBlockAnchoredPosition(block, origPos);
             }
-
             block.transform.localScale = Vector3.one;
         }
 
@@ -217,10 +205,9 @@ namespace JewelsHexaPuzzle.Core
             {
                 elapsed += Time.deltaTime;
                 float t = elapsed / removeAnimationDuration;
-                // 약간의 팝 효과 추가
                 float scale = 1f - t;
                 if (t < 0.2f)
-                    scale = 1f + (t / 0.2f) * 0.1f; // 처음에 살짝 커짐
+                    scale = 1f + (t / 0.2f) * 0.1f;
                 else
                     scale = 1.1f * (1f - (t - 0.2f) / 0.8f);
 
@@ -228,13 +215,13 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            // 스케일 0으로 설정하고 즉시 데이터 클리어 (잔상 방지)
             block.transform.localScale = Vector3.zero;
-            block.ClearData();  // 여기서 바로 클리어하여 잔상 제거
+            block.ClearData();
         }
 
         /// <summary>
-        /// 현실적인 물리 기반 낙하 처리
+        /// 현실적인 물리 기반 낙하 처리 (깜빡임 없음)
+        /// 핵심: 블록을 숨기지 않고, 시작 위치로 먼저 이동시킨 후 데이터 교체
         /// </summary>
         private IEnumerator ProcessFallingWithPhysics()
         {
@@ -242,12 +229,11 @@ namespace JewelsHexaPuzzle.Core
 
             List<FallData> allFallData = new List<FallData>();
 
-            // 각 열 처리 - 낙하 데이터 준비
             foreach (var kvp in columnCache)
             {
                 List<HexBlock> column = kvp.Value;
 
-                // 1. 현재 열에서 데이터가 있는 블록들의 데이터 수집
+                // 1. 데이터가 있는 블록 수집
                 List<BlockData> existingData = new List<BlockData>();
                 List<int> sourceIndices = new List<int>();
 
@@ -264,48 +250,74 @@ namespace JewelsHexaPuzzle.Core
                 int emptyCount = column.Count - existingData.Count;
                 if (emptyCount == 0) continue;
 
-                // 2. 모든 블록 데이터 클리어
-                for (int i = 0; i < column.Count; i++)
+                // 2. 낙하가 필요한 블록 처리 (깜빡임 방지)
+                //    - 먼저 원본 위치에서 데이터를 클리어하고
+                //    - 타겟 블록에 데이터를 설정하면서 동시에 시작 위치로 이동
+
+                // 2a. 제자리 블록은 그대로 유지
+                HashSet<int> occupiedTargets = new HashSet<int>();
+                for (int i = 0; i < existingData.Count; i++)
                 {
-                    column[i].ClearData();
-                    RestoreBlockPosition(column[i]);
+                    if (sourceIndices[i] == i)
+                    {
+                        // 제자리 - 아무것도 안 함
+                        occupiedTargets.Add(i);
+                    }
                 }
 
-                // 3. 기존 데이터 낙하 준비
+                // 2b. 낙하할 블록의 원본 위치 클리어 (타겟과 겹치지 않는 것만)
+                for (int i = 0; i < existingData.Count; i++)
+                {
+                    int sourceIdx = sourceIndices[i];
+                    int targetIdx = i;
+
+                    if (sourceIdx != targetIdx && !occupiedTargets.Contains(sourceIdx))
+                    {
+                        column[sourceIdx].ClearData();
+                        RestoreBlockPosition(column[sourceIdx]);
+                    }
+                }
+
+                // 2c. 빈 슬롯(위쪽)도 클리어
+                for (int i = existingData.Count; i < column.Count; i++)
+                {
+                    if (!occupiedTargets.Contains(i))
+                    {
+                        column[i].ClearData();
+                        RestoreBlockPosition(column[i]);
+                    }
+                }
+
+                // 3. 낙하 애니메이션 데이터 생성
                 for (int i = 0; i < existingData.Count; i++)
                 {
                     int targetIdx = i;
                     int sourceIdx = sourceIndices[i];
 
-                    HexBlock targetBlock = column[targetIdx];
-                    Vector2 targetPos = originalPositions[targetBlock];
-
                     if (sourceIdx != targetIdx)
                     {
-                        // 낙하 필요
-                        HexBlock sourceBlock = column[sourceIdx];
-                        Vector2 startPos = originalPositions[sourceBlock];
+                        HexBlock targetBlock = column[targetIdx];
+                        Vector2 startPos = originalPositions[column[sourceIdx]];
+                        Vector2 targetPos = originalPositions[targetBlock];
+
+                        // 타겟 블록에 데이터 설정 + 시작 위치로 즉시 이동 (깜빡임 없음)
+                        targetBlock.SetBlockData(existingData[i]);
+                        targetBlock.transform.localScale = Vector3.one;
+                        SetBlockAnchoredPosition(targetBlock, startPos);
 
                         allFallData.Add(new FallData
                         {
                             block = targetBlock,
-                            data = existingData[i],
                             startY = startPos.y,
                             targetY = targetPos.y,
                             delay = (column.Count - sourceIdx) * staggerDelay,
-                            isNewBlock = false
                         });
-                    }
-                    else
-                    {
-                        // 제자리 - 바로 데이터 설정
-                        targetBlock.SetBlockData(existingData[i]);
                     }
                 }
 
-                // 4. 새 블록 생성 및 낙하 준비
+                // 4. 새 블록 생성
                 float topY = originalPositions[column[column.Count - 1]].y;
-                float spawnOffset = 100f; // 화면 위에서 시작
+                float spawnOffset = 100f;
 
                 for (int i = 0; i < emptyCount; i++)
                 {
@@ -318,14 +330,17 @@ namespace JewelsHexaPuzzle.Core
 
                     float startY = topY + spawnOffset + (i * 80f);
 
+                    // 데이터 설정 + 시작 위치로 즉시 이동 (깜빡임 없음)
+                    targetBlock.SetBlockData(newData);
+                    targetBlock.transform.localScale = Vector3.one;
+                    SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
+
                     allFallData.Add(new FallData
                     {
                         block = targetBlock,
-                        data = newData,
                         startY = startY,
                         targetY = targetPos.y,
                         delay = (emptyCount - i - 1) * staggerDelay + existingData.Count * staggerDelay,
-                        isNewBlock = true
                     });
                 }
             }
@@ -339,72 +354,53 @@ namespace JewelsHexaPuzzle.Core
                 coroutines.Add(StartCoroutine(AnimateFallWithPhysics(fallData)));
             }
 
-            // 모든 애니메이션 완료 대기
             foreach (var co in coroutines)
             {
                 yield return co;
             }
 
-            // 최종 검증
             VerifyAllBlocksHaveData();
         }
 
         /// <summary>
         /// 물리 기반 낙하 애니메이션 - 중력 가속 + 바운스
+        /// 블록은 이미 데이터가 설정되고 시작 위치에 있음 (깜빡임 없음)
         /// </summary>
         private IEnumerator AnimateFallWithPhysics(FallData fallData)
         {
             if (fallData.block == null) yield break;
 
-            // 딜레이
             if (fallData.delay > 0)
                 yield return new WaitForSeconds(fallData.delay);
 
             HexBlock block = fallData.block;
             Vector2 originalPos = originalPositions[block];
 
-            // 데이터 설정 및 시작 위치로 이동
-            block.SetBlockData(fallData.data);
-            block.transform.localScale = Vector3.one;
-
             float currentY = fallData.startY;
             float velocity = 0f;
             float targetY = fallData.targetY;
-
-            // 시작 위치 설정
-            SetBlockAnchoredPosition(block, new Vector2(originalPos.x, currentY));
 
             int bounceCount = 0;
             int maxBounces = 2;
 
             while (true)
             {
-                // 중력 적용
                 velocity -= gravity * Time.deltaTime;
-
-                // 최대 속도 제한
                 velocity = Mathf.Max(velocity, -maxFallSpeed);
-
-                // 위치 업데이트
                 currentY += velocity * Time.deltaTime;
 
-                // 목표 위치 도달 체크
                 if (currentY <= targetY)
                 {
                     currentY = targetY;
 
-                    // 바운스 처리
                     if (bounceCount < maxBounces && Mathf.Abs(velocity) > bounceThreshold)
                     {
                         velocity = -velocity * bounceRatio;
                         bounceCount++;
-
-                        // 바운스 시 살짝 스쿼시 효과
                         StartCoroutine(SquashEffect(block));
                     }
                     else
                     {
-                        // 낙하 완료
                         SetBlockAnchoredPosition(block, new Vector2(originalPos.x, targetY));
                         block.transform.localScale = Vector3.one;
                         yield break;
@@ -416,9 +412,6 @@ namespace JewelsHexaPuzzle.Core
             }
         }
 
-        /// <summary>
-        /// 착지 시 스쿼시 효과
-        /// </summary>
         private IEnumerator SquashEffect(HexBlock block)
         {
             if (block == null) yield break;
@@ -426,7 +419,6 @@ namespace JewelsHexaPuzzle.Core
             float duration = 0.08f;
             float elapsed = 0f;
 
-            // 스쿼시 (납작해짐)
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
@@ -440,19 +432,14 @@ namespace JewelsHexaPuzzle.Core
             block.transform.localScale = Vector3.one;
         }
 
-        /// <summary>
-        /// 모든 블록이 데이터를 가지고 있는지 검증 및 강제 채우기
-        /// </summary>
         private void VerifyAllBlocksHaveData()
         {
             int filledCount = 0;
 
             foreach (var block in hexGrid.GetAllBlocks())
             {
-                // 위치 복원
                 RestoreBlockPosition(block);
 
-                // 데이터 검증
                 if (block.Data == null || block.Data.gemType == GemType.None)
                 {
                     GemType randomGem = (GemType)Random.Range(1, 6);
@@ -499,7 +486,6 @@ namespace JewelsHexaPuzzle.Core
                 RestoreBlockPosition(block);
             }
 
-            // 모든 블록에 새 데이터 할당 후 위에서 떨어지는 연출
             yield return StartCoroutine(BigBangFallAnimation());
 
             isProcessing = false;
@@ -525,14 +511,16 @@ namespace JewelsHexaPuzzle.Core
 
                     float startY = topY + 150f + (column.Count - i) * 60f;
 
+                    block.SetBlockData(newData);
+                    block.transform.localScale = Vector3.one;
+                    SetBlockAnchoredPosition(block, new Vector2(targetPos.x, startY));
+
                     allFallData.Add(new FallData
                     {
                         block = block,
-                        data = newData,
                         startY = startY,
                         targetY = targetPos.y,
                         delay = (column.Count - i) * staggerDelay * 0.5f,
-                        isNewBlock = true
                     });
                 }
             }
@@ -554,11 +542,9 @@ namespace JewelsHexaPuzzle.Core
         private struct FallData
         {
             public HexBlock block;
-            public BlockData data;
             public float startY;
             public float targetY;
             public float delay;
-            public bool isNewBlock;
         }
     }
 }
