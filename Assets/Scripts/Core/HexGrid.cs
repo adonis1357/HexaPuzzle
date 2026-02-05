@@ -148,11 +148,13 @@ namespace JewelsHexaPuzzle.Core
 
         public (HexBlock, HexBlock, HexBlock)? GetClusterAtPosition(Vector2 localPos)
         {
-            // 블록이 없으면 null 반환 (경고 없이)
             if (blocks.Count == 0)
             {
                 return null;
             }
+
+            // 블록 반경 (터치가 이 범위 안에 있어야 유효)
+            float maxTouchDistance = hexSize * 1.0f;
 
             HexBlock closestBlock = null;
             float closestDist = float.MaxValue;
@@ -169,7 +171,8 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
-            if (closestBlock == null)
+            // 가장 가까운 블록이 너무 멀면 null (블록 영역 밖 터치)
+            if (closestBlock == null || closestDist > maxTouchDistance)
             {
                 return null;
             }
@@ -180,6 +183,9 @@ namespace JewelsHexaPuzzle.Core
             {
                 return null;
             }
+
+            // 삼각형 중심까지의 최대 허용 거리
+            float maxTriangleDist = hexSize * 1.2f;
 
             (HexBlock, HexBlock, HexBlock)? bestTriangle = null;
             float bestDist = float.MaxValue;
@@ -202,7 +208,7 @@ namespace JewelsHexaPuzzle.Core
 
                     float dist = Vector2.Distance(localPos, center);
 
-                    if (dist < bestDist)
+                    if (dist < bestDist && dist < maxTriangleDist)
                     {
                         bestDist = dist;
                         bestTriangle = (closestBlock, n1, n2);
@@ -237,7 +243,7 @@ namespace JewelsHexaPuzzle.Core
 
                         float dist = Vector2.Distance(localPos, center);
 
-                        if (dist < bestDist)
+                        if (dist < bestDist && dist < maxTriangleDist)
                         {
                             bestDist = dist;
                             bestTriangle = (neighbor, n1, n2);
