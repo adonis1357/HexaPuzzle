@@ -45,6 +45,8 @@ namespace JewelsHexaPuzzle.Managers
             if (Instance == null)
             {
                 Instance = this;
+                if (transform.parent != null)
+                    transform.SetParent(null);
                 DontDestroyOnLoad(gameObject);
                 InitializeAudioPool();
                 LoadVolumeSettings();

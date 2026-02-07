@@ -23,11 +23,11 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private float maxFallSpeed = 1500f;
         [SerializeField] private float bounceRatio = 0.3f;
         [SerializeField] private float bounceThreshold = 50f;
-        [SerializeField] private float staggerDelay = 0.03f;
+        
 
         private bool isProcessing = false;
 
-        // °¢ ºí·ÏÀÇ °íÁ¤ ½½·Ô À§Ä¡ (°ÔÀÓ ½ÃÀÛ ½Ã ÇÑ¹ø Ä³½Ã)
+        // ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ (ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ñ¹ï¿½ Ä³ï¿½ï¿½)
         private Dictionary<HexBlock, Vector2> slotPositions = new Dictionary<HexBlock, Vector2>();
         private Dictionary<int, List<HexBlock>> columnCache = null;
         private bool slotsCached = false;
@@ -53,8 +53,8 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// ½½·Ô À§Ä¡¿Í ¿­ Ä³½Ã¸¦ ÇÑ¹ø¸¸ »ı¼º (¶Ç´Â °»½Å)
-        /// ºí·ÏÀÇ ¿ø·¡ À§Ä¡¸¦ ÀúÀåÇÏ¹Ç·Î ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼Ç Áß¿¡µµ ¿ø·¡ À§Ä¡¸¦ ¾Ë ¼ö ÀÖÀ½
+        /// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½ Ä³ï¿½Ã¸ï¿½ ï¿½Ñ¹ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Ç´ï¿½ ï¿½ï¿½ï¿½ï¿½)
+        /// ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¹Ç·ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½ ï¿½ß¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         /// </summary>
         private void EnsureSlotsCached()
         {
@@ -75,7 +75,7 @@ namespace JewelsHexaPuzzle.Core
                 columnCache[colKey].Add(block);
             }
 
-            // YÁÂÇ¥ ¿À¸§Â÷¼ø Á¤·Ä (¾Æ·¡¡æÀ§)
+            // Yï¿½ï¿½Ç¥ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Æ·ï¿½ï¿½ï¿½ï¿½ï¿½)
             foreach (var key in columnCache.Keys.ToList())
             {
                 columnCache[key] = columnCache[key]
@@ -103,7 +103,7 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // ¸ÅÄª Ã³¸®
+        // ï¿½ï¿½Äª Ã³ï¿½ï¿½
         // ============================================================
 
         public void ProcessMatches(List<MatchingSystem.MatchGroup> matches)
@@ -112,39 +112,64 @@ namespace JewelsHexaPuzzle.Core
             StartCoroutine(ProcessMatchesCoroutine(matches));
         }
 
-        private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matches)
+private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matches)
         {
             isProcessing = true;
             EnsureSlotsCached();
 
-            // 1. ¸ÅÄª ÇÏÀÌ¶óÀÌÆ®
+            // 1. ë§¤ì¹­ í•˜ì´ë¼ì´íŠ¸
             foreach (var match in matches)
                 foreach (var block in match.blocks)
                     if (block != null) block.SetMatched(true);
 
             yield return new WaitForSeconds(matchHighlightDuration);
 
-            // 2. µå¸± »ı¼º
+            // 2. ë“œë¦´ ìƒì„± ì²˜ë¦¬ (í•©ì²´ ì• ë‹ˆë©”ì´ì…˜ ë¨¼ì €)
+            // ì´ë²ˆ í„´ì— ìƒˆë¡œ ìƒì„±ëœ ë“œë¦´ ë¸”ë¡ ì¶”ì 
+            HashSet<HexBlock> newlyCreatedDrills = new HashSet<HexBlock>();
+
             foreach (var match in matches)
             {
                 if (match.createsDrill && match.drillSpawnBlock != null && drillSystem != null)
-                    drillSystem.CreateDrillBlock(match.drillSpawnBlock, match.drillDirection, match.gemType);
+                {
+                    yield return StartCoroutine(DrillMergeAnimation(match.blocks, match.drillSpawnBlock, match.drillDirection, match.gemType));
+                    newlyCreatedDrills.Add(match.drillSpawnBlock);
+                }
             }
 
-            // 3. Á¦°ÅÇÒ ºí·Ï ¼öÁı
+            // 3. ë¸”ë¡ ë¶„ë¥˜: ì¼ë°˜ ë¸”ë¡ì€ ì‚­ì œ, ê¸°ì¡´ íŠ¹ìˆ˜ ë¸”ë¡ì€ ëŠ¥ë ¥ ë°œë™
             HashSet<HexBlock> blocksToRemove = new HashSet<HexBlock>();
-            foreach (var match in matches)
-                foreach (var block in match.blocks)
-                    if (block != null && block.Data != null && block.Data.specialType != SpecialBlockType.Drill)
-                        blocksToRemove.Add(block);
+            List<HexBlock> specialBlocksToActivate = new List<HexBlock>();
 
-            // 4. Á¦°Å ¾Ö´Ï¸ŞÀÌ¼Ç (ClearData´Â ¿©±â¼­ ÇÏÁö ¾ÊÀ½)
+            foreach (var match in matches)
+            {
+                foreach (var block in match.blocks)
+                {
+                    if (block == null || block.Data == null) continue;
+
+                    if (block.Data.specialType != SpecialBlockType.None)
+                    {
+                        // ì´ë²ˆ í„´ì— ìƒˆë¡œ ìƒì„±ëœ ë“œë¦´ì€ ìë™ ì‹¤í–‰í•˜ì§€ ì•ŠìŒ
+                        if (newlyCreatedDrills.Contains(block))
+                            continue;
+
+                        if (!specialBlocksToActivate.Contains(block))
+                            specialBlocksToActivate.Add(block);
+                    }
+                    else
+                    {
+                        blocksToRemove.Add(block);
+                    }
+                }
+            }
+
+            // 4. ì‚­ì œ ì• ë‹ˆë©”ì´ì…˜ (ì¼ë°˜ ë¸”ë¡ë§Œ)
             foreach (var block in blocksToRemove)
                 StartCoroutine(AnimateRemove(block));
 
             yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
 
-            // 5. µ¥ÀÌÅÍ Á¦°Å ¹× À§Ä¡ º¹¿ø
+            // 5. ì¼ë°˜ ë¸”ë¡ ë°ì´í„° í´ë¦¬ì–´
             foreach (var block in blocksToRemove)
             {
                 if (block != null)
@@ -158,10 +183,31 @@ namespace JewelsHexaPuzzle.Core
 
             OnBlocksRemoved?.Invoke(blocksToRemove.Count);
 
-            // 6. ³«ÇÏ Ã³¸® (¸ğµç ºí·Ï À§Ä¡ º¹¿ø ÈÄ)
+            // 6. ê¸°ì¡´ íŠ¹ìˆ˜ ë¸”ë¡ ëŠ¥ë ¥ ë°œë™ (ì´ë¯¸ ì¡´ì¬í•˜ë˜ íŠ¹ìˆ˜ ë¸”ë¡ë§Œ)
+            foreach (var specialBlock in specialBlocksToActivate)
+            {
+                if (specialBlock == null || specialBlock.Data == null) continue;
+                specialBlock.SetMatched(false);
+
+                switch (specialBlock.Data.specialType)
+                {
+                    case SpecialBlockType.Drill:
+                        if (drillSystem != null)
+                        {
+                            Debug.Log($"[BlockRemovalSystem] Auto-activating existing Drill at {specialBlock.Coord}");
+                            drillSystem.ActivateDrill(specialBlock);
+                            yield return new WaitForSeconds(0.3f);
+                            while (drillSystem.IsDrilling)
+                                yield return null;
+                        }
+                        break;
+                }
+            }
+
+            // 7. ë‚™í•˜ ì²˜ë¦¬
             yield return StartCoroutine(ProcessFalling());
 
-            // 7. ¿¬¼â ¸ÅÄª
+            // 8. ì—°ì‡„ ë§¤ì¹­
             yield return new WaitForSeconds(cascadeDelay);
 
             if (matchingSystem != null)
@@ -170,13 +216,425 @@ namespace JewelsHexaPuzzle.Core
                 if (newMatches.Count > 0)
                 {
                     yield return StartCoroutine(ProcessMatchesCoroutine(newMatches));
-                    yield break; // Àç±Í È£ÃâÀÌ isProcessingÀ» °ü¸®
+                    yield break;
                 }
             }
 
             isProcessing = false;
             OnCascadeComplete?.Invoke();
         }
+
+        /// <summary>
+        /// ï¿½å¸± ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½ - 4ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ß¾ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ + ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+        /// </summary>
+private IEnumerator DrillMergeAnimation(List<HexBlock> blocks, HexBlock spawnBlock, DrillDirection direction, GemType gemType)
+        {
+            if (blocks == null || spawnBlock == null) yield break;
+
+            Vector3 targetPos = spawnBlock.transform.position;
+            float mergeDuration = 0.45f;
+
+            // ê° ë¸”ë¡ì˜ ì‹œì‘ ìœ„ì¹˜ì™€ ìŠ¤ì¼€ì¼ ì €ì¥
+            Dictionary<HexBlock, Vector3> startPositions = new Dictionary<HexBlock, Vector3>();
+            Dictionary<HexBlock, Vector3> startScales = new Dictionary<HexBlock, Vector3>();
+
+            foreach (var block in blocks)
+            {
+                if (block != null && block != spawnBlock)
+                {
+                    startPositions[block] = block.transform.position;
+                    startScales[block] = block.transform.localScale;
+                }
+            }
+
+            // ì „ê¸° ì´í™íŠ¸ ì‹œì‘ (ë¸”ë¡ ê°„ ë²ˆê°œì„ )
+            List<GameObject> electricObjects = new List<GameObject>();
+            foreach (var block in blocks)
+            {
+                if (block != null)
+                {
+                    var obj = CreateElectricArcObject(block.transform);
+                    electricObjects.Add(obj);
+                }
+            }
+
+            // ë¸”ë¡ ê°„ ë²ˆê°œì„  ì—°ê²° ì´í™íŠ¸
+            List<GameObject> arcLines = new List<GameObject>();
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                for (int j = i + 1; j < blocks.Count; j++)
+                {
+                    if (blocks[i] != null && blocks[j] != null)
+                    {
+                        var arc = CreateLightningArc(blocks[i].transform, blocks[j].transform);
+                        arcLines.Add(arc);
+                    }
+                }
+            }
+
+            // ìŠ¤íŒŒí¬ íŒŒí‹°í´ ì‹œì‘
+            List<Coroutine> sparkCoroutines = new List<Coroutine>();
+            foreach (var block in blocks)
+            {
+                if (block != null)
+                    sparkCoroutines.Add(StartCoroutine(SpawnSparks(block.transform.position, mergeDuration)));
+            }
+
+            // í•©ì²´ ì• ë‹ˆë©”ì´ì…˜
+            float elapsed = 0f;
+            while (elapsed < mergeDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / mergeDuration;
+                float easeT = 1f - Mathf.Pow(1f - t, 3f); // ease out cubic
+
+                foreach (var kvp in startPositions)
+                {
+                    HexBlock block = kvp.Key;
+                    if (block != null)
+                    {
+                        // ê³¡ì„  ê²½ë¡œ ì´ë™ (ì•½ê°„ì˜ í˜¸ í˜•íƒœ)
+                        Vector3 startPos = kvp.Value;
+                        Vector3 midPoint = (startPos + targetPos) / 2f + Vector3.up * 15f * (1f - easeT);
+                        Vector3 currentPos;
+                        if (easeT < 0.5f)
+                            currentPos = Vector3.Lerp(startPos, midPoint, easeT * 2f);
+                        else
+                            currentPos = Vector3.Lerp(midPoint, targetPos, (easeT - 0.5f) * 2f);
+                        block.transform.position = currentPos;
+
+                        // ìŠ¤ì¼€ì¼ ê°ì†Œ (í„ìŠ¤ íš¨ê³¼ í¬í•¨)
+                        float pulse = 1f + 0.05f * Mathf.Sin(t * Mathf.PI * 6f);
+                        float shrink = 1f - easeT * 0.9f;
+                        block.transform.localScale = startScales[block] * shrink * pulse;
+
+                        // íšŒì „ íš¨ê³¼
+                        float rotZ = easeT * 180f * (block.GetInstanceID() % 2 == 0 ? 1f : -1f);
+                        block.transform.localRotation = Quaternion.Euler(0, 0, rotZ);
+                    }
+                }
+
+                // ì „ê¸° ì´í™íŠ¸ ì—…ë°ì´íŠ¸
+                UpdateElectricArcs(electricObjects, t);
+                UpdateLightningArcs(arcLines, t);
+
+                // ìŠ¤í° ë¸”ë¡ í„ìŠ¤
+                float spawnPulse = 1f + 0.08f * Mathf.Sin(t * Mathf.PI * 8f);
+                spawnBlock.transform.localScale = Vector3.one * spawnPulse;
+
+                yield return null;
+            }
+
+            // ì „ê¸° ì´í™íŠ¸ ì •ë¦¬
+            foreach (var obj in electricObjects)
+                if (obj != null) Destroy(obj);
+            foreach (var arc in arcLines)
+                if (arc != null) Destroy(arc);
+
+            // í•©ì²´ ì™„ë£Œ - íšŒì „ ë¦¬ì…‹
+            foreach (var kvp in startPositions)
+            {
+                if (kvp.Key != null)
+                {
+                    kvp.Key.transform.localRotation = Quaternion.identity;
+                    kvp.Key.transform.localScale = Vector3.zero;
+                }
+            }
+            spawnBlock.transform.localScale = Vector3.one;
+            spawnBlock.transform.localRotation = Quaternion.identity;
+
+            // ë“œë¦´ ìƒì„± (ìŠ¤í° ë¸”ë¡ì—)
+            drillSystem.CreateDrillBlock(spawnBlock, direction, gemType);
+
+            // ë“œë¦´ ìƒì„± ì„íŒ©íŠ¸ ì´í™íŠ¸
+            StartCoroutine(DrillSpawnImpact(spawnBlock));
+
+            yield return new WaitForSeconds(0.15f);
+        }
+
+        /// <summary>
+        /// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ® - ï¿½ï¿½ï¿½ ï¿½Öºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ È¿ï¿½ï¿½
+        /// </summary>
+private IEnumerator ElectricEffect(HexBlock block, float duration)
+        {
+            if (block == null) yield break;
+            // ì´ì œ DrillMergeAnimationì—ì„œ ì§ì ‘ ì²˜ë¦¬í•˜ë¯€ë¡œ ë¹ˆ ë©”ì„œë“œë¡œ ìœ ì§€
+            yield return null;
+        }
+
+        /// <summary>
+        /// ï¿½å¸± ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ®
+        /// </summary>
+private IEnumerator DrillSpawnFlash(HexBlock block)
+        {
+            // DrillSpawnImpactë¡œ ëŒ€ì²´
+            if (block == null) yield break;
+            yield return null;
+        }
+
+/// <summary>
+        /// ë¸”ë¡ì— ì „ê¸° ì•„í¬ ì˜¤ë¸Œì íŠ¸ ìƒì„±
+        /// </summary>
+        private GameObject CreateElectricArcObject(Transform parent)
+        {
+            GameObject obj = new GameObject("ElectricArc");
+            obj.transform.SetParent(parent, false);
+            obj.transform.localPosition = Vector3.zero;
+
+            var image = obj.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+            image.color = new Color(0.4f, 0.7f, 1f, 0.8f);
+
+            RectTransform rt = obj.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(60f, 60f);
+
+            return obj;
+        }
+
+        /// <summary>
+        /// ë‘ ë¸”ë¡ ì‚¬ì´ ë²ˆê°œì„  ìƒì„±
+        /// </summary>
+        private GameObject CreateLightningArc(Transform from, Transform to)
+        {
+            GameObject obj = new GameObject("LightningArc");
+            obj.transform.SetParent(transform, false);
+
+            var image = obj.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+            image.color = new Color(0.6f, 0.85f, 1f, 0.7f);
+
+            RectTransform rt = obj.GetComponent<RectTransform>();
+            Vector3 mid = (from.position + to.position) / 2f;
+            rt.position = mid;
+
+            float dist = Vector3.Distance(from.position, to.position);
+            rt.sizeDelta = new Vector2(dist, 3f);
+
+            Vector3 dir = to.position - from.position;
+            float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+            rt.localRotation = Quaternion.Euler(0, 0, angle);
+
+            return obj;
+        }
+
+        /// <summary>
+        /// ì „ê¸° ì•„í¬ ì—…ë°ì´íŠ¸ (í”Œë¦¬ì»¤ + í¬ê¸° ë³€í™”)
+        /// </summary>
+        private void UpdateElectricArcs(List<GameObject> arcs, float progress)
+        {
+            foreach (var obj in arcs)
+            {
+                if (obj == null) continue;
+                var image = obj.GetComponent<UnityEngine.UI.Image>();
+                var rt = obj.GetComponent<RectTransform>();
+                if (image == null || rt == null) continue;
+
+                float flicker = Random.Range(0.3f, 1f);
+                float alpha = flicker * (1f - progress * 0.5f);
+                image.color = new Color(
+                    0.4f + Random.Range(0f, 0.3f),
+                    0.7f + Random.Range(0f, 0.2f),
+                    1f,
+                    alpha * 0.9f
+                );
+
+                rt.localPosition = new Vector3(
+                    Random.Range(-4f, 4f),
+                    Random.Range(-4f, 4f),
+                    0
+                );
+
+                float scale = Random.Range(0.6f, 1.3f) * (1f - progress * 0.3f);
+                rt.sizeDelta = new Vector2(60f * scale, 60f * scale);
+            }
+        }
+
+        /// <summary>
+        /// ë²ˆê°œì„  ì—…ë°ì´íŠ¸ (ìœ„ì¹˜ ì¶”ì  + í”Œë¦¬ì»¤)
+        /// </summary>
+        private void UpdateLightningArcs(List<GameObject> arcs, float progress)
+        {
+            foreach (var obj in arcs)
+            {
+                if (obj == null) continue;
+                var image = obj.GetComponent<UnityEngine.UI.Image>();
+                var rt = obj.GetComponent<RectTransform>();
+                if (image == null || rt == null) continue;
+
+                float flicker = Random.Range(0.2f, 1f);
+                image.color = new Color(
+                    0.5f + Random.Range(0f, 0.4f),
+                    0.8f + Random.Range(0f, 0.2f),
+                    1f,
+                    flicker * (1f - progress) * 0.7f
+                );
+
+                float thickness = Random.Range(1.5f, 5f) * (1f - progress * 0.5f);
+                Vector2 size = rt.sizeDelta;
+                size.y = thickness;
+                rt.sizeDelta = size;
+
+                float jitter = Random.Range(-3f, 3f);
+                Vector3 pos = rt.localPosition;
+                pos.y += jitter;
+                rt.localPosition = pos;
+            }
+        }
+
+        /// <summary>
+        /// ìŠ¤íŒŒí¬ íŒŒí‹°í´ ìƒì„±
+        /// </summary>
+        private IEnumerator SpawnSparks(Vector3 center, float duration)
+        {
+            float elapsed = 0f;
+            float spawnInterval = 0.04f;
+            float nextSpawn = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                if (elapsed >= nextSpawn)
+                {
+                    nextSpawn += spawnInterval;
+                    StartCoroutine(AnimateSpark(center));
+                }
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// ê°œë³„ ìŠ¤íŒŒí¬ ì• ë‹ˆë©”ì´ì…˜
+        /// </summary>
+        private IEnumerator AnimateSpark(Vector3 center)
+        {
+            GameObject spark = new GameObject("Spark");
+            spark.transform.SetParent(transform, false);
+            spark.transform.position = center;
+
+            var image = spark.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+
+            RectTransform rt = spark.GetComponent<RectTransform>();
+            float size = Random.Range(3f, 8f);
+            rt.sizeDelta = new Vector2(size, size);
+
+            // ëœë¤ ë°©í–¥
+            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float speed = Random.Range(80f, 200f);
+            Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+
+            // ë°ì€ ì „ê¸°ìƒ‰
+            Color sparkColor = new Color(
+                Random.Range(0.5f, 0.8f),
+                Random.Range(0.7f, 1f),
+                1f,
+                1f
+            );
+            image.color = sparkColor;
+
+            float lifetime = Random.Range(0.1f, 0.25f);
+            float elapsedTime = 0f;
+
+            while (elapsedTime < lifetime)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = elapsedTime / lifetime;
+
+                Vector3 pos = spark.transform.position;
+                pos.x += velocity.x * Time.deltaTime;
+                pos.y += velocity.y * Time.deltaTime;
+                spark.transform.position = pos;
+
+                // ê°ì†
+                velocity *= 0.95f;
+
+                // í˜ì´ë“œ ì•„ì›ƒ + ì¶•ì†Œ
+                sparkColor.a = 1f - t;
+                image.color = sparkColor;
+                float s = size * (1f - t * 0.5f);
+                rt.sizeDelta = new Vector2(s, s);
+
+                yield return null;
+            }
+
+            Destroy(spark);
+        }
+
+        /// <summary>
+        /// ë“œë¦´ ìƒì„± ì„íŒ©íŠ¸ - ì¶©ê²©íŒŒ + ë°ì€ í”Œë˜ì‹œ
+        /// </summary>
+        private IEnumerator DrillSpawnImpact(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            // 1) ë°ì€ í”Œë˜ì‹œ
+            GameObject flashObj = new GameObject("DrillImpactFlash");
+            flashObj.transform.SetParent(block.transform, false);
+            flashObj.transform.localPosition = Vector3.zero;
+
+            var flashImage = flashObj.AddComponent<UnityEngine.UI.Image>();
+            flashImage.color = new Color(0.8f, 0.9f, 1f, 1f);
+            flashImage.raycastTarget = false;
+
+            RectTransform flashRt = flashObj.GetComponent<RectTransform>();
+            flashRt.sizeDelta = new Vector2(30f, 30f);
+
+            // 2) ì¶©ê²©íŒŒ ë§
+            GameObject ringObj = new GameObject("DrillImpactRing");
+            ringObj.transform.SetParent(block.transform, false);
+            ringObj.transform.localPosition = Vector3.zero;
+
+            var ringImage = ringObj.AddComponent<UnityEngine.UI.Image>();
+            ringImage.color = new Color(0.5f, 0.8f, 1f, 0.8f);
+            ringImage.raycastTarget = false;
+
+            RectTransform ringRt = ringObj.GetComponent<RectTransform>();
+            ringRt.sizeDelta = new Vector2(10f, 10f);
+
+            // ìŠ¤í° ë¸”ë¡ ìŠ¤ì¼€ì¼ í€ì¹˜
+            float punchDuration = 0.15f;
+            float impactDuration = 0.3f;
+            float elapsed = 0f;
+
+            // ìŠ¤íŒŒí¬ ë²„ìŠ¤íŠ¸
+            for (int i = 0; i < 12; i++)
+                StartCoroutine(AnimateSpark(block.transform.position));
+
+            while (elapsed < impactDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / impactDuration;
+
+                // í”Œë˜ì‹œ: ë¹ ë¥´ê²Œ í™•ì¥ í›„ í˜ì´ë“œ
+                float flashScale = 1f + t * 6f;
+                flashRt.sizeDelta = new Vector2(30f * flashScale, 30f * flashScale);
+                flashImage.color = new Color(0.8f, 0.9f, 1f, (1f - t) * 0.8f);
+
+                // ì¶©ê²©íŒŒ ë§: í™•ì¥
+                float ringScale = 1f + t * 8f;
+                ringRt.sizeDelta = new Vector2(10f * ringScale, 10f * ringScale);
+                ringImage.color = new Color(0.5f, 0.8f, 1f, (1f - t) * 0.5f);
+
+                // ë¸”ë¡ ìŠ¤ì¼€ì¼ í€ì¹˜
+                if (elapsed < punchDuration)
+                {
+                    float pt = elapsed / punchDuration;
+                    float punch = 1f + 0.3f * Mathf.Sin(pt * Mathf.PI);
+                    block.transform.localScale = Vector3.one * punch;
+                }
+                else
+                {
+                    block.transform.localScale = Vector3.one;
+                }
+
+                yield return null;
+            }
+
+            block.transform.localScale = Vector3.one;
+            Destroy(flashObj);
+            Destroy(ringObj);
+        }
+
 
         private IEnumerator AnimateRemove(HexBlock block)
         {
@@ -197,11 +655,11 @@ namespace JewelsHexaPuzzle.Core
             }
 
             block.transform.localScale = Vector3.zero;
-            // ClearData´Â ¿©±â¼­ È£ÃâÇÏÁö ¾ÊÀ½ - ProcessMatchesCoroutine¿¡¼­ ÀÏ°ı Ã³¸®
+            // ClearDataï¿½ï¿½ ï¿½ï¿½ï¿½â¼­ È£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ - ProcessMatchesCoroutineï¿½ï¿½ï¿½ï¿½ ï¿½Ï°ï¿½ Ã³ï¿½ï¿½
         }
 
         // ============================================================
-        // ³«ÇÏ Ã³¸®
+        // ï¿½ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
         // ============================================================
 
         private IEnumerator ProcessFalling()
@@ -210,11 +668,17 @@ namespace JewelsHexaPuzzle.Core
 
             List<FallAnimation> allAnimations = new List<FallAnimation>();
 
+            // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¼ï¿½ï¿½Ï°ï¿½ ï¿½Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
+            Dictionary<int, float> columnBaseDelay = new Dictionary<int, float>();
+            foreach (var key in columnCache.Keys)
+                columnBaseDelay[key] = Random.Range(0f, 0.04f);
+
             foreach (var kvp in columnCache)
             {
                 List<HexBlock> column = kvp.Value;
+                float colDelay = columnBaseDelay[kvp.Key];
 
-                // 1. µ¥ÀÌÅÍ ÀÖ´Â ºí·Ï ¼öÁı (¾Æ·¡ºÎÅÍ)
+                // 1. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Æ·ï¿½ï¿½ï¿½ï¿½ï¿½)
                 List<BlockData> dataList = new List<BlockData>();
                 List<int> sourceSlots = new List<int>();
 
@@ -231,44 +695,51 @@ namespace JewelsHexaPuzzle.Core
                 int emptyCount = column.Count - dataList.Count;
                 if (emptyCount == 0) continue;
 
-                // 2. ¸ğµç ºí·ÏÀ» ½½·Ô À§Ä¡·Î º¹¿øÇÏ°í Å¬¸®¾î
+                // 2. ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï°ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½
                 for (int i = 0; i < column.Count; i++)
                 {
                     column[i].HideVisuals();
                     RestoreBlockToSlot(column[i]);
                 }
 
-                // 3. ±âÁ¸ µ¥ÀÌÅÍ¸¦ ¾Æ·¡ºÎÅÍ Ã¤¿ì°í, ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼Ç ÁØºñ
+                // 3. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½Æ·ï¿½ï¿½ï¿½ï¿½ï¿½ Ã¤ï¿½ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½ ï¿½Øºï¿½
                 for (int i = 0; i < dataList.Count; i++)
                 {
                     int targetSlot = i;
                     int sourceSlot = sourceSlots[i];
                     HexBlock targetBlock = column[targetSlot];
 
-                    // µ¥ÀÌÅÍ ¼³Á¤
                     targetBlock.SetBlockData(dataList[i]);
                     targetBlock.transform.localScale = Vector3.one;
 
                     if (sourceSlot != targetSlot)
                     {
-                        // ½ÃÀÛ À§Ä¡·Î Áï½Ã ÀÌµ¿ (¿ø·¡ ¼Ò½º À§Ä¡¿¡¼­ Ãâ¹ß)
                         Vector2 startPos = slotPositions[column[sourceSlot]];
                         SetBlockAnchoredPosition(targetBlock, startPos);
+
+                        // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ï¼ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ê°ï¿½ ï¿½ï¿½ï¿½ (ï¿½Æ·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½)
+                        int fallDistance = sourceSlot - targetSlot;
+                        float heightDelay = (sourceSlot - targetSlot) * 0.025f;
+                        float jitter = Random.Range(0f, 0.02f);
 
                         allAnimations.Add(new FallAnimation
                         {
                             block = targetBlock,
                             startY = startPos.y,
                             targetY = slotPositions[targetBlock].y,
-                            delay = (column.Count - sourceSlot) * staggerDelay,
+                            delay = colDelay + heightDelay + jitter,
+                            gravityMult = Random.Range(0.92f, 1.08f),
+                            maxSpeedMult = Random.Range(0.90f, 1.10f),
                         });
                     }
-                    // sourceSlot == targetSlotÀÌ¸é Á¦ÀÚ¸® ¡æ ÀÌ¹Ì ¿Ã¹Ù¸¥ À§Ä¡
                 }
 
-                // 4. »õ ºí·Ï »ı¼º (À§¿¡¼­ ¶³¾îÁü)
+                // 4. ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
                 float topY = slotPositions[column[column.Count - 1]].y;
                 float spawnOffset = 120f;
+
+                // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½âº» ï¿½ï¿½ï¿½ï¿½
+                float existingFallBase = emptyCount * 0.03f;
 
                 for (int i = 0; i < emptyCount; i++)
                 {
@@ -281,48 +752,46 @@ namespace JewelsHexaPuzzle.Core
 
                     float startY = topY + spawnOffset + (i * 80f);
 
-                    // µ¥ÀÌÅÍ ¼³Á¤ + È­¸é À§ ½ÃÀÛ À§Ä¡
                     targetBlock.SetBlockData(newData);
                     targetBlock.transform.localScale = Vector3.one;
                     SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
+
+                    // ï¿½ï¿½ ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½à°£ï¿½ï¿½ ï¿½Ê°ï¿½ + ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+                    float newDelay = colDelay + existingFallBase + i * 0.04f + Random.Range(0f, 0.025f);
 
                     allAnimations.Add(new FallAnimation
                     {
                         block = targetBlock,
                         startY = startY,
                         targetY = targetPos.y,
-                        delay = (emptyCount - i - 1) * staggerDelay + dataList.Count * staggerDelay,
+                        delay = newDelay,
+                        gravityMult = Random.Range(0.90f, 1.10f),
+                        maxSpeedMult = Random.Range(0.88f, 1.12f),
                     });
                 }
             }
 
             if (allAnimations.Count == 0)
             {
-                // ³«ÇÏÇÒ °ÍÀÌ ¾ø¾îµµ ºó ºí·Ï Ã¼Å©
                 FillEmptyBlocksWithAnimation();
                 yield break;
             }
 
-            // ¸ğµç ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼Ç µ¿½Ã ½ÃÀÛ ¹× ¿Ï·á ´ë±â
             int completedCount = 0;
             int totalCount = allAnimations.Count;
 
             foreach (var anim in allAnimations)
-            {
                 StartCoroutine(AnimateFall(anim, () => completedCount++));
-            }
 
-            // ¸ğµç ¾Ö´Ï¸ŞÀÌ¼Ç ¿Ï·á ´ë±â
             while (completedCount < totalCount)
                 yield return null;
 
-            // ÃÖÁ¾ °ËÁõ - ºó ºí·Ï¿¡µµ ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼Ç Àû¿ë
             FillEmptyBlocksWithAnimation();
         }
 
         /// <summary>
-        /// ¹°¸® ±â¹İ ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼Ç
-        /// ºí·ÏÀº ÀÌ¹Ì µ¥ÀÌÅÍ°¡ ¼³Á¤µÇ°í ½ÃÀÛ À§Ä¡¿¡ ¹èÄ¡µÈ »óÅÂ
+        /// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½
+        /// ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¹ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         /// </summary>
         private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
         {
@@ -337,14 +806,16 @@ namespace JewelsHexaPuzzle.Core
             float currentY = anim.startY;
             float velocity = 0f;
             float targetY = anim.targetY;
+            float blockGravity = gravity * anim.gravityMult;
+            float blockMaxSpeed = maxFallSpeed * anim.maxSpeedMult;
 
             int bounceCount = 0;
             int maxBounces = 2;
 
             while (true)
             {
-                velocity -= gravity * Time.deltaTime;
-                velocity = Mathf.Max(velocity, -maxFallSpeed);
+                velocity -= blockGravity * Time.deltaTime;
+                velocity = Mathf.Max(velocity, -blockMaxSpeed);
                 currentY += velocity * Time.deltaTime;
 
                 if (currentY <= targetY)
@@ -359,7 +830,6 @@ namespace JewelsHexaPuzzle.Core
                     }
                     else
                     {
-                        // ³«ÇÏ ¿Ï·á - Á¤È®ÇÑ ½½·Ô À§Ä¡·Î °íÁ¤
                         SetBlockAnchoredPosition(block, slotPos);
                         block.transform.localScale = Vector3.one;
                         onComplete?.Invoke();
@@ -390,7 +860,7 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// ºó ºí·ÏÀÌ ÀÖÀ¸¸é ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼ÇÀ¸·Î Ã¤¿ò (°©ÀÚ±â »ı±â´Â Çö»ó ¹æÁö)
+        /// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½ï¿½ï¿½ï¿½ï¿½ Ã¤ï¿½ï¿½ (ï¿½ï¿½ï¿½Ú±ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
         /// </summary>
         private void FillEmptyBlocksWithAnimation()
         {
@@ -400,6 +870,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 List<HexBlock> column = kvp.Value;
                 float topY = slotPositions[column[column.Count - 1]].y;
+                float colDelay = Random.Range(0f, 0.03f);
                 int newBlockIndex = 0;
 
                 for (int i = 0; i < column.Count; i++)
@@ -413,7 +884,6 @@ namespace JewelsHexaPuzzle.Core
                         block.SetBlockData(new BlockData(randomGem));
                         block.transform.localScale = Vector3.one;
 
-                        // À§¿¡¼­ ¶³¾îÁö´Â ¾Ö´Ï¸ŞÀÌ¼Ç
                         Vector2 slotPos = slotPositions[block];
                         float startY = topY + 120f + newBlockIndex * 80f;
                         SetBlockAnchoredPosition(block, new Vector2(slotPos.x, startY));
@@ -423,7 +893,9 @@ namespace JewelsHexaPuzzle.Core
                             block = block,
                             startY = startY,
                             targetY = slotPos.y,
-                            delay = newBlockIndex * staggerDelay,
+                            delay = colDelay + newBlockIndex * 0.04f + Random.Range(0f, 0.02f),
+                            gravityMult = Random.Range(0.90f, 1.10f),
+                            maxSpeedMult = Random.Range(0.88f, 1.12f),
                         }, null));
 
                         newBlockIndex++;
@@ -437,7 +909,41 @@ namespace JewelsHexaPuzzle.Core
         // BigBang
         // ============================================================
 
-        public void TriggerBigBang()
+        /// <summary>
+        /// ë‚™í•˜ë§Œ ì²˜ë¦¬ (ë“œë¦´ íŒŒê´´ í›„ í˜¸ì¶œ)
+        /// </summary>
+        public void TriggerFallOnly()
+        {
+            if (isProcessing) return;
+            StartCoroutine(FallOnlyCoroutine());
+        }
+
+        private IEnumerator FallOnlyCoroutine()
+        {
+            isProcessing = true;
+            EnsureSlotsCached();
+
+            yield return StartCoroutine(ProcessFalling());
+
+            yield return new WaitForSeconds(cascadeDelay);
+
+            // ë‚™í•˜ í›„ ì—°ì‡„ ë§¤ì¹­ í™•ì¸
+            if (matchingSystem != null)
+            {
+                var newMatches = matchingSystem.FindMatches();
+                if (newMatches.Count > 0)
+                {
+                    yield return StartCoroutine(ProcessMatchesCoroutine(newMatches));
+                    yield break;
+                }
+            }
+
+            isProcessing = false;
+            OnCascadeComplete?.Invoke();
+        }
+
+        
+public void TriggerBigBang()
         {
             if (isProcessing) return;
             StartCoroutine(BigBangCoroutine());
@@ -463,7 +969,6 @@ namespace JewelsHexaPuzzle.Core
                 RestoreBlockToSlot(block);
             }
 
-            // ¸ğµç ºí·Ï¿¡ ³«ÇÏ ¾Ö´Ï¸ŞÀÌ¼Ç
             int completedCount = 0;
             int totalCount = 0;
             List<FallAnimation> anims = new List<FallAnimation>();
@@ -472,6 +977,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 List<HexBlock> column = kvp.Value;
                 float topY = slotPositions[column[column.Count - 1]].y;
+                float colDelay = Random.Range(0f, 0.06f);
 
                 for (int i = 0; i < column.Count; i++)
                 {
@@ -485,12 +991,16 @@ namespace JewelsHexaPuzzle.Core
                     float startY = topY + 150f + (column.Count - i) * 60f;
                     SetBlockAnchoredPosition(block, new Vector2(targetPos.x, startY));
 
+                    float heightDelay = (column.Count - i) * 0.03f;
+
                     anims.Add(new FallAnimation
                     {
                         block = block,
                         startY = startY,
                         targetY = targetPos.y,
-                        delay = (column.Count - i) * staggerDelay * 0.5f,
+                        delay = colDelay + heightDelay + Random.Range(0f, 0.02f),
+                        gravityMult = Random.Range(0.88f, 1.12f),
+                        maxSpeedMult = Random.Range(0.85f, 1.15f),
                     });
                     totalCount++;
                 }
@@ -516,6 +1026,8 @@ namespace JewelsHexaPuzzle.Core
             public float startY;
             public float targetY;
             public float delay;
+            public float gravityMult;   // ï¿½ï¿½ï¿½ï¿½ ï¿½ß·ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Ú¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
+            public float maxSpeedMult;  // ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´ï¿½Óµï¿½ ï¿½ï¿½ï¿½ï¿½
         }
     }
 }

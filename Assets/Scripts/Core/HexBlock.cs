@@ -26,11 +26,15 @@ namespace JewelsHexaPuzzle.Core
         private bool isMatched;
 
         // 스프라이트 캐시 (인스턴스별로 관리하지 않고 static으로 공유)
-        private static Sprite hexFillSprite;
-        private static Sprite hexBorderSprite;
+        private static Sprite hexFillSprite;      // 풀 육각형 (배경용)
+        private static Sprite hexBorderSprite;     // 테두리 링 (테두리용)
+        private static Sprite hexGemSprite;        // 테두리 안쪽 육각형 (젬 색상용)
         private static Sprite drillVerticalSprite;
         private static Sprite drillSlashSprite;
         private static Sprite drillBackSlashSprite;
+
+        private const float BORDER_WIDTH = 10f;
+        private const float INNER_BORDER_WIDTH = 7f;  // 안쪽 테두리 30% 축소 (10 * 0.7)
 
         public event Action<HexBlock> OnBlockClicked;
         public event Action<HexBlock> OnBlockPressed;
@@ -86,21 +90,114 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private void EnsureSpritesCreated()
         {
-            // 스프라이트가 null이면 재생성 (Play 모드 재시작 대응)
+            const int TEX_SIZE = 512;
+            float scale = TEX_SIZE / 128f; // 4x
+
             if (hexFillSprite == null)
-            {
-                hexFillSprite = CreateFlatTopHexSprite(128, 0, false);
-            }
+                hexFillSprite = CreateAAHexSprite(TEX_SIZE, 0, false);
             if (hexBorderSprite == null)
-            {
-                hexBorderSprite = CreateFlatTopHexSprite(128, 10f, true);
-            }
+                hexBorderSprite = CreateAAHexSprite(TEX_SIZE, INNER_BORDER_WIDTH * scale, true);
+            if (hexGemSprite == null)
+                hexGemSprite = CreateAAInnerHexSprite(TEX_SIZE, INNER_BORDER_WIDTH * scale);
             if (drillVerticalSprite == null)
             {
                 drillVerticalSprite = CreateArrowSprite(64, 0);
                 drillSlashSprite = CreateArrowSprite(64, -45);
                 drillBackSlashSprite = CreateArrowSprite(64, 45);
             }
+        }
+
+        /// <summary>
+        /// 점에서 flat-top 육각형 변까지의 signed distance (음수=안쪽, 양수=바깥)
+        /// flat-top: 꼭지점이 0°,60°,120°... → 변의 법선은 30°,90°,150°...
+        /// </summary>
+        private static float HexSignedDistance(Vector2 point, Vector2 center, float radius)
+        {
+            Vector2 p = point - center;
+            float maxDist = float.MinValue;
+            for (int i = 0; i < 6; i++)
+            {
+                // flat-top 법선: 30° + i*60°
+                float angle = (30f + i * 60f) * Mathf.Deg2Rad;
+                Vector2 normal = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                // flat-top에서 중심~변 거리 = radius * cos(30°) = radius * sqrt(3)/2
+                float edgeDist = radius * 0.8660254f; // sqrt(3)/2
+                float dist = Vector2.Dot(p, normal) - edgeDist;
+                if (dist > maxDist) maxDist = dist;
+            }
+            return maxDist;
+        }
+
+        /// <summary>
+        /// 안티앨리어싱 적용 육각형 (fill 또는 border)
+        /// </summary>
+        private static Sprite CreateAAHexSprite(int size, float borderWidth, bool isBorderOnly)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerRadius = size / 2f - 2f;
+            float innerRadius = outerRadius - borderWidth;
+            float aa = 2.0f; // 안티앨리어싱 폭 (픽셀)
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 point = new Vector2(x + 0.5f, y + 0.5f);
+                    float outerDist = HexSignedDistance(point, center, outerRadius);
+
+                    if (isBorderOnly)
+                    {
+                        float innerDist = HexSignedDistance(point, center, innerRadius);
+                        float outerAlpha = Mathf.Clamp01(1f - outerDist / aa);
+                        float innerAlpha = Mathf.Clamp01(innerDist / aa);
+                        float alpha = outerAlpha * innerAlpha;
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    }
+                    else
+                    {
+                        float alpha = Mathf.Clamp01(1f - outerDist / aa);
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>
+        /// 안티앨리어싱 적용 내부 육각형 (젬 색상용)
+        /// </summary>
+        private static Sprite CreateAAInnerHexSprite(int size, float borderWidth)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerRadius = size / 2f - 2f;
+            float innerRadius = outerRadius - borderWidth;
+            float aa = 2.0f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 point = new Vector2(x + 0.5f, y + 0.5f);
+                    float dist = HexSignedDistance(point, center, innerRadius);
+                    float alpha = Mathf.Clamp01(1f - dist / aa);
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
         private Sprite CreateArrowSprite(int size, float rotation)
@@ -147,71 +244,11 @@ namespace JewelsHexaPuzzle.Core
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        private Sprite CreateFlatTopHexSprite(int size, float borderWidth, bool isBorderOnly)
-        {
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[size * size];
-
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = Color.clear;
-
-            Vector2 center = new Vector2(size / 2f, size / 2f);
-            float outerRadius = size / 2f - 1f;
-            float innerRadius = outerRadius - borderWidth;
-
-            Vector2[] outerVerts = new Vector2[6];
-            Vector2[] innerVerts = new Vector2[6];
-
-            for (int i = 0; i < 6; i++)
-            {
-                float angle = i * Mathf.PI / 3f;
-                outerVerts[i] = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * outerRadius;
-                innerVerts[i] = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * innerRadius;
-            }
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    Vector2 point = new Vector2(x, y);
-                    bool inOuter = IsPointInHex(point, outerVerts);
-                    bool inInner = IsPointInHex(point, innerVerts);
-
-                    if (isBorderOnly)
-                    {
-                        if (inOuter && !inInner) pixels[y * size + x] = Color.white;
-                    }
-                    else
-                    {
-                        if (inOuter) pixels[y * size + x] = Color.white;
-                    }
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
-        }
-
-        private static bool IsPointInHex(Vector2 p, Vector2[] verts)
-        {
-            int intersections = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                Vector2 v1 = verts[i];
-                Vector2 v2 = verts[(i + 1) % 6];
-                if ((v1.y > p.y) != (v2.y > p.y))
-                {
-                    float x = (v2.x - v1.x) * (p.y - v1.y) / (v2.y - v1.y) + v1.x;
-                    if (p.x < x) intersections++;
-                }
-            }
-            return intersections % 2 == 1;
-        }
+        // (구 메서드 제거됨 - CreateAAHexSprite/CreateAAInnerHexSprite로 대체)
 
         private void SetupBorder()
         {
-            // 배경 이미지에 육각형 스프라이트 적용
+            // 배경 이미지 - 투명 육각형 (raycast 영역용)
             if (backgroundImage != null)
             {
                 backgroundImage.sprite = hexFillSprite;
@@ -219,12 +256,32 @@ namespace JewelsHexaPuzzle.Core
                 backgroundImage.type = Image.Type.Simple;
             }
 
-            // 테두리 이미지 생성 또는 설정
+            // 젬 이미지 - 테두리 안쪽만 채우는 육각형 (삐져나감 방지)
+            if (gemImage == null)
+            {
+                GameObject gemObj = new GameObject("GemImage");
+                gemObj.transform.SetParent(transform, false);
+
+                gemImage = gemObj.AddComponent<Image>();
+
+                // 풀사이즈 앵커 - 스프라이트 자체가 inner hex이므로 축소 불필요
+                RectTransform rt = gemObj.GetComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+            }
+
+            gemImage.sprite = hexGemSprite;  // inner hex 스프라이트 사용
+            gemImage.raycastTarget = false;
+            gemImage.type = Image.Type.Simple;
+
+            // 테두리 이미지 - 젬 이미지 위에 배치하여 삐져나온 부분을 덮음
             if (borderImage == null)
             {
                 GameObject borderObj = new GameObject("Border");
                 borderObj.transform.SetParent(transform, false);
-                borderObj.transform.SetAsFirstSibling();
+                borderObj.transform.SetAsLastSibling();  // 맨 위에 그림 (gem을 덮음)
 
                 borderImage = borderObj.AddComponent<Image>();
 
@@ -234,30 +291,16 @@ namespace JewelsHexaPuzzle.Core
                 rt.offsetMin = Vector2.zero;
                 rt.offsetMax = Vector2.zero;
             }
+            else
+            {
+                // 이미 존재하면 맨 위로 이동
+                borderImage.transform.SetAsLastSibling();
+            }
 
             borderImage.sprite = hexBorderSprite;
             borderImage.color = new Color(0.15f, 0.15f, 0.15f, 1f);
             borderImage.raycastTarget = false;
             borderImage.type = Image.Type.Simple;
-
-            // 젬 이미지 생성 또는 설정
-            if (gemImage == null)
-            {
-                GameObject gemObj = new GameObject("GemImage");
-                gemObj.transform.SetParent(transform, false);
-
-                gemImage = gemObj.AddComponent<Image>();
-
-                RectTransform rt = gemObj.GetComponent<RectTransform>();
-                rt.anchorMin = new Vector2(0.08f, 0.08f);
-                rt.anchorMax = new Vector2(0.92f, 0.92f);
-                rt.offsetMin = Vector2.zero;
-                rt.offsetMax = Vector2.zero;
-            }
-
-            gemImage.sprite = hexFillSprite;
-            gemImage.raycastTarget = false;
-            gemImage.type = Image.Type.Simple;
         }
 
         private void SetupDrillIndicator()
@@ -266,6 +309,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 GameObject drillObj = new GameObject("DrillIndicator");
                 drillObj.transform.SetParent(transform, false);
+                drillObj.transform.SetAsLastSibling();  // 맨 위에 표시
 
                 drillIndicator = drillObj.AddComponent<Image>();
 
@@ -299,7 +343,7 @@ namespace JewelsHexaPuzzle.Core
                 borderImage.sprite = hexBorderSprite;
 
             if (gemImage != null && gemImage.sprite == null)
-                gemImage.sprite = hexFillSprite;
+                gemImage.sprite = hexGemSprite;
 
             SetupVisuals();
         }
@@ -440,16 +484,15 @@ namespace JewelsHexaPuzzle.Core
             if (gemImage != null)
             {
                 if (gemImage.sprite == null)
-                    gemImage.sprite = hexFillSprite;
+                    gemImage.sprite = hexGemSprite;
                 gemImage.color = color;
-                gemImage.enabled = true;  // 반드시 활성화
+                gemImage.enabled = true;
             }
             else if (backgroundImage != null)
             {
                 backgroundImage.color = color;
             }
 
-            // 테두리도 활성화
             if (borderImage != null)
             {
                 borderImage.enabled = true;

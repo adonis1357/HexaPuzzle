@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 using JewelsHexaPuzzle.Core;
 using JewelsHexaPuzzle.Data;
 
@@ -18,6 +19,8 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private MatchingSystem matchingSystem;
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
         [SerializeField] private InputSystem inputSystem;
+        [SerializeField] private DrillBlockSystem drillSystem;
+
 
         [Header("Managers")]
         [SerializeField] private UIManager uiManager;
@@ -102,7 +105,15 @@ namespace JewelsHexaPuzzle.Managers
                     Debug.Log("[GameManager] BlockRemovalSystem auto-found");
             }
 
-            if (inputSystem == null)
+            if (drillSystem == null)
+            {
+                drillSystem = FindObjectOfType<DrillBlockSystem>();
+                if (drillSystem != null)
+                    Debug.Log("[GameManager] DrillBlockSystem auto-found");
+            }
+
+            
+if (inputSystem == null)
             {
                 inputSystem = FindObjectOfType<InputSystem>();
                 if (inputSystem != null)
@@ -144,6 +155,12 @@ namespace JewelsHexaPuzzle.Managers
                 blockRemovalSystem.OnBlocksRemoved += OnBlocksRemoved;
                 blockRemovalSystem.OnCascadeComplete += OnCascadeComplete;
                 blockRemovalSystem.OnBigBang += OnBigBang;
+
+            if (drillSystem != null)
+            {
+                drillSystem.OnDrillComplete += OnDrillCompleted;
+            }
+
             }
         }
 
@@ -339,7 +356,73 @@ namespace JewelsHexaPuzzle.Managers
         /// <summary>
         /// 빅뱅 이벤트
         /// </summary>
-        private void OnBigBang()
+        /// <summary>
+        /// 드릴 완료 이벤트 - 낙하 처리 트리거
+        /// </summary>
+        private void OnDrillCompleted(int score)
+        {
+            Debug.Log($"Drill completed! Score: {score}");
+            if (scoreManager != null)
+                scoreManager.AddScore(score);
+
+            // 드릴로 파괴된 블록들의 낙하 + 연쇄 매칭 처리
+            if (blockRemovalSystem != null)
+            {
+                // ProcessMatches에서 빈 매칭으로 낙하만 트리거
+                StartCoroutine(ProcessDrillAftermath());
+            }
+        }
+
+private IEnumerator ProcessDrillAftermath()
+        {
+            yield return new WaitForSeconds(0.1f);
+
+            // 납하 처리
+            blockRemovalSystem.TriggerFallOnly();
+            while (blockRemovalSystem.IsProcessing)
+                yield return null;
+
+            // 드릴이 발견한 특수블록들 순차적으로 발동
+            if (drillSystem != null && drillSystem.PendingSpecialBlocks.Count > 0)
+            {
+                List<HexBlock> pending = new List<HexBlock>(drillSystem.PendingSpecialBlocks);
+                drillSystem.PendingSpecialBlocks.Clear();
+
+                foreach (var specialBlock in pending)
+                {
+                    if (specialBlock == null || specialBlock.Data == null) continue;
+                    if (specialBlock.Data.specialType == SpecialBlockType.None) continue;
+
+                    Debug.Log($"[GameManager] Activating pending special block: {specialBlock.Coord} type={specialBlock.Data.specialType}");
+
+                    switch (specialBlock.Data.specialType)
+                    {
+                        case SpecialBlockType.Drill:
+                            drillSystem.ActivateDrill(specialBlock);
+                            yield return new WaitForSeconds(0.1f);
+                            while (drillSystem.IsDrilling)
+                                yield return null;
+                            // 이 드릴이 또 특수블록을 발견했을 수 있으므로 재귀적 처리
+                            yield return StartCoroutine(ProcessDrillAftermath());
+                            yield break;
+                    }
+                }
+            }
+
+            // 연쇄 매칭 확인
+            if (matchingSystem != null)
+            {
+                var matches = matchingSystem.FindMatches();
+                if (matches.Count > 0)
+                {
+                    blockRemovalSystem.ProcessMatches(matches);
+                    yield break;
+                }
+            }
+        }
+
+        
+private void OnBigBang()
         {
             Debug.Log("BIG BANG triggered!");
         }
@@ -545,6 +628,12 @@ namespace JewelsHexaPuzzle.Managers
                 blockRemovalSystem.OnBlocksRemoved -= OnBlocksRemoved;
                 blockRemovalSystem.OnCascadeComplete -= OnCascadeComplete;
                 blockRemovalSystem.OnBigBang -= OnBigBang;
+
+            if (drillSystem != null)
+            {
+                drillSystem.OnDrillComplete -= OnDrillCompleted;
+            }
+
             }
         }
     }

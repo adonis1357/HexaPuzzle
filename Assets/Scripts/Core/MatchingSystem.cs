@@ -41,7 +41,9 @@ namespace JewelsHexaPuzzle.Core
             {
                 drillSystem = FindObjectOfType<DrillBlockSystem>();
             }
-        }
+
+            // === 방향 매핑 검증 로그 ===
+                                }
 
         /// <summary>
         /// 삼각형 매칭 찾기
@@ -225,107 +227,158 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 드릴 패턴 체크 (4개 이상 직선)
+        /// 드릴 패턴 체크 - 두 삼각형이 중첩되어 4개 블록이 되는 경우
+        /// 공유하는 2개 블록의 방향으로 드릴 방향 결정, 아래쪽 블록에 드릴 생성
         /// </summary>
-        private void CheckForDrillPattern(MatchGroup group)
+private void CheckForDrillPattern(MatchGroup group)
         {
-            if (group.blocks.Count < 4) return;
+            if (group.blocks.Count != 4) return;
 
-            List<HexBlock> lineBlocks = FindLinearBlocks(group.blocks);
+            List<HexBlock> sharedBlocks = new List<HexBlock>();
+            List<HexBlock> outerBlocks = new List<HexBlock>();
 
-            if (lineBlocks != null && lineBlocks.Count >= 4)
+            Dictionary<HexBlock, int> neighborCounts = new Dictionary<HexBlock, int>();
+            foreach (var block in group.blocks)
             {
-                DrillDirection? direction = DetectLineDirection(lineBlocks);
-
-                if (direction.HasValue)
+                int count = 0;
+                foreach (var other in group.blocks)
                 {
-                    group.createsDrill = true;
-                    group.drillDirection = direction.Value;
-                    group.drillSpawnBlock = lineBlocks[lineBlocks.Count / 2];
+                    if (block != other && AreNeighbors(block.Coord, other.Coord))
+                        count++;
+                }
+                neighborCounts[block] = count;
+            }
+
+            int maxCount = neighborCounts.Values.Max();
+            var candidates = group.blocks.Where(b => neighborCounts[b] == maxCount).ToList();
+
+            if (candidates.Count >= 2)
+            {
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    for (int j = i + 1; j < candidates.Count; j++)
+                    {
+                        if (AreNeighbors(candidates[i].Coord, candidates[j].Coord))
+                        {
+                            sharedBlocks.Add(candidates[i]);
+                            sharedBlocks.Add(candidates[j]);
+                            goto foundShared;
+                        }
+                    }
                 }
             }
+            return;
+
+        foundShared:
+            foreach (var block in group.blocks)
+            {
+                if (!sharedBlocks.Contains(block))
+                    outerBlocks.Add(block);
+            }
+
+            if (sharedBlocks.Count != 2 || outerBlocks.Count != 2) return;
+
+            // === 방향 결정: 공유 블록 2개의 나열 방향 = 발사 방향 ===
+            // (정상 확인된 중앙 패턴: 공유블록 r축 나열 → BackSlash 발사)
+            HexCoord sharedDelta = sharedBlocks[1].Coord - sharedBlocks[0].Coord;
+            DrillDirection direction = GetDrillDirectionFromSharedDelta(sharedDelta);
+
+            Debug.Log($"[MatchingSystem] Shared=({sharedBlocks[0].Coord.q},{sharedBlocks[0].Coord.r})->({sharedBlocks[1].Coord.q},{sharedBlocks[1].Coord.r}) delta=({sharedDelta.q},{sharedDelta.r}) dir={direction}");
+
+            // === 생성 위치 우선순위 ===
+            List<HexBlock> priorityOrder = new List<HexBlock>();
+
+            Vector2 sPos0 = GetBlockScreenPosition(sharedBlocks[0]);
+            Vector2 sPos1 = GetBlockScreenPosition(sharedBlocks[1]);
+            if (sPos0.y <= sPos1.y)
+            {
+                priorityOrder.Add(sharedBlocks[0]);
+                priorityOrder.Add(sharedBlocks[1]);
+            }
+            else
+            {
+                priorityOrder.Add(sharedBlocks[1]);
+                priorityOrder.Add(sharedBlocks[0]);
+            }
+
+            if (outerBlocks.Count >= 2)
+            {
+                Vector2 oPos0 = GetBlockScreenPosition(outerBlocks[0]);
+                Vector2 oPos1 = GetBlockScreenPosition(outerBlocks[1]);
+                if (oPos0.y <= oPos1.y)
+                {
+                    priorityOrder.Add(outerBlocks[0]);
+                    priorityOrder.Add(outerBlocks[1]);
+                }
+                else
+                {
+                    priorityOrder.Add(outerBlocks[1]);
+                    priorityOrder.Add(outerBlocks[0]);
+                }
+            }
+
+            HexBlock spawnBlock = null;
+            foreach (var block in priorityOrder)
+            {
+                if (block.Data != null && block.Data.specialType == SpecialBlockType.None)
+                {
+                    spawnBlock = block;
+                    break;
+                }
+            }
+
+            if (spawnBlock == null) return;
+
+            group.createsDrill = true;
+            group.drillDirection = direction;
+            group.drillSpawnBlock = spawnBlock;
+
+            Debug.Log($"[MatchingSystem] DRILL: Direction={direction}, Spawn=({spawnBlock.Coord.q},{spawnBlock.Coord.r})");
         }
 
-        private List<HexBlock> FindLinearBlocks(List<HexBlock> blocks)
+private DrillDirection GetDrillDirectionFromSharedDelta(HexCoord delta)
         {
-            // 방향별 직선 검사
-            var directions = new HexCoord[]
-            {
-                new HexCoord(1, 0),   // 수평
-                new HexCoord(1, -1),  // 대각선 /
-                new HexCoord(0, 1)    // 대각선 \
-            };
+            // 공유 블록 나열 방향의 **수직** 방향으로 발사
+            // 정규화
+            int nq = delta.q == 0 ? 0 : (delta.q > 0 ? 1 : -1);
+            int nr = delta.r == 0 ? 0 : (delta.r > 0 ? 1 : -1);
 
-            foreach (var dir in directions)
+            // DrillBlockSystem.GetDirectionDelta 기준:
+            //   Vertical  = (0, ±1)    화면상 ↘↖
+            //   Slash     = (±1, ∓ 1)  화면상 ↗↙
+            //   BackSlash = (±1, 0)    화면상 →←
+            //
+            // 공유블록 나열 → 수직 발사:
+            //   (0, ±1)   r축 나열 (↘↖) → 수직 = Slash (↗↙)
+            //   (±1, ∓ 1) s축 나열 (↗↙) → 수직 = BackSlash (→←)
+            //   (±1, 0)   q축 나열 (→←) → 수직 = Vertical (↘↖)
+
+            if (nq == 0 && (nr == 1 || nr == -1))
             {
-                var line = FindLineInDirection(blocks, dir);
-                if (line != null && line.Count >= 4)
-                    return line;
+                Debug.Log($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) r축 -> Slash");
+                return DrillDirection.Slash;
             }
-
-            return null;
-        }
-
-        private List<HexBlock> FindLineInDirection(List<HexBlock> blocks, HexCoord direction)
-        {
-            HashSet<HexCoord> coordSet = new HashSet<HexCoord>();
-            Dictionary<HexCoord, HexBlock> coordToBlock = new Dictionary<HexCoord, HexBlock>();
-
-            foreach (var block in blocks)
+            if ((nq == 1 && nr == -1) || (nq == -1 && nr == 1))
             {
-                coordSet.Add(block.Coord);
-                coordToBlock[block.Coord] = block;
-            }
-
-            List<HexBlock> bestLine = null;
-
-            foreach (var block in blocks)
-            {
-                List<HexBlock> line = new List<HexBlock> { block };
-
-                // 양방향 확장
-                HexCoord pos = block.Coord + direction;
-                while (coordSet.Contains(pos))
-                {
-                    line.Add(coordToBlock[pos]);
-                    pos = pos + direction;
-                }
-
-                pos = block.Coord - direction;
-                while (coordSet.Contains(pos))
-                {
-                    line.Insert(0, coordToBlock[pos]);
-                    pos = pos - direction;
-                }
-
-                if (bestLine == null || line.Count > bestLine.Count)
-                {
-                    bestLine = line;
-                }
-            }
-
-            return bestLine;
-        }
-
-        private DrillDirection? DetectLineDirection(List<HexBlock> lineBlocks)
-        {
-            if (lineBlocks.Count < 2) return null;
-
-            HexCoord delta = lineBlocks[1].Coord - lineBlocks[0].Coord;
-
-            if (delta.r == 0 && delta.q != 0)
-                return DrillDirection.Vertical;
-
-            if ((delta.q > 0 && delta.r < 0) || (delta.q < 0 && delta.r > 0))
+                Debug.Log($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) s축 -> BackSlash");
                 return DrillDirection.BackSlash;
+            }
+            if ((nq == 1 && nr == 0) || (nq == -1 && nr == 0))
+            {
+                Debug.Log($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) q축 -> Vertical");
+                return DrillDirection.Vertical;
+            }
 
-            if (delta.q == 0 && delta.r != 0)
-                return DrillDirection.Slash;
+            Debug.LogWarning($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) unexpected -> Vertical");
+            return DrillDirection.Vertical;
+        }
 
-            if ((delta.q > 0 && delta.r > 0) || (delta.q < 0 && delta.r < 0))
-                return DrillDirection.Slash;
-
-            return null;
+        private Vector2 GetBlockScreenPosition(HexBlock block)
+        {
+            RectTransform rt = block.GetComponent<RectTransform>();
+            if (rt != null)
+                return rt.anchoredPosition;
+            return block.transform.localPosition;
         }
 
         private int CalculateScore(int blockCount)
@@ -345,5 +398,8 @@ namespace JewelsHexaPuzzle.Core
             }
             return false;
         }
-    }
+    
+
+
+}
 }

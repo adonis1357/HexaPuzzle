@@ -13,8 +13,8 @@ namespace JewelsHexaPuzzle.Managers
     {
         public static AchievementManager Instance { get; private set; }
         
-        [Header("Reward Settings")]
-        [SerializeField] private int pinkDiamondRewardBase = 1;
+        
+        
         
         // 업적 데이터
         private Dictionary<int, AchievementData> achievements = new Dictionary<int, AchievementData>();
