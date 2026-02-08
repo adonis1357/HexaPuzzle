@@ -278,14 +278,13 @@ private void CheckForDrillPattern(MatchGroup group)
 
             if (sharedBlocks.Count != 2 || outerBlocks.Count != 2) return;
 
-            // === 방향 결정: 공유 블록 2개의 나열 방향 = 발사 방향 ===
-            // (정상 확인된 중앙 패턴: 공유블록 r축 나열 → BackSlash 발사)
+            // === 방향 결정: 공유 블록의 나열 방향 = 드릴 발사 방향 ===
             HexCoord sharedDelta = sharedBlocks[1].Coord - sharedBlocks[0].Coord;
-            DrillDirection direction = GetDrillDirectionFromSharedDelta(sharedDelta);
+            DrillDirection direction = GetDrillDirectionFromShared(sharedDelta);
 
-            Debug.Log($"[MatchingSystem] Shared=({sharedBlocks[0].Coord.q},{sharedBlocks[0].Coord.r})->({sharedBlocks[1].Coord.q},{sharedBlocks[1].Coord.r}) delta=({sharedDelta.q},{sharedDelta.r}) dir={direction}");
+            Debug.Log($"[MatchingSystem] Shared=({sharedBlocks[0].Coord})->({sharedBlocks[1].Coord}) delta=({sharedDelta.q},{sharedDelta.r}) dir={direction}");
 
-            // === 생성 위치 우선순위 ===
+            // === 생성 위치 우선순위: 화면상 가장 아래쪽 블록 ===
             List<HexBlock> priorityOrder = new List<HexBlock>();
 
             Vector2 sPos0 = GetBlockScreenPosition(sharedBlocks[0]);
@@ -333,43 +332,38 @@ private void CheckForDrillPattern(MatchGroup group)
             group.drillDirection = direction;
             group.drillSpawnBlock = spawnBlock;
 
-            Debug.Log($"[MatchingSystem] DRILL: Direction={direction}, Spawn=({spawnBlock.Coord.q},{spawnBlock.Coord.r})");
+            Debug.Log($"[MatchingSystem] DRILL: Direction={direction}, Spawn=({spawnBlock.Coord})");
         }
 
-private DrillDirection GetDrillDirectionFromSharedDelta(HexCoord delta)
+private DrillDirection GetDrillDirectionFromShared(HexCoord sharedDelta)
         {
-            // 공유 블록 나열 방향의 **수직** 방향으로 발사
-            // 정규화
-            int nq = delta.q == 0 ? 0 : (delta.q > 0 ? 1 : -1);
-            int nr = delta.r == 0 ? 0 : (delta.r > 0 ? 1 : -1);
+            // 공유 블록의 hex delta로 드릴 방향 판별
+            // 공유 블록의 나열 방향 = 드릴 발사 방향
+            // Flat-top hex 배치: CalculateFlatTopHexPosition 기준
+            // (0,±1) = 순수 세로, (±1,0) = \\ 방향, (±1,∓1) = / 방향
+            int nq = sharedDelta.q == 0 ? 0 : (sharedDelta.q > 0 ? 1 : -1);
+            int nr = sharedDelta.r == 0 ? 0 : (sharedDelta.r > 0 ? 1 : -1);
 
-            // DrillBlockSystem.GetDirectionDelta 기준:
-            //   Vertical  = (0, ±1)    화면상 ↘↖
-            //   Slash     = (±1, ∓ 1)  화면상 ↗↙
-            //   BackSlash = (±1, 0)    화면상 →←
-            //
-            // 공유블록 나열 → 수직 발사:
-            //   (0, ±1)   r축 나열 (↘↖) → 수직 = Slash (↗↙)
-            //   (±1, ∓ 1) s축 나열 (↗↙) → 수직 = BackSlash (→←)
-            //   (±1, 0)   q축 나열 (→←) → 수직 = Vertical (↘↖)
-
+            // r축 (0, ±1): 화면상 순수 세로 ↕ → Vertical
             if (nq == 0 && (nr == 1 || nr == -1))
             {
-                Debug.Log($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) r축 -> Slash");
-                return DrillDirection.Slash;
-            }
-            if ((nq == 1 && nr == -1) || (nq == -1 && nr == 1))
-            {
-                Debug.Log($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) s축 -> BackSlash");
-                return DrillDirection.BackSlash;
-            }
-            if ((nq == 1 && nr == 0) || (nq == -1 && nr == 0))
-            {
-                Debug.Log($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) q축 -> Vertical");
+                Debug.Log($"[MatchingSystem] sharedDelta({sharedDelta.q},{sharedDelta.r}) -> r축 -> Vertical (세로)");
                 return DrillDirection.Vertical;
             }
+            // s축 (±1, ∓1): 화면상 / 방향 → Slash (세로에서 시계방향 60°)
+            if ((nq == 1 && nr == -1) || (nq == -1 && nr == 1))
+            {
+                Debug.Log($"[MatchingSystem] sharedDelta({sharedDelta.q},{sharedDelta.r}) -> s축 -> Slash (/)");
+                return DrillDirection.Slash;
+            }
+            // q축 (±1, 0): 화면상 \\ 방향 → BackSlash (세로에서 시계방향 120°)
+            if ((nq == 1 || nq == -1) && nr == 0)
+            {
+                Debug.Log($"[MatchingSystem] sharedDelta({sharedDelta.q},{sharedDelta.r}) -> q축 -> BackSlash (\\)");
+                return DrillDirection.BackSlash;
+            }
 
-            Debug.LogWarning($"[MatchingSystem] SharedDelta ({delta.q},{delta.r}) unexpected -> Vertical");
+            Debug.LogWarning($"[MatchingSystem] sharedDelta ({sharedDelta.q},{sharedDelta.r}) unexpected -> Vertical");
             return DrillDirection.Vertical;
         }
 

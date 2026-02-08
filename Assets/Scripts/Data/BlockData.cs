@@ -55,6 +55,7 @@ namespace JewelsHexaPuzzle.Data
         public bool hasChain;
         public DrillDirection drillDirection;
         public BlockTier tier;
+        public bool pendingActivation;
 
         public BlockData()
         {
@@ -78,7 +79,7 @@ namespace JewelsHexaPuzzle.Data
             tier = BlockTier.Normal;
         }
 
-        public BlockData Clone()
+public BlockData Clone()
         {
             return new BlockData
             {
@@ -88,7 +89,8 @@ namespace JewelsHexaPuzzle.Data
                 vinylLayer = this.vinylLayer,
                 hasChain = this.hasChain,
                 drillDirection = this.drillDirection,
-                tier = this.tier
+                tier = this.tier,
+                pendingActivation = this.pendingActivation
             };
         }
 

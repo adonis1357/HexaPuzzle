@@ -105,6 +105,67 @@ namespace JewelsHexaPuzzle.Core
             }
         }
 
+        /// <summary>
+        /// 매칭이 발생하지 않도록 랜덤 배치 (각 블록의 이웃과 같은 색이 2개 이상 연속되지 않도록)
+        /// </summary>
+        public void PopulateWithNoMatches()
+        {
+            foreach (var block in blocks.Values)
+                block.ClearData();
+
+            foreach (var coord in allCoords)
+            {
+                HexBlock block = blocks[coord];
+                HashSet<GemType> forbidden = new HashSet<GemType>();
+
+                // 이 블록의 모든 이웃 중 이미 데이터가 있는 것들
+                var neighborCoords = coord.GetAllNeighbors();
+                List<HexCoord> filledNeighbors = new List<HexCoord>();
+                foreach (var nc in neighborCoords)
+                {
+                    if (blocks.ContainsKey(nc) && blocks[nc].Data != null && blocks[nc].Data.gemType != GemType.None)
+                        filledNeighbors.Add(nc);
+                }
+
+                // 이웃 쌍 중 서로 인접한 쌍을 찾고, 둘 다 같은 색이면 그 색 금지
+                for (int i = 0; i < filledNeighbors.Count; i++)
+                {
+                    for (int j = i + 1; j < filledNeighbors.Count; j++)
+                    {
+                        HexCoord n1 = filledNeighbors[i];
+                        HexCoord n2 = filledNeighbors[j];
+                        // n1과 n2가 서로 인접해야 삼각형
+                        if (n1.DistanceTo(n2) == 1)
+                        {
+                            GemType g1 = blocks[n1].Data.gemType;
+                            GemType g2 = blocks[n2].Data.gemType;
+                            if (g1 == g2)
+                                forbidden.Add(g1);
+                        }
+                    }
+                }
+
+                // 허용된 색 목록
+                List<GemType> allowed = new List<GemType>();
+                for (int g = 1; g <= 5; g++)
+                {
+                    GemType gt = (GemType)g;
+                    if (!forbidden.Contains(gt)) allowed.Add(gt);
+                }
+
+                GemType chosen;
+                if (allowed.Count > 0)
+                    chosen = allowed[Random.Range(0, allowed.Count)];
+                else
+                    chosen = (GemType)Random.Range(1, 6);
+
+                block.SetBlockData(new BlockData(chosen));
+            }
+
+            Debug.Log("[HexGrid] Populated with no-match gems");
+        }
+
+
         public HexBlock GetBlock(HexCoord coord)
         {
             blocks.TryGetValue(coord, out HexBlock block);

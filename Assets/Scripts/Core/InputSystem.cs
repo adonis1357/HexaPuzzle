@@ -124,12 +124,14 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>
         /// 드릴 블록 클릭 시 활성화
         /// </summary>
-        private bool TryActivateDrill(Vector2 screenPosition)
+private bool TryActivateDrill(Vector2 screenPosition)
         {
             if (drillSystem == null) return false;
 
             Vector2 localPos = ScreenToLocalPosition(screenPosition);
-            HexBlock clickedBlock = GetBlockAtPosition(localPos);
+            
+            // 특수 블록 클릭 범위를 일반 블록보다 30% 중심으로 줄임
+            HexBlock clickedBlock = GetBlockAtPositionTight(localPos);
 
             if (clickedBlock != null &&
                 clickedBlock.Data != null &&
@@ -171,6 +173,35 @@ namespace JewelsHexaPuzzle.Core
 
             return closestBlock;
         }
+
+private HexBlock GetBlockAtPositionTight(Vector2 localPos)
+        {
+            if (hexGrid == null) return null;
+
+            float closestDist = float.MaxValue;
+            HexBlock closestBlock = null;
+            // 일반 범위(0.8f)에서 30% 줄임 → 0.56f
+            float maxDist = hexGrid.HexSize * 0.56f;
+
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block.Data == null || block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.None)
+                    continue;
+
+                RectTransform rt = block.GetComponent<RectTransform>();
+                Vector2 blockPos = rt != null ? rt.anchoredPosition : (Vector2)block.transform.localPosition;
+                float dist = Vector2.Distance(localPos, blockPos);
+
+                if (dist < closestDist && dist < maxDist)
+                {
+                    closestDist = dist;
+                    closestBlock = block;
+                }
+            }
+
+            return closestBlock;
+        }
+
 
         private void UpdateClusterPreview(Vector2 screenPosition)
         {

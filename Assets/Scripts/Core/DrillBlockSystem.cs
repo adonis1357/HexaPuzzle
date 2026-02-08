@@ -21,10 +21,10 @@ namespace JewelsHexaPuzzle.Core
 
         public event System.Action<int> OnDrillComplete;
 
-        private bool isDrilling = false;
+        private int activeDrillCount = 0;
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
 
-        public bool IsDrilling => isDrilling;
+        public bool IsDrilling => activeDrillCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
 
 
@@ -99,7 +99,7 @@ namespace JewelsHexaPuzzle.Core
 
         public void ActivateDrill(HexBlock drillBlock)
         {
-            if (isDrilling || drillBlock == null) return;
+            if (drillBlock == null) return;
             if (drillBlock.Data == null || drillBlock.Data.specialType != SpecialBlockType.Drill)
                 return;
             Debug.Log($"[DrillBlockSystem] Activating drill at {drillBlock.Coord}, direction={drillBlock.Data.drillDirection}");
@@ -108,8 +108,8 @@ namespace JewelsHexaPuzzle.Core
 
 private IEnumerator DrillCoroutine(HexBlock drillBlock)
         {
-            isDrilling = true;
-            pendingSpecialBlocks.Clear();
+            activeDrillCount++;
+            // pendingSpecialBlocks.Clear() 제거 - 동시 실행 시 다른 드릴의 pending을 지우지 않도록 GameManager에서 관리
 
             DrillDirection direction = drillBlock.Data.drillDirection;
             HexCoord startCoord = drillBlock.Coord;
@@ -146,22 +146,22 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             int totalScore = 100 + (targets1.Count + targets2.Count) * 50;
             Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore}");
             OnDrillComplete?.Invoke(totalScore);
-            isDrilling = false;
+            activeDrillCount--;
         }
 
         // ============================================================
         // 방향별 블록 수집
         // ============================================================
 
-        private List<HexBlock> GetBlocksInDirection(HexCoord start, DrillDirection direction, bool positive)
+private List<HexBlock> GetBlocksInDirection(HexCoord start, DrillDirection direction, bool positive)
         {
             List<HexBlock> blocks = new List<HexBlock>();
             if (hexGrid == null) return blocks;
 
+            // 모든 방향을 hex 단일 축으로 직선 이동 (지그재그 제거)
             HexCoord delta = GetDirectionDelta(direction, positive);
             HexCoord current = start + delta;
-
-            int maxSteps = 20; // 안전장치
+            int maxSteps = 20;
             int step = 0;
             while (hexGrid.IsValidCoord(current) && step < maxSteps)
             {
@@ -180,14 +180,20 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
         /// Slash: q+,r- 대각선 (화면상 / 방향)
         /// BackSlash: q축 (화면상 수평... 이름과 다르지만 hex구조상 이렇게 됨)
         /// </summary>
-        private HexCoord GetDirectionDelta(DrillDirection direction, bool positive)
+private HexCoord GetDirectionDelta(DrillDirection direction, bool positive)
         {
+            // Flat-top hex 배치 기준 (CalculateFlatTopHexPosition)
+            // x = 1.5*q, y = -√3*(r + q/2)
+            // (0,±1) = 순수 세로, (±1,0) = \\ 방향, (±1,∓1) = / 방향
             int sign = positive ? 1 : -1;
             switch (direction)
             {
-                case DrillDirection.Vertical:  return new HexCoord(0, sign);       // r축 = 화면 상하
-                case DrillDirection.Slash:     return new HexCoord(sign, -sign);   // 대각 / 방향
-                case DrillDirection.BackSlash: return new HexCoord(sign, 0);       // q축 = 화면 수평(약간 대각)
+                // Vertical = r축: 화면상 순수 세로 ↕
+                case DrillDirection.Vertical:  return new HexCoord(0, sign);
+                // Slash = s축: 화면상 / 방향 (세로에서 시계 60°)
+                case DrillDirection.Slash:     return new HexCoord(sign, -sign);
+                // BackSlash = q축: 화면상 \\ 방향 (세로에서 시계 120°)
+                case DrillDirection.BackSlash: return new HexCoord(sign, 0);
                 default: return new HexCoord(0, sign);
             }
         }
@@ -243,7 +249,12 @@ private IEnumerator DrillLineWithProjectile(
                 {
                     Debug.Log($"[DrillBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
                     if (!pendingSpecialBlocks.Contains(target))
+                    {
                         pendingSpecialBlocks.Add(target);
+                        // 영향을 준 즉시 빨간색 테두리로 변경
+                        target.SetPendingActivation();
+                        target.StartWarningBlink(10f); // 낙하 중 점멸 (발동 시 StopWarningBlink로 종료)
+                    }
                     StartCoroutine(ScreenShake(shakeIntensity * 0.5f, 0.06f));
                 }
                 else
@@ -795,12 +806,21 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         /// Vertical = 상하(90도), Slash = /(약 60도), BackSlash = 수평~약간대각(약 0도)
         /// 실제 hex 좌표계의 ToWorldPosition 기반으로 계산
         /// </summary>
-        private float GetDirectionAngle(DrillDirection direction, bool positive)
+private float GetDirectionAngle(DrillDirection direction, bool positive)
         {
-            // hex 좌표계에서 실제 world position delta로 각도 계산
-            HexCoord delta = GetDirectionDelta(direction, true);
-            Vector2 worldDelta = delta.ToWorldPosition(1f); // hexSize=1로 방향만 계산
-            float angle = Mathf.Atan2(worldDelta.y, worldDelta.x) * Mathf.Rad2Deg;
+            // Flat-top hex 배치 기준 화면 각도
+            // CalculateFlatTopHexPosition: x=1.5*q, y=-√3*(r+q/2)
+            // (0,1) → (0, -√3) → 아래쪽 = -90° (positive = 아래쪽)
+            // (1,-1) → (1.5, √3/2) → 오른쪽 위 = 30°
+            // (1,0) → (1.5, -√3/2) → 오른쪽 아래 = -30°
+            float angle;
+            switch (direction)
+            {
+                case DrillDirection.Vertical:  angle = -90f; break; // r축: 순수 세로 (아래)
+                case DrillDirection.Slash:     angle = 30f;  break; // s축: / 방향 (오른쪽 위)
+                case DrillDirection.BackSlash: angle = -30f; break; // q축: \\ 방향 (오른쪽 아래)
+                default: angle = -90f; break;
+            }
             return positive ? angle : angle + 180f;
         }
 

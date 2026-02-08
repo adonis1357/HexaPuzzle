@@ -35,7 +35,9 @@ namespace JewelsHexaPuzzle.Managers
         private GameState currentState = GameState.Loading;
         private int currentTurns;
         private int currentStage = 1;
-        private bool isPaused = false;
+        
+        private bool isProcessingChainDrill = false;
+private bool isPaused = false;
 
         // 프로퍼티
         public GameState CurrentState => currentState;
@@ -176,31 +178,29 @@ if (inputSystem == null)
         {
             SetGameState(GameState.Loading);
 
-            // 그리드 초기화
             if (hexGrid != null)
             {
                 hexGrid.InitializeGrid();
-                yield return new WaitForSeconds(0.5f);
+                yield return new WaitForSeconds(0.3f);
 
-                hexGrid.PopulateWithRandomGems();
+                // 매칭 없는 블록으로 배치
+                hexGrid.PopulateWithNoMatches();
+
+                if (blockRemovalSystem != null)
+                {
+                    blockRemovalSystem.TriggerStartDrop();
+                    while (blockRemovalSystem.IsProcessing)
+                        yield return null;
+                }
             }
 
-            // 턴 설정
             currentTurns = initialTurns;
-
-            // UI 업데이트
             UpdateUI();
-
-            yield return new WaitForSeconds(0.5f);
-
-            // 초기 매칭 제거 (최대 10회만 시도)
-            yield return StartCoroutine(RemoveInitialMatches());
 
             SetGameState(GameState.Playing);
             Debug.Log("Game Started! State: Playing");
         }
 
-        /// <summary>
         /// 초기 매칭 제거 (게임 시작 시) - 최대 10회 제한
         /// </summary>
         private IEnumerator RemoveInitialMatches()
@@ -359,16 +359,17 @@ if (inputSystem == null)
         /// <summary>
         /// 드릴 완료 이벤트 - 낙하 처리 트리거
         /// </summary>
-        private void OnDrillCompleted(int score)
+private void OnDrillCompleted(int score)
         {
             Debug.Log($"Drill completed! Score: {score}");
             if (scoreManager != null)
                 scoreManager.AddScore(score);
 
-            // 드릴로 파괴된 블록들의 낙하 + 연쇄 매칭 처리
+            // 연쇄 드릴 처리 중이면 이벤트 무시 (ActivateDrillAndWait에서 직접 관리)
+            if (isProcessingChainDrill) return;
+
             if (blockRemovalSystem != null)
             {
-                // ProcessMatches에서 빈 매칭으로 낙하만 트리거
                 StartCoroutine(ProcessDrillAftermath());
             }
         }
@@ -377,39 +378,66 @@ private IEnumerator ProcessDrillAftermath()
         {
             yield return new WaitForSeconds(0.1f);
 
-            // 납하 처리
+            int pendingCount = 0;
+            if (drillSystem != null)
+            {
+                pendingCount = drillSystem.PendingSpecialBlocks.Count;
+                drillSystem.PendingSpecialBlocks.Clear();
+            }
+
+            // 낙하 전에 pending 블록에 점멸 시작 (낙하 중 자연스럽게 점멸됨)
+            // pendingActivation 플래그는 Data에 있으므로 낙하 후에도 유지됨
+            // SetPendingActivation은 드릴 충돌 시 이미 호출됨 (빨간 테두리 + 점멸 시작)
+
             blockRemovalSystem.TriggerFallOnly();
             while (blockRemovalSystem.IsProcessing)
                 yield return null;
 
-            // 드릴이 발견한 특수블록들 순차적으로 발동
-            if (drillSystem != null && drillSystem.PendingSpecialBlocks.Count > 0)
+            if (pendingCount > 0 && hexGrid != null)
             {
-                List<HexBlock> pending = new List<HexBlock>(drillSystem.PendingSpecialBlocks);
-                drillSystem.PendingSpecialBlocks.Clear();
-
-                foreach (var specialBlock in pending)
+                List<HexBlock> pendingBlocks = new List<HexBlock>();
+                foreach (var block in hexGrid.GetAllBlocks())
                 {
-                    if (specialBlock == null || specialBlock.Data == null) continue;
-                    if (specialBlock.Data.specialType == SpecialBlockType.None) continue;
+                    if (block != null && block.Data != null && block.Data.pendingActivation && block.Data.specialType != SpecialBlockType.None)
+                        pendingBlocks.Add(block);
+                }
 
-                    Debug.Log($"[GameManager] Activating pending special block: {specialBlock.Coord} type={specialBlock.Data.specialType}");
-
-                    switch (specialBlock.Data.specialType)
+                if (pendingBlocks.Count > 0)
+                {
+                    // 낙하 완료 후 점멸 정지 → 즉시 발동 (추가 대기 없음)
+                    foreach (var specialBlock in pendingBlocks)
                     {
-                        case SpecialBlockType.Drill:
-                            drillSystem.ActivateDrill(specialBlock);
-                            yield return new WaitForSeconds(0.1f);
-                            while (drillSystem.IsDrilling)
-                                yield return null;
-                            // 이 드릴이 또 특수블록을 발견했을 수 있으므로 재귀적 처리
-                            yield return StartCoroutine(ProcessDrillAftermath());
-                            yield break;
+                        specialBlock.StopWarningBlink();
+                        specialBlock.Data.pendingActivation = false;
                     }
+
+                    List<Coroutine> drillCoroutines = new List<Coroutine>();
+                    foreach (var specialBlock in pendingBlocks)
+                    {
+                        if (specialBlock == null || specialBlock.Data == null) continue;
+                        if (specialBlock.Data.specialType == SpecialBlockType.None) continue;
+
+                        Debug.Log($"[GameManager] Activating pending: {specialBlock.Coord} type={specialBlock.Data.specialType}");
+
+                        switch (specialBlock.Data.specialType)
+                        {
+                            case SpecialBlockType.Drill:
+                                drillCoroutines.Add(StartCoroutine(ActivateDrillAndWait(specialBlock)));
+                                break;
+                        }
+                    }
+
+                    foreach (var co in drillCoroutines)
+                        yield return co;
+
+                    yield return StartCoroutine(ProcessDrillAftermath());
+                    isProcessingChainDrill = false;
+                    yield break;
                 }
             }
 
-            // 연쇄 매칭 확인
+            isProcessingChainDrill = false;
+
             if (matchingSystem != null)
             {
                 var matches = matchingSystem.FindMatches();
@@ -420,6 +448,18 @@ private IEnumerator ProcessDrillAftermath()
                 }
             }
         }
+
+private IEnumerator ActivateDrillAndWait(HexBlock drillBlock)
+        {
+            if (drillSystem == null || drillBlock == null) yield break;
+            isProcessingChainDrill = true;
+            drillSystem.ActivateDrill(drillBlock);
+            yield return new WaitForSeconds(0.1f);
+            while (drillSystem.IsDrilling)
+                yield return null;
+            // 점수는 OnDrillCompleted에서 이미 처리됨
+        }
+
 
         
 private void OnBigBang()

@@ -183,25 +183,25 @@ private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matc
 
             OnBlocksRemoved?.Invoke(blocksToRemove.Count);
 
-            // 6. 기존 특수 블록 능력 발동 (이미 존재하던 특수 블록만)
-            foreach (var specialBlock in specialBlocksToActivate)
+            // 6. 기존 특수 블록 능력 동시 발동 (이미 존재하던 특수 블록만)
+            if (specialBlocksToActivate.Count > 0 && drillSystem != null)
             {
-                if (specialBlock == null || specialBlock.Data == null) continue;
-                specialBlock.SetMatched(false);
-
-                switch (specialBlock.Data.specialType)
+                List<Coroutine> activationCoroutines = new List<Coroutine>();
+                foreach (var specialBlock in specialBlocksToActivate)
                 {
-                    case SpecialBlockType.Drill:
-                        if (drillSystem != null)
-                        {
+                    if (specialBlock == null || specialBlock.Data == null) continue;
+                    specialBlock.SetMatched(false);
+
+                    switch (specialBlock.Data.specialType)
+                    {
+                        case SpecialBlockType.Drill:
                             Debug.Log($"[BlockRemovalSystem] Auto-activating existing Drill at {specialBlock.Coord}");
-                            drillSystem.ActivateDrill(specialBlock);
-                            yield return new WaitForSeconds(0.3f);
-                            while (drillSystem.IsDrilling)
-                                yield return null;
-                        }
-                        break;
+                            activationCoroutines.Add(StartCoroutine(ActivateDrillAndWaitLocal(specialBlock)));
+                            break;
+                    }
                 }
+                foreach (var co in activationCoroutines)
+                    yield return co;
             }
 
             // 7. 낙하 처리
@@ -223,6 +223,16 @@ private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matc
             isProcessing = false;
             OnCascadeComplete?.Invoke();
         }
+
+private IEnumerator ActivateDrillAndWaitLocal(HexBlock drillBlock)
+        {
+            if (drillSystem == null || drillBlock == null) yield break;
+            drillSystem.ActivateDrill(drillBlock);
+            yield return new WaitForSeconds(0.1f);
+            while (drillSystem.IsDrilling)
+                yield return null;
+        }
+
 
         /// <summary>
         /// �帱 ���� �ִϸ��̼� - 4�� ����� �߾����� �������� ��� + ���� ����Ʈ
@@ -943,6 +953,67 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         }
 
         
+        /// <summary>
+        /// 게임 시작 연출: 모든 블록을 위에서 낙하시킨다 (데이터는 이미 세팅됨)
+        /// </summary>
+        public void TriggerStartDrop()
+        {
+            if (isProcessing) return;
+            StartCoroutine(StartDropCoroutine());
+        }
+
+        private IEnumerator StartDropCoroutine()
+        {
+            isProcessing = true;
+            EnsureSlotsCached();
+
+            if (hexGrid == null || columnCache == null) { isProcessing = false; yield break; }
+
+            int completedCount = 0;
+            int totalCount = 0;
+            List<FallAnimation> anims = new List<FallAnimation>();
+
+            foreach (var kvp in columnCache)
+            {
+                List<HexBlock> column = kvp.Value;
+                float topY = slotPositions[column[column.Count - 1]].y;
+                float colDelay = Random.Range(0f, 0.06f);
+
+                for (int i = 0; i < column.Count; i++)
+                {
+                    HexBlock block = column[i];
+                    Vector2 targetPos = slotPositions[block];
+
+                    // 위치를 화면 위로 이동
+                    float startY = topY + 200f + (column.Count - i) * 70f;
+                    SetBlockAnchoredPosition(block, new Vector2(targetPos.x, startY));
+                    block.transform.localScale = Vector3.one;
+
+                    float heightDelay = (column.Count - i) * 0.03f;
+
+                    anims.Add(new FallAnimation
+                    {
+                        block = block,
+                        startY = startY,
+                        targetY = targetPos.y,
+                        delay = colDelay + heightDelay + Random.Range(0f, 0.02f),
+                        gravityMult = Random.Range(0.88f, 1.12f),
+                        maxSpeedMult = Random.Range(0.85f, 1.15f),
+                    });
+                    totalCount++;
+                }
+            }
+
+            foreach (var anim in anims)
+                StartCoroutine(AnimateFall(anim, () => completedCount++));
+
+            while (completedCount < totalCount)
+                yield return null;
+
+            isProcessing = false;
+            OnCascadeComplete?.Invoke();
+        }
+
 public void TriggerBigBang()
         {
             if (isProcessing) return;
