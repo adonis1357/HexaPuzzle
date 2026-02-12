@@ -12,6 +12,14 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private HexGrid hexGrid;
         [SerializeField] private MatchingSystem matchingSystem;
         [SerializeField] private DrillBlockSystem drillSystem;
+                [SerializeField] private BombBlockSystem bombSystem;
+        [SerializeField] private DonutBlockSystem donutSystem;
+        [SerializeField] private XBlockSystem xBlockSystem;
+        [SerializeField] private LaserBlockSystem laserSystem;
+
+
+
+
 
         [Header("Animation Settings")]
         [SerializeField] private float matchHighlightDuration = 0.15f;
@@ -26,6 +34,7 @@ namespace JewelsHexaPuzzle.Core
         
 
         private bool isProcessing = false;
+        private bool isFalling = false;  // 낙하 재진입 방지
 
         // �� ����� ���� ���� ��ġ (���� ���� �� �ѹ� ĳ��)
         private Dictionary<HexBlock, Vector2> slotPositions = new Dictionary<HexBlock, Vector2>();
@@ -37,6 +46,18 @@ namespace JewelsHexaPuzzle.Core
         public event System.Action OnBigBang;
 
         public bool IsProcessing => isProcessing;
+
+        /// <summary>
+        /// Stuck 상태 복구용 - 모든 플래그 리셋
+        /// </summary>
+        public void ForceReset()
+        {
+            StopAllCoroutines();
+            isProcessing = false;
+            isFalling = false;
+            Debug.LogWarning("[BlockRemovalSystem] ForceReset called");
+        }
+
 
         private void Start()
         {
@@ -50,6 +71,18 @@ namespace JewelsHexaPuzzle.Core
                 matchingSystem = FindObjectOfType<MatchingSystem>();
             if (drillSystem == null)
                 drillSystem = FindObjectOfType<DrillBlockSystem>();
+            if (bombSystem == null)
+                bombSystem = FindObjectOfType<BombBlockSystem>();
+            if (donutSystem == null)
+                donutSystem = FindObjectOfType<DonutBlockSystem>();
+            if (xBlockSystem == null)
+                xBlockSystem = FindObjectOfType<XBlockSystem>();
+            if (laserSystem == null)
+                laserSystem = FindObjectOfType<LaserBlockSystem>();
+
+
+
+
         }
 
         /// <summary>
@@ -112,139 +145,162 @@ namespace JewelsHexaPuzzle.Core
             StartCoroutine(ProcessMatchesCoroutine(matches));
         }
 
+/// <summary>
+        /// 매칭 처리 + pending 특수블록 동시 발동 (연쇄 처리용)
+        /// 낙하 후 매칭이 발견되었을 때, pending 특수블록과 함께 동시 실행
+        /// </summary>
+        public void ProcessMatchesWithPendingSpecials(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
+        {
+            if (isProcessing || matches == null || matches.Count == 0) return;
+            StartCoroutine(ProcessMatchesWithPendingCoroutine(matches, pendingSpecials));
+        }
+
+private IEnumerator ProcessMatchesWithPendingCoroutine(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
+        {
+            isProcessing = true;
+            EnsureSlotsCached();
+
+            // Safety: matches 유효성 검증
+            if (matches == null || matches.Count == 0)
+            {
+                // pending만 있는 경우도 처리
+                if (pendingSpecials != null && pendingSpecials.Count > 0)
+                {
+                    yield return StartCoroutine(ProcessMatchesInline(null, pendingSpecials));
+                }
+                else
+                {
+                    isProcessing = false;
+                    yield break;
+                }
+            }
+            else
+            {
+                // 인라인 처리 (재귀 없음)
+                yield return StartCoroutine(ProcessMatchesInline(matches, pendingSpecials));
+            }
+
+            // 낙하 + 연쇄 처리 (완전 반복문)
+            yield return StartCoroutine(CascadeWithPendingLoop());
+            // Note: CascadeWithPendingLoop 내부에서 isProcessing = false 및 OnCascadeComplete 호출
+        }
+
+
 private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matches)
         {
             isProcessing = true;
             EnsureSlotsCached();
 
-            // 1. 매칭 하이라이트
-            foreach (var match in matches)
-                foreach (var block in match.blocks)
-                    if (block != null) block.SetMatched(true);
-
-            yield return new WaitForSeconds(matchHighlightDuration);
-
-            // 2. 드릴 생성 처리 (합체 애니메이션 먼저)
-            // 이번 턴에 새로 생성된 드릴 블록 추적
-            HashSet<HexBlock> newlyCreatedDrills = new HashSet<HexBlock>();
-
-            foreach (var match in matches)
+            // Safety: matches 유효성 검증
+            if (matches == null || matches.Count == 0)
             {
-                if (match.createsDrill && match.drillSpawnBlock != null && drillSystem != null)
-                {
-                    yield return StartCoroutine(DrillMergeAnimation(match.blocks, match.drillSpawnBlock, match.drillDirection, match.gemType));
-                    newlyCreatedDrills.Add(match.drillSpawnBlock);
-                }
+                isProcessing = false;
+                yield break;
             }
 
-            // 3. 블록 분류: 일반 블록은 삭제, 기존 특수 블록은 능력 발동
-            HashSet<HexBlock> blocksToRemove = new HashSet<HexBlock>();
-            List<HexBlock> specialBlocksToActivate = new List<HexBlock>();
+            // 인라인 처리 (재귀 없음)
+            yield return StartCoroutine(ProcessMatchesInline(matches, null));
 
-            foreach (var match in matches)
-            {
-                foreach (var block in match.blocks)
-                {
-                    if (block == null || block.Data == null) continue;
-
-                    if (block.Data.specialType != SpecialBlockType.None)
-                    {
-                        // 이번 턴에 새로 생성된 드릴은 자동 실행하지 않음
-                        if (newlyCreatedDrills.Contains(block))
-                            continue;
-
-                        if (!specialBlocksToActivate.Contains(block))
-                            specialBlocksToActivate.Add(block);
-                    }
-                    else
-                    {
-                        blocksToRemove.Add(block);
-                    }
-                }
-            }
-
-            // 4. 삭제 애니메이션 (일반 블록만)
-            foreach (var block in blocksToRemove)
-                StartCoroutine(AnimateRemove(block));
-
-            yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
-
-            // 5. 일반 블록 데이터 클리어
-            foreach (var block in blocksToRemove)
-            {
-                if (block != null)
-                {
-                    block.ClearData();
-                    block.SetMatched(false);
-                    RestoreBlockToSlot(block);
-                    block.transform.localScale = Vector3.one;
-                }
-            }
-
-            OnBlocksRemoved?.Invoke(blocksToRemove.Count);
-
-            // 6. 기존 특수 블록 능력 동시 발동 (이미 존재하던 특수 블록만)
-            if (specialBlocksToActivate.Count > 0 && drillSystem != null)
-            {
-                List<Coroutine> activationCoroutines = new List<Coroutine>();
-                foreach (var specialBlock in specialBlocksToActivate)
-                {
-                    if (specialBlock == null || specialBlock.Data == null) continue;
-                    specialBlock.SetMatched(false);
-
-                    switch (specialBlock.Data.specialType)
-                    {
-                        case SpecialBlockType.Drill:
-                            Debug.Log($"[BlockRemovalSystem] Auto-activating existing Drill at {specialBlock.Coord}");
-                            activationCoroutines.Add(StartCoroutine(ActivateDrillAndWaitLocal(specialBlock)));
-                            break;
-                    }
-                }
-                foreach (var co in activationCoroutines)
-                    yield return co;
-            }
-
-            // 7. 낙하 처리
-            yield return StartCoroutine(ProcessFalling());
-
-            // 8. 연쇄 매칭
-            yield return new WaitForSeconds(cascadeDelay);
-
-            if (matchingSystem != null)
-            {
-                var newMatches = matchingSystem.FindMatches();
-                if (newMatches.Count > 0)
-                {
-                    yield return StartCoroutine(ProcessMatchesCoroutine(newMatches));
-                    yield break;
-                }
-            }
-
-            isProcessing = false;
-            OnCascadeComplete?.Invoke();
+            // 낙하 + 연쇄 처리 (완전 반복문)
+            yield return StartCoroutine(CascadeWithPendingLoop());
+            // Note: CascadeWithPendingLoop 내부에서 isProcessing = false 및 OnCascadeComplete 호출
         }
 
-private IEnumerator ActivateDrillAndWaitLocal(HexBlock drillBlock)
+/// <summary>
+        /// 특수 블록 발동 + 완료 대기 (통합, BlockRemovalSystem 내부용)
+        /// 새 특수 블록 추가 시 case만 추가
+        /// </summary>
+private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
         {
-            if (drillSystem == null || drillBlock == null) yield break;
-            drillSystem.ActivateDrill(drillBlock);
-            yield return new WaitForSeconds(0.1f);
-            while (drillSystem.IsDrilling)
-                yield return null;
-        }
+            // Safety: 블록이 이미 파괴되었거나 데이터가 없으면 즉시 종료
+            if (block == null || block.Data == null || block.gameObject == null) yield break;
+            
+            // 발동 전 specialType 캐싱 (발동 중 Data가 변경될 수 있음)
+            SpecialBlockType cachedType = block.Data.specialType;
+            if (cachedType == SpecialBlockType.None) yield break;
+            
+            float timeout = 5f;
+            float waited = 0f;
 
+            switch (cachedType)
+            {
+                case SpecialBlockType.Drill:
+                    if (drillSystem != null)
+                    {
+                        drillSystem.ActivateDrill(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (drillSystem.IsDrilling && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (drillSystem.IsDrilling) { Debug.LogError("[BRS] Drill timeout! ForceReset"); drillSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.Bomb:
+                    if (bombSystem != null)
+                    {
+                        bombSystem.ActivateBomb(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (bombSystem.IsBombing && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (bombSystem.IsBombing) { Debug.LogError("[BRS] Bomb timeout! ForceReset"); bombSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.Rainbow:
+                    if (donutSystem != null)
+                    {
+                        donutSystem.ActivateDonut(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (donutSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (donutSystem.IsActivating) { Debug.LogError("[BRS] Donut timeout! ForceReset"); donutSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.XBlock:
+                    if (xBlockSystem != null)
+                    {
+                        xBlockSystem.ActivateXBlock(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (xBlockSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (xBlockSystem.IsActivating) { Debug.LogError("[BRS] XBlock timeout! ForceReset"); xBlockSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.Laser:
+                    if (laserSystem != null)
+                    {
+                        laserSystem.ActivateLaser(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (laserSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (laserSystem.IsActivating) { Debug.LogError("[BRS] Laser timeout! ForceReset"); laserSystem.ForceReset(); }
+                    }
+                    break;
+            }
+        }
 
         /// <summary>
-        /// �帱 ���� �ִϸ��̼� - 4�� ����� �߾����� �������� ��� + ���� ����Ʈ
+        /// 폭탄 합체 애니메이션 - 5개 블록이 중앙으로 빨려들어가며 폭탄 생성
         /// </summary>
-private IEnumerator DrillMergeAnimation(List<HexBlock> blocks, HexBlock spawnBlock, DrillDirection direction, GemType gemType)
+/// <summary>
+        /// 특수 블록 합체 애니메이션 (통합)
+        /// 모든 특수 블록이 동일한 합체 연출을 사용
+        /// 블록 수에 따라 자연스럽게 연출 강도 조절
+        /// </summary>
+        private IEnumerator SpecialBlockMergeAnimation(
+            List<HexBlock> blocks, HexBlock spawnBlock,
+            SpecialBlockType specialType, DrillDirection drillDirection, GemType gemType)
         {
             if (blocks == null || spawnBlock == null) yield break;
 
             Vector3 targetPos = spawnBlock.transform.position;
-            float mergeDuration = 0.45f;
+            // 블록 수에 따라 드라마 조절 (4개=드릴, 5+개=폭탄 등)
+            float mergeDuration = 0.4f + blocks.Count * 0.02f;
+            float rotationMult = blocks.Count >= 5 ? 360f : 180f;
+            float swirlAmount = blocks.Count >= 5 ? 20f : 0f;
 
-            // 각 블록의 시작 위치와 스케일 저장
             Dictionary<HexBlock, Vector3> startPositions = new Dictionary<HexBlock, Vector3>();
             Dictionary<HexBlock, Vector3> startScales = new Dictionary<HexBlock, Vector3>();
 
@@ -257,38 +313,22 @@ private IEnumerator DrillMergeAnimation(List<HexBlock> blocks, HexBlock spawnBlo
                 }
             }
 
-            // 전기 이펙트 시작 (블록 간 번개선)
+            // 전기 이펙트 + 번개선
             List<GameObject> electricObjects = new List<GameObject>();
-            foreach (var block in blocks)
-            {
-                if (block != null)
-                {
-                    var obj = CreateElectricArcObject(block.transform);
-                    electricObjects.Add(obj);
-                }
-            }
-
-            // 블록 간 번개선 연결 이펙트
             List<GameObject> arcLines = new List<GameObject>();
-            for (int i = 0; i < blocks.Count; i++)
-            {
-                for (int j = i + 1; j < blocks.Count; j++)
-                {
-                    if (blocks[i] != null && blocks[j] != null)
-                    {
-                        var arc = CreateLightningArc(blocks[i].transform, blocks[j].transform);
-                        arcLines.Add(arc);
-                    }
-                }
-            }
-
-            // 스파크 파티클 시작
-            List<Coroutine> sparkCoroutines = new List<Coroutine>();
             foreach (var block in blocks)
-            {
                 if (block != null)
-                    sparkCoroutines.Add(StartCoroutine(SpawnSparks(block.transform.position, mergeDuration)));
-            }
+                    electricObjects.Add(CreateElectricArcObject(block.transform));
+
+            for (int i = 0; i < blocks.Count; i++)
+                for (int j = i + 1; j < blocks.Count; j++)
+                    if (blocks[i] != null && blocks[j] != null)
+                        arcLines.Add(CreateLightningArc(blocks[i].transform, blocks[j].transform));
+
+            // 스파크
+            foreach (var block in blocks)
+                if (block != null)
+                    StartCoroutine(SpawnSparks(block.transform.position, mergeDuration));
 
             // 합체 애니메이션
             float elapsed = 0f;
@@ -296,52 +336,48 @@ private IEnumerator DrillMergeAnimation(List<HexBlock> blocks, HexBlock spawnBlo
             {
                 elapsed += Time.deltaTime;
                 float t = elapsed / mergeDuration;
-                float easeT = 1f - Mathf.Pow(1f - t, 3f); // ease out cubic
+                float easeT = 1f - Mathf.Pow(1f - t, 3f);
 
                 foreach (var kvp in startPositions)
                 {
                     HexBlock block = kvp.Key;
-                    if (block != null)
-                    {
-                        // 곡선 경로 이동 (약간의 호 형태)
-                        Vector3 startPos = kvp.Value;
-                        Vector3 midPoint = (startPos + targetPos) / 2f + Vector3.up * 15f * (1f - easeT);
-                        Vector3 currentPos;
-                        if (easeT < 0.5f)
-                            currentPos = Vector3.Lerp(startPos, midPoint, easeT * 2f);
-                        else
-                            currentPos = Vector3.Lerp(midPoint, targetPos, (easeT - 0.5f) * 2f);
-                        block.transform.position = currentPos;
+                    if (block == null) continue;
 
-                        // 스케일 감소 (펄스 효과 포함)
-                        float pulse = 1f + 0.05f * Mathf.Sin(t * Mathf.PI * 6f);
-                        float shrink = 1f - easeT * 0.9f;
-                        block.transform.localScale = startScales[block] * shrink * pulse;
+                    Vector3 startPos = kvp.Value;
 
-                        // 회전 효과
-                        float rotZ = easeT * 180f * (block.GetInstanceID() % 2 == 0 ? 1f : -1f);
-                        block.transform.localRotation = Quaternion.Euler(0, 0, rotZ);
-                    }
+                    // 공통 경로: 곡선 이동 + 소용돌이 (블록 수에 따라 강도)
+                    Vector3 diff = targetPos - startPos;
+                    Vector3 perpendicular = new Vector3(-diff.y, diff.x, 0).normalized * swirlAmount * (1f - easeT);
+                    Vector3 midPoint = (startPos + targetPos) / 2f + Vector3.up * 15f * (1f - easeT);
+                    Vector3 currentPos;
+                    if (easeT < 0.5f)
+                        currentPos = Vector3.Lerp(startPos, midPoint, easeT * 2f);
+                    else
+                        currentPos = Vector3.Lerp(midPoint, targetPos, (easeT - 0.5f) * 2f);
+                    currentPos += perpendicular * Mathf.Sin(easeT * Mathf.PI);
+                    block.transform.position = currentPos;
+
+                    float pulse = 1f + 0.06f * Mathf.Sin(t * Mathf.PI * 8f);
+                    float shrink = 1f - easeT * 0.9f;
+                    block.transform.localScale = startScales[block] * shrink * pulse;
+
+                    float rotZ = easeT * rotationMult * (block.GetInstanceID() % 2 == 0 ? 1f : -1f);
+                    block.transform.localRotation = Quaternion.Euler(0, 0, rotZ);
                 }
 
-                // 전기 이펙트 업데이트
                 UpdateElectricArcs(electricObjects, t);
                 UpdateLightningArcs(arcLines, t);
 
-                // 스폰 블록 펄스
-                float spawnPulse = 1f + 0.08f * Mathf.Sin(t * Mathf.PI * 8f);
+                float spawnPulse = 1f + 0.1f * Mathf.Sin(t * Mathf.PI * 10f);
                 spawnBlock.transform.localScale = Vector3.one * spawnPulse;
 
                 yield return null;
             }
 
-            // 전기 이펙트 정리
-            foreach (var obj in electricObjects)
-                if (obj != null) Destroy(obj);
-            foreach (var arc in arcLines)
-                if (arc != null) Destroy(arc);
+            // 정리
+            foreach (var obj in electricObjects) if (obj != null) Destroy(obj);
+            foreach (var arc in arcLines) if (arc != null) Destroy(arc);
 
-            // 합체 완료 - 회전 리셋
             foreach (var kvp in startPositions)
             {
                 if (kvp.Key != null)
@@ -353,14 +389,53 @@ private IEnumerator DrillMergeAnimation(List<HexBlock> blocks, HexBlock spawnBlo
             spawnBlock.transform.localScale = Vector3.one;
             spawnBlock.transform.localRotation = Quaternion.identity;
 
-            // 드릴 생성 (스폰 블록에)
-            drillSystem.CreateDrillBlock(spawnBlock, direction, gemType);
+            // 특수 블록 생성 (통합 디스패쳐)
+            CreateSpecialBlock(spawnBlock, specialType, drillDirection, gemType);
 
-            // 드릴 생성 임팩트 이펙트
-            StartCoroutine(DrillSpawnImpact(spawnBlock));
+            // 임팩트 이펙트 (모든 특수 블록 동일)
+            StartCoroutine(SpecialSpawnImpact(spawnBlock));
 
             yield return new WaitForSeconds(0.15f);
         }
+
+        /// <summary>
+        /// 특수 블록 생성 디스패쳐 (통합)
+        /// 새 특수 블록 추가 시 case만 추가
+        /// </summary>
+private void CreateSpecialBlock(HexBlock block, SpecialBlockType type, DrillDirection direction, GemType gemType)
+        {
+            switch (type)
+            {
+                case SpecialBlockType.Drill:
+                    if (drillSystem != null)
+                        drillSystem.CreateDrillBlock(block, direction, gemType);
+                    break;
+                case SpecialBlockType.Bomb:
+                    if (bombSystem != null)
+                        bombSystem.CreateBombBlock(block, gemType);
+                    break;
+                case SpecialBlockType.Rainbow:
+                    if (donutSystem != null)
+                        donutSystem.CreateDonutBlock(block, gemType);
+                    break;
+                case SpecialBlockType.XBlock:
+                    if (xBlockSystem != null)
+                        xBlockSystem.CreateXBlock(block, gemType);
+                    break;
+                case SpecialBlockType.Laser:
+                    if (laserSystem != null)
+                        laserSystem.CreateLaserBlock(block, gemType);
+                    break;
+            }
+        }
+
+// ActivateDrillAndWaitLocal/ActivateBombAndWaitLocal → ActivateSpecialAndWaitLocal로 통합됨
+
+
+        /// <summary>
+        /// �帱 ���� �ִϸ��̼� - 4�� ����� �߾����� �������� ��� + ���� ����Ʈ
+        /// </summary>
+// DrillMergeAnimation/BombMergeAnimation → SpecialBlockMergeAnimation로 통합됨
 
         /// <summary>
         /// ���� ����Ʈ - ��� �ֺ��� ���� ���� ȿ��
@@ -573,12 +648,15 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         /// <summary>
         /// 드릴 생성 임팩트 - 충격파 + 밝은 플래시
         /// </summary>
-        private IEnumerator DrillSpawnImpact(HexBlock block)
+/// <summary>
+        /// 특수 블록 생성 임팩트 - 충격파 + 밝은 플래시 (모든 특수 블록 공통)
+        /// </summary>
+        private IEnumerator SpecialSpawnImpact(HexBlock block)
         {
             if (block == null) yield break;
 
             // 1) 밝은 플래시
-            GameObject flashObj = new GameObject("DrillImpactFlash");
+            GameObject flashObj = new GameObject("SpecialImpactFlash");
             flashObj.transform.SetParent(block.transform, false);
             flashObj.transform.localPosition = Vector3.zero;
 
@@ -590,7 +668,7 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
             flashRt.sizeDelta = new Vector2(30f, 30f);
 
             // 2) 충격파 링
-            GameObject ringObj = new GameObject("DrillImpactRing");
+            GameObject ringObj = new GameObject("SpecialImpactRing");
             ringObj.transform.SetParent(block.transform, false);
             ringObj.transform.localPosition = Vector3.zero;
 
@@ -601,7 +679,6 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
             RectTransform ringRt = ringObj.GetComponent<RectTransform>();
             ringRt.sizeDelta = new Vector2(10f, 10f);
 
-            // 스폰 블록 스케일 펀치
             float punchDuration = 0.15f;
             float impactDuration = 0.3f;
             float elapsed = 0f;
@@ -615,17 +692,14 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                 elapsed += Time.deltaTime;
                 float t = elapsed / impactDuration;
 
-                // 플래시: 빠르게 확장 후 페이드
                 float flashScale = 1f + t * 6f;
                 flashRt.sizeDelta = new Vector2(30f * flashScale, 30f * flashScale);
                 flashImage.color = new Color(0.8f, 0.9f, 1f, (1f - t) * 0.8f);
 
-                // 충격파 링: 확장
                 float ringScale = 1f + t * 8f;
                 ringRt.sizeDelta = new Vector2(10f * ringScale, 10f * ringScale);
                 ringImage.color = new Color(0.5f, 0.8f, 1f, (1f - t) * 0.5f);
 
-                // 블록 스케일 펀치
                 if (elapsed < punchDuration)
                 {
                     float pt = elapsed / punchDuration;
@@ -672,13 +746,115 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         // ���� ó��
         // ============================================================
 
-        private IEnumerator ProcessFalling()
+/// <summary>
+        /// 낙하 후 pendingActivation 플래그가 있는 특수 블록을 수집하고 플래그 해제
+        /// </summary>
+        /// <summary>
+        /// 낙하 → pending + 매칭 확인 → 처리 → 반복 (통합 연쇄 루프)
+        /// 모든 매칭/특수블록 처리 후 호출하여 연쇄를 완전히 처리
+        /// </summary>
+private IEnumerator CascadeWithPendingLoop()
+        {
+            int maxIterations = 20;
+            int iteration = 0;
+            bool fatalError = false;
+
+            while (iteration < maxIterations && !fatalError)
+            {
+                iteration++;
+
+                // 1. 낙하 처리
+                yield return StartCoroutine(ProcessFalling());
+                yield return new WaitForSeconds(cascadeDelay);
+
+                // 2. pending 블록 수집
+                List<HexBlock> cascadePending = CollectAndClearPendingSpecials();
+
+                // 3. 매칭 확인
+                List<MatchingSystem.MatchGroup> cascadeMatches = null;
+                if (matchingSystem != null)
+                {
+                    var m = matchingSystem.FindMatches();
+                    if (m != null && m.Count > 0) cascadeMatches = m;
+                }
+
+                // 4. 아무것도 없으면 연쇄 종료
+                if (cascadePending.Count == 0 && cascadeMatches == null)
+                {
+                    Debug.Log($"[BRS] Cascade loop ended at iteration #{iteration} (nothing to process)");
+                    break;
+                }
+
+                // 5. 매칭 있음 (pending과 함께 또는 단독) → 인라인 처리 후 루프 반복
+                if (cascadeMatches != null)
+                {
+                    Debug.Log($"[BRS] Cascade #{iteration}: {(cascadePending.Count > 0 ? cascadePending.Count + " pending + " : "")}{cascadeMatches.Count} matches");
+                    yield return StartCoroutine(ProcessMatchesInline(cascadeMatches, cascadePending.Count > 0 ? cascadePending : null));
+                    continue;
+                }
+
+                // 6. pending만 있음 → 발동 후 루프 반복
+                if (cascadePending.Count > 0)
+                {
+                    Debug.Log($"[BRS] Cascade #{iteration}: {cascadePending.Count} pending specials only");
+                    // 유효한 블록만 필터링
+                    List<HexBlock> validPending = new List<HexBlock>();
+                    foreach (var sp in cascadePending)
+                    {
+                        if (sp != null && sp.Data != null && sp.gameObject != null && sp.Data.specialType != SpecialBlockType.None)
+                            validPending.Add(sp);
+                    }
+                    
+                    if (validPending.Count == 0)
+                    {
+                        Debug.LogWarning("[BRS] All pending specials became invalid. Breaking cascade.");
+                        break;
+                    }
+                    
+                    List<Coroutine> cos = new List<Coroutine>();
+                    foreach (var sp in validPending)
+                        cos.Add(StartCoroutine(ActivateSpecialAndWaitLocal(sp)));
+                    foreach (var co in cos) yield return co;
+                    continue;
+                }
+            }
+
+            if (iteration >= maxIterations)
+                Debug.LogError($"[BRS] CascadeWithPendingLoop hit max iterations ({maxIterations})! Breaking.");
+
+            // === 항상 도달하는 최종 정리 ===
+            isProcessing = false;
+            OnCascadeComplete?.Invoke();
+            Debug.Log($"[BRS] CascadeWithPendingLoop completed. isProcessing=false");
+        }
+
+private List<HexBlock> CollectAndClearPendingSpecials()
+        {
+            List<HexBlock> result = new List<HexBlock>();
+            if (hexGrid == null) return result;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block != null && block.Data != null &&
+                    block.Data.pendingActivation &&
+                    block.Data.specialType != SpecialBlockType.None)
+                {
+                    block.StopWarningBlink();
+                    block.Data.pendingActivation = false;
+                    result.Add(block);
+                }
+            }
+            if (result.Count > 0)
+                Debug.Log($"[BlockRemovalSystem] Collected {result.Count} pending specials for cascade");
+            return result;
+        }
+
+private IEnumerator ProcessFalling()
         {
             if (hexGrid == null || columnCache == null) yield break;
 
-            List<FallAnimation> allAnimations = new List<FallAnimation>();
+            List<FallAnimation> existingAnimations = new List<FallAnimation>();
+            List<FallAnimation> newBlockAnimations = new List<FallAnimation>();
 
-            // ���� ���� ���� (������ �̼��ϰ� �ٸ� ������ ���� ����)
             Dictionary<int, float> columnBaseDelay = new Dictionary<int, float>();
             foreach (var key in columnCache.Keys)
                 columnBaseDelay[key] = Random.Range(0f, 0.04f);
@@ -688,14 +864,13 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                 List<HexBlock> column = kvp.Value;
                 float colDelay = columnBaseDelay[kvp.Key];
 
-                // 1. ������ �ִ� ��� ���� (�Ʒ�����)
                 List<BlockData> dataList = new List<BlockData>();
                 List<int> sourceSlots = new List<int>();
 
                 for (int i = 0; i < column.Count; i++)
                 {
                     HexBlock block = column[i];
-                    if (block.Data != null && block.Data.gemType != GemType.None)
+                    if (block != null && block.Data != null && block.Data.gemType != GemType.None)
                     {
                         dataList.Add(block.Data.Clone());
                         sourceSlots.Add(i);
@@ -705,71 +880,77 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                 int emptyCount = column.Count - dataList.Count;
                 if (emptyCount == 0) continue;
 
-                // 2. ��� ����� ���� ��ġ�� �����ϰ� Ŭ����
                 for (int i = 0; i < column.Count; i++)
                 {
-                    column[i].HideVisuals();
-                    RestoreBlockToSlot(column[i]);
+                    if (column[i] != null)
+                    {
+                        column[i].HideVisuals();
+                        RestoreBlockToSlot(column[i]);
+                    }
                 }
 
-                // 3. ���� �����͸� �Ʒ����� ä���, ���� �ִϸ��̼� �غ�
+                float maxExistingDelay = 0f;
                 for (int i = 0; i < dataList.Count; i++)
                 {
                     int targetSlot = i;
                     int sourceSlot = sourceSlots[i];
                     HexBlock targetBlock = column[targetSlot];
+                    if (targetBlock == null) continue;
+
+                    if (sourceSlot != targetSlot)
+                    {
+                        Vector2 startPos = slotPositions.ContainsKey(column[sourceSlot]) ? slotPositions[column[sourceSlot]] : slotPositions[targetBlock];
+                        SetBlockAnchoredPosition(targetBlock, startPos);
+                    }
 
                     targetBlock.SetBlockData(dataList[i]);
                     targetBlock.transform.localScale = Vector3.one;
 
-                    if (sourceSlot != targetSlot)
+                    if (sourceSlot != targetSlot && slotPositions.ContainsKey(column[sourceSlot]))
                     {
                         Vector2 startPos = slotPositions[column[sourceSlot]];
-                        SetBlockAnchoredPosition(targetBlock, startPos);
-
-                        // ���� ����ϼ��� �� �ʰ� ��� (�Ʒ��� ������ �������Ƿ�)
                         int fallDistance = sourceSlot - targetSlot;
-                        float heightDelay = (sourceSlot - targetSlot) * 0.025f;
+                        float heightDelay = fallDistance * 0.025f;
                         float jitter = Random.Range(0f, 0.02f);
+                        float totalDelay = colDelay + heightDelay + jitter;
 
-                        allAnimations.Add(new FallAnimation
+                        if (totalDelay > maxExistingDelay)
+                            maxExistingDelay = totalDelay;
+
+                        existingAnimations.Add(new FallAnimation
                         {
                             block = targetBlock,
                             startY = startPos.y,
                             targetY = slotPositions[targetBlock].y,
-                            delay = colDelay + heightDelay + jitter,
+                            delay = totalDelay,
                             gravityMult = Random.Range(0.92f, 1.08f),
                             maxSpeedMult = Random.Range(0.90f, 1.10f),
                         });
                     }
                 }
 
-                // 4. �� ��� ���� (������ ������)
                 float topY = slotPositions[column[column.Count - 1]].y;
                 float spawnOffset = 120f;
-
-                // ���� ����� ��� ������ �� �� ����� ��Ÿ������ �⺻ ����
-                float existingFallBase = emptyCount * 0.03f;
+                float newBlockBaseDelay = maxExistingDelay + 0.08f;
 
                 for (int i = 0; i < emptyCount; i++)
                 {
                     int targetSlot = dataList.Count + i;
                     HexBlock targetBlock = column[targetSlot];
-                    Vector2 targetPos = slotPositions[targetBlock];
+                    if (targetBlock == null) continue;
+                    Vector2 targetPos = slotPositions.ContainsKey(targetBlock) ? slotPositions[targetBlock] : Vector2.zero;
 
                     GemType randomGem = (GemType)Random.Range(1, 6);
                     BlockData newData = new BlockData(randomGem);
 
                     float startY = topY + spawnOffset + (i * 80f);
-
+                    SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
                     targetBlock.SetBlockData(newData);
                     targetBlock.transform.localScale = Vector3.one;
-                    SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
 
-                    // �� ���: ������� �ణ�� �ʰ� + ���� ����
-                    float newDelay = colDelay + existingFallBase + i * 0.04f + Random.Range(0f, 0.025f);
+                    float newDelay = newBlockBaseDelay + i * 0.04f + Random.Range(0f, 0.025f);
 
-                    allAnimations.Add(new FallAnimation
+                    newBlockAnimations.Add(new FallAnimation
                     {
                         block = targetBlock,
                         startY = startY,
@@ -781,29 +962,44 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                 }
             }
 
-            if (allAnimations.Count == 0)
+            int totalCount = existingAnimations.Count + newBlockAnimations.Count;
+            if (totalCount == 0)
             {
-                FillEmptyBlocksWithAnimation();
                 yield break;
             }
 
             int completedCount = 0;
-            int totalCount = allAnimations.Count;
 
-            foreach (var anim in allAnimations)
+            foreach (var anim in existingAnimations)
                 StartCoroutine(AnimateFall(anim, () => completedCount++));
 
-            while (completedCount < totalCount)
-                yield return null;
+            foreach (var anim in newBlockAnimations)
+                StartCoroutine(AnimateFall(anim, () => completedCount++));
 
-            FillEmptyBlocksWithAnimation();
+            // 타임아웃 포함 대기 (최대 8초)
+            float waitElapsed = 0f;
+            while (completedCount < totalCount && waitElapsed < 8f)
+            {
+                waitElapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (completedCount < totalCount)
+            {
+                Debug.LogError($"[BRS] ProcessFalling timeout! {completedCount}/{totalCount} completed. Force finishing.");
+                // 강제로 모든 블록을 슬롯 위치로 복원
+                foreach (var anim in existingAnimations)
+                    if (anim.block != null) RestoreBlockToSlot(anim.block);
+                foreach (var anim in newBlockAnimations)
+                    if (anim.block != null) RestoreBlockToSlot(anim.block);
+            }
         }
 
         /// <summary>
         /// ���� ��� ���� �ִϸ��̼�
         /// ����� �̹� �����Ͱ� �����ǰ� ���� ��ġ�� ��ġ�� ����
         /// </summary>
-        private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
+private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
         {
             if (anim.block == null) { onComplete?.Invoke(); yield break; }
 
@@ -811,6 +1007,11 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                 yield return new WaitForSeconds(anim.delay);
 
             HexBlock block = anim.block;
+
+            // 딜레이 후 블록이 파괴되었을 수 있음
+            if (block == null) { onComplete?.Invoke(); yield break; }
+
+            if (!slotPositions.ContainsKey(block)) { onComplete?.Invoke(); yield break; }
             Vector2 slotPos = slotPositions[block];
 
             float currentY = anim.startY;
@@ -821,9 +1022,19 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
 
             int bounceCount = 0;
             int maxBounces = 2;
+            float elapsed = 0f;
+            float maxDuration = 5f; // 안전장치: 최대 5초
 
-            while (true)
+            while (elapsed < maxDuration)
             {
+                // 블록이 중간에 파괴되면 즉시 완료 처리
+                if (block == null)
+                {
+                    onComplete?.Invoke();
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
                 velocity -= blockGravity * Time.deltaTime;
                 velocity = Mathf.Max(velocity, -blockMaxSpeed);
                 currentY += velocity * Time.deltaTime;
@@ -836,20 +1047,33 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                     {
                         velocity = -velocity * bounceRatio;
                         bounceCount++;
-                        StartCoroutine(SquashEffect(block));
+                        if (block != null) StartCoroutine(SquashEffect(block));
                     }
                     else
                     {
-                        SetBlockAnchoredPosition(block, slotPos);
-                        block.transform.localScale = Vector3.one;
+                        if (block != null)
+                        {
+                            SetBlockAnchoredPosition(block, slotPos);
+                            block.transform.localScale = Vector3.one;
+                        }
                         onComplete?.Invoke();
                         yield break;
                     }
                 }
 
-                SetBlockAnchoredPosition(block, new Vector2(slotPos.x, currentY));
+                if (block != null)
+                    SetBlockAnchoredPosition(block, new Vector2(slotPos.x, currentY));
                 yield return null;
             }
+
+            // 타임아웃: 강제 완료
+            if (block != null)
+            {
+                SetBlockAnchoredPosition(block, slotPos);
+                block.transform.localScale = Vector3.one;
+            }
+            Debug.LogWarning($"[BRS] AnimateFall timeout for block at slot Y={targetY}");
+            onComplete?.Invoke();
         }
 
         private IEnumerator SquashEffect(HexBlock block)
@@ -872,9 +1096,9 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         /// <summary>
         /// �� ����� ������ ���� �ִϸ��̼����� ä�� (���ڱ� ����� ���� ����)
         /// </summary>
-        private void FillEmptyBlocksWithAnimation()
+private void FillEmptyBlocksWithAnimation()
         {
-            if (hexGrid == null) return;
+            if (hexGrid == null || columnCache == null) return;
 
             foreach (var kvp in columnCache)
             {
@@ -886,31 +1110,33 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                 for (int i = 0; i < column.Count; i++)
                 {
                     HexBlock block = column[i];
+
+                    // ★ 데이터가 있는 블록은 위치를 건드리지 않음 (낙하 중일 수 있음)
+                    if (block.Data != null && block.Data.gemType != GemType.None)
+                        continue;
+
                     RestoreBlockToSlot(block);
 
-                    if (block.Data == null || block.Data.gemType == GemType.None)
+                    GemType randomGem = (GemType)Random.Range(1, 6);
+                    block.SetBlockData(new BlockData(randomGem));
+                    block.transform.localScale = Vector3.one;
+
+                    Vector2 slotPos = slotPositions[block];
+                    float startY = topY + 120f + newBlockIndex * 80f;
+                    SetBlockAnchoredPosition(block, new Vector2(slotPos.x, startY));
+
+                    StartCoroutine(AnimateFall(new FallAnimation
                     {
-                        GemType randomGem = (GemType)Random.Range(1, 6);
-                        block.SetBlockData(new BlockData(randomGem));
-                        block.transform.localScale = Vector3.one;
+                        block = block,
+                        startY = startY,
+                        targetY = slotPos.y,
+                        delay = colDelay + newBlockIndex * 0.04f + Random.Range(0f, 0.02f),
+                        gravityMult = Random.Range(0.90f, 1.10f),
+                        maxSpeedMult = Random.Range(0.88f, 1.12f),
+                    }, null));
 
-                        Vector2 slotPos = slotPositions[block];
-                        float startY = topY + 120f + newBlockIndex * 80f;
-                        SetBlockAnchoredPosition(block, new Vector2(slotPos.x, startY));
-
-                        StartCoroutine(AnimateFall(new FallAnimation
-                        {
-                            block = block,
-                            startY = startY,
-                            targetY = slotPos.y,
-                            delay = colDelay + newBlockIndex * 0.04f + Random.Range(0f, 0.02f),
-                            gravityMult = Random.Range(0.90f, 1.10f),
-                            maxSpeedMult = Random.Range(0.88f, 1.12f),
-                        }, null));
-
-                        newBlockIndex++;
-                        Debug.LogWarning($"[BlockRemovalSystem] Force filled empty block at column {kvp.Key}, slot {i}");
-                    }
+                    newBlockIndex++;
+                    Debug.LogWarning($"[BlockRemovalSystem] Force filled empty block at column {kvp.Key}, slot {i}");
                 }
             }
         }
@@ -922,7 +1148,25 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         /// <summary>
         /// 낙하만 처리 (드릴 파괴 후 호출)
         /// </summary>
-        public void TriggerFallOnly()
+        /// <summary>
+        /// 낙하만 처리 (매칭 체크 없음) - 외부에서 코루틴으로 직접 호출 가능
+        /// 특수 블록과 동시 실행할 때 사용
+        /// </summary>
+public IEnumerator ProcessFallingCoroutinePublic()
+        {
+            if (isFalling)
+            {
+                Debug.LogWarning("[BlockRemovalSystem] ProcessFallingCoroutinePublic skipped - already falling");
+                yield break;
+            }
+            isFalling = true;
+            EnsureSlotsCached();
+            yield return StartCoroutine(ProcessFalling());
+            isFalling = false;
+        }
+
+        
+public void TriggerFallOnly()
         {
             if (isProcessing) return;
             StartCoroutine(FallOnlyCoroutine());
@@ -984,12 +1228,13 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
                     HexBlock block = column[i];
                     Vector2 targetPos = slotPositions[block];
 
-                    // 위치를 화면 위로 이동
-                    float startY = topY + 200f + (column.Count - i) * 70f;
+                    // 위치를 화면 위로 이동 (아래 블록일수록 낮은 startY → 먼저 도착)
+                    float startY = topY + 200f + i * 70f;
                     SetBlockAnchoredPosition(block, new Vector2(targetPos.x, startY));
                     block.transform.localScale = Vector3.one;
 
-                    float heightDelay = (column.Count - i) * 0.03f;
+                    // 아래 블록(i=0)이 먼저 떨어지도록 딜레이: 위 블록일수록 딜레이가 큼
+                    float heightDelay = i * 0.03f;
 
                     anims.Add(new FallAnimation
                     {
@@ -1006,12 +1251,17 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
 
             foreach (var anim in anims)
                 StartCoroutine(AnimateFall(anim, () => completedCount++));
-
-            while (completedCount < totalCount)
+            float dropWaitTime = 0f;
+            while (completedCount < totalCount && dropWaitTime < 10f)
+            {
+                dropWaitTime += Time.deltaTime;
                 yield return null;
+            }
+
 
             isProcessing = false;
             OnCascadeComplete?.Invoke();
+
         }
 
 public void TriggerBigBang()
@@ -1080,8 +1330,12 @@ public void TriggerBigBang()
             foreach (var anim in anims)
                 StartCoroutine(AnimateFall(anim, () => completedCount++));
 
-            while (completedCount < totalCount)
+            float bangWaitTime = 0f;
+            while (completedCount < totalCount && bangWaitTime < 10f)
+            {
+                bangWaitTime += Time.deltaTime;
                 yield return null;
+            }
 
             isProcessing = false;
             OnCascadeComplete?.Invoke();
@@ -1100,5 +1354,135 @@ public void TriggerBigBang()
             public float gravityMult;   // ���� �߷� ���� (�ڿ������� ����)
             public float maxSpeedMult;  // ���� �ִ�ӵ� ����
         }
-    }
+    
+
+/// <summary>
+        /// 매칭 처리 인라인 (isProcessing 관리 없음, cascade 호출 없음)
+        /// highlight → 특수블록 생성 → 일반블록 삭제 → 기존 특수블록 발동
+        /// pendingSpecials가 있으면 함께 동시 발동
+        /// </summary>
+        private IEnumerator ProcessMatchesInline(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
+        {
+            if (matches == null || matches.Count == 0)
+            {
+                // 매칭 없이 pending만 있는 경우: pending 발동만 처리
+                if (pendingSpecials != null && pendingSpecials.Count > 0)
+                {
+                    List<Coroutine> pendingCos = new List<Coroutine>();
+                    foreach (var sp in pendingSpecials)
+                    {
+                        if (sp != null && sp.Data != null && sp.Data.specialType != SpecialBlockType.None)
+                        {
+                            sp.SetMatched(false);
+                            pendingCos.Add(StartCoroutine(ActivateSpecialAndWaitLocal(sp)));
+                        }
+                    }
+                    foreach (var co in pendingCos) yield return co;
+                }
+                yield break;
+            }
+
+            // 1. 매칭 하이라이트
+            foreach (var match in matches)
+                foreach (var block in match.blocks)
+                    if (block != null) block.SetMatched(true);
+
+            yield return new WaitForSeconds(matchHighlightDuration);
+
+            // 2. 특수 블록 생성
+            HashSet<HexBlock> newlyCreatedSpecials = new HashSet<HexBlock>();
+
+            foreach (var match in matches)
+            {
+                if (match.createdSpecialType != SpecialBlockType.None && match.specialSpawnBlock != null)
+                {
+                    yield return StartCoroutine(SpecialBlockMergeAnimation(
+                        match.blocks, match.specialSpawnBlock, match.createdSpecialType,
+                        match.drillDirection, match.gemType));
+                    newlyCreatedSpecials.Add(match.specialSpawnBlock);
+                }
+            }
+
+            // 3. 블록 분류: 일반 블록 삭제, 기존 특수 블록 발동
+            HashSet<HexBlock> blocksToRemove = new HashSet<HexBlock>();
+            List<HexBlock> matchSpecialBlocks = new List<HexBlock>();
+
+            foreach (var match in matches)
+            {
+                foreach (var block in match.blocks)
+                {
+                    if (block == null || block.Data == null) continue;
+
+                    if (block.Data.specialType != SpecialBlockType.None)
+                    {
+                        if (newlyCreatedSpecials.Contains(block)) continue;
+                        if (!matchSpecialBlocks.Contains(block))
+                            matchSpecialBlocks.Add(block);
+                    }
+                    else
+                    {
+                        blocksToRemove.Add(block);
+                    }
+                }
+            }
+
+            // 4. 삭제 애니메이션 (일반 블록만)
+            foreach (var block in blocksToRemove)
+                StartCoroutine(AnimateRemove(block));
+
+            yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
+
+            // 5. 일반 블록 데이터 클리어
+            foreach (var block in blocksToRemove)
+            {
+                if (block != null)
+                {
+                    block.ClearData();
+                    block.SetMatched(false);
+                    RestoreBlockToSlot(block);
+                    block.transform.localScale = Vector3.one;
+                }
+            }
+
+            OnBlocksRemoved?.Invoke(blocksToRemove.Count);
+
+            // 6. 매칭 특수블록 + pending 특수블록 동시 발동
+            List<HexBlock> allSpecialsToActivate = new List<HexBlock>();
+
+            foreach (var sp in matchSpecialBlocks)
+            {
+                if (sp != null && sp.Data != null)
+                {
+                    sp.SetMatched(false);
+                    allSpecialsToActivate.Add(sp);
+                }
+            }
+
+            if (pendingSpecials != null)
+            {
+                foreach (var sp in pendingSpecials)
+                {
+                    if (sp != null && sp.Data != null && !allSpecialsToActivate.Contains(sp))
+                    {
+                        Debug.Log($"[BRS] Pending special simultaneous: {sp.Coord} type={sp.Data.specialType}");
+                        allSpecialsToActivate.Add(sp);
+                    }
+                }
+            }
+
+            if (allSpecialsToActivate.Count > 0)
+            {
+                Debug.Log($"[BRS] Activating {allSpecialsToActivate.Count} specials (match+pending)");
+                List<Coroutine> activationCoroutines = new List<Coroutine>();
+                foreach (var specialBlock in allSpecialsToActivate)
+                {
+                    if (specialBlock == null || specialBlock.Data == null) continue;
+                    Debug.Log($"[BRS] Activate: {specialBlock.Data.specialType} at {specialBlock.Coord}");
+                    activationCoroutines.Add(StartCoroutine(ActivateSpecialAndWaitLocal(specialBlock)));
+                }
+                foreach (var co in activationCoroutines)
+                    yield return co;
+            }
+        }
+}
 }

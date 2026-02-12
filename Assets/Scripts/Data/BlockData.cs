@@ -26,7 +26,9 @@ namespace JewelsHexaPuzzle.Data
         TimeBomb,
         Drill,
         Bomb,
-        Rainbow
+        Rainbow,
+        XBlock,
+        Laser
     }
 
     public enum DrillDirection
@@ -79,7 +81,7 @@ namespace JewelsHexaPuzzle.Data
             tier = BlockTier.Normal;
         }
 
-public BlockData Clone()
+        public BlockData Clone()
         {
             return new BlockData
             {
@@ -94,11 +96,6 @@ public BlockData Clone()
             };
         }
 
-        public bool CanMove()
-        {
-            return specialType != SpecialBlockType.FixedBlock && !hasChain;
-        }
-
         public bool IsSpecial()
         {
             return specialType != SpecialBlockType.None;
@@ -107,6 +104,31 @@ public BlockData Clone()
         public bool IsDrill()
         {
             return specialType == SpecialBlockType.Drill;
+        }
+
+        public bool IsDonut()
+        {
+            return specialType == SpecialBlockType.Rainbow;
+        }
+
+        public bool IsXBlock()
+        {
+            return specialType == SpecialBlockType.XBlock;
+        }
+
+        public bool IsLaser()
+        {
+            return specialType == SpecialBlockType.Laser;
+        }
+
+        public bool IsBomb()
+        {
+            return specialType == SpecialBlockType.Bomb;
+        }
+
+        public bool CanMove()
+        {
+            return specialType != SpecialBlockType.FixedBlock;
         }
     }
 

@@ -20,6 +20,12 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
         [SerializeField] private InputSystem inputSystem;
         [SerializeField] private DrillBlockSystem drillSystem;
+                [SerializeField] private BombBlockSystem bombSystem;
+        [SerializeField] private DonutBlockSystem donutSystem;
+        [SerializeField] private XBlockSystem xBlockSystem;
+        [SerializeField] private LaserBlockSystem laserSystem;
+
+
 
 
         [Header("Managers")]
@@ -37,7 +43,13 @@ namespace JewelsHexaPuzzle.Managers
         private int currentStage = 1;
         
         private bool isProcessingChainDrill = false;
-private bool isPaused = false;
+        private bool isInPostRecovery = false;
+        private bool isPaused = false;
+
+        // Stuck 상태 감지 워치독
+        private float processingStartTime = 0f;
+        private const float STUCK_TIMEOUT = 8f; // 8초 이상 Processing 상태면 복구태면 복구
+
 
         // 프로퍼티
         public GameState CurrentState => currentState;
@@ -71,6 +83,172 @@ private bool isPaused = false;
         {
             StartGame();
         }
+
+        /// <summary>
+        /// 워치독: Processing 상태가 너무 오래 지속되면 강제 복구
+        /// </summary>
+private void Update()
+        {
+            if (currentState == GameState.Processing && !isPaused)
+            {
+                float elapsed = Time.time - processingStartTime;
+
+                if (isInPostRecovery)
+                {
+                    // PostRecovery 자체가 15초 이상 걸리면 강제 복구
+                    if (elapsed > 15f)
+                    {
+                        Debug.LogError($"[GameManager] PostRecovery timeout after {elapsed:F1}s! Force resetting to Playing.");
+                        StopAllCoroutines();
+                        isInPostRecovery = false;
+                        isProcessingChainDrill = false;
+                        if (blockRemovalSystem != null) blockRemovalSystem.ForceReset();
+                        if (drillSystem != null) drillSystem.ForceReset();
+                        if (bombSystem != null) bombSystem.ForceReset();
+                        if (donutSystem != null) donutSystem.ForceReset();
+                        if (xBlockSystem != null) xBlockSystem.ForceReset();
+                        if (laserSystem != null) laserSystem.ForceReset();
+                        SetGameState(GameState.Playing);
+                        if (inputSystem != null) inputSystem.SetEnabled(true);
+                    }
+                }
+                else
+                {
+                    if (elapsed > STUCK_TIMEOUT)
+                    {
+                        Debug.LogWarning($"[GameManager] STUCK DETECTED! Processing for {elapsed:F1}s. Force recovering...");
+                        Debug.LogWarning($"[GameManager] Flags: isProcessingChainDrill={isProcessingChainDrill}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}");
+                        ForceRecoverFromStuck();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stuck 상태에서 강제 복구
+        /// </summary>
+private void ForceRecoverFromStuck()
+        {
+            Debug.LogWarning($"[GameManager] Flags before reset: isProcessingChainDrill={isProcessingChainDrill}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}, Rotating={rotationSystem?.IsRotating}");
+
+            // 모든 코루틴 중지 (GameManager 코루틴만)
+            StopAllCoroutines();
+
+            // 모든 플래그 리셋
+            isProcessingChainDrill = false;
+            isInPostRecovery = false;
+
+            // RotationSystem 리셋
+            if (rotationSystem != null)
+                rotationSystem.ForceReset();
+
+            // BlockRemovalSystem 리셋 (내부 코루틴도 중지됨)
+            if (blockRemovalSystem != null)
+                blockRemovalSystem.ForceReset();
+
+            // 모든 특수 블록 시스템 리셋
+            if (drillSystem != null) drillSystem.ForceReset();
+            if (bombSystem != null) bombSystem.ForceReset();
+            if (donutSystem != null) donutSystem.ForceReset();
+            if (xBlockSystem != null) xBlockSystem.ForceReset();
+            if (laserSystem != null) laserSystem.ForceReset();
+
+            // pending 플래그 전체 클리어 + matched 상태 해제
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block != null && block.Data != null)
+                    {
+                        block.Data.pendingActivation = false;
+                        block.SetMatched(false);
+                    }
+                }
+            }
+
+            // 타이머 리셋
+            processingStartTime = Time.time;
+
+            Debug.LogWarning("[GameManager] Force recovered - starting post-recovery cleanup");
+
+            // 복구 후 보드 정리 (낙하 + 매칭 처리)
+            StartCoroutine(PostRecoveryCleanup());
+        }
+
+/// <summary>
+        /// 강제 복구 후 보드 정리: 낙하 처리 + 미처리 매칭 해결
+        /// </summary>
+private IEnumerator PostRecoveryCleanup()
+        {
+            isInPostRecovery = true;
+            SetGameState(GameState.Processing);
+            processingStartTime = Time.time;
+
+            yield return new WaitForSeconds(0.3f);
+
+            // 1. 모든 블록 위치 복원 (slotPositions 기반)
+            // BRS의 ProcessFalling이 정상적으로 처리하도록 낙하만 수행
+            if (blockRemovalSystem != null)
+            {
+                yield return StartCoroutine(blockRemovalSystem.ProcessFallingCoroutinePublic());
+            }
+            yield return new WaitForSeconds(0.2f);
+
+            // 2. 매칭 확인 - 있으면 BRS에 위임 (풀 cascade)
+            if (matchingSystem != null && blockRemovalSystem != null)
+            {
+                var matches = matchingSystem.FindMatches();
+                if (matches != null && matches.Count > 0)
+                {
+                    Debug.Log($"[GameManager] PostRecovery: Found {matches.Count} matches, delegating to BRS...");
+                    
+                    // BRS가 준비될 때까지 대기
+                    float brsWait = 0f;
+                    while (blockRemovalSystem.IsProcessing && brsWait < 3f)
+                    {
+                        brsWait += Time.deltaTime;
+                        yield return null;
+                    }
+                    if (blockRemovalSystem.IsProcessing)
+                    {
+                        Debug.LogError("[GameManager] PostRecovery: BRS still busy after 3s. Force resetting.");
+                        blockRemovalSystem.ForceReset();
+                        yield return new WaitForSeconds(0.1f);
+                    }
+                    
+                    // BRS에 위임 - BRS가 cascade까지 모두 처리하고 OnCascadeComplete를 발사함
+                    // OnCascadeComplete 핸들러에서 Playing 상태로 전환됨
+                    isInPostRecovery = false;
+                    isProcessingChainDrill = false;
+                    blockRemovalSystem.ProcessMatches(matches);
+                    // BRS cascade 완료 대기 (타임아웃 포함)
+                    yield return StartCoroutine(WaitForBRSComplete("PostRecovery"));
+                    
+                    // BRS가 OnCascadeComplete를 이미 발사했으므로 여기서는 상태만 확인
+                    if (currentState == GameState.Processing)
+                    {
+                        SetGameState(GameState.Playing);
+                        if (inputSystem != null) inputSystem.SetEnabled(true);
+                    }
+                    Debug.Log("[GameManager] PostRecoveryCleanup completed (via BRS cascade)");
+                    yield break;
+                }
+                else
+                {
+                    Debug.Log("[GameManager] PostRecovery: No matches found, board is clean.");
+                }
+            }
+
+            // 3. Playing 상태로 복귀
+            isInPostRecovery = false;
+            isProcessingChainDrill = false;
+            SetGameState(GameState.Playing);
+            if (inputSystem != null)
+                inputSystem.SetEnabled(true);
+            Debug.Log("[GameManager] PostRecoveryCleanup completed -> Playing");
+        }
+
+
 
         /// <summary>
         /// 참조가 없으면 자동으로 찾기
@@ -114,6 +292,36 @@ private bool isPaused = false;
                     Debug.Log("[GameManager] DrillBlockSystem auto-found");
             }
 
+            if (bombSystem == null)
+            {
+                bombSystem = FindObjectOfType<BombBlockSystem>();
+                if (bombSystem != null)
+                    Debug.Log("[GameManager] BombBlockSystem auto-found");
+            }
+
+            if (donutSystem == null)
+            {
+                donutSystem = FindObjectOfType<DonutBlockSystem>();
+                if (donutSystem != null)
+                    Debug.Log("[GameManager] DonutBlockSystem auto-found");
+            }
+
+            if (xBlockSystem == null)
+            {
+                xBlockSystem = FindObjectOfType<XBlockSystem>();
+                if (xBlockSystem != null)
+                    Debug.Log("[GameManager] XBlockSystem auto-found");
+            }
+
+            if (laserSystem == null)
+            {
+                laserSystem = FindObjectOfType<LaserBlockSystem>();
+                if (laserSystem != null)
+                    Debug.Log("[GameManager] LaserBlockSystem auto-found");
+            }
+
+
+
             
 if (inputSystem == null)
             {
@@ -138,9 +346,8 @@ if (inputSystem == null)
         /// <summary>
         /// 시스템 초기화
         /// </summary>
-        private void InitializeSystems()
+private void InitializeSystems()
         {
-            // 이벤트 연결
             if (rotationSystem != null)
             {
                 rotationSystem.OnRotationComplete += OnRotationComplete;
@@ -157,13 +364,23 @@ if (inputSystem == null)
                 blockRemovalSystem.OnBlocksRemoved += OnBlocksRemoved;
                 blockRemovalSystem.OnCascadeComplete += OnCascadeComplete;
                 blockRemovalSystem.OnBigBang += OnBigBang;
+            }
 
             if (drillSystem != null)
-            {
-                drillSystem.OnDrillComplete += OnDrillCompleted;
-            }
+                drillSystem.OnDrillComplete += OnSpecialBlockCompleted;
 
-            }
+            if (bombSystem != null)
+                bombSystem.OnBombComplete += OnSpecialBlockCompleted;
+
+            if (donutSystem != null)
+                donutSystem.OnDonutComplete += OnSpecialBlockCompleted;
+
+
+            if (xBlockSystem != null)
+                xBlockSystem.OnXBlockComplete += OnSpecialBlockCompleted;
+
+            if (laserSystem != null)
+                laserSystem.OnLaserComplete += OnSpecialBlockCompleted;
         }
 
         /// <summary>
@@ -254,6 +471,11 @@ if (inputSystem == null)
 
             currentState = newState;
 
+            // Processing 상태 진입 시 타이머 시작
+            if (newState == GameState.Processing)
+                processingStartTime = Time.time;
+
+
             // 입력 시스템 제어
             if (inputSystem != null)
             {
@@ -275,8 +497,10 @@ if (inputSystem == null)
         /// <summary>
         /// 회전 완료 이벤트
         /// </summary>
-        private void OnRotationComplete(bool matchFound)
+private void OnRotationComplete(bool matchFound)
         {
+            Debug.Log($"[GameManager] OnRotationComplete: matchFound={matchFound}, state={currentState}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}");
+
             if (matchFound)
             {
                 // 턴 소모
@@ -286,12 +510,20 @@ if (inputSystem == null)
                 if (matchingSystem != null && blockRemovalSystem != null)
                 {
                     var matches = matchingSystem.FindMatches();
+                    Debug.Log($"[GameManager] OnRotationComplete: FindMatches returned {matches.Count} groups");
+
                     if (matches.Count > 0)
                     {
+                        if (blockRemovalSystem.IsProcessing)
+                        {
+                            Debug.LogWarning("[GameManager] BRS still processing! Force resetting before ProcessMatches.");
+                            blockRemovalSystem.ForceReset();
+                        }
                         blockRemovalSystem.ProcessMatches(matches);
                     }
                     else
                     {
+                        Debug.LogWarning("[GameManager] Rotation found match but FindMatches returned 0! Reverting to Playing.");
                         SetGameState(GameState.Playing);
                     }
                 }
@@ -331,8 +563,15 @@ if (inputSystem == null)
         /// <summary>
         /// 연쇄 완료 이벤트
         /// </summary>
-        private void OnCascadeComplete()
+private void OnCascadeComplete()
         {
+            // ProcessSpecialBlockAftermath가 실행 중이면 상태 복원을 그쪽에서 처리
+            if (isProcessingChainDrill)
+            {
+                Debug.Log("[GameManager] OnCascadeComplete skipped - ProcessSpecialBlockAftermath is managing state");
+                return;
+            }
+
             // 시한폭탄 체크
             CheckTimeBombs();
 
@@ -359,105 +598,326 @@ if (inputSystem == null)
         /// <summary>
         /// 드릴 완료 이벤트 - 낙하 처리 트리거
         /// </summary>
-private void OnDrillCompleted(int score)
+/// <summary>
+        /// 특수 블록(드릴/폭탄 등) 완료 통합 이벤트
+        /// 새 특수 블록 추가 시 해당 시스템의 OnXxxComplete 이벤트를 이 메서드에 연결하면 됨
+        /// </summary>
+private void OnSpecialBlockCompleted(int score)
         {
-            Debug.Log($"Drill completed! Score: {score}");
+            Debug.Log($"[GameManager] Special block completed! Score: {score}");
             if (scoreManager != null)
                 scoreManager.AddScore(score);
 
-            // 연쇄 드릴 처리 중이면 이벤트 무시 (ActivateDrillAndWait에서 직접 관리)
+            // 복구 중이면 무시 (이중 처리 방지)
+            if (isInPostRecovery) return;
+
             if (isProcessingChainDrill) return;
 
-            if (blockRemovalSystem != null)
+            // BlockRemovalSystem 내부 cascade에서 특수블록이 발동된 경우
+            // 이미 내부적으로 연쇄 처리 중이므로 GameManager가 개입하면 데드락 발생
+            if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
+
+            // 유저 직접 클릭으로 발동된 경우: 낙하 + pending 연쇄 처리 트리거
+            SetGameState(GameState.Processing);
+            StartCoroutine(ProcessSpecialBlockAftermath());
+        }
+
+/// <summary>
+        /// 특수 블록 발동 후 통합 후처리
+        /// 1) 낙하 처리
+        /// 2) pendingActivation 플래그가 있는 특수 블록 연쇄 발동
+        /// 3) 연쇄 매칭 확인
+        /// 새 특수 블록 추가 시 ActivateSpecialAndWait의 switch에 case만 추가하면 됨
+        /// </summary>
+
+        /// <summary>
+        /// BRS가 준비될 때까지 대기 (타임아웃 포함)
+        /// ProcessMatches/ProcessMatchesWithPendingSpecials 호출 전에 반드시 호출
+        /// </summary>
+        private IEnumerator WaitForBRSReady()
+        {
+            if (blockRemovalSystem == null || !blockRemovalSystem.IsProcessing) yield break;
+            Debug.LogWarning("[GameManager] WaitForBRSReady: BRS is processing, waiting...");
+            float waited = 0f;
+            while (blockRemovalSystem.IsProcessing && waited < 5f)
             {
-                StartCoroutine(ProcessDrillAftermath());
+                waited += Time.deltaTime;
+                yield return null;
+            }
+            if (blockRemovalSystem.IsProcessing)
+            {
+                Debug.LogError("[GameManager] WaitForBRSReady timeout! Force resetting.");
+                blockRemovalSystem.ForceReset();
             }
         }
 
-private IEnumerator ProcessDrillAftermath()
+        /// <summary>
+        /// BRS 처리 완료 대기 (타임아웃 + 미시작 감지)
+        /// ProcessMatches 호출 후에 사용
+        /// </summary>
+        private IEnumerator WaitForBRSComplete(string callerName)
         {
-            yield return new WaitForSeconds(0.1f);
+            if (blockRemovalSystem == null) yield break;
 
-            int pendingCount = 0;
-            if (drillSystem != null)
+            // ProcessMatches가 guard에 의해 무시된 경우 감지:
+            // 코루틴 시작을 위해 1프레임 대기
+            yield return null;
+
+            if (!blockRemovalSystem.IsProcessing)
             {
-                pendingCount = drillSystem.PendingSpecialBlocks.Count;
-                drillSystem.PendingSpecialBlocks.Clear();
+                // ProcessMatches가 실제로 시작되지 않았음 (guard에 의해 무시됨)
+                Debug.LogWarning($"[GameManager] {callerName} did not start (BRS guard rejected). Skipping wait.");
+                yield break;
             }
 
-            // 낙하 전에 pending 블록에 점멸 시작 (낙하 중 자연스럽게 점멸됨)
-            // pendingActivation 플래그는 Data에 있으므로 낙하 후에도 유지됨
-            // SetPendingActivation은 드릴 충돌 시 이미 호출됨 (빨간 테두리 + 점멸 시작)
-
-            blockRemovalSystem.TriggerFallOnly();
-            while (blockRemovalSystem.IsProcessing)
-                yield return null;
-
-            if (pendingCount > 0 && hexGrid != null)
+            float elapsed = 0f;
+            while (blockRemovalSystem.IsProcessing && elapsed < 10f)
             {
-                List<HexBlock> pendingBlocks = new List<HexBlock>();
-                foreach (var block in hexGrid.GetAllBlocks())
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+            if (blockRemovalSystem.IsProcessing)
+            {
+                Debug.LogError($"[GameManager] {callerName} timeout after {elapsed:F1}s! Force resetting.");
+                blockRemovalSystem.ForceReset();
+            }
+        }
+
+private IEnumerator ProcessSpecialBlockAftermath()
+        {
+            yield return new WaitForSeconds(0.1f);
+            isProcessingChainDrill = true;
+
+            int maxLoops = 20;
+            int loop = 0;
+
+            while (loop < maxLoops)
+            {
+                loop++;
+
+                // 1. 모든 특수 블록 시스템의 pending 목록 클리어
+                if (drillSystem != null) drillSystem.PendingSpecialBlocks.Clear();
+                if (bombSystem != null) bombSystem.PendingSpecialBlocks.Clear();
+                if (donutSystem != null) donutSystem.PendingSpecialBlocks.Clear();
+                if (xBlockSystem != null) xBlockSystem.PendingSpecialBlocks.Clear();
+                if (laserSystem != null) laserSystem.PendingSpecialBlocks.Clear();
+
+                // 2. 낙하 전: pendingActivation 블록의 블링크만 중지
+                if (hexGrid != null)
                 {
-                    if (block != null && block.Data != null && block.Data.pendingActivation && block.Data.specialType != SpecialBlockType.None)
-                        pendingBlocks.Add(block);
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block != null && block.Data != null && block.Data.pendingActivation)
+                            block.StopWarningBlink();
+                    }
                 }
 
+                // 3. Safety: BRS가 아직 처리 중이면 완료 대기
+                if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing)
+                {
+                    Debug.LogWarning("[GameManager] BRS still processing before falling. Waiting...");
+                    float waited = 0f;
+                    while (blockRemovalSystem.IsProcessing && waited < 5f)
+                    {
+                        waited += Time.deltaTime;
+                        yield return null;
+                    }
+                    if (blockRemovalSystem.IsProcessing)
+                    {
+                        Debug.LogError("[GameManager] BRS timeout before falling! Force resetting.");
+                        blockRemovalSystem.ForceReset();
+                    }
+                }
+
+                // 4. 낙하 처리
+                if (blockRemovalSystem != null)
+                {
+                    yield return StartCoroutine(blockRemovalSystem.ProcessFallingCoroutinePublic());
+                }
+                yield return new WaitForSeconds(0.05f);
+
+                // 5. 낙하 후 pending 블록 재수집
+                List<HexBlock> pendingBlocks = new List<HexBlock>();
+                if (hexGrid != null)
+                {
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block != null && block.Data != null &&
+                            block.Data.pendingActivation &&
+                            block.Data.specialType != SpecialBlockType.None)
+                        {
+                            block.Data.pendingActivation = false;
+                            pendingBlocks.Add(block);
+                        }
+                    }
+                }
+
+                Debug.Log($"[GameManager] Aftermath loop #{loop}: {pendingBlocks.Count} pending specials found");
+
+                // 6. 매칭 확인
+                List<MatchingSystem.MatchGroup> newMatches = null;
+                if (matchingSystem != null)
+                {
+                    var matches = matchingSystem.FindMatches();
+                    if (matches.Count > 0) newMatches = matches;
+                }
+
+                // 7. 아무것도 없으면 종료
+                if (pendingBlocks.Count == 0 && newMatches == null)
+                {
+                    Debug.Log($"[GameManager] Aftermath loop ended at #{loop} (nothing to process)");
+                    break;
+                }
+
+                // 8. 매칭이 있으면 BRS에 위임 (BRS 내부에서 cascade 처리)
+                if (newMatches != null)
+                {
+                    yield return StartCoroutine(WaitForBRSReady());
+
+                    if (pendingBlocks.Count > 0)
+                    {
+                        Debug.Log($"[GameManager] Aftermath: {pendingBlocks.Count} pending + {newMatches.Count} matches -> BRS");
+                        blockRemovalSystem.ProcessMatchesWithPendingSpecials(newMatches, pendingBlocks);
+                    }
+                    else
+                    {
+                        Debug.Log($"[GameManager] Aftermath: {newMatches.Count} matches -> BRS");
+                        blockRemovalSystem.ProcessMatches(newMatches);
+                    }
+                    yield return StartCoroutine(WaitForBRSComplete("Aftermath-BRS"));
+                    // BRS cascade가 모든 연쇄를 처리하므로 루프 종료
+                    break;
+                }
+
+                // 9. pending만 있으면 독립 발동 후 루프 반복
                 if (pendingBlocks.Count > 0)
                 {
-                    // 낙하 완료 후 점멸 정지 → 즉시 발동 (추가 대기 없음)
-                    foreach (var specialBlock in pendingBlocks)
-                    {
-                        specialBlock.StopWarningBlink();
-                        specialBlock.Data.pendingActivation = false;
-                    }
-
-                    List<Coroutine> drillCoroutines = new List<Coroutine>();
+                    Debug.Log($"[GameManager] Aftermath: activating {pendingBlocks.Count} pending specials");
+                    List<Coroutine> activationCoroutines = new List<Coroutine>();
                     foreach (var specialBlock in pendingBlocks)
                     {
                         if (specialBlock == null || specialBlock.Data == null) continue;
                         if (specialBlock.Data.specialType == SpecialBlockType.None) continue;
-
-                        Debug.Log($"[GameManager] Activating pending: {specialBlock.Coord} type={specialBlock.Data.specialType}");
-
-                        switch (specialBlock.Data.specialType)
-                        {
-                            case SpecialBlockType.Drill:
-                                drillCoroutines.Add(StartCoroutine(ActivateDrillAndWait(specialBlock)));
-                                break;
-                        }
+                        activationCoroutines.Add(StartCoroutine(ActivateSpecialAndWait(specialBlock)));
                     }
-
-                    foreach (var co in drillCoroutines)
+                    foreach (var co in activationCoroutines)
                         yield return co;
-
-                    yield return StartCoroutine(ProcessDrillAftermath());
-                    isProcessingChainDrill = false;
-                    yield break;
+                    continue;
                 }
             }
 
+            if (loop >= maxLoops)
+                Debug.LogError($"[GameManager] ProcessSpecialBlockAftermath hit max loops ({maxLoops})!");
+
+            // === 항상 도달하는 최종 상태 복원 ===
             isProcessingChainDrill = false;
 
-            if (matchingSystem != null)
+            CheckTimeBombs();
+
+            if (stageManager != null && stageManager.IsMissionComplete())
             {
-                var matches = matchingSystem.FindMatches();
-                if (matches.Count > 0)
-                {
-                    blockRemovalSystem.ProcessMatches(matches);
-                    yield break;
-                }
+                StageClear();
+                yield break;
             }
+
+            if (currentTurns <= 0)
+            {
+                GameOver();
+                yield break;
+            }
+
+            SetGameState(GameState.Playing);
+            Debug.Log("[GameManager] ProcessSpecialBlockAftermath completed -> Playing");
         }
 
-private IEnumerator ActivateDrillAndWait(HexBlock drillBlock)
+/// <summary>
+        /// 낙하 처리 후 콜백 호출 - 특수 블록과 동시 실행용
+        /// </summary>
+// FallAndSignal은 더 이상 사용하지 않음 - 낙하 완료 후 pending 블록 처리로 변경됨
+        private IEnumerator FallAndSignal(System.Action onComplete)
         {
-            if (drillSystem == null || drillBlock == null) yield break;
+            if (blockRemovalSystem != null)
+            {
+                yield return StartCoroutine(blockRemovalSystem.ProcessFallingCoroutinePublic());
+            }
+            onComplete?.Invoke();
+        }
+
+
+// ActivateDrillAndWait/ActivateBombAndWait → ActivateSpecialAndWait로 통합됨
+
+// OnDrillCompleted/OnBombCompleted → OnSpecialBlockCompleted로 통합됨
+
+// ProcessDrillAftermath/ProcessBombAftermath → ProcessSpecialBlockAftermath로 통합됨
+
+/// <summary>
+        /// 특수 블록 발동 + 완료 대기 (통합)
+        /// 새 특수 블록 추가 시 case만 추가
+        /// </summary>
+private IEnumerator ActivateSpecialAndWait(HexBlock block)
+        {
+            if (block == null || block.Data == null) yield break;
             isProcessingChainDrill = true;
-            drillSystem.ActivateDrill(drillBlock);
-            yield return new WaitForSeconds(0.1f);
-            while (drillSystem.IsDrilling)
-                yield return null;
-            // 점수는 OnDrillCompleted에서 이미 처리됨
+            float timeout = 5f;
+            float waited = 0f;
+
+            switch (block.Data.specialType)
+            {
+                case SpecialBlockType.Drill:
+                    if (drillSystem != null)
+                    {
+                        drillSystem.ActivateDrill(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (drillSystem.IsDrilling && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (drillSystem.IsDrilling) { Debug.LogError("[GM] Drill timeout!"); drillSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.Bomb:
+                    if (bombSystem != null)
+                    {
+                        bombSystem.ActivateBomb(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (bombSystem.IsBombing && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (bombSystem.IsBombing) { Debug.LogError("[GM] Bomb timeout!"); bombSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.Rainbow:
+                    if (donutSystem != null)
+                    {
+                        donutSystem.ActivateDonut(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (donutSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (donutSystem.IsActivating) { Debug.LogError("[GM] Donut timeout!"); donutSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.XBlock:
+                    if (xBlockSystem != null)
+                    {
+                        xBlockSystem.ActivateXBlock(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (xBlockSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (xBlockSystem.IsActivating) { Debug.LogError("[GM] XBlock timeout!"); xBlockSystem.ForceReset(); }
+                    }
+                    break;
+
+                case SpecialBlockType.Laser:
+                    if (laserSystem != null)
+                    {
+                        laserSystem.ActivateLaser(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (laserSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (laserSystem.IsActivating) { Debug.LogError("[GM] Laser timeout!"); laserSystem.ForceReset(); }
+                    }
+                    break;
+            }
         }
 
 
@@ -650,7 +1110,7 @@ private void OnBigBang()
             Debug.Log("Exit to Lobby");
         }
 
-        private void OnDestroy()
+private void OnDestroy()
         {
             if (rotationSystem != null)
             {
@@ -659,22 +1119,29 @@ private void OnBigBang()
             }
 
             if (matchingSystem != null)
-            {
                 matchingSystem.OnMatchFound -= OnMatchFound;
-            }
 
             if (blockRemovalSystem != null)
             {
                 blockRemovalSystem.OnBlocksRemoved -= OnBlocksRemoved;
                 blockRemovalSystem.OnCascadeComplete -= OnCascadeComplete;
                 blockRemovalSystem.OnBigBang -= OnBigBang;
+            }
 
             if (drillSystem != null)
-            {
-                drillSystem.OnDrillComplete -= OnDrillCompleted;
-            }
+                drillSystem.OnDrillComplete -= OnSpecialBlockCompleted;
 
-            }
+            if (bombSystem != null)
+                bombSystem.OnBombComplete -= OnSpecialBlockCompleted;
+
+            if (donutSystem != null)
+                donutSystem.OnDonutComplete -= OnSpecialBlockCompleted;
+
+            if (xBlockSystem != null)
+                xBlockSystem.OnXBlockComplete -= OnSpecialBlockCompleted;
+
+            if (laserSystem != null)
+                laserSystem.OnLaserComplete -= OnSpecialBlockCompleted;
         }
     }
 

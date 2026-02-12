@@ -6,7 +6,7 @@ namespace JewelsHexaPuzzle.Core
 {
     /// <summary>
     /// 입력 처리 시스템
-    /// 삼각형 클러스터 선택 및 회전, 드릴 블록 클릭
+    /// 삼각형 클러스터 선택 및 회전, 특수 블록 클릭
     /// </summary>
     public class InputSystem : MonoBehaviour
     {
@@ -14,6 +14,12 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private HexGrid hexGrid;
         [SerializeField] private RotationSystem rotationSystem;
         [SerializeField] private DrillBlockSystem drillSystem;
+        [SerializeField] private BombBlockSystem bombSystem;
+        [SerializeField] private XBlockSystem xBlockSystem;
+        [SerializeField] private LaserBlockSystem laserSystem;
+        [SerializeField] private BlockRemovalSystem blockRemovalSystem;
+
+
         [SerializeField] private Camera mainCamera;
         [SerializeField] private Canvas gameCanvas;
 
@@ -21,10 +27,6 @@ namespace JewelsHexaPuzzle.Core
         private bool isEnabled = true;
         private HexBlock[] currentCluster = new HexBlock[3];
         private bool hasValidCluster = false;
-
-        // 이벤트
-        
-        
 
         private void Awake()
         {
@@ -57,20 +59,52 @@ namespace JewelsHexaPuzzle.Core
                     Debug.Log("[InputSystem] DrillBlockSystem auto-found: " + drillSystem.name);
             }
 
+            if (bombSystem == null)
+            {
+                bombSystem = FindObjectOfType<BombBlockSystem>();
+                if (bombSystem != null)
+                    Debug.Log("[InputSystem] BombBlockSystem auto-found: " + bombSystem.name);
+            }
+
+            if (xBlockSystem == null)
+            {
+                xBlockSystem = FindObjectOfType<XBlockSystem>();
+                if (xBlockSystem != null)
+                    Debug.Log("[InputSystem] XBlockSystem auto-found: " + xBlockSystem.name);
+            }
+
+            if (laserSystem == null)
+            {
+                laserSystem = FindObjectOfType<LaserBlockSystem>();
+                if (laserSystem != null)
+                    Debug.Log("[InputSystem] LaserBlockSystem auto-found: " + laserSystem.name);
+            }
+
             if (gameCanvas == null)
             {
                 gameCanvas = FindObjectOfType<Canvas>();
                 if (gameCanvas != null)
                     Debug.Log("[InputSystem] Canvas auto-found: " + gameCanvas.name);
             }
+
+            if (blockRemovalSystem == null)
+            {
+                blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+                if (blockRemovalSystem != null)
+                    Debug.Log("[InputSystem] BlockRemovalSystem auto-found: " + blockRemovalSystem.name);
+            }
         }
 
-        private void Update()
+private void Update()
         {
             if (!isEnabled) return;
             if (hexGrid == null || hexGrid.BlockCount == 0) return;
             if (rotationSystem != null && rotationSystem.IsRotating) return;
             if (drillSystem != null && drillSystem.IsDrilling) return;
+            if (bombSystem != null && bombSystem.IsBombing) return;
+            if (xBlockSystem != null && xBlockSystem.IsActivating) return;
+            if (laserSystem != null && laserSystem.IsActivating) return;
+            if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
 
             HandleInput();
         }
@@ -91,8 +125,7 @@ namespace JewelsHexaPuzzle.Core
 
             if (Input.GetMouseButtonDown(0))
             {
-                // 먼저 드릴 블록 클릭 체크
-                if (TryActivateDrill(mousePos))
+                if (TryActivateSpecialBlock(mousePos))
                     return;
 
                 ExecuteRotation();
@@ -112,8 +145,7 @@ namespace JewelsHexaPuzzle.Core
 
                 if (touch.phase == TouchPhase.Ended)
                 {
-                    // 먼저 드릴 블록 클릭 체크
-                    if (TryActivateDrill(touch.position))
+                    if (TryActivateSpecialBlock(touch.position))
                         return;
 
                     ExecuteRotation();
@@ -122,26 +154,71 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 드릴 블록 클릭 시 활성화
+        /// 특수 블록 클릭 시 활성화 (통합 디스패쳐)
         /// </summary>
-private bool TryActivateDrill(Vector2 screenPosition)
+        private bool TryActivateSpecialBlock(Vector2 screenPosition)
         {
-            if (drillSystem == null) return false;
-
             Vector2 localPos = ScreenToLocalPosition(screenPosition);
-            
-            // 특수 블록 클릭 범위를 일반 블록보다 30% 중심으로 줄임
-            HexBlock clickedBlock = GetBlockAtPositionTight(localPos);
+            HexBlock clickedBlock = GetBlockAtPosition(localPos);
 
-            if (clickedBlock != null &&
-                clickedBlock.Data != null &&
-                clickedBlock.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill)
+            if (clickedBlock == null || clickedBlock.Data == null)
+                return false;
+
+            var specialType = clickedBlock.Data.specialType;
+
+            // 드릴은 일반 클릭 범위
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
                 Debug.Log($"[InputSystem] Drill block clicked at {clickedBlock.Coord}");
                 drillSystem.ActivateDrill(clickedBlock);
                 ClearHighlight();
                 hasValidCluster = false;
                 return true;
+            }
+
+            // 폭탄은 더 좁은 클릭 범위 사용 (30% 축소)
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb && bombSystem != null)
+            {
+                HexBlock tightBlock = GetBlockAtPositionTight(localPos);
+                if (tightBlock != null && tightBlock == clickedBlock)
+                {
+                    Debug.Log($"[InputSystem] Bomb block clicked at {clickedBlock.Coord}");
+                    bombSystem.ActivateBomb(clickedBlock);
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return true;
+                }
+                return false;
+            }
+
+            // X블록도 좁은 클릭 범위
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock && xBlockSystem != null)
+            {
+                HexBlock tightBlock = GetBlockAtPositionTight(localPos);
+                if (tightBlock != null && tightBlock == clickedBlock)
+                {
+                    Debug.Log($"[InputSystem] X-block clicked at {clickedBlock.Coord}");
+                    xBlockSystem.ActivateXBlock(clickedBlock);
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return true;
+                }
+                return false;
+            }
+
+            // 레이저도 좁은 클릭 범위
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Laser && laserSystem != null)
+            {
+                HexBlock tightBlock = GetBlockAtPositionTight(localPos);
+                if (tightBlock != null && tightBlock == clickedBlock)
+                {
+                    Debug.Log($"[InputSystem] Laser block clicked at {clickedBlock.Coord}");
+                    laserSystem.ActivateLaser(clickedBlock);
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return true;
+                }
+                return false;
             }
 
             return false;
@@ -174,13 +251,12 @@ private bool TryActivateDrill(Vector2 screenPosition)
             return closestBlock;
         }
 
-private HexBlock GetBlockAtPositionTight(Vector2 localPos)
+        private HexBlock GetBlockAtPositionTight(Vector2 localPos)
         {
             if (hexGrid == null) return null;
 
             float closestDist = float.MaxValue;
             HexBlock closestBlock = null;
-            // 일반 범위(0.8f)에서 30% 줄임 → 0.56f
             float maxDist = hexGrid.HexSize * 0.56f;
 
             foreach (var block in hexGrid.GetAllBlocks())
@@ -201,7 +277,6 @@ private HexBlock GetBlockAtPositionTight(Vector2 localPos)
 
             return closestBlock;
         }
-
 
         private void UpdateClusterPreview(Vector2 screenPosition)
         {

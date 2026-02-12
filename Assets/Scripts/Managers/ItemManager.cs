@@ -14,8 +14,10 @@ namespace JewelsHexaPuzzle.Managers
     {
         [Header("References")]
         [SerializeField] private HexGrid hexGrid;
-        [SerializeField] private InputSystem inputSystem;
         [SerializeField] private UIManager uiManager;
+        [SerializeField] private BlockRemovalSystem blockRemovalSystem;
+        [SerializeField] private InputSystem inputSystem;
+
         
         [Header("Item Data")]
         [SerializeField] private ItemData[] items;
@@ -40,6 +42,9 @@ namespace JewelsHexaPuzzle.Managers
         {
             LoadItemCounts();
             InitializeItems();
+
+            if (blockRemovalSystem == null)
+                blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
         }
         
         /// <summary>
@@ -194,13 +199,13 @@ namespace JewelsHexaPuzzle.Managers
             }
             
             // 아이템 효과 실행
-            ExecuteItem(activeItem.Value, targetBlock);
+            StartCoroutine(ExecuteItem(activeItem.Value, targetBlock));
         }
         
         /// <summary>
         /// 아이템 효과 실행
         /// </summary>
-        private void ExecuteItem(ItemType type, HexBlock targetBlock)
+        private IEnumerator ExecuteItem(ItemType type, HexBlock targetBlock)
         {
             switch (type)
             {
@@ -214,29 +219,37 @@ namespace JewelsHexaPuzzle.Managers
                     ExecuteSixWayLaser(targetBlock);
                     break;
                 case ItemType.SSD:
-                    StartCoroutine(ExecuteSSD(targetBlock));
+                    yield return StartCoroutine(ExecuteSSD(targetBlock));
                     break;
             }
-            
+
             // 아이템 소모
             itemCounts[type]--;
             SaveItemCounts();
             UpdateItemUI();
-            
+
             // 상태 초기화
             activeItem = null;
             isSelectingTarget = false;
-            
+
+            // 낙하 트리거 (빈 공간 채우기 + 연쇄 매칭)
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.TriggerFallOnly();
+                while (blockRemovalSystem.IsProcessing)
+                    yield return null;
+            }
+
             if (inputSystem != null)
             {
                 inputSystem.SetEnabled(true);
             }
-            
+
             if (itemTargetIndicator != null)
             {
                 itemTargetIndicator.SetActive(false);
             }
-            
+
             OnItemUsed?.Invoke(type);
         }
         

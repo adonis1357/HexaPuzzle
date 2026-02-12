@@ -51,6 +51,17 @@ namespace JewelsHexaPuzzle.Core
             clockwiseRotation = clockwise;
         }
 
+/// <summary>
+        /// 강제 리셋 - stuck 복구 시 호출
+        /// </summary>
+        public void ForceReset()
+        {
+            StopAllCoroutines();
+            isRotating = false;
+            Debug.Log("[RotationSystem] ForceReset called");
+        }
+
+
         public void TryRotate(HexBlock block1, HexBlock block2, HexBlock block3)
         {
             if (isRotating) return;
@@ -148,9 +159,34 @@ namespace JewelsHexaPuzzle.Core
             SwapData(blocks);
             yield return null;
 
-            Debug.Log($"[Rotation] After 120° - B0:{blocks[0].Data.gemType} B1:{blocks[1].Data.gemType} B2:{blocks[2].Data.gemType}");
+            // 디버그: 회전 후 3블록의 실제 상태 출력
+                for (int dbg = 0; dbg < 3; dbg++)
+                {
+                    var bd = blocks[dbg].Data;
+                    string info = bd != null ? $"gem={bd.gemType}, special={bd.specialType}" : "NULL DATA";
+                    var nbs = hexGrid != null ? hexGrid.GetNeighbors(blocks[dbg].Coord) : null;
+                    int sameColorCount = 0;
+                    if (nbs != null && bd != null)
+                    {
+                        foreach (var nb in nbs)
+                            if (nb.Data != null && nb.Data.gemType == bd.gemType) sameColorCount++;
+                    }
+                    Debug.Log($"[Rotation] Block[{dbg}] coord=({blocks[dbg].Coord}), {info}, sameColorNeighbors={sameColorCount}");
+                }
+                // 3블록이 서로 이웃인지 확인
+                Debug.Log($"[Rotation] Mutual neighbors: 0-1={blocks[0].Coord.DistanceTo(blocks[1].Coord)}, 1-2={blocks[1].Coord.DistanceTo(blocks[2].Coord)}, 0-2={blocks[0].Coord.DistanceTo(blocks[2].Coord)}");
+
+                Debug.Log($"[Rotation] After 120° - B0:{blocks[0].Data.gemType} B1:{blocks[1].Data.gemType} B2:{blocks[2].Data.gemType}");
 
             List<MatchingSystem.MatchGroup> matches = matchingSystem.FindMatches();
+            Debug.Log($"[Rotation] 240° FindMatches returned {matches.Count} groups");
+            foreach (var m in matches)
+                Debug.Log($"[Rotation]   240° match: {m.gemType} x{m.blocks.Count} coords=[{string.Join(",", m.blocks.ConvertAll(b => b.Coord.ToString()))}]");
+
+            Debug.Log($"[Rotation] FindMatches returned {matches.Count} groups");
+            foreach (var m in matches)
+                Debug.Log($"[Rotation]   match: {m.gemType} x{m.blocks.Count} coords=[{string.Join(",", m.blocks.ConvertAll(b => b.Coord.ToString()))}]");
+
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 120°! ({matches.Count} groups)");

@@ -33,6 +33,13 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite drillVerticalSprite;
         private static Sprite drillSlashSprite;
         private static Sprite drillBackSlashSprite;
+                private static Sprite bombIconSprite;
+        private static Sprite donutIconSprite;
+        private static Sprite xBlockIconSprite;
+        private static Sprite laserIconSprite;
+
+
+
 
         private const float BORDER_WIDTH = 10f;
         private const float INNER_BORDER_WIDTH = 7f;  // ���� �׵θ� 30% ��� (10 * 0.7)
@@ -419,9 +426,8 @@ public void SetBlockData(BlockData data)
             if (drillIndicator != null) drillIndicator.enabled = false;
         }
 
-        public void UpdateVisuals()
+public void UpdateVisuals()
         {
-            // ��������Ʈ Ȯ��
             EnsureSpritesCreated();
 
             if (blockData == null || blockData.gemType == GemType.None)
@@ -430,7 +436,6 @@ public void SetBlockData(BlockData data)
                 return;
             }
 
-            // ��� ���� (������ ���¿��� ����)
             if (backgroundImage != null)
             {
                 backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
@@ -439,65 +444,140 @@ public void SetBlockData(BlockData data)
             Color gemColor = GemColors.GetColor(blockData.gemType);
             SetGemColor(gemColor);
 
-            if (borderImage != null)
+            // 테두리 색상 결정
             if (borderImage != null)
             {
                 borderImage.enabled = true;
-                // pendingActivation이면 빨간색 테두리 유지
-                if (blockData != null && blockData.pendingActivation)
+                if (blockData.pendingActivation)
                     borderImage.color = new Color(1f, 0.15f, 0.1f, 1f);
                 else
                     borderImage.color = isMatched ? Color.white : new Color(0.15f, 0.15f, 0.15f, 1f);
             }
 
-            HandleSpecialBlock();
+            // 특수 블록 아이콘/추가 시각 처리 (통합)
+            UpdateSpecialIndicator();
             UpdateOverlay();
-            UpdateDrillIndicator();
         }
 
-        private void HandleSpecialBlock()
+/// <summary>
+        /// 특수 블록 통합 시각 처리
+        /// 새 특수 블록 추가 시 이 메서드에 case만 추가하면 됨
+        /// - 아이콘: drillIndicator(특수 블록 공용 아이콘 이미지)에 스프라이트 설정
+        /// - 젬 색상 오버라이드: SetGemColor 호출
+        /// - 추가 UI(타이머 등): 개별 처리
+        /// </summary>
+private void UpdateSpecialIndicator()
         {
-            if (blockData == null) return;
+            if (blockData == null)
+            {
+                if (drillIndicator != null) drillIndicator.enabled = false;
+                return;
+            }
+
             switch (blockData.specialType)
             {
+                case SpecialBlockType.Drill:
+                    ShowSpecialIcon(GetDrillSprite(blockData.drillDirection));
+                    break;
+
+                case SpecialBlockType.Bomb:
+                    if (bombIconSprite == null)
+                        bombIconSprite = BombBlockSystem.GetBombIconSprite();
+                    ShowSpecialIcon(bombIconSprite);
+                    break;
+
+                case SpecialBlockType.Rainbow:
+                    if (donutIconSprite == null)
+                        donutIconSprite = DonutBlockSystem.GetDonutIconSprite();
+                    ShowSpecialIcon(donutIconSprite);
+                    break;
+
+                case SpecialBlockType.XBlock:
+                    if (xBlockIconSprite == null)
+                        xBlockIconSprite = XBlockSystem.GetXBlockIconSprite();
+                    ShowSpecialIcon(xBlockIconSprite);
+                    break;
+
+                case SpecialBlockType.Laser:
+                    if (laserIconSprite == null)
+                        laserIconSprite = LaserBlockSystem.GetLaserIconSprite();
+                    ShowSpecialIcon(laserIconSprite);
+                    break;
+
+                case SpecialBlockType.TimeBomb:
+                    if (drillIndicator != null) drillIndicator.enabled = false;
+                    ShowTimerText(blockData.timeBombCount);
+                    break;
+
                 case SpecialBlockType.MoveBlock:
+                    if (drillIndicator != null) drillIndicator.enabled = false;
                     SetGemColor(new Color(0.5f, 0.5f, 0.5f, 0.8f));
                     break;
+
                 case SpecialBlockType.FixedBlock:
+                    if (drillIndicator != null) drillIndicator.enabled = false;
                     SetGemColor(new Color(0.3f, 0.3f, 0.35f, 1f));
                     break;
-                case SpecialBlockType.TimeBomb:
-                    ShowTimerText(blockData.timeBombCount);
+
+                default:
+                    if (drillIndicator != null) drillIndicator.enabled = false;
                     break;
             }
         }
 
-        private void UpdateDrillIndicator()
-        {
-            if (drillIndicator == null) return;
-            if (blockData != null && blockData.specialType == SpecialBlockType.Drill)
-                ShowDrillIndicator(blockData.drillDirection);
-            else
-                drillIndicator.enabled = false;
-        }
-
-        public void ShowDrillIndicator(DrillDirection direction)
+/// <summary>
+        /// 특수 블록 아이콘 표시 (공용)
+        /// drillIndicator를 특수 블록 공용 아이콘 이미지로 사용
+        /// </summary>
+        private void ShowSpecialIcon(Sprite iconSprite)
         {
             if (drillIndicator == null) return;
             drillIndicator.enabled = true;
+            drillIndicator.sprite = iconSprite;
             drillIndicator.color = Color.white;
+        }
+
+/// <summary>
+        /// 드릴 방향에 맞는 스프라이트 반환
+        /// </summary>
+        private Sprite GetDrillSprite(DrillDirection direction)
+        {
             switch (direction)
             {
-                case DrillDirection.Vertical:
-                    drillIndicator.sprite = drillVerticalSprite;
-                    break;
-                case DrillDirection.Slash:
-                    drillIndicator.sprite = drillSlashSprite;
-                    break;
-                case DrillDirection.BackSlash:
-                    drillIndicator.sprite = drillBackSlashSprite;
-                    break;
+                case DrillDirection.Vertical:  return drillVerticalSprite;
+                case DrillDirection.Slash:     return drillSlashSprite;
+                case DrillDirection.BackSlash: return drillBackSlashSprite;
+                default: return drillVerticalSprite;
             }
+        }
+
+/// <summary>
+        /// 외부에서 직접 특수 블록 아이콘 표시 (드릴 생성 시 등)
+        /// SetBlockData → UpdateVisuals에서 자동 처리되므로 보통은 호출 불필요
+        /// </summary>
+        public void ShowDrillIndicator(DrillDirection direction)
+        {
+            ShowSpecialIcon(GetDrillSprite(direction));
+        }
+
+        
+        public void ShowDonutIndicator()
+        {
+            if (donutIconSprite == null)
+                donutIconSprite = DonutBlockSystem.GetDonutIconSprite();
+            ShowSpecialIcon(donutIconSprite);
+        }
+public void ShowXBlockIndicator()
+        {
+            if (xBlockIconSprite == null)
+                xBlockIconSprite = XBlockSystem.GetXBlockIconSprite();
+            ShowSpecialIcon(xBlockIconSprite);
+        }
+public void ShowBombIndicator()
+        {
+            if (bombIconSprite == null)
+                bombIconSprite = BombBlockSystem.GetBombIconSprite();
+            ShowSpecialIcon(bombIconSprite);
         }
 
         private void SetGemColor(Color color)

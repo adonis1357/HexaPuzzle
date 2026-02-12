@@ -26,6 +26,14 @@ namespace JewelsHexaPuzzle.Core
 
         public bool IsDrilling => activeDrillCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
+        public void ForceReset()
+        {
+            activeDrillCount = 0;
+            pendingSpecialBlocks.Clear();
+            StopAllCoroutines();
+            Debug.LogWarning("[DrillBlockSystem] ForceReset called");
+        }
+
 
 
         // 이펙트 생성용 Canvas 내 부모 Transform
@@ -207,6 +215,7 @@ private IEnumerator DrillLineWithProjectile(
             bool positive, Color drillColor)
         {
             if (targets.Count == 0) yield break;
+            List<Coroutine> destroyCoroutines = new List<Coroutine>();
 
             Vector3 firstTargetPos = targets[0].transform.position;
             Vector3 initDir = (firstTargetPos - startPos).normalized;
@@ -260,7 +269,7 @@ private IEnumerator DrillLineWithProjectile(
                 else
                 {
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
-                    StartCoroutine(DestroyBlockWithDebris(target, blockColor));
+                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithDebris(target, blockColor)));
                     StartCoroutine(ScreenShake(shakeIntensity * 0.5f, 0.06f));
                 }
 
@@ -309,6 +318,11 @@ private IEnumerator DrillLineWithProjectile(
             }
 
             if (projectile != null) Destroy(projectile);
+
+            // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
+            foreach (var co in destroyCoroutines)
+                yield return co;
+
         }
 
         // ============================================================
