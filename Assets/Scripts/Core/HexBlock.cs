@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Utils;
 using System;
 using System.Collections;
 
@@ -48,6 +49,19 @@ namespace JewelsHexaPuzzle.Core
         public event Action<HexBlock> OnBlockPressed;
         public event Action<HexBlock> OnBlockReleased;
 
+        /// <summary>
+        /// 플래시 이펙트용 육각형 스프라이트 반환 (캐싱)
+        /// </summary>
+        public static Sprite GetHexFlashSprite()
+        {
+            if (hexFillSprite == null)
+            {
+                const int TEX_SIZE = 512;
+                hexFillSprite = CreateAAHexSprite(TEX_SIZE, 0, false);
+            }
+            return hexFillSprite;
+        }
+
         public HexCoord Coord => coord;
         public BlockData Data => blockData;
         public bool IsSelected => isSelected;
@@ -62,6 +76,21 @@ namespace JewelsHexaPuzzle.Core
             EnsureSpritesCreated();
             SetupBorder();
             SetupDrillIndicator();
+            ApplyGemMaterials();
+        }
+
+        private void ApplyGemMaterials()
+        {
+            Material gemMat = GemMaterialManager.GetGemMaterial();
+            Material borderMat = GemMaterialManager.GetBorderGlowMaterial();
+            Material bgMat = GemMaterialManager.GetBackgroundMaterial();
+
+            if (gemImage != null && gemMat != null)
+                gemImage.material = gemMat;
+            if (borderImage != null && borderMat != null)
+                borderImage.material = borderMat;
+            if (backgroundImage != null && bgMat != null)
+                backgroundImage.material = bgMat;
         }
 
         private void FindChildComponents()
@@ -98,9 +127,13 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private void EnsureSpritesCreated()
         {
+            // 외부 텍스처 초기화 (한 번만)
+            GemSpriteProvider.Initialize();
+
             const int TEX_SIZE = 512;
             float scale = TEX_SIZE / 128f; // 4x
 
+            // 프로시저럴 스프라이트는 항상 생성 (fallback + 배경/테두리용)
             if (hexFillSprite == null)
                 hexFillSprite = CreateAAHexSprite(TEX_SIZE, 0, false);
             if (hexBorderSprite == null)
@@ -137,7 +170,9 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// ��Ƽ�ٸ���� ���� ������ (fill �Ǵ� border)
+        /// 고퀄리티 AA 육각형 스프라이트 (배경 fill 또는 베벨 테두리)
+        /// - 배경(fill): 안쪽이 어둡고 가장자리가 밝은 움푹 들어간 슬롯 느낌
+        /// - 테두리(border): 방향성 조명 베벨 + 소프트 외곽 글로우
         /// </summary>
         private static Sprite CreateAAHexSprite(int size, float borderWidth, bool isBorderOnly)
         {
@@ -148,7 +183,10 @@ namespace JewelsHexaPuzzle.Core
             Vector2 center = new Vector2(size / 2f, size / 2f);
             float outerRadius = size / 2f - 2f;
             float innerRadius = outerRadius - borderWidth;
-            float aa = 2.0f; // ��Ƽ�ٸ���� �� (�ȼ�)
+            float aa = 2.0f;
+            // 조명 방향 (좌상단에서 우하단으로)
+            Vector2 lightDir = new Vector2(-0.707f, 0.707f);
+            float maxPixelDist = outerRadius * 0.8660254f; // hex apothem
 
             for (int y = 0; y < size; y++)
             {
@@ -159,16 +197,52 @@ namespace JewelsHexaPuzzle.Core
 
                     if (isBorderOnly)
                     {
+                        // === 베벨 테두리 ===
                         float innerDist = HexSignedDistance(point, center, innerRadius);
                         float outerAlpha = Mathf.Clamp01(1f - outerDist / aa);
                         float innerAlpha = Mathf.Clamp01(innerDist / aa);
-                        float alpha = outerAlpha * innerAlpha;
-                        pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                        float ringAlpha = outerAlpha * innerAlpha;
+
+                        // 방향성 베벨 (매트: 완만한 명암)
+                        Vector2 dir = (point - center);
+                        float dirLen = dir.magnitude;
+                        if (dirLen > 0.001f) dir /= dirLen;
+                        float lightDot = Vector2.Dot(dir, lightDir);
+                        float bevel = 0.7f + lightDot * 0.15f; // 0.55 ~ 0.85
+
+                        // 링 중심부 밝기 부스트 (매트: 미세)
+                        float ringCenter = Mathf.Min(outerAlpha, innerAlpha);
+                        bevel += ringCenter * 0.08f;
+
+                        // 소프트 외곽 글로우 (매트: 거의 없음)
+                        float glowAlpha = Mathf.Clamp01(1f - outerDist / (aa * 2f)) * 0.08f;
+                        float finalAlpha = Mathf.Clamp01(ringAlpha + glowAlpha);
+
+                        float b = Mathf.Clamp01(bevel);
+                        pixels[y * size + x] = new Color(b, b, b, finalAlpha);
                     }
                     else
                     {
+                        // === 움푹 들어간 배경 슬롯 ===
                         float alpha = Mathf.Clamp01(1f - outerDist / aa);
-                        pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+
+                        Vector2 offset = point - center;
+                        float pixelDist = offset.magnitude;
+                        float normDist = Mathf.Clamp01(pixelDist / maxPixelDist);
+
+                        // 중심부 어둡고 가장자리 밝게 (움푹 파인 느낌)
+                        float depression = 0.65f + normDist * 0.3f;
+
+                        // 방향성 조명 (좌상단 약간 밝게)
+                        float dirLen = offset.magnitude;
+                        if (dirLen > 0.001f)
+                        {
+                            Vector2 dir = offset / dirLen;
+                            depression += Vector2.Dot(dir, lightDir) * 0.06f;
+                        }
+
+                        float b = Mathf.Clamp01(depression);
+                        pixels[y * size + x] = new Color(b, b, b, alpha);
                     }
                 }
             }
@@ -179,7 +253,12 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// ��Ƽ�ٸ���� ���� ���� ������ (�� �����)
+        /// 고퀄리티 AA 내부 젬 스프라이트 (보석 느낌)
+        /// - 볼록 깊이감: 중심 밝고 가장자리 어두움
+        /// - 6면 패싯 패턴: 커팅된 보석 표면 시뮬레이션
+        /// - 스펙큘러 하이라이트: 좌상단 메인 + 우하단 서브
+        /// - 에지 베벨: 가장자리 얇은 밝은 라인
+        /// - 방향성 조명: 좌상단→우하단 라이팅
         /// </summary>
         private static Sprite CreateAAInnerHexSprite(int size, float borderWidth)
         {
@@ -191,21 +270,86 @@ namespace JewelsHexaPuzzle.Core
             float outerRadius = size / 2f - 2f;
             float innerRadius = outerRadius - borderWidth;
             float aa = 2.0f;
+            float maxDist = innerRadius * 0.8660254f; // hex apothem
+            Vector2 lightDir = new Vector2(-0.707f, 0.707f);
+
+            // 하이라이트 위치 (UV 공간에서의 오프셋을 픽셀로 변환)
+            Vector2 hlCenter = center + new Vector2(-size * 0.15f, size * 0.15f);
+            float hlRadius = size * 0.12f;
+            Vector2 secHlCenter = center + new Vector2(size * 0.1f, -size * 0.17f);
+            float secHlRadius = size * 0.06f;
+
+            // 에지 베벨 폭
+            float bevelWidth = 4f * (size / 512f);
 
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
                     Vector2 point = new Vector2(x + 0.5f, y + 0.5f);
-                    float dist = HexSignedDistance(point, center, innerRadius);
-                    float alpha = Mathf.Clamp01(1f - dist / aa);
-                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    float sdf = HexSignedDistance(point, center, innerRadius);
+                    float alpha = Mathf.Clamp01(1f - sdf / aa);
+
+                    if (alpha < 0.001f)
+                    {
+                        pixels[y * size + x] = Color.clear;
+                        continue;
+                    }
+
+                    Vector2 offset = point - center;
+                    float pixelDist = offset.magnitude;
+                    float normDist = Mathf.Clamp01(pixelDist / maxDist);
+
+                    // 1. 볼록 깊이 그라디언트 (매트: 완만한 명암 차이)
+                    float depth = 1.0f - normDist * normDist * 0.12f;
+
+                    // 2. 6면 패싯 패턴 (매트: 거의 눈에 안 띄는 수준)
+                    float angle = Mathf.Atan2(offset.y, offset.x);
+                    float facet = 1.0f + Mathf.Sin(angle * 6f) * 0.02f;
+
+                    // 3. 메인 스펙큘러 하이라이트 (매트: 은은한 밝음)
+                    float hlDist = Vector2.Distance(point, hlCenter);
+                    float highlight = SmoothStep(hlRadius, 0f, hlDist) * 0.15f;
+
+                    // 4. 서브 스펙큘러 하이라이트 (매트: 거의 없음)
+                    float secDist = Vector2.Distance(point, secHlCenter);
+                    float secHighlight = SmoothStep(secHlRadius, 0f, secDist) * 0.06f;
+
+                    // 5. 에지 베벨 (매트: 얇고 은은한 테두리 라인)
+                    float bevelDist = Mathf.Abs(sdf + bevelWidth);
+                    float bevel = SmoothStep(bevelWidth, 0f, bevelDist) * 0.08f;
+
+                    // 6. 방향성 조명 (매트: 미세한 방향감만)
+                    float dirLighting = 0f;
+                    if (pixelDist > 0.001f)
+                    {
+                        Vector2 dir = offset / pixelDist;
+                        dirLighting = Vector2.Dot(dir, lightDir) * 0.04f;
+                    }
+
+                    // 7. 내부 글로우 (매트: 거의 없음)
+                    float glow = (1f - normDist) * (1f - normDist) * 0.03f;
+
+                    // 합성
+                    float brightness = depth * facet + highlight + secHighlight + bevel + dirLighting + glow;
+                    brightness = Mathf.Clamp01(brightness);
+
+                    pixels[y * size + x] = new Color(brightness, brightness, brightness, alpha);
                 }
             }
 
             tex.SetPixels(pixels);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>
+        /// Mathf.SmoothStep 래핑 (셰이더의 smoothstep과 동일 동작)
+        /// </summary>
+        private static float SmoothStep(float edge0, float edge1, float x)
+        {
+            float t = Mathf.Clamp01((x - edge1) / (edge0 - edge1));
+            return t * t * (3f - 2f * t);
         }
 
         private Sprite CreateArrowSprite(int size, float rotation)
@@ -259,7 +403,7 @@ namespace JewelsHexaPuzzle.Core
             // ��� �̹��� - ���� ������ (raycast ������)
             if (backgroundImage != null)
             {
-                backgroundImage.sprite = hexFillSprite;
+                backgroundImage.sprite = GemSpriteProvider.GetBackgroundSprite() ?? hexFillSprite;
                 backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
                 backgroundImage.type = Image.Type.Simple;
             }
@@ -280,7 +424,7 @@ namespace JewelsHexaPuzzle.Core
                 rt.offsetMax = Vector2.zero;
             }
 
-            gemImage.sprite = hexGemSprite;  // inner hex ��������Ʈ ���
+            gemImage.sprite = hexGemSprite;  // 기본 프로시저럴 (UpdateVisuals에서 외부 텍스처로 교체)
             gemImage.raycastTarget = false;
             gemImage.type = Image.Type.Simple;
 
@@ -305,7 +449,7 @@ namespace JewelsHexaPuzzle.Core
                 borderImage.transform.SetAsLastSibling();
             }
 
-            borderImage.sprite = hexBorderSprite;
+            borderImage.sprite = GemSpriteProvider.GetBorderSprite() ?? hexBorderSprite;
             borderImage.color = new Color(0.15f, 0.15f, 0.15f, 1f);
             borderImage.raycastTarget = false;
             borderImage.type = Image.Type.Simple;
@@ -523,6 +667,26 @@ private void UpdateSpecialIndicator()
                     if (drillIndicator != null) drillIndicator.enabled = false;
                     break;
             }
+
+            // Apply special or normal gem material
+            if (gemImage != null)
+            {
+                if (blockData.specialType != SpecialBlockType.None &&
+                    blockData.specialType != SpecialBlockType.TimeBomb &&
+                    blockData.specialType != SpecialBlockType.MoveBlock &&
+                    blockData.specialType != SpecialBlockType.FixedBlock)
+                {
+                    Material specialMat = GemMaterialManager.GetSpecialGemMaterial(blockData.specialType);
+                    if (specialMat != null)
+                        gemImage.material = specialMat;
+                }
+                else
+                {
+                    Material gemMat = GemMaterialManager.GetGemMaterial();
+                    if (gemMat != null)
+                        gemImage.material = gemMat;
+                }
+            }
         }
 
 /// <summary>
@@ -584,9 +748,23 @@ public void ShowBombIndicator()
         {
             if (gemImage != null)
             {
-                if (gemImage.sprite == null)
-                    gemImage.sprite = hexGemSprite;
-                gemImage.color = color;
+                // 외부 텍스처가 있으면 사용, 없으면 프로시저럴
+                GemType currentGem = blockData != null ? blockData.gemType : GemType.None;
+                Sprite externalSprite = GemSpriteProvider.GetGemSprite(currentGem);
+
+                if (externalSprite != null)
+                {
+                    gemImage.sprite = externalSprite;
+                    // 개별 컬러 텍스처면 흰색 (텍스처 자체에 색상 포함)
+                    // 그레이스케일 베이스면 틴팅 적용
+                    gemImage.color = GemSpriteProvider.NeedsTinting(currentGem) ? color : Color.white;
+                }
+                else
+                {
+                    if (gemImage.sprite == null)
+                        gemImage.sprite = hexGemSprite;
+                    gemImage.color = color;
+                }
                 gemImage.enabled = true;
             }
             else if (backgroundImage != null)
@@ -602,6 +780,14 @@ public void ShowBombIndicator()
 
         public void SetEmpty()
         {
+            // Revert to normal gem material
+            if (gemImage != null)
+            {
+                Material gemMat = GemMaterialManager.GetGemMaterial();
+                if (gemMat != null)
+                    gemImage.material = gemMat;
+            }
+
             // gemImage�� ������ �����ϰ� (�ܻ� ����)
             if (gemImage != null)
             {
