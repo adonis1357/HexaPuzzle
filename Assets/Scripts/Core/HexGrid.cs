@@ -99,7 +99,7 @@ namespace JewelsHexaPuzzle.Core
         {
             foreach (var block in blocks.Values)
             {
-                GemType randomGem = (GemType)Random.Range(1, 6);
+                GemType randomGem = GemTypeHelper.GetRandom();
                 BlockData data = new BlockData(randomGem);
                 block.SetBlockData(data);
             }
@@ -147,7 +147,7 @@ namespace JewelsHexaPuzzle.Core
 
                 // 허용된 색 목록
                 List<GemType> allowed = new List<GemType>();
-                for (int g = 1; g <= 5; g++)
+                for (int g = 1; g <= GemTypeHelper.ActiveGemTypeCount; g++)
                 {
                     GemType gt = (GemType)g;
                     if (!forbidden.Contains(gt)) allowed.Add(gt);
@@ -157,7 +157,7 @@ namespace JewelsHexaPuzzle.Core
                 if (allowed.Count > 0)
                     chosen = allowed[Random.Range(0, allowed.Count)];
                 else
-                    chosen = (GemType)Random.Range(1, 6);
+                    chosen = GemTypeHelper.GetRandom();
 
                 block.SetBlockData(new BlockData(chosen));
             }

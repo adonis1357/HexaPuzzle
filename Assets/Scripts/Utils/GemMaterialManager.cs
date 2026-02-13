@@ -18,11 +18,12 @@ namespace JewelsHexaPuzzle.Utils
                 Shader shader = Shader.Find("UI/HexGem");
                 if (shader == null)
                 {
-                    Debug.LogWarning("[GemMaterialManager] UI/HexGem shader not found, using default");
+                    Debug.LogError("[GemMaterialManager] UI/HexGem shader NOT FOUND! Check Assets/Shaders/HexGem.shader exists and compiles.");
                     return null;
                 }
                 _gemMat = new Material(shader);
                 _gemMat.name = "GemMaterial (Runtime)";
+                Debug.Log("[GemMaterialManager] UI/HexGem shader loaded successfully!");
             }
             return _gemMat;
         }
@@ -79,33 +80,33 @@ namespace JewelsHexaPuzzle.Utils
                 switch (type)
                 {
                     case SpecialBlockType.Drill:
-                        mat.SetFloat("_ShimmerSpeed", 2.0f);
-                        mat.SetFloat("_ShimmerIntensity", 0.06f);
-                        mat.SetFloat("_EnergyPulse", 0.1f);
-                        mat.SetFloat("_RainbowStrength", 0f);
-                        break;
-                    case SpecialBlockType.Bomb:
-                        mat.SetFloat("_ShimmerSpeed", 1.0f);
-                        mat.SetFloat("_ShimmerIntensity", 0.08f);
+                        mat.SetFloat("_ShimmerSpeed", 3.0f);
+                        mat.SetFloat("_ShimmerIntensity", 0.15f);
                         mat.SetFloat("_EnergyPulse", 0.2f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
+                    case SpecialBlockType.Bomb:
+                        mat.SetFloat("_ShimmerSpeed", 1.5f);
+                        mat.SetFloat("_ShimmerIntensity", 0.18f);
+                        mat.SetFloat("_EnergyPulse", 0.35f);
+                        mat.SetFloat("_RainbowStrength", 0f);
+                        break;
                     case SpecialBlockType.Laser:
-                        mat.SetFloat("_ShimmerSpeed", 2.5f);
-                        mat.SetFloat("_ShimmerIntensity", 0.08f);
-                        mat.SetFloat("_EnergyPulse", 0.15f);
+                        mat.SetFloat("_ShimmerSpeed", 3.5f);
+                        mat.SetFloat("_ShimmerIntensity", 0.18f);
+                        mat.SetFloat("_EnergyPulse", 0.25f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.XBlock:
-                        mat.SetFloat("_ShimmerSpeed", 1.5f);
-                        mat.SetFloat("_ShimmerIntensity", 0.06f);
-                        mat.SetFloat("_EnergyPulse", 0.12f);
+                        mat.SetFloat("_ShimmerSpeed", 2.0f);
+                        mat.SetFloat("_ShimmerIntensity", 0.15f);
+                        mat.SetFloat("_EnergyPulse", 0.22f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.Rainbow:
-                        mat.SetFloat("_ShimmerSpeed", 1.5f);
-                        mat.SetFloat("_ShimmerIntensity", 0.06f);
-                        mat.SetFloat("_EnergyPulse", 0.1f);
+                        mat.SetFloat("_ShimmerSpeed", 2.0f);
+                        mat.SetFloat("_ShimmerIntensity", 0.15f);
+                        mat.SetFloat("_EnergyPulse", 0.2f);
                         mat.SetFloat("_RainbowStrength", 1.0f);
                         break;
                 }

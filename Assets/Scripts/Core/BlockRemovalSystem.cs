@@ -12,18 +12,14 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private HexGrid hexGrid;
         [SerializeField] private MatchingSystem matchingSystem;
         [SerializeField] private DrillBlockSystem drillSystem;
-                [SerializeField] private BombBlockSystem bombSystem;
+        [SerializeField] private BombBlockSystem bombSystem;
         [SerializeField] private DonutBlockSystem donutSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
         [SerializeField] private LaserBlockSystem laserSystem;
 
-
-
-
-
         [Header("Animation Settings")]
         [SerializeField] private float matchHighlightDuration = 0.15f;
-        [SerializeField] private float removeAnimationDuration = 0.2f;
+        [SerializeField] private float removeAnimationDuration = 0.14f;
         [SerializeField] private float cascadeDelay = 0.1f;
 
         [Header("Fall Physics")]
@@ -31,17 +27,20 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private float maxFallSpeed = 1500f;
         [SerializeField] private float bounceRatio = 0.3f;
         [SerializeField] private float bounceThreshold = 50f;
-        
 
         private bool isProcessing = false;
         private bool isFalling = false;  // 낙하 재진입 방지
+
+        // Cascade depth tracking (Phase 6B)
+        private int currentCascadeDepth = 0;
+        public int CurrentCascadeDepth => currentCascadeDepth;
 
         // �� ����� ���� ���� ��ġ (���� ���� �� �ѹ� ĳ��)
         private Dictionary<HexBlock, Vector2> slotPositions = new Dictionary<HexBlock, Vector2>();
         private Dictionary<int, List<HexBlock>> columnCache = null;
         private bool slotsCached = false;
 
-        public event System.Action<int> OnBlocksRemoved;
+        public event System.Action<int, int, Vector3> OnBlocksRemoved; // (blockCount, cascadeDepth, avgPosition)
         public event System.Action OnCascadeComplete;
         public event System.Action OnBigBang;
 
@@ -55,7 +54,81 @@ namespace JewelsHexaPuzzle.Core
             StopAllCoroutines();
             isProcessing = false;
             isFalling = false;
+            currentCascadeDepth = 0;
+
+            // 코루틴 중단으로 남은 이펙트 오브젝트 정리
+            CleanupOrphanedEffects();
+
+            // 블록 시각 상태 복원 (scale, rotation, position) - 캐시 클리어 전에 수행
+            RestoreAllBlockStates();
+
+            slotsCached = false;
             Debug.LogWarning("[BlockRemovalSystem] ForceReset called");
+        }
+
+        /// <summary>
+        /// 코루틴 중단으로 남은 임시 이펙트 오브젝트 정리
+        /// (Spark, LightningArc → this.transform 자식 / ElectricArc, SpecialImpact → block.transform 자식)
+        /// </summary>
+        private void CleanupOrphanedEffects()
+        {
+            // 1. this.transform의 임시 이펙트 자식 정리
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                GameObject child = transform.GetChild(i).gameObject;
+                if (child.name.StartsWith("Spark") || child.name.StartsWith("LightningArc") ||
+                    child.name.StartsWith("DestroyFlash") || child.name.StartsWith("BloomLayer") ||
+                    child.name.StartsWith("MatchPulseGlow"))
+                    Destroy(child);
+            }
+
+            // 2. 블록 transform의 임시 이펙트 자식 정리
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null) continue;
+                    for (int i = block.transform.childCount - 1; i >= 0; i--)
+                    {
+                        GameObject child = block.transform.GetChild(i).gameObject;
+                        if (child.name.StartsWith("ElectricArc") ||
+                            child.name.StartsWith("SpecialImpact") ||
+                            child.name.StartsWith("SpawnGlow") ||
+                            child.name.StartsWith("DestroyFlash") ||
+                            child.name.StartsWith("MatchPulseGlow"))
+                            Destroy(child);
+                    }
+                }
+            }
+
+            // 3. Reset cascade depth
+            currentCascadeDepth = 0;
+        }
+
+        /// <summary>
+        /// 모든 블록의 시각 상태 복원 (낙하/삭제 애니메이션 중단 시)
+        /// </summary>
+        private void RestoreAllBlockStates()
+        {
+            if (hexGrid == null) return;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null) continue;
+                block.transform.localScale = Vector3.one;
+                block.transform.localRotation = Quaternion.identity;
+                if (slotPositions.ContainsKey(block))
+                    SetBlockAnchoredPosition(block, slotPositions[block]);
+            }
+        }
+
+        /// <summary>
+        /// 슬롯 캐시 무효화 (스테이지 전환 시 호출)
+        /// </summary>
+        public void InvalidateSlotCache()
+        {
+            slotsCached = false;
+            slotPositions.Clear();
+            columnCache = null;
         }
 
 
@@ -151,7 +224,10 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         public void ProcessMatchesWithPendingSpecials(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
         {
-            if (isProcessing || matches == null || matches.Count == 0) return;
+            if (isProcessing) return;
+            bool hasMatches = matches != null && matches.Count > 0;
+            bool hasPending = pendingSpecials != null && pendingSpecials.Count > 0;
+            if (!hasMatches && !hasPending) return;
             StartCoroutine(ProcessMatchesWithPendingCoroutine(matches, pendingSpecials));
         }
 
@@ -221,6 +297,13 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
             
             float timeout = 5f;
             float waited = 0f;
+
+            // 발동 직전 데이터 재검증 (동시 발동 중 다른 특수 블록이 이 블록을 파괴했을 수 있음)
+            if (block.Data == null || block.Data.gemType == GemType.None || block.Data.specialType == SpecialBlockType.None)
+            {
+                Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: block data invalidated before activation (cachedType={cachedType})");
+                yield break;
+            }
 
             switch (cachedType)
             {
@@ -661,6 +744,7 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
             flashObj.transform.localPosition = Vector3.zero;
 
             var flashImage = flashObj.AddComponent<UnityEngine.UI.Image>();
+            flashImage.sprite = HexBlock.GetHexFlashSprite();
             flashImage.color = new Color(0.8f, 0.9f, 1f, 1f);
             flashImage.raycastTarget = false;
 
@@ -673,6 +757,7 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
             ringObj.transform.localPosition = Vector3.zero;
 
             var ringImage = ringObj.AddComponent<UnityEngine.UI.Image>();
+            ringImage.sprite = HexBlock.GetHexFlashSprite();
             ringImage.color = new Color(0.5f, 0.8f, 1f, 0.8f);
             ringImage.raycastTarget = false;
 
@@ -724,22 +809,120 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         {
             if (block == null) yield break;
 
+            // 화이트 플래시 오버레이
+            StartCoroutine(DestroyFlashOverlay(block));
+
             float elapsed = 0f;
-            while (elapsed < removeAnimationDuration)
+            float duration = VisualConstants.DestroyDuration;
+            float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
+
+            while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / removeAnimationDuration;
-                float scale;
-                if (t < 0.2f)
-                    scale = 1f + (t / 0.2f) * 0.1f;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                if (t < expandRatio)
+                {
+                    // Phase 1: 확대 (0~20%)
+                    float expandT = t / expandRatio;
+                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
+                    block.transform.localScale = Vector3.one * scale;
+                }
                 else
-                    scale = 1.1f * (1f - (t - 0.2f) / 0.8f);
-                block.transform.localScale = Vector3.one * Mathf.Max(0, scale);
+                {
+                    // Phase 2: 찌그러짐 + 축소 (20~100%)
+                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
+                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
+                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
+                    block.transform.localScale = new Vector3(sx, sy, 1f);
+                }
+
                 yield return null;
             }
 
             block.transform.localScale = Vector3.zero;
-            // ClearData�� ���⼭ ȣ������ ���� - ProcessMatchesCoroutine���� �ϰ� ó��
+        }
+
+        /// <summary>
+        /// 파괴 순간 백색 플래시 오버레이
+        /// </summary>
+        private IEnumerator DestroyFlashOverlay(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            GameObject flash = new GameObject("DestroyFlash");
+            flash.transform.SetParent(block.transform, false);
+            flash.transform.localPosition = Vector3.zero;
+
+            var img = flash.AddComponent<UnityEngine.UI.Image>();
+            img.raycastTarget = false;
+            img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 60f * VisualConstants.DestroyFlashSizeMultiplier;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.DestroyFlashDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.DestroyFlashDuration);
+                img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha * (1f - t));
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        /// <summary>
+        /// 매칭 블록 펄스 애니메이션 - 크기 1→1.08→1 + 백색 글로우
+        /// </summary>
+        private IEnumerator MatchPulse(HexBlock block, float delay)
+        {
+            if (block == null) yield break;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (block == null) yield break;
+
+            // 백색 글로우 오버레이
+            GameObject glow = new GameObject("MatchPulseGlow");
+            glow.transform.SetParent(block.transform, false);
+            glow.transform.localPosition = Vector3.zero;
+
+            var glowImg = glow.AddComponent<UnityEngine.UI.Image>();
+            glowImg.raycastTarget = false;
+            glowImg.color = new Color(1f, 1f, 1f, 0f);
+
+            RectTransform glowRt = glow.GetComponent<RectTransform>();
+            glowRt.sizeDelta = new Vector2(60f, 60f);
+
+            float elapsed = 0f;
+            float duration = VisualConstants.MatchPulseDuration;
+            Vector3 origScale = block.transform.localScale;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // EaseOutElastic 기반 스케일 펄스
+                float pulseT = VisualConstants.EaseOutElastic(t);
+                float scale = 1f + (VisualConstants.MatchPulseScale - 1f) * (1f - pulseT);
+                block.transform.localScale = origScale * scale;
+
+                // 글로우 알파: 전반부 페이드인, 후반부 페이드아웃
+                float alpha = t < 0.3f
+                    ? VisualConstants.MatchPulseOverlayAlpha * (t / 0.3f)
+                    : VisualConstants.MatchPulseOverlayAlpha * (1f - (t - 0.3f) / 0.7f);
+                if (glowImg != null)
+                    glowImg.color = new Color(1f, 1f, 1f, alpha);
+
+                yield return null;
+            }
+
+            if (block != null)
+                block.transform.localScale = origScale;
+            if (glow != null)
+                Destroy(glow);
         }
 
         // ============================================================
@@ -758,10 +941,12 @@ private IEnumerator CascadeWithPendingLoop()
             int maxIterations = 20;
             int iteration = 0;
             bool fatalError = false;
+            currentCascadeDepth = 0;
 
             while (iteration < maxIterations && !fatalError)
             {
                 iteration++;
+                currentCascadeDepth = iteration - 1;
 
                 // 1. 낙하 처리
                 yield return StartCoroutine(ProcessFalling());
@@ -823,6 +1008,7 @@ private IEnumerator CascadeWithPendingLoop()
                 Debug.LogError($"[BRS] CascadeWithPendingLoop hit max iterations ({maxIterations})! Breaking.");
 
             // === 항상 도달하는 최종 정리 ===
+            currentCascadeDepth = 0;
             isProcessing = false;
             OnCascadeComplete?.Invoke();
             Debug.Log($"[BRS] CascadeWithPendingLoop completed. isProcessing=false");
@@ -940,7 +1126,7 @@ private IEnumerator ProcessFalling()
                     if (targetBlock == null) continue;
                     Vector2 targetPos = slotPositions.ContainsKey(targetBlock) ? slotPositions[targetBlock] : Vector2.zero;
 
-                    GemType randomGem = (GemType)Random.Range(1, 6);
+                    GemType randomGem = GemTypeHelper.GetRandom();
                     BlockData newData = new BlockData(randomGem);
 
                     float startY = topY + spawnOffset + (i * 80f);
@@ -958,6 +1144,7 @@ private IEnumerator ProcessFalling()
                         delay = newDelay,
                         gravityMult = Random.Range(0.90f, 1.10f),
                         maxSpeedMult = Random.Range(0.88f, 1.12f),
+                        isNewBlock = true,
                     });
                 }
             }
@@ -1055,6 +1242,9 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                         {
                             SetBlockAnchoredPosition(block, slotPos);
                             block.transform.localScale = Vector3.one;
+                            // Spawn pop-in animation for new blocks
+                            if (anim.isNewBlock)
+                                StartCoroutine(SpawnPopAnimation(block));
                         }
                         onComplete?.Invoke();
                         yield break;
@@ -1117,7 +1307,7 @@ private void FillEmptyBlocksWithAnimation()
 
                     RestoreBlockToSlot(block);
 
-                    GemType randomGem = (GemType)Random.Range(1, 6);
+                    GemType randomGem = GemTypeHelper.GetRandom();
                     block.SetBlockData(new BlockData(randomGem));
                     block.transform.localScale = Vector3.one;
 
@@ -1305,7 +1495,7 @@ public void TriggerBigBang()
                     HexBlock block = column[i];
                     Vector2 targetPos = slotPositions[block];
 
-                    GemType randomGem = (GemType)Random.Range(1, 6);
+                    GemType randomGem = GemTypeHelper.GetRandom();
                     block.SetBlockData(new BlockData(randomGem));
                     block.transform.localScale = Vector3.one;
 
@@ -1351,10 +1541,59 @@ public void TriggerBigBang()
             public float startY;
             public float targetY;
             public float delay;
-            public float gravityMult;   // ���� �߷� ���� (�ڿ������� ����)
-            public float maxSpeedMult;  // ���� �ִ�ӵ� ����
+            public float gravityMult;
+            public float maxSpeedMult;
+            public bool isNewBlock;
         }
     
+
+/// <summary>
+        /// Spawn pop-in animation for newly created blocks after fall.
+        /// Scales from 0.5x -> 1.15x overshoot -> 1.0x with EaseOutBack.
+        /// Includes a white glow overlay that fades out.
+        /// </summary>
+        private IEnumerator SpawnPopAnimation(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            float duration = VisualConstants.SpawnDuration;
+
+            // Create glow overlay
+            GameObject glow = new GameObject("SpawnGlow");
+            glow.transform.SetParent(block.transform, false);
+            glow.transform.localPosition = Vector3.zero;
+
+            var glowImg = glow.AddComponent<UnityEngine.UI.Image>();
+            glowImg.raycastTarget = false;
+            glowImg.color = new Color(1f, 1f, 1f, VisualConstants.SpawnGlowAlpha);
+
+            RectTransform glowRt = glow.GetComponent<RectTransform>();
+            glowRt.sizeDelta = new Vector2(50f, 50f);
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // EaseOutBack: 0.5 -> overshoot 1.15 -> settle 1.0
+                float eased = VisualConstants.EaseOutBack(t);
+                float scale = Mathf.Lerp(VisualConstants.SpawnStartScale, 1f, eased);
+                if (block != null)
+                    block.transform.localScale = Vector3.one * scale;
+
+                // Glow fade out
+                if (glowImg != null)
+                    glowImg.color = new Color(1f, 1f, 1f, VisualConstants.SpawnGlowAlpha * (1f - t));
+
+                yield return null;
+            }
+
+            if (block != null)
+                block.transform.localScale = Vector3.one;
+            if (glow != null)
+                Destroy(glow);
+        }
 
 /// <summary>
         /// 매칭 처리 인라인 (isProcessing 관리 없음, cascade 호출 없음)
@@ -1382,10 +1621,40 @@ public void TriggerBigBang()
                 yield break;
             }
 
-            // 1. 매칭 하이라이트
+            // 1. 매칭 하이라이트 + 펄스 애니메이션
+            List<HexBlock> allMatchedBlocks = new List<HexBlock>();
+            Vector3 matchCenter = Vector3.zero;
+            int centerCount = 0;
+
             foreach (var match in matches)
+            {
                 foreach (var block in match.blocks)
-                    if (block != null) block.SetMatched(true);
+                {
+                    if (block != null)
+                    {
+                        block.SetMatched(true);
+                        if (!allMatchedBlocks.Contains(block))
+                        {
+                            allMatchedBlocks.Add(block);
+                            matchCenter += block.transform.position;
+                            centerCount++;
+                        }
+                    }
+                }
+            }
+            if (centerCount > 0) matchCenter /= centerCount;
+
+            // 중심에서 가까운 순서대로 시차 펄스
+            allMatchedBlocks.Sort((a, b) =>
+            {
+                float dA = Vector3.Distance(a.transform.position, matchCenter);
+                float dB = Vector3.Distance(b.transform.position, matchCenter);
+                return dA.CompareTo(dB);
+            });
+            for (int i = 0; i < allMatchedBlocks.Count; i++)
+            {
+                StartCoroutine(MatchPulse(allMatchedBlocks[i], i * VisualConstants.MatchPulseStagger));
+            }
 
             yield return new WaitForSeconds(matchHighlightDuration);
 
@@ -1426,13 +1695,26 @@ public void TriggerBigBang()
                 }
             }
 
-            // 4. 삭제 애니메이션 (일반 블록만)
+            // 4. 제거될 블록의 평균 위치 계산 (점수 팝업용)
+            Vector3 avgPosition = Vector3.zero;
+            int posCount = 0;
+            foreach (var block in blocksToRemove)
+            {
+                if (block != null)
+                {
+                    avgPosition += block.transform.position;
+                    posCount++;
+                }
+            }
+            if (posCount > 0) avgPosition /= posCount;
+
+            // 5. 삭제 애니메이션 (일반 블록만)
             foreach (var block in blocksToRemove)
                 StartCoroutine(AnimateRemove(block));
 
             yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
 
-            // 5. 일반 블록 데이터 클리어
+            // 6. 일반 블록 데이터 클리어
             foreach (var block in blocksToRemove)
             {
                 if (block != null)
@@ -1444,7 +1726,7 @@ public void TriggerBigBang()
                 }
             }
 
-            OnBlocksRemoved?.Invoke(blocksToRemove.Count);
+            OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
 
             // 6. 매칭 특수블록 + pending 특수블록 동시 발동
             List<HexBlock> allSpecialsToActivate = new List<HexBlock>();

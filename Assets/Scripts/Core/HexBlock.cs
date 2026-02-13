@@ -79,11 +79,21 @@ namespace JewelsHexaPuzzle.Core
             ApplyGemMaterials();
         }
 
+        private static bool _materialLogPrinted = false;
+
         private void ApplyGemMaterials()
         {
             Material gemMat = GemMaterialManager.GetGemMaterial();
             Material borderMat = GemMaterialManager.GetBorderGlowMaterial();
             Material bgMat = GemMaterialManager.GetBackgroundMaterial();
+
+            if (!_materialLogPrinted)
+            {
+                _materialLogPrinted = true;
+                Debug.Log($"[HexBlock] ApplyGemMaterials: gemMat={gemMat?.name ?? "NULL"}, borderMat={borderMat?.name ?? "NULL"}, bgMat={bgMat?.name ?? "NULL"}");
+                if (gemMat == null)
+                    Debug.LogWarning("[HexBlock] GemMaterial is NULL - UI/HexGem shader not found! Gems will use default flat color.");
+            }
 
             if (gemImage != null && gemMat != null)
                 gemImage.material = gemMat;
@@ -262,6 +272,7 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private static Sprite CreateAAInnerHexSprite(int size, float borderWidth)
         {
+            // 깨끗한 흰색 육각형 - 모든 시각 효과는 셰이더(HexGem/HexSpecialGem)가 담당
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
@@ -270,17 +281,6 @@ namespace JewelsHexaPuzzle.Core
             float outerRadius = size / 2f - 2f;
             float innerRadius = outerRadius - borderWidth;
             float aa = 2.0f;
-            float maxDist = innerRadius * 0.8660254f; // hex apothem
-            Vector2 lightDir = new Vector2(-0.707f, 0.707f);
-
-            // 하이라이트 위치 (UV 공간에서의 오프셋을 픽셀로 변환)
-            Vector2 hlCenter = center + new Vector2(-size * 0.15f, size * 0.15f);
-            float hlRadius = size * 0.12f;
-            Vector2 secHlCenter = center + new Vector2(size * 0.1f, -size * 0.17f);
-            float secHlRadius = size * 0.06f;
-
-            // 에지 베벨 폭
-            float bevelWidth = 4f * (size / 512f);
 
             for (int y = 0; y < size; y++)
             {
@@ -296,45 +296,8 @@ namespace JewelsHexaPuzzle.Core
                         continue;
                     }
 
-                    Vector2 offset = point - center;
-                    float pixelDist = offset.magnitude;
-                    float normDist = Mathf.Clamp01(pixelDist / maxDist);
-
-                    // 1. 볼록 깊이 그라디언트 (매트: 완만한 명암 차이)
-                    float depth = 1.0f - normDist * normDist * 0.12f;
-
-                    // 2. 6면 패싯 패턴 (매트: 거의 눈에 안 띄는 수준)
-                    float angle = Mathf.Atan2(offset.y, offset.x);
-                    float facet = 1.0f + Mathf.Sin(angle * 6f) * 0.02f;
-
-                    // 3. 메인 스펙큘러 하이라이트 (매트: 은은한 밝음)
-                    float hlDist = Vector2.Distance(point, hlCenter);
-                    float highlight = SmoothStep(hlRadius, 0f, hlDist) * 0.15f;
-
-                    // 4. 서브 스펙큘러 하이라이트 (매트: 거의 없음)
-                    float secDist = Vector2.Distance(point, secHlCenter);
-                    float secHighlight = SmoothStep(secHlRadius, 0f, secDist) * 0.06f;
-
-                    // 5. 에지 베벨 (매트: 얇고 은은한 테두리 라인)
-                    float bevelDist = Mathf.Abs(sdf + bevelWidth);
-                    float bevel = SmoothStep(bevelWidth, 0f, bevelDist) * 0.08f;
-
-                    // 6. 방향성 조명 (매트: 미세한 방향감만)
-                    float dirLighting = 0f;
-                    if (pixelDist > 0.001f)
-                    {
-                        Vector2 dir = offset / pixelDist;
-                        dirLighting = Vector2.Dot(dir, lightDir) * 0.04f;
-                    }
-
-                    // 7. 내부 글로우 (매트: 거의 없음)
-                    float glow = (1f - normDist) * (1f - normDist) * 0.03f;
-
-                    // 합성
-                    float brightness = depth * facet + highlight + secHighlight + bevel + dirLighting + glow;
-                    brightness = Mathf.Clamp01(brightness);
-
-                    pixels[y * size + x] = new Color(brightness, brightness, brightness, alpha);
+                    // 순수 흰색 텍스처 → Image.color(젬 색상)로 틴팅 → 셰이더가 깊이/하이라이트/패싯 적용
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
                 }
             }
 

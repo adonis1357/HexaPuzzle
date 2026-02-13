@@ -74,7 +74,7 @@ namespace JewelsHexaPuzzle.Managers
             {
                 // 초반: 단일 원석 채광
                 mission.type = MissionType.CollectGem;
-                mission.targetGemType = (GemType)Random.Range(1, 6);
+                mission.targetGemType = GemTypeHelper.GetRandom();
                 mission.targetCount = 10 + stageNumber * 2;
             }
             else if (stageNumber < 30)
@@ -85,7 +85,7 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     case 0:
                         mission.type = MissionType.CollectGem;
-                        mission.targetGemType = (GemType)Random.Range(1, 6);
+                        mission.targetGemType = GemTypeHelper.GetRandom();
                         mission.targetCount = 15 + stageNumber;
                         break;
                     case 1:
@@ -106,7 +106,7 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     case 0:
                         mission.type = MissionType.CollectGem;
-                        mission.targetGemType = (GemType)Random.Range(1, 6);
+                        mission.targetGemType = GemTypeHelper.GetRandom();
                         mission.targetCount = 30 + stageNumber;
                         break;
                     case 1:

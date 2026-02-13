@@ -34,7 +34,18 @@ namespace JewelsHexaPuzzle.Core
             StopAllCoroutines();
             activeLaserCount = 0;
             pendingSpecialBlocks.Clear();
+            CleanupEffects();
             Debug.LogWarning("[LaserBlockSystem] ForceReset called");
+        }
+
+        /// <summary>
+        /// 코루틴 중단으로 남은 이펙트 오브젝트 일괄 정리
+        /// </summary>
+        private void CleanupEffects()
+        {
+            if (effectParent == null) return;
+            for (int i = effectParent.childCount - 1; i >= 0; i--)
+                Destroy(effectParent.GetChild(i).gameObject);
         }
 
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
@@ -206,6 +217,15 @@ namespace JewelsHexaPuzzle.Core
 
             Debug.Log($"[LaserBlockSystem] === LASER ACTIVATED === Coord={startCoord}");
 
+            // Pre-Fire 압축 애니메이션
+            yield return StartCoroutine(PreFireCompression(laserBlock));
+
+            // Hit Stop (Large tier)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+
+            // Zoom Punch (Large tier)
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
             // 레이저 블록 자체 클리어
             laserBlock.ClearData();
 
@@ -229,7 +249,7 @@ namespace JewelsHexaPuzzle.Core
 
             // 중앙 폭발 이펙트
             StartCoroutine(LaserCenterFlash(laserWorldPos, laserColor));
-            StartCoroutine(ScreenShake(shakeIntensity, 0.15f));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
             // 3축 레이저 빔 이펙트
             for (int i = 0; i < axes.Length; i++)
@@ -306,6 +326,9 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
                 HexBlock target = targets[i];
                 if (target == null) continue;
 
+                // Bug #15 fix: target.Data가 동시 실행 중 null이 될 수 있음
+                if (target.Data == null || target.Data.gemType == GemType.None) continue;
+
                 if (target.Data.specialType != SpecialBlockType.None &&
                     target.Data.specialType != SpecialBlockType.FixedBlock)
                 {
@@ -341,25 +364,43 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
 
             Vector3 blockPos = block.transform.position;
 
+            // 화이트 플래시 오버레이
+            StartCoroutine(DestroyFlashOverlay(block));
+
             // 임팩트 이펙트
             StartCoroutine(LaserImpactWave(blockPos, blockColor));
 
-            // 파편
-            for (int i = 0; i < 4; i++)
+            // 파편 (base tier with cascade)
+            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+            int debrisCount = Mathf.RoundToInt((VisualConstants.DebrisBaseCount / 2 + Random.Range(0, 2)) * cascadeMult);
+            for (int i = 0; i < debrisCount; i++)
                 StartCoroutine(AnimateDebris(blockPos, blockColor));
 
-            // 블록 축소 + 사라짐
-            float duration = 0.12f;
+            // 이중 이징 파괴: 확대 → 찌그러짐 + 축소
+            float duration = VisualConstants.DestroyDuration;
             float elapsed = 0f;
+            float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
             Vector3 origScale = block.transform.localScale;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                float sx = 1f + 0.3f * Mathf.Sin(t * Mathf.PI);
-                float sy = 1f - t;
-                block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                if (t < expandRatio)
+                {
+                    float expandT = t / expandRatio;
+                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
+                    block.transform.localScale = origScale * scale;
+                }
+                else
+                {
+                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
+                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
+                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
+                    block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                }
+
                 yield return null;
             }
 
@@ -378,31 +419,39 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
 
+            // 블룸 레이어 (메인 플래시 뒤에)
+            StartCoroutine(BloomLayer(pos, VisualConstants.FlashColorLaser, VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
+
             GameObject flash = new GameObject("LaserCenterFlash");
             flash.transform.SetParent(parent, false);
             flash.transform.position = pos;
 
             var img = flash.AddComponent<UnityEngine.UI.Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
             img.raycastTarget = false;
-            img.color = new Color(0.7f, 0.85f, 1f, 1f);
+            img.color = new Color(VisualConstants.FlashColorLaser.r, VisualConstants.FlashColorLaser.g, VisualConstants.FlashColorLaser.b, 1f);
 
             RectTransform rt = flash.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(40f, 40f);
+            float initSize = VisualConstants.FlashInitialSize;
+            rt.sizeDelta = new Vector2(initSize, initSize);
 
-            // 스파크 버스트
-            for (int i = 0; i < 20; i++)
+            // 스파크 버스트 (large tier with cascade)
+            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+            int sparkCount = Mathf.RoundToInt(VisualConstants.SparkLargeCount * cascadeMult);
+            for (int i = 0; i < sparkCount; i++)
                 StartCoroutine(AnimateSpark(pos, color));
 
-            float duration = 0.3f;
+            float duration = VisualConstants.FlashDuration;
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                float scale = 1f + t * 5f;
-                rt.sizeDelta = new Vector2(40f * scale, 40f * scale);
-                img.color = new Color(0.7f, 0.85f, 1f, (1f - t) * 0.9f);
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.FlashExpand - 1f);
+                rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
+                img.color = new Color(VisualConstants.FlashColorLaser.r, VisualConstants.FlashColorLaser.g, VisualConstants.FlashColorLaser.b, (1f - t) * 0.9f);
                 yield return null;
             }
 
@@ -416,6 +465,7 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
 
+            // Main beam
             GameObject beam = new GameObject("LaserBeam");
             beam.transform.SetParent(parent, false);
             beam.transform.position = pos;
@@ -423,12 +473,8 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
             var img = beam.AddComponent<UnityEngine.UI.Image>();
             img.raycastTarget = false;
 
-            Color beamColor = new Color(
-                Mathf.Min(1f, color.r + 0.3f),
-                Mathf.Min(1f, color.g + 0.3f),
-                Mathf.Min(1f, color.b + 0.2f),
-                0.9f
-            );
+            Color beamColor = VisualConstants.LaserBrighten(color);
+            beamColor.a = 0.9f;
             img.color = beamColor;
 
             RectTransform rt = beam.GetComponent<RectTransform>();
@@ -437,7 +483,21 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
             rt.pivot = new Vector2(0.5f, 0f);
             rt.sizeDelta = new Vector2(6f, 0f);
 
-            // 빔 확장
+            // White core beam (inner bright line)
+            GameObject coreBeam = new GameObject("LaserCoreBeam");
+            coreBeam.transform.SetParent(beam.transform, false);
+            coreBeam.transform.localPosition = Vector3.zero;
+            coreBeam.transform.localRotation = Quaternion.identity;
+
+            var coreImg = coreBeam.AddComponent<UnityEngine.UI.Image>();
+            coreImg.raycastTarget = false;
+            coreImg.color = new Color(1f, 1f, 1f, 0.8f);
+
+            RectTransform coreRt = coreBeam.GetComponent<RectTransform>();
+            coreRt.pivot = new Vector2(0.5f, 0f);
+            coreRt.sizeDelta = new Vector2(2f, 0f);
+
+            // 빔 확장 (keeping existing cubic easing)
             float extendDuration = 0.12f;
             float elapsed = 0f;
             float maxLength = 800f;
@@ -446,12 +506,13 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
             {
                 elapsed += Time.deltaTime;
                 float t = elapsed / extendDuration;
-                float easeT = 1f - Mathf.Pow(1f - t, 3f);
+                float easeT = VisualConstants.EaseOutCubic(t);
                 rt.sizeDelta = new Vector2(6f, maxLength * easeT);
+                coreRt.sizeDelta = new Vector2(2f, maxLength * easeT);
                 yield return null;
             }
 
-            // 빔 유지 + 페이드
+            // 빔 유지 + 페이드 + shimmer
             float fadeDuration = beamDuration;
             elapsed = 0f;
 
@@ -460,11 +521,15 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
                 elapsed += Time.deltaTime;
                 float t = elapsed / fadeDuration;
 
-                float width = Mathf.Lerp(6f, 2f, t);
+                // Width shimmer (micro pulse)
+                float shimmer = 1f + 0.15f * Mathf.Sin(elapsed * 30f);
+                float width = Mathf.Lerp(6f, 2f, t) * shimmer;
                 rt.sizeDelta = new Vector2(width, maxLength);
+                coreRt.sizeDelta = new Vector2(Mathf.Max(1f, width * 0.3f), maxLength);
 
                 beamColor.a = 0.9f * (1f - t);
                 img.color = beamColor;
+                coreImg.color = new Color(1f, 1f, 1f, 0.8f * (1f - t));
 
                 yield return null;
             }
@@ -482,21 +547,23 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
 
             var image = wave.AddComponent<UnityEngine.UI.Image>();
             image.raycastTarget = false;
-            image.color = new Color(color.r, color.g, color.b, 0.6f);
+            image.color = new Color(color.r, color.g, color.b, VisualConstants.WaveSmallAlpha);
 
             RectTransform rt = wave.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(8f, 8f);
+            float initSize = VisualConstants.WaveSmallInitialSize;
+            rt.sizeDelta = new Vector2(initSize, initSize);
 
-            float duration = 0.15f;
+            float duration = VisualConstants.WaveSmallDuration;
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                float scale = 1f + t * 4f;
-                rt.sizeDelta = new Vector2(8f * scale, 8f * scale);
-                image.color = new Color(color.r, color.g, color.b, 0.6f * (1f - t));
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.WaveSmallExpand - 1f);
+                rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
+                image.color = new Color(color.r, color.g, color.b, VisualConstants.WaveSmallAlpha * (1f - t));
                 yield return null;
             }
 
@@ -514,23 +581,19 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
             var img = spark.AddComponent<UnityEngine.UI.Image>();
             img.raycastTarget = false;
 
-            Color bright = new Color(
-                Mathf.Min(1f, color.r + 0.4f),
-                Mathf.Min(1f, color.g + 0.3f),
-                Mathf.Min(1f, color.b + 0.2f),
-                1f
-            );
+            Color bright = VisualConstants.LaserBrighten(color);
+            bright.a = 1f;
             img.color = bright;
 
             RectTransform rt = spark.GetComponent<RectTransform>();
-            float size = Random.Range(3f, 8f);
+            float size = Random.Range(VisualConstants.SparkMediumSizeMin, VisualConstants.SparkMediumSizeMax);
             rt.sizeDelta = new Vector2(size, size);
 
             float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float speed = Random.Range(120f, 350f);
+            float speed = Random.Range(VisualConstants.SparkMediumSpeedMin, VisualConstants.SparkMediumSpeedMax);
             Vector2 vel = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
 
-            float lifetime = Random.Range(0.12f, 0.3f);
+            float lifetime = Random.Range(VisualConstants.SparkMediumLifetimeMin, VisualConstants.SparkMediumLifetimeMax);
             float elapsed = 0f;
 
             while (elapsed < lifetime)
@@ -538,7 +601,7 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
                 elapsed += Time.deltaTime;
                 float t = elapsed / lifetime;
                 spark.transform.position += new Vector3(vel.x, vel.y, 0) * Time.deltaTime;
-                vel *= 0.93f;
+                vel *= VisualConstants.SparkDeceleration;
                 bright.a = 1f - t;
                 img.color = bright;
                 float s = size * (1f - t * 0.5f);
@@ -570,17 +633,16 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
             image.color = debrisColor;
 
             RectTransform rt = debris.GetComponent<RectTransform>();
-            float w = Random.Range(4f, 10f);
-            float h = Random.Range(4f, 8f);
+            float w = Random.Range(VisualConstants.DebrisBaseSizeMin, VisualConstants.DebrisBaseSizeMax * 0.9f);
+            float h = Random.Range(VisualConstants.DebrisBaseSizeMin, VisualConstants.DebrisBaseSizeMax * 0.7f);
             rt.sizeDelta = new Vector2(w, h);
 
             float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float speed = Random.Range(150f, 400f);
+            float speed = Random.Range(VisualConstants.DebrisBaseSpeedMin, VisualConstants.DebrisBaseSpeedMax);
             Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
 
-            float gravityY = -800f;
-            float rotSpeed = Random.Range(-720f, 720f);
-            float lifetime = Random.Range(0.25f, 0.5f);
+            float rotSpeed = Random.Range(VisualConstants.DebrisRotSpeedMin, VisualConstants.DebrisRotSpeedMax);
+            float lifetime = Random.Range(VisualConstants.DebrisLifetimeMin, VisualConstants.DebrisLifetimeMax);
             float elapsed = 0f;
             float rot = Random.Range(0f, 360f);
 
@@ -589,7 +651,7 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
                 elapsed += Time.deltaTime;
                 float t = elapsed / lifetime;
 
-                velocity.y += gravityY * Time.deltaTime;
+                velocity.y += VisualConstants.DebrisGravity * Time.deltaTime;
                 Vector3 pos = debris.transform.position;
                 pos.x += velocity.x * Time.deltaTime;
                 pos.y += velocity.y * Time.deltaTime;
@@ -610,26 +672,38 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
         }
 
         // ============================================================
-        // 화면 흔들림
+        // 화면 흔들림 (Bug #11 fix: 동시 실행 시 위치 드리프트 방지)
         // ============================================================
+
+        private int shakeCount = 0;
+        private Vector3 shakeOriginalPos;
 
         private IEnumerator ScreenShake(float intensity, float duration)
         {
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 originalPos = target.localPosition;
+            if (shakeCount == 0)
+                shakeOriginalPos = target.localPosition;
+            shakeCount++;
+
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = 1f - (elapsed / duration);
-                float x = Random.Range(-1f, 1f) * intensity * t;
-                float y = Random.Range(-1f, 1f) * intensity * t;
-                target.localPosition = originalPos + new Vector3(x, y, 0);
+                float t = Mathf.Clamp01(elapsed / duration);
+                float decay = 1f - VisualConstants.EaseInQuad(t);
+                float x = Random.Range(-1f, 1f) * intensity * decay;
+                float y = Random.Range(-1f, 1f) * intensity * decay;
+                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
                 yield return null;
             }
 
-            target.localPosition = originalPos;
+            shakeCount--;
+            if (shakeCount <= 0)
+            {
+                shakeCount = 0;
+                target.localPosition = shakeOriginalPos;
+            }
         }
 
         // ============================================================
@@ -647,6 +721,152 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
                 default: angle = -90f; break;
             }
             return positive ? angle : angle + 180f;
+        }
+
+        // ============================================================
+        // Phase 1 VFX: 공통 유틸리티 메서드
+        // ============================================================
+
+        private IEnumerator PreFireCompression(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            float duration = VisualConstants.PreFireDuration;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float scale;
+                if (t < 0.5f)
+                {
+                    float ct = t / 0.5f;
+                    scale = Mathf.Lerp(1f, VisualConstants.PreFireScaleMin, VisualConstants.EaseInQuad(ct));
+                }
+                else
+                {
+                    float et = (t - 0.5f) / 0.5f;
+                    scale = Mathf.Lerp(VisualConstants.PreFireScaleMin, VisualConstants.PreFireScaleMax, VisualConstants.EaseOutCubic(et));
+                }
+
+                block.transform.localScale = Vector3.one * scale;
+                yield return null;
+            }
+
+            block.transform.localScale = Vector3.one;
+        }
+
+        private IEnumerator HitStop(float stopDuration)
+        {
+            if (!VisualConstants.CanHitStop()) yield break;
+            VisualConstants.RecordHitStop();
+
+            Time.timeScale = 0f;
+            yield return new WaitForSecondsRealtime(stopDuration);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.HitStopSlowMoDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
+                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+            Time.timeScale = 1f;
+        }
+
+        private IEnumerator ZoomPunch(float targetScale)
+        {
+            Transform target = hexGrid != null ? hexGrid.transform : transform;
+            Vector3 origScale = target.localScale;
+            Vector3 punchScale = origScale * targetScale;
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            target.localScale = origScale;
+        }
+
+        private IEnumerator DestroyFlashOverlay(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            GameObject flash = new GameObject("DestroyFlash");
+            flash.transform.SetParent(block.transform, false);
+            flash.transform.localPosition = Vector3.zero;
+
+            var img = flash.AddComponent<UnityEngine.UI.Image>();
+            img.raycastTarget = false;
+            img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 60f * VisualConstants.DestroyFlashSizeMultiplier;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.DestroyFlashDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.DestroyFlashDuration);
+                img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha * (1f - t));
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        private IEnumerator BloomLayer(Vector3 pos, Color color, float initSize, float duration)
+        {
+            yield return new WaitForSeconds(VisualConstants.BloomLag);
+
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+
+            GameObject bloom = new GameObject("BloomLayer");
+            bloom.transform.SetParent(parent, false);
+            bloom.transform.position = pos;
+            bloom.transform.SetAsFirstSibling();
+
+            var img = bloom.AddComponent<UnityEngine.UI.Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            img.color = new Color(color.r, color.g, color.b, VisualConstants.BloomAlphaMultiplier);
+
+            RectTransform rt = bloom.GetComponent<RectTransform>();
+            float bloomSize = initSize * VisualConstants.BloomSizeMultiplier;
+            rt.sizeDelta = new Vector2(bloomSize, bloomSize);
+
+            float remainDuration = duration - VisualConstants.BloomLag;
+            float elapsed = 0f;
+
+            while (elapsed < remainDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / remainDuration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.FlashExpand - 1f);
+                rt.sizeDelta = new Vector2(bloomSize * scale, bloomSize * scale);
+                img.color = new Color(color.r, color.g, color.b, VisualConstants.BloomAlphaMultiplier * (1f - t));
+                yield return null;
+            }
+
+            Destroy(bloom);
         }
     }
 }

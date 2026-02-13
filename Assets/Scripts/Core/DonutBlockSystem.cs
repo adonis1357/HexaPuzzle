@@ -35,7 +35,18 @@ namespace JewelsHexaPuzzle.Core
             activeDonutCount = 0;
             pendingSpecialBlocks.Clear();
             StopAllCoroutines();
+            CleanupEffects();
             Debug.LogWarning("[DonutBlockSystem] ForceReset called");
+        }
+
+        /// <summary>
+        /// 코루틴 중단으로 남은 이펙트 오브젝트 일괄 정리
+        /// </summary>
+        private void CleanupEffects()
+        {
+            if (effectParent == null) return;
+            for (int i = effectParent.childCount - 1; i >= 0; i--)
+                Destroy(effectParent.GetChild(i).gameObject);
         }
 
 
@@ -200,6 +211,15 @@ namespace JewelsHexaPuzzle.Core
 
             Debug.Log($"[DonutBlockSystem] === DONUT ACTIVATED === Coord={donutCoord}, TargetColor={targetGemType}");
 
+            // Pre-Fire 압축 애니메이션
+            yield return StartCoroutine(PreFireCompression(donutBlock));
+
+            // Hit Stop (Medium tier)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationMedium));
+
+            // Zoom Punch (Small tier)
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
+
             // 도넛 블록 자체 클리어
             donutBlock.ClearData();
 
@@ -226,6 +246,9 @@ namespace JewelsHexaPuzzle.Core
             // 무지개 링 확산 이펙트
             StartCoroutine(RainbowRingExpand(donutWorldPos));
 
+            // Screen shake (Medium tier - newly added for Donut)
+            StartCoroutine(ScreenShake(VisualConstants.ShakeMediumIntensity, VisualConstants.ShakeMediumDuration));
+
             yield return new WaitForSeconds(0.15f);
 
             // 거리순 정렬 (중심에서 가까운 것부터)
@@ -236,15 +259,21 @@ namespace JewelsHexaPuzzle.Core
                 return distA.CompareTo(distB);
             });
 
-            // 파도처럼 순차 파괴
+            // 파도처럼 순차 파괴 - 모든 파괴 코루틴을 추적
+            List<Coroutine> destroyCoroutines = new List<Coroutine>();
+
             for (int i = 0; i < targets.Count; i++)
             {
                 HexBlock target = targets[i];
                 if (target == null) continue;
+                if (target.Data == null || target.Data.gemType == GemType.None) continue;
+
+                // FixedBlock은 파괴 불가 - 건너뛰기
+                if (target.Data.specialType == SpecialBlockType.FixedBlock)
+                    continue;
 
                 // 특수 블록이면 pending에 추가
-                if (target.Data.specialType != SpecialBlockType.None &&
-                    target.Data.specialType != SpecialBlockType.FixedBlock)
+                if (target.Data.specialType != SpecialBlockType.None)
                 {
                     Debug.Log($"[DonutBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
                     if (!pendingSpecialBlocks.Contains(target))
@@ -257,14 +286,15 @@ namespace JewelsHexaPuzzle.Core
                 else
                 {
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
-                    StartCoroutine(DestroyBlockWithRainbow(target, blockColor, donutWorldPos));
+                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithRainbow(target, blockColor, donutWorldPos)));
                 }
 
                 yield return new WaitForSeconds(waveDelay);
             }
 
-            // 완료 대기
-            yield return new WaitForSeconds(0.2f);
+            // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
+            foreach (var co in destroyCoroutines)
+                yield return co;
 
             int totalScore = 500 + targets.Count * 100;
             Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore}, Destroyed={targets.Count}");
@@ -283,55 +313,65 @@ namespace JewelsHexaPuzzle.Core
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
 
+            // 블룸 레이어 (무지개 플래시 뒤에)
+            StartCoroutine(BloomLayer(pos, new Color(1f, 1f, 0.8f), VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
+
             // 1) 무지개 플래시
             GameObject flash = new GameObject("DonutFlash");
             flash.transform.SetParent(parent, false);
             flash.transform.position = pos;
 
             var flashImg = flash.AddComponent<UnityEngine.UI.Image>();
+            flashImg.sprite = HexBlock.GetHexFlashSprite();
             flashImg.raycastTarget = false;
             flashImg.color = new Color(1f, 1f, 0.8f, 1f);
 
             RectTransform flashRt = flash.GetComponent<RectTransform>();
-            flashRt.sizeDelta = new Vector2(20f, 20f);
+            float initSize = VisualConstants.FlashInitialSize;
+            flashRt.sizeDelta = new Vector2(initSize, initSize);
 
-            // 2) 회전 링 (3중)
-            GameObject[] rings = new GameObject[3];
-            for (int r = 0; r < 3; r++)
+            // 2) 회전 링 (4중 - increased from 3)
+            int ringCount = 4;
+            GameObject[] rings = new GameObject[ringCount];
+            for (int r = 0; r < ringCount; r++)
             {
                 rings[r] = CreateDonutRing(pos, parent, r);
             }
 
-            // 3) 스파크 버스트
-            for (int i = 0; i < sparkCount; i++)
+            // 3) 스파크 버스트 (large tier with cascade)
+            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+            int totalSparks = Mathf.RoundToInt(sparkCount * cascadeMult);
+            for (int i = 0; i < totalSparks; i++)
             {
-                float hue = (float)i / sparkCount;
+                float hue = (float)i / totalSparks;
                 Color sparkColor = Color.HSVToRGB(hue, 0.9f, 1f);
                 StartCoroutine(RainbowSpark(pos, sparkColor));
             }
 
-            float duration = 0.5f;
+            float duration = VisualConstants.FlashDuration;
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
 
-                // 플래시 확장 + 페이드 + 색상 회전
-                float flashScale = 1f + t * 10f;
-                flashRt.sizeDelta = new Vector2(20f * flashScale, 20f * flashScale);
+                // 플래시 확장 + 페이드 + HSV 색상 회전 (donut identity)
+                float flashScale = 1f + eased * (VisualConstants.FlashExpand - 1f);
+                flashRt.sizeDelta = new Vector2(initSize * flashScale, initSize * flashScale);
                 float hue = (t * 2f) % 1f;
                 Color flashColor = Color.HSVToRGB(hue, 0.5f, 1f);
                 flashColor.a = (1f - t) * 0.8f;
                 flashImg.color = flashColor;
 
                 // 링 회전 + 확장
-                for (int r = 0; r < 3; r++)
+                for (int r = 0; r < ringCount; r++)
                 {
                     if (rings[r] == null) continue;
-                    float ringT = Mathf.Clamp01(t - r * 0.1f);
-                    float ringScale = 1f + ringT * (8f + r * 3f);
+                    float ringT = Mathf.Clamp01(t - r * 0.08f);
+                    float ringEased = VisualConstants.EaseOutCubic(ringT);
+                    float ringScale = 1f + ringEased * (8f + r * 2.5f);
                     var rt = rings[r].GetComponent<RectTransform>();
                     rt.sizeDelta = new Vector2(15f * ringScale, 15f * ringScale);
                     rings[r].transform.localRotation = Quaternion.Euler(0, 0, elapsed * ringRotationSpeed * (r % 2 == 0 ? 1 : -1));
@@ -348,7 +388,7 @@ namespace JewelsHexaPuzzle.Core
             }
 
             Destroy(flash);
-            for (int r = 0; r < 3; r++)
+            for (int r = 0; r < ringCount; r++)
                 if (rings[r] != null) Destroy(rings[r]);
         }
 
@@ -359,6 +399,7 @@ namespace JewelsHexaPuzzle.Core
             ring.transform.position = pos;
 
             var img = ring.AddComponent<UnityEngine.UI.Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
             img.raycastTarget = false;
 
             float hue = (float)index / 3f;
@@ -379,6 +420,8 @@ namespace JewelsHexaPuzzle.Core
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
 
+            float initSize = VisualConstants.WaveLargeInitialSize;
+
             // 외곽 링
             GameObject ring = new GameObject("RainbowExpand");
             ring.transform.SetParent(parent, false);
@@ -386,10 +429,10 @@ namespace JewelsHexaPuzzle.Core
 
             var img = ring.AddComponent<UnityEngine.UI.Image>();
             img.raycastTarget = false;
-            img.color = new Color(1f, 0.8f, 0.2f, 0.6f);
+            img.color = new Color(1f, 0.8f, 0.2f, VisualConstants.WaveLargeAlpha);
 
             RectTransform rt = ring.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(10f, 10f);
+            rt.sizeDelta = new Vector2(initSize, initSize);
 
             float duration = 0.6f;
             float elapsed = 0f;
@@ -397,10 +440,11 @@ namespace JewelsHexaPuzzle.Core
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
 
-                float scale = 1f + t * 30f;
-                rt.sizeDelta = new Vector2(10f * scale, 10f * scale);
+                float scale = 1f + eased * 30f;
+                rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
 
                 float hue = (t * 3f) % 1f;
                 Color c = Color.HSVToRGB(hue, 0.7f, 1f);
@@ -424,32 +468,56 @@ namespace JewelsHexaPuzzle.Core
 
             Vector3 blockPos = block.transform.position;
 
-            // 무지개 스파크
-            for (int i = 0; i < 4; i++)
+            // 화이트 플래시 오버레이
+            StartCoroutine(DestroyFlashOverlay(block));
+
+            // Rainbow connection line from center to block
+            StartCoroutine(RainbowConnectionLine(center, blockPos));
+
+            // 무지개 스파크 (small tier with cascade)
+            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+            int sparkCount = Mathf.RoundToInt(VisualConstants.SparkSmallCount * cascadeMult);
+            for (int i = 0; i < sparkCount; i++)
             {
                 float hue = Random.Range(0f, 1f);
                 Color sparkColor = Color.HSVToRGB(hue, 0.9f, 1f);
                 StartCoroutine(RainbowSpark(blockPos, sparkColor));
             }
 
-            // 블록 축소 + 색상 변화
-            float duration = 0.15f;
+            // 이중 이징 + 미세 회전 (30도, 레인보우 정체성)
+            float duration = VisualConstants.DestroyDuration;
             float elapsed = 0f;
+            float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
             Vector3 origScale = block.transform.localScale;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
+                float t = Mathf.Clamp01(elapsed / duration);
 
-                // 색상이 무지개처럼 변하면서 사라짐
-                float shrink = 1f - t;
-                block.transform.localScale = origScale * shrink;
+                if (t < expandRatio)
+                {
+                    float expandT = t / expandRatio;
+                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
+                    block.transform.localScale = origScale * scale;
+                }
+                else
+                {
+                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
+                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
+                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
+                    block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                }
+
+                // Micro rotation (30 degrees - rainbow identity)
+                float rot = t * 30f;
+                block.transform.localRotation = Quaternion.Euler(0, 0, rot);
 
                 yield return null;
             }
 
             block.transform.localScale = Vector3.one;
+            block.transform.localRotation = Quaternion.identity;
             block.ClearData();
         }
 
@@ -469,14 +537,14 @@ namespace JewelsHexaPuzzle.Core
             img.color = color;
 
             RectTransform rt = spark.GetComponent<RectTransform>();
-            float size = Random.Range(4f, 10f);
+            float size = Random.Range(VisualConstants.SparkMediumSizeMin, VisualConstants.SparkMediumSizeMax);
             rt.sizeDelta = new Vector2(size, size);
 
             float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float speed = Random.Range(180f, 400f);
+            float speed = Random.Range(VisualConstants.SparkMediumSpeedMin, VisualConstants.SparkMediumSpeedMax);
             Vector2 vel = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
 
-            float lifetime = Random.Range(0.2f, 0.4f);
+            float lifetime = Random.Range(VisualConstants.SparkMediumLifetimeMin, VisualConstants.SparkMediumLifetimeMax);
             float elapsed = 0f;
 
             while (elapsed < lifetime)
@@ -485,9 +553,9 @@ namespace JewelsHexaPuzzle.Core
                 float t = elapsed / lifetime;
 
                 spark.transform.position += new Vector3(vel.x, vel.y, 0) * Time.deltaTime;
-                vel *= 0.93f;
+                vel *= VisualConstants.SparkDeceleration;
 
-                // 색상 회전
+                // HSV 색상 회전 (donut identity preserved)
                 float h, s, v;
                 Color.RGBToHSV(color, out h, out s, out v);
                 h = (h + Time.deltaTime * 2f) % 1f;
@@ -503,6 +571,232 @@ namespace JewelsHexaPuzzle.Core
             }
 
             Destroy(spark);
+        }
+
+        /// <summary>
+        /// Rainbow connection line from center to target block (donut identity)
+        /// </summary>
+        private IEnumerator RainbowConnectionLine(Vector3 from, Vector3 to)
+        {
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+
+            GameObject line = new GameObject("RainbowLine");
+            line.transform.SetParent(parent, false);
+
+            Vector3 mid = (from + to) / 2f;
+            line.transform.position = mid;
+
+            var img = line.AddComponent<UnityEngine.UI.Image>();
+            img.raycastTarget = false;
+
+            RectTransform rt = line.GetComponent<RectTransform>();
+            float dist = Vector3.Distance(from, to);
+            Vector3 dir = to - from;
+            float lineAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+            rt.localRotation = Quaternion.Euler(0, 0, lineAngle);
+            rt.sizeDelta = new Vector2(dist, 3f);
+
+            float duration = 0.2f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float hue = (t * 2f) % 1f;
+                Color c = Color.HSVToRGB(hue, 0.8f, 1f);
+                c.a = (1f - t) * 0.6f;
+                img.color = c;
+
+                float width = Mathf.Lerp(3f, 1f, t);
+                rt.sizeDelta = new Vector2(dist, width);
+
+                yield return null;
+            }
+
+            Destroy(line);
+        }
+
+        // ============================================================
+        // 화면 흔들림 (newly added for Donut)
+        // ============================================================
+
+        private int shakeCount = 0;
+        private Vector3 shakeOriginalPos;
+
+        private IEnumerator ScreenShake(float intensity, float duration)
+        {
+            Transform target = hexGrid != null ? hexGrid.transform : transform;
+            if (shakeCount == 0)
+                shakeOriginalPos = target.localPosition;
+            shakeCount++;
+
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float decay = 1f - VisualConstants.EaseInQuad(t);
+                float x = Random.Range(-1f, 1f) * intensity * decay;
+                float y = Random.Range(-1f, 1f) * intensity * decay;
+                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                yield return null;
+            }
+
+            shakeCount--;
+            if (shakeCount <= 0)
+            {
+                shakeCount = 0;
+                target.localPosition = shakeOriginalPos;
+            }
+        }
+
+        // ============================================================
+        // Phase 1 VFX: 공통 유틸리티 메서드
+        // ============================================================
+
+        private IEnumerator PreFireCompression(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            float duration = VisualConstants.PreFireDuration;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float scale;
+                if (t < 0.5f)
+                {
+                    float ct = t / 0.5f;
+                    scale = Mathf.Lerp(1f, VisualConstants.PreFireScaleMin, VisualConstants.EaseInQuad(ct));
+                }
+                else
+                {
+                    float et = (t - 0.5f) / 0.5f;
+                    scale = Mathf.Lerp(VisualConstants.PreFireScaleMin, VisualConstants.PreFireScaleMax, VisualConstants.EaseOutCubic(et));
+                }
+
+                block.transform.localScale = Vector3.one * scale;
+                yield return null;
+            }
+
+            block.transform.localScale = Vector3.one;
+        }
+
+        private IEnumerator HitStop(float stopDuration)
+        {
+            if (!VisualConstants.CanHitStop()) yield break;
+            VisualConstants.RecordHitStop();
+
+            Time.timeScale = 0f;
+            yield return new WaitForSecondsRealtime(stopDuration);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.HitStopSlowMoDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
+                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+            Time.timeScale = 1f;
+        }
+
+        private IEnumerator ZoomPunch(float targetScale)
+        {
+            Transform target = hexGrid != null ? hexGrid.transform : transform;
+            Vector3 origScale = target.localScale;
+            Vector3 punchScale = origScale * targetScale;
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            target.localScale = origScale;
+        }
+
+        private IEnumerator DestroyFlashOverlay(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            GameObject flash = new GameObject("DestroyFlash");
+            flash.transform.SetParent(block.transform, false);
+            flash.transform.localPosition = Vector3.zero;
+
+            var img = flash.AddComponent<UnityEngine.UI.Image>();
+            img.raycastTarget = false;
+            img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 60f * VisualConstants.DestroyFlashSizeMultiplier;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.DestroyFlashDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.DestroyFlashDuration);
+                img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha * (1f - t));
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        private IEnumerator BloomLayer(Vector3 pos, Color color, float initSize, float duration)
+        {
+            yield return new WaitForSeconds(VisualConstants.BloomLag);
+
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+
+            GameObject bloom = new GameObject("BloomLayer");
+            bloom.transform.SetParent(parent, false);
+            bloom.transform.position = pos;
+            bloom.transform.SetAsFirstSibling();
+
+            var img = bloom.AddComponent<UnityEngine.UI.Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            img.color = new Color(color.r, color.g, color.b, VisualConstants.BloomAlphaMultiplier);
+
+            RectTransform rt = bloom.GetComponent<RectTransform>();
+            float bloomSize = initSize * VisualConstants.BloomSizeMultiplier;
+            rt.sizeDelta = new Vector2(bloomSize, bloomSize);
+
+            float remainDuration = duration - VisualConstants.BloomLag;
+            float elapsed = 0f;
+
+            while (elapsed < remainDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / remainDuration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.FlashExpand - 1f);
+                rt.sizeDelta = new Vector2(bloomSize * scale, bloomSize * scale);
+                img.color = new Color(color.r, color.g, color.b, VisualConstants.BloomAlphaMultiplier * (1f - t));
+                yield return null;
+            }
+
+            Destroy(bloom);
         }
     }
 }

@@ -13,9 +13,9 @@ Shader "UI/HexBorderGlow"
         _ColorMask ("Color Mask", Float) = 15
 
         // Glow properties
-        _GlowIntensity ("Glow Intensity", Range(0, 2)) = 0.25
-        _GlowFalloff ("Glow Falloff", Range(1, 8)) = 2.0
-        _BrightBoost ("Brightness Boost", Range(0, 1)) = 0.15
+        _GlowIntensity ("Glow Intensity", Range(0, 2)) = 0.5
+        _GlowFalloff ("Glow Falloff", Range(1, 8)) = 2.5
+        _BrightBoost ("Brightness Boost", Range(0, 1)) = 0.3
     }
 
     SubShader

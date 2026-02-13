@@ -34,7 +34,18 @@ namespace JewelsHexaPuzzle.Core
             activeBombCount = 0;
             pendingSpecialBlocks.Clear();
             StopAllCoroutines();
+            CleanupEffects();
             Debug.LogWarning("[BombBlockSystem] ForceReset called");
+        }
+
+        /// <summary>
+        /// 코루틴 중단으로 남은 이펙트 오브젝트 일괄 정리
+        /// </summary>
+        private void CleanupEffects()
+        {
+            if (effectParent == null) return;
+            for (int i = effectParent.childCount - 1; i >= 0; i--)
+                Destroy(effectParent.GetChild(i).gameObject);
         }
 
 
@@ -206,6 +217,15 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             Debug.Log($"[BombBlockSystem] === BOMB ACTIVATED === Coord={bombCoord}");
 
+            // Pre-Fire 압축 애니메이션 (통일)
+            yield return StartCoroutine(PreFireCompression(bombBlock));
+
+            // Hit Stop (Large tier)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+
+            // Zoom Punch (Large tier)
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
             // 폭탄 블록 자체 클리어
             bombBlock.ClearData();
 
@@ -225,7 +245,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             // 폭발 시작 이펙트
             StartCoroutine(BombExplosionEffect(bombWorldPos, bombColor));
-            StartCoroutine(ScreenShake(shakeIntensity, 0.2f));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
             // 약간의 딜레이 후 주변 블록 파괴
             yield return new WaitForSeconds(0.05f);
@@ -237,6 +257,9 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             {
                 HexBlock target = targets[i];
                 if (target == null) continue;
+
+                // Bug #15 fix: target.Data가 동시 실행 중 null이 될 수 있음
+                if (target.Data == null || target.Data.gemType == GemType.None) continue;
 
                 // 특수 블록이면 pending에 추가
                 if (target.Data.specialType != SpecialBlockType.None &&
@@ -280,49 +303,58 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
 
+            // 블룸 레이어 (메인 플래시 뒤에)
+            StartCoroutine(BloomLayer(pos, VisualConstants.FlashColorBomb, VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
+
             // 1) 중앙 밝은 플래시
             GameObject flash = new GameObject("BombFlash");
             flash.transform.SetParent(parent, false);
             flash.transform.position = pos;
 
             var flashImg = flash.AddComponent<UnityEngine.UI.Image>();
+            flashImg.sprite = HexBlock.GetHexFlashSprite();
             flashImg.raycastTarget = false;
-            flashImg.color = new Color(1f, 0.9f, 0.4f, 1f);
+            flashImg.color = new Color(VisualConstants.FlashColorBomb.r, VisualConstants.FlashColorBomb.g, VisualConstants.FlashColorBomb.b, 1f);
 
             RectTransform flashRt = flash.GetComponent<RectTransform>();
-            flashRt.sizeDelta = new Vector2(30f, 30f);
+            float initSize = VisualConstants.FlashInitialSize;
+            flashRt.sizeDelta = new Vector2(initSize, initSize);
 
-            // 2) 충격파 링 (2중)
+            // 2) 충격파 링 (2중) with stagger
             GameObject ring1 = CreateExplosionRing(pos, parent, new Color(1f, 0.6f, 0.1f, 0.8f));
             GameObject ring2 = CreateExplosionRing(pos, parent, new Color(1f, 0.3f, 0.1f, 0.5f));
 
-            // 3) 스파크 버스트 (대량)
-            for (int i = 0; i < 16; i++)
+            // 3) 스파크 버스트 (large tier)
+            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+            int sparkCount = Mathf.RoundToInt(VisualConstants.SparkLargeCount * cascadeMult);
+            for (int i = 0; i < sparkCount; i++)
                 StartCoroutine(ExplosionSpark(pos, color));
 
-            // 4) 파편
-            int count = debrisCount + Random.Range(2, 6);
+            // 4) 파편 (large tier)
+            int count = Mathf.RoundToInt((VisualConstants.DebrisLargeCount + Random.Range(0, 4)) * cascadeMult);
             for (int i = 0; i < count; i++)
                 StartCoroutine(AnimateExplosionDebris(pos, color));
 
             // 애니메이션
-            float duration = 0.35f;
+            float duration = VisualConstants.FlashDuration;
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
 
                 // 플래시 확장 + 페이드
-                float flashScale = 1f + t * 8f;
-                flashRt.sizeDelta = new Vector2(30f * flashScale, 30f * flashScale);
-                flashImg.color = new Color(1f, 0.9f, 0.4f, (1f - t) * 0.9f);
+                float flashScale = 1f + eased * (VisualConstants.FlashExpand - 1f);
+                flashRt.sizeDelta = new Vector2(initSize * flashScale, initSize * flashScale);
+                flashImg.color = new Color(VisualConstants.FlashColorBomb.r, VisualConstants.FlashColorBomb.g, VisualConstants.FlashColorBomb.b, (1f - t) * 0.9f);
 
-                // 충격파 링 1
-                AnimateRing(ring1, t, 12f);
-                // 충격파 링 2 (약간 느리게)
-                AnimateRing(ring2, Mathf.Clamp01(t * 0.8f), 10f);
+                // 충격파 링 1 (with easing)
+                AnimateRing(ring1, eased, VisualConstants.WaveLargeExpand);
+                // 충격파 링 2 (약간 느리게, enhanced stagger)
+                float ring2T = Mathf.Clamp01(t * 0.7f);
+                AnimateRing(ring2, VisualConstants.EaseOutCubic(ring2T), VisualConstants.WaveLargeExpand * 0.8f);
 
                 yield return null;
             }
@@ -339,6 +371,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             ring.transform.position = pos;
 
             var img = ring.AddComponent<UnityEngine.UI.Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
             img.raycastTarget = false;
             img.color = color;
 
@@ -372,33 +405,47 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             Vector3 blockPos = block.transform.position;
             Vector3 pushDir = (blockPos - bombCenter).normalized;
 
+            // 화이트 플래시 오버레이
+            StartCoroutine(DestroyFlashOverlay(block));
+
             // 임팩트 웨이브
             StartCoroutine(ImpactWave(blockPos, blockColor));
 
-            // 파편
-            int count = debrisCount / 2 + Random.Range(0, 3);
+            // 파편 (base tier)
+            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+            int count = Mathf.RoundToInt((VisualConstants.DebrisBaseCount / 2 + Random.Range(0, 3)) * cascadeMult);
             for (int i = 0; i < count; i++)
                 StartCoroutine(AnimateExplosionDebris(blockPos, blockColor));
 
-            // 블록 밀려나기 + 축소
-            float duration = 0.15f;
+            // 이중 이징: 확대 → 밀려나기 + 찌그러짐
+            float duration = VisualConstants.DestroyDuration;
             float elapsed = 0f;
+            float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
             Vector3 origScale = block.transform.localScale;
             Vector3 origPos = block.transform.position;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
+                float t = Mathf.Clamp01(elapsed / duration);
 
                 // 밀려나기
                 float pushAmount = 15f * Mathf.Sin(t * Mathf.PI * 0.5f);
                 block.transform.position = origPos + pushDir * pushAmount;
 
-                // 찌그러짐 + 축소
-                float sx = 1f + 0.2f * Mathf.Sin(t * Mathf.PI);
-                float sy = 1f - t;
-                block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                if (t < expandRatio)
+                {
+                    float expandT = t / expandRatio;
+                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
+                    block.transform.localScale = origScale * scale;
+                }
+                else
+                {
+                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
+                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
+                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
+                    block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                }
 
                 yield return null;
             }
@@ -418,21 +465,23 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             var image = wave.AddComponent<UnityEngine.UI.Image>();
             image.raycastTarget = false;
-            image.color = new Color(color.r, color.g, color.b, 0.5f);
+            image.color = new Color(color.r, color.g, color.b, VisualConstants.WaveSmallAlpha);
 
             RectTransform rt = wave.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(10f, 10f);
+            float initSize = VisualConstants.WaveSmallInitialSize;
+            rt.sizeDelta = new Vector2(initSize, initSize);
 
-            float duration = 0.2f;
+            float duration = VisualConstants.WaveSmallDuration;
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                float scale = 1f + t * 4f;
-                rt.sizeDelta = new Vector2(10f * scale, 10f * scale);
-                image.color = new Color(color.r, color.g, color.b, 0.5f * (1f - t));
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.WaveSmallExpand - 1f);
+                rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
+                image.color = new Color(color.r, color.g, color.b, VisualConstants.WaveSmallAlpha * (1f - t));
                 yield return null;
             }
 
@@ -450,23 +499,19 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             var img = spark.AddComponent<UnityEngine.UI.Image>();
             img.raycastTarget = false;
 
-            Color bright = new Color(
-                Mathf.Min(1f, color.r + 0.4f),
-                Mathf.Min(1f, color.g + 0.3f),
-                Mathf.Min(1f, color.b + 0.1f),
-                1f
-            );
+            Color bright = VisualConstants.BombBrighten(color);
+            bright.a = 1f;
             img.color = bright;
 
             RectTransform rt = spark.GetComponent<RectTransform>();
-            float size = Random.Range(3f, 9f);
+            float size = Random.Range(VisualConstants.SparkLargeSizeMin, VisualConstants.SparkLargeSizeMax);
             rt.sizeDelta = new Vector2(size, size);
 
             float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float speed = Random.Range(150f, 450f);
+            float speed = Random.Range(VisualConstants.SparkLargeSpeedMin, VisualConstants.SparkLargeSpeedMax);
             Vector2 vel = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
 
-            float lifetime = Random.Range(0.15f, 0.35f);
+            float lifetime = Random.Range(VisualConstants.SparkLargeLifetimeMin, VisualConstants.SparkLargeLifetimeMax);
             float elapsed = 0f;
 
             while (elapsed < lifetime)
@@ -474,10 +519,10 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 elapsed += Time.deltaTime;
                 float t = elapsed / lifetime;
                 spark.transform.position += new Vector3(vel.x, vel.y, 0) * Time.deltaTime;
-                vel *= 0.92f;
+                vel *= VisualConstants.SparkDeceleration;
                 bright.a = 1f - t;
                 img.color = bright;
-                float s = size * (1f - t * 0.6f);
+                float s = size * (1f - t * 0.5f);
                 rt.sizeDelta = new Vector2(s, s);
                 yield return null;
             }
@@ -506,17 +551,16 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             image.color = debrisColor;
 
             RectTransform rt = debris.GetComponent<RectTransform>();
-            float w = Random.Range(5f, 14f);
-            float h = Random.Range(5f, 12f);
+            float w = Random.Range(VisualConstants.DebrisLargeSizeMin, VisualConstants.DebrisLargeSizeMax);
+            float h = Random.Range(VisualConstants.DebrisLargeSizeMin, VisualConstants.DebrisLargeSizeMax * 0.85f);
             rt.sizeDelta = new Vector2(w, h);
 
             float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float speed = Random.Range(200f, 500f);
+            float speed = Random.Range(VisualConstants.DebrisLargeSpeedMin, VisualConstants.DebrisLargeSpeedMax);
             Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
 
-            float gravityY = -900f;
-            float rotSpeed = Random.Range(-900f, 900f);
-            float lifetime = Random.Range(0.3f, 0.6f);
+            float rotSpeed = Random.Range(VisualConstants.DebrisRotSpeedMin, VisualConstants.DebrisRotSpeedMax);
+            float lifetime = Random.Range(VisualConstants.DebrisLargeLifetimeMin, VisualConstants.DebrisLargeLifetimeMax);
             float elapsed = 0f;
             float rot = Random.Range(0f, 360f);
 
@@ -525,7 +569,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 elapsed += Time.deltaTime;
                 float t = elapsed / lifetime;
 
-                velocity.y += gravityY * Time.deltaTime;
+                velocity.y += VisualConstants.DebrisGravity * Time.deltaTime;
                 Vector3 pos = debris.transform.position;
                 pos.x += velocity.x * Time.deltaTime;
                 pos.y += velocity.y * Time.deltaTime;
@@ -546,26 +590,184 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
         }
 
         // ============================================================
-        // 화면 흔들림
+        // 화면 흔들림 (Bug #11 fix: 동시 실행 시 위치 드리프트 방지)
         // ============================================================
+
+        private int shakeCount = 0;
+        private Vector3 shakeOriginalPos;
 
         private IEnumerator ScreenShake(float intensity, float duration)
         {
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 originalPos = target.localPosition;
+            if (shakeCount == 0)
+                shakeOriginalPos = target.localPosition;
+            shakeCount++;
+
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
-                float t = 1f - (elapsed / duration);
-                float x = Random.Range(-1f, 1f) * intensity * t;
-                float y = Random.Range(-1f, 1f) * intensity * t;
-                target.localPosition = originalPos + new Vector3(x, y, 0);
+                float t = Mathf.Clamp01(elapsed / duration);
+                float decay = 1f - VisualConstants.EaseInQuad(t);
+                float x = Random.Range(-1f, 1f) * intensity * decay;
+                float y = Random.Range(-1f, 1f) * intensity * decay;
+                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
                 yield return null;
             }
 
-            target.localPosition = originalPos;
+            shakeCount--;
+            if (shakeCount <= 0)
+            {
+                shakeCount = 0;
+                target.localPosition = shakeOriginalPos;
+            }
+        }
+
+        // ============================================================
+        // Phase 1 VFX: 공통 유틸리티 메서드
+        // ============================================================
+
+        private IEnumerator PreFireCompression(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            float duration = VisualConstants.PreFireDuration;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float scale;
+                if (t < 0.5f)
+                {
+                    float ct = t / 0.5f;
+                    scale = Mathf.Lerp(1f, VisualConstants.PreFireScaleMin, VisualConstants.EaseInQuad(ct));
+                }
+                else
+                {
+                    float et = (t - 0.5f) / 0.5f;
+                    scale = Mathf.Lerp(VisualConstants.PreFireScaleMin, VisualConstants.PreFireScaleMax, VisualConstants.EaseOutCubic(et));
+                }
+
+                block.transform.localScale = Vector3.one * scale;
+                yield return null;
+            }
+
+            block.transform.localScale = Vector3.one;
+        }
+
+        private IEnumerator HitStop(float stopDuration)
+        {
+            if (!VisualConstants.CanHitStop()) yield break;
+            VisualConstants.RecordHitStop();
+
+            Time.timeScale = 0f;
+            yield return new WaitForSecondsRealtime(stopDuration);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.HitStopSlowMoDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
+                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+            Time.timeScale = 1f;
+        }
+
+        private IEnumerator ZoomPunch(float targetScale)
+        {
+            Transform target = hexGrid != null ? hexGrid.transform : transform;
+            Vector3 origScale = target.localScale;
+            Vector3 punchScale = origScale * targetScale;
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            target.localScale = origScale;
+        }
+
+        private IEnumerator DestroyFlashOverlay(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            GameObject flash = new GameObject("DestroyFlash");
+            flash.transform.SetParent(block.transform, false);
+            flash.transform.localPosition = Vector3.zero;
+
+            var img = flash.AddComponent<UnityEngine.UI.Image>();
+            img.raycastTarget = false;
+            img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 60f * VisualConstants.DestroyFlashSizeMultiplier;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.DestroyFlashDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.DestroyFlashDuration);
+                img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha * (1f - t));
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        private IEnumerator BloomLayer(Vector3 pos, Color color, float initSize, float duration)
+        {
+            yield return new WaitForSeconds(VisualConstants.BloomLag);
+
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+
+            GameObject bloom = new GameObject("BloomLayer");
+            bloom.transform.SetParent(parent, false);
+            bloom.transform.position = pos;
+            bloom.transform.SetAsFirstSibling();
+
+            var img = bloom.AddComponent<UnityEngine.UI.Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            img.color = new Color(color.r, color.g, color.b, VisualConstants.BloomAlphaMultiplier);
+
+            RectTransform rt = bloom.GetComponent<RectTransform>();
+            float bloomSize = initSize * VisualConstants.BloomSizeMultiplier;
+            rt.sizeDelta = new Vector2(bloomSize, bloomSize);
+
+            float remainDuration = duration - VisualConstants.BloomLag;
+            float elapsed = 0f;
+
+            while (elapsed < remainDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / remainDuration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.FlashExpand - 1f);
+                rt.sizeDelta = new Vector2(bloomSize * scale, bloomSize * scale);
+                img.color = new Color(color.r, color.g, color.b, VisualConstants.BloomAlphaMultiplier * (1f - t));
+                yield return null;
+            }
+
+            Destroy(bloom);
         }
     }
 }

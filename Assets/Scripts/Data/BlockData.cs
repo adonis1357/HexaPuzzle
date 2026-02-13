@@ -132,6 +132,22 @@ namespace JewelsHexaPuzzle.Data
         }
     }
 
+    public static class GemTypeHelper
+    {
+        /// <summary>
+        /// 활성 보석 타입 수 (기본 5: Red~Purple, 6으로 변경 시 Orange 포함)
+        /// </summary>
+        public static int ActiveGemTypeCount = 5;
+
+        /// <summary>
+        /// 랜덤 보석 타입 반환 (활성 타입 범위 내에서)
+        /// </summary>
+        public static GemType GetRandom()
+        {
+            return (GemType)UnityEngine.Random.Range(1, ActiveGemTypeCount + 1);
+        }
+    }
+
     public static class GemColors
     {
         public static Color GetColor(GemType type)
@@ -140,23 +156,23 @@ namespace JewelsHexaPuzzle.Data
             {
                 case GemType.Red:
                 case GemType.Ruby:
-                    return new Color(0.9f, 0.2f, 0.2f);
+                    return new Color(0.85f, 0.25f, 0.22f);    // 베리 레드 (따뜻한 붉은색)
                 case GemType.Blue:
                 case GemType.Sapphire:
-                    return new Color(0.2f, 0.4f, 0.9f);
+                    return new Color(0.3f, 0.55f, 0.78f);     // 이슬 블루 (부드러운 하늘색)
                 case GemType.Green:
                 case GemType.Emerald:
-                    return new Color(0.2f, 0.8f, 0.3f);
+                    return new Color(0.35f, 0.7f, 0.32f);     // 잎사귀 그린 (따뜻한 올리브)
                 case GemType.Yellow:
                 case GemType.Amber:
-                    return new Color(0.95f, 0.85f, 0.2f);
+                    return new Color(0.92f, 0.75f, 0.2f);     // 꿀 골드 (진한 앰버)
                 case GemType.Purple:
                 case GemType.Amethyst:
-                    return new Color(0.7f, 0.3f, 0.9f);
+                    return new Color(0.6f, 0.35f, 0.72f);     // 라벤더 (따뜻한 보라)
                 case GemType.Orange:
-                    return new Color(1f, 0.5f, 0.1f);
+                    return new Color(0.9f, 0.55f, 0.18f);     // 넥타 오렌지 (꿀벌 주황)
                 default:
-                    return Color.gray;
+                    return new Color(0.55f, 0.45f, 0.35f);    // 밀랍 브라운
             }
         }
     }

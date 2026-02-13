@@ -41,10 +41,11 @@ namespace JewelsHexaPuzzle.Managers
         private GameState currentState = GameState.Loading;
         private int currentTurns;
         private int currentStage = 1;
-        
+
         private bool isProcessingChainDrill = false;
         private bool isInPostRecovery = false;
         private bool isPaused = false;
+        private bool bigBangTriggered = false;
 
         // Stuck 상태 감지 워치독
         private float processingStartTime = 0f;
@@ -55,6 +56,7 @@ namespace JewelsHexaPuzzle.Managers
         public GameState CurrentState => currentState;
         public int CurrentTurns => currentTurns;
         public int CurrentStage => currentStage;
+        public int InitialTurns => initialTurns;
         public bool IsPaused => isPaused;
 
         // 이벤트
@@ -381,6 +383,36 @@ private void InitializeSystems()
 
             if (laserSystem != null)
                 laserSystem.OnLaserComplete += OnSpecialBlockCompleted;
+
+            // UI 시스템 자동 초기화 (ScorePopupManager, ComboDisplay)
+            EnsureUIComponents();
+        }
+
+        /// <summary>
+        /// ScorePopupManager와 ComboDisplay가 없으면 자동 생성
+        /// </summary>
+        private void EnsureUIComponents()
+        {
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            // ScorePopupManager
+            if (FindObjectOfType<JewelsHexaPuzzle.UI.ScorePopupManager>() == null)
+            {
+                GameObject popupMgr = new GameObject("ScorePopupManager");
+                popupMgr.transform.SetParent(canvas.transform, false);
+                popupMgr.AddComponent<JewelsHexaPuzzle.UI.ScorePopupManager>();
+                Debug.Log("[GameManager] ScorePopupManager auto-created");
+            }
+
+            // ComboDisplay
+            if (FindObjectOfType<JewelsHexaPuzzle.UI.ComboDisplay>() == null)
+            {
+                GameObject comboDisp = new GameObject("ComboDisplay");
+                comboDisp.transform.SetParent(canvas.transform, false);
+                comboDisp.AddComponent<JewelsHexaPuzzle.UI.ComboDisplay>();
+                Debug.Log("[GameManager] ComboDisplay auto-created");
+            }
         }
 
         /// <summary>
@@ -394,6 +426,10 @@ private void InitializeSystems()
         private IEnumerator StartGameCoroutine()
         {
             SetGameState(GameState.Loading);
+
+            // 스테이지 전환 시 슬롯 캐시 무효화
+            if (blockRemovalSystem != null)
+                blockRemovalSystem.InvalidateSlotCache();
 
             if (hexGrid != null)
             {
@@ -412,6 +448,11 @@ private void InitializeSystems()
             }
 
             currentTurns = initialTurns;
+            bigBangTriggered = false;
+
+            if (uiManager != null)
+                uiManager.SetMaxTurns(initialTurns);
+
             UpdateUI();
 
             SetGameState(GameState.Playing);
@@ -445,7 +486,7 @@ private void InitializeSystems()
                     {
                         if (block != null && block.Data != null)
                         {
-                            GemType newGem = (GemType)Random.Range(1, 6);
+                            GemType newGem = GemTypeHelper.GetRandom();
                             block.SetBlockData(new BlockData(newGem));
                         }
                     }
@@ -546,11 +587,11 @@ private void OnRotationComplete(bool matchFound)
         /// <summary>
         /// 블록 제거 완료 이벤트
         /// </summary>
-        private void OnBlocksRemoved(int score)
+        private void OnBlocksRemoved(int blockCount, int cascadeDepth, Vector3 avgPosition)
         {
             if (scoreManager != null)
             {
-                scoreManager.AddScore(score);
+                scoreManager.AddMatchScore(blockCount, cascadeDepth, avgPosition);
             }
 
             // 미션 체크
@@ -606,7 +647,10 @@ private void OnSpecialBlockCompleted(int score)
         {
             Debug.Log($"[GameManager] Special block completed! Score: {score}");
             if (scoreManager != null)
-                scoreManager.AddScore(score);
+            {
+                int cascadeDepth = blockRemovalSystem != null ? blockRemovalSystem.CurrentCascadeDepth : 0;
+                scoreManager.AddSpecialBlockScore(score, cascadeDepth, Vector3.zero);
+            }
 
             // 복구 중이면 무시 (이중 처리 방지)
             if (isInPostRecovery) return;
@@ -924,6 +968,7 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
         
 private void OnBigBang()
         {
+            bigBangTriggered = true;
             Debug.Log("BIG BANG triggered!");
         }
 
@@ -989,7 +1034,15 @@ private void OnBigBang()
 
             if (uiManager != null)
             {
-                uiManager.ShowStageClearPopup();
+                if (scoreManager != null)
+                {
+                    var summary = scoreManager.CalculateStageClearBonus(currentTurns, initialTurns);
+                    uiManager.ShowStageClearPopup(summary);
+                }
+                else
+                {
+                    uiManager.ShowStageClearPopup();
+                }
             }
         }
 

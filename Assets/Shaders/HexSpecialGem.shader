@@ -14,15 +14,15 @@ Shader "UI/HexSpecialGem"
 
         // Base gem properties (same as HexGem)
         _HighlightPos ("Highlight Position", Vector) = (0.35, 0.65, 0, 0)
-        _HighlightSize ("Highlight Size", Range(0.05, 0.4)) = 0.10
-        _HighlightIntensity ("Highlight Intensity", Range(0, 2)) = 0.35
-        _SecondaryHighlightPos ("Secondary Highlight Pos", Vector) = (0.6, 0.3, 0, 0)
-        _SecondaryHighlightSize ("Secondary Highlight Size", Range(0.02, 0.2)) = 0.05
-        _EdgeDarken ("Edge Darkening", Range(0, 1)) = 0.25
-        _InnerGlow ("Inner Glow Intensity", Range(0, 1)) = 0.08
-        _DepthGradient ("Depth Gradient Strength", Range(0, 1)) = 0.2
+        _HighlightSize ("Highlight Size", Range(0.05, 0.4)) = 0.13
+        _HighlightIntensity ("Highlight Intensity", Range(0, 2)) = 0.7
+        _SecondaryHighlightPos ("Secondary Highlight Pos", Vector) = (0.62, 0.28, 0, 0)
+        _SecondaryHighlightSize ("Secondary Highlight Size", Range(0.02, 0.2)) = 0.06
+        _EdgeDarken ("Edge Darkening", Range(0, 1)) = 0.45
+        _InnerGlow ("Inner Glow Intensity", Range(0, 1)) = 0.18
+        _DepthGradient ("Depth Gradient Strength", Range(0, 1)) = 0.4
         _FacetCount ("Facet Count", Float) = 6
-        _FacetIntensity ("Facet Intensity", Range(0, 0.3)) = 0.03
+        _FacetIntensity ("Facet Intensity", Range(0, 0.3)) = 0.08
 
         // Special block animation properties
         _ShimmerSpeed ("Shimmer Speed", Range(0, 5)) = 1.5

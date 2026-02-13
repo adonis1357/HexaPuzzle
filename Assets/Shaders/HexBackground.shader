@@ -13,10 +13,10 @@ Shader "UI/HexBackground"
         _ColorMask ("Color Mask", Float) = 15
 
         // Background effect properties
-        _ShadowIntensity ("Inner Shadow Intensity", Range(0, 1)) = 0.2
+        _ShadowIntensity ("Inner Shadow Intensity", Range(0, 1)) = 0.35
         _ShadowOffset ("Shadow Offset", Vector) = (0.03, -0.05, 0, 0)
-        _VignetteStrength ("Vignette Strength", Range(0, 1)) = 0.25
-        _RimLightIntensity ("Rim Light Intensity", Range(0, 0.3)) = 0.05
+        _VignetteStrength ("Vignette Strength", Range(0, 1)) = 0.4
+        _RimLightIntensity ("Rim Light Intensity", Range(0, 0.3)) = 0.12
     }
 
     SubShader
