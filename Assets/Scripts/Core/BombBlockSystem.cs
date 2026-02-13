@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -252,6 +253,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             // 방사형으로 순차 파괴 - 모든 파괴 코루틴을 추적
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
+            int blockScoreSum = 0;
 
             for (int i = 0; i < targets.Count; i++)
             {
@@ -275,6 +277,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 }
                 else
                 {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
                 }
@@ -286,8 +289,8 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            int totalScore = 200 + targets.Count * 80;
-            Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore}");
+            int totalScore = 200 + blockScoreSum;
+            Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
             OnBombComplete?.Invoke(totalScore);
             activeBombCount--;
         }

@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -245,6 +246,18 @@ namespace JewelsHexaPuzzle.Core
             foreach (var line in allTargetLines)
                 totalTargets += line.Count;
 
+            // 파괴 대상 블록의 티어별 기본 점수 미리 계산 (ClearData 전)
+            int blockScoreSum = 0;
+            foreach (var line in allTargetLines)
+            {
+                foreach (var t in line)
+                {
+                    if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+                    if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+                }
+            }
+
             Debug.Log($"[LaserBlockSystem] Total targets across 3 axes: {totalTargets}");
 
             // 중앙 폭발 이펙트
@@ -271,8 +284,8 @@ namespace JewelsHexaPuzzle.Core
             foreach (var co in lineCoroutines)
                 yield return co;
 
-            int totalScore = 300 + totalTargets * 60;
-            Debug.Log($"[LaserBlockSystem] === LASER COMPLETE === Score={totalScore}");
+            int totalScore = 300 + blockScoreSum;
+            Debug.Log($"[LaserBlockSystem] === LASER COMPLETE === Score={totalScore} (base:300 + blockTierSum:{blockScoreSum})");
             OnLaserComplete?.Invoke(totalScore);
             activeLaserCount--;
         }

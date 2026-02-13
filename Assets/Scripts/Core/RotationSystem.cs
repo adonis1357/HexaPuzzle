@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -132,6 +133,10 @@ namespace JewelsHexaPuzzle.Core
             isRotating = true;
             OnRotationStarted?.Invoke();
 
+            // 회전 시작 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayRotateSound();
+
             HexBlock[] blocks = { block1, block2, block3 };
 
             // 원본 데이터 백업
@@ -190,6 +195,13 @@ namespace JewelsHexaPuzzle.Core
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 120°! ({matches.Count} groups)");
+                // 매칭 성공 사운드
+                if (AudioManager.Instance != null)
+                {
+                    int totalBlocks = 0;
+                    foreach (var m in matches) totalBlocks += m.blocks.Count;
+                    AudioManager.Instance.PlayMatchSound(totalBlocks);
+                }
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
                 yield break;
@@ -210,6 +222,13 @@ namespace JewelsHexaPuzzle.Core
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 240°! ({matches.Count} groups)");
+                // 매칭 성공 사운드
+                if (AudioManager.Instance != null)
+                {
+                    int totalBlocks = 0;
+                    foreach (var m in matches) totalBlocks += m.blocks.Count;
+                    AudioManager.Instance.PlayMatchSound(totalBlocks);
+                }
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
                 yield break;
@@ -225,6 +244,9 @@ namespace JewelsHexaPuzzle.Core
                 blocks[i].SetBlockData(originalData[i]);
 
             Debug.Log("[Rotation] No match, reverted");
+            // 매칭 실패 (원복) 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayFailSound();
             isRotating = false;
             OnRotationComplete?.Invoke(false);
         }

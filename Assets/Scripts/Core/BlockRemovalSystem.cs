@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -310,6 +311,7 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                 case SpecialBlockType.Drill:
                     if (drillSystem != null)
                     {
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
                         drillSystem.ActivateDrill(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
@@ -321,6 +323,7 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                 case SpecialBlockType.Bomb:
                     if (bombSystem != null)
                     {
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
                         bombSystem.ActivateBomb(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
@@ -332,6 +335,7 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                 case SpecialBlockType.Rainbow:
                     if (donutSystem != null)
                     {
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayDonutSound();
                         donutSystem.ActivateDonut(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
@@ -343,6 +347,7 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                 case SpecialBlockType.XBlock:
                     if (xBlockSystem != null)
                     {
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
                         xBlockSystem.ActivateXBlock(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
@@ -354,6 +359,7 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                 case SpecialBlockType.Laser:
                     if (laserSystem != null)
                     {
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
                         laserSystem.ActivateLaser(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
@@ -476,6 +482,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
             CreateSpecialBlock(spawnBlock, specialType, drillDirection, gemType);
 
             // 임팩트 이펙트 (모든 특수 블록 동일)
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySpecialImpactSound();
             StartCoroutine(SpecialSpawnImpact(spawnBlock));
 
             yield return new WaitForSeconds(0.15f);
@@ -948,6 +956,10 @@ private IEnumerator CascadeWithPendingLoop()
                 iteration++;
                 currentCascadeDepth = iteration - 1;
 
+                // 캐스케이드 콤보 사운드 (피치 상승)
+                if (currentCascadeDepth > 0 && AudioManager.Instance != null)
+                    AudioManager.Instance.PlayComboSound(currentCascadeDepth);
+
                 // 1. 낙하 처리
                 yield return StartCoroutine(ProcessFalling());
                 yield return new WaitForSeconds(cascadeDelay);
@@ -1234,7 +1246,13 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                     {
                         velocity = -velocity * bounceRatio;
                         bounceCount++;
-                        if (block != null) StartCoroutine(SquashEffect(block));
+                        if (block != null)
+                        {
+                            StartCoroutine(SquashEffect(block));
+                            // 블록 착지 사운드
+                            if (AudioManager.Instance != null)
+                                AudioManager.Instance.PlayBlockLandSound();
+                        }
                     }
                     else
                     {
@@ -1651,6 +1669,10 @@ public void TriggerBigBang()
                 float dB = Vector3.Distance(b.transform.position, matchCenter);
                 return dA.CompareTo(dB);
             });
+            // 매칭 감지 톤
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayMatchDetectTone();
+
             for (int i = 0; i < allMatchedBlocks.Count; i++)
             {
                 StartCoroutine(MatchPulse(allMatchedBlocks[i], i * VisualConstants.MatchPulseStagger));
@@ -1665,6 +1687,9 @@ public void TriggerBigBang()
             {
                 if (match.createdSpecialType != SpecialBlockType.None && match.specialSpawnBlock != null)
                 {
+                    // 특수 블록 합체 사운드
+                    if (AudioManager.Instance != null)
+                        AudioManager.Instance.PlaySpecialGemSound();
                     yield return StartCoroutine(SpecialBlockMergeAnimation(
                         match.blocks, match.specialSpawnBlock, match.createdSpecialType,
                         match.drillDirection, match.gemType));
@@ -1708,7 +1733,9 @@ public void TriggerBigBang()
             }
             if (posCount > 0) avgPosition /= posCount;
 
-            // 5. 삭제 애니메이션 (일반 블록만)
+            // 5. 삭제 애니메이션 (일반 블록만) + 파괴 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBlockDestroySound();
             foreach (var block in blocksToRemove)
                 StartCoroutine(AnimateRemove(block));
 

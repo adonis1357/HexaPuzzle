@@ -455,6 +455,10 @@ private void InitializeSystems()
 
             UpdateUI();
 
+            // 게임 BGM 시작
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayGameBGM();
+
             SetGameState(GameState.Playing);
             Debug.Log("Game Started! State: Playing");
         }
@@ -981,6 +985,10 @@ private void OnBigBang()
             OnTurnChanged?.Invoke(currentTurns);
             UpdateUI();
 
+            // 턴 부족 경고 사운드 (3턴 이하)
+            if (currentTurns <= 3 && currentTurns > 0 && AudioManager.Instance != null)
+                AudioManager.Instance.PlayWarningBeep();
+
             Debug.Log($"Turn used. Remaining: {currentTurns}");
         }
 
@@ -1030,6 +1038,13 @@ private void OnBigBang()
             SetGameState(GameState.StageClear);
             OnStageClear?.Invoke();
 
+            // BGM 정지 + 스테이지 클리어 사운드
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.StopBGM();
+                AudioManager.Instance.PlayStageClear();
+            }
+
             Debug.Log($"Stage {currentStage} Clear!");
 
             if (uiManager != null)
@@ -1053,6 +1068,13 @@ private void OnBigBang()
         {
             SetGameState(GameState.GameOver);
             OnGameOver?.Invoke();
+
+            // BGM 정지 + 게임 오버 사운드
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.StopBGM();
+                AudioManager.Instance.PlayGameOver();
+            }
 
             Debug.Log("Game Over!");
 

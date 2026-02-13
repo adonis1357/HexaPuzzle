@@ -725,11 +725,13 @@ namespace JewelsHexaPuzzle.Managers
 
         private void OnPauseButtonClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             GameManager.Instance?.PauseGame();
         }
 
         private void OnRotationToggleClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             isClockwise = !isClockwise;
 
             if (rotationDirectionIcon != null)
@@ -742,11 +744,13 @@ namespace JewelsHexaPuzzle.Managers
 
         private void OnOutButtonClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             GameManager.Instance?.ExitToLobby();
         }
 
         private void OnHelpButtonClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             ShowHelpPopup();
         }
 

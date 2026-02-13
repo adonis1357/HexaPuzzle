@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -261,6 +262,7 @@ namespace JewelsHexaPuzzle.Core
 
             // 파도처럼 순차 파괴 - 모든 파괴 코루틴을 추적
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
+            int blockScoreSum = 0;
 
             for (int i = 0; i < targets.Count; i++)
             {
@@ -285,6 +287,7 @@ namespace JewelsHexaPuzzle.Core
                 }
                 else
                 {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithRainbow(target, blockColor, donutWorldPos)));
                 }
@@ -296,8 +299,8 @@ namespace JewelsHexaPuzzle.Core
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            int totalScore = 500 + targets.Count * 100;
-            Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore}, Destroyed={targets.Count}");
+            int totalScore = 500 + blockScoreSum;
+            Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
             OnDonutComplete?.Invoke(totalScore);
             activeDonutCount--;
         }

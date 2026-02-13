@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -158,6 +159,21 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             foreach (var t in targets2)
                 Debug.Log($"[DrillBlockSystem]   -target: {t.Coord} pos={t.transform.position}");
 
+            // 파괴 대상 블록의 티어별 기본 점수 미리 계산 (ClearData 전)
+            int blockScoreSum = 0;
+            foreach (var t in targets1)
+            {
+                if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+                if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
+                blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+            }
+            foreach (var t in targets2)
+            {
+                if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+                if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
+                blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+            }
+
             // 드릴 발사 시작 이펙트 (중앙 폭발)
             StartCoroutine(DrillLaunchEffect(drillWorldPos, direction, drillColor));
 
@@ -170,8 +186,8 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             yield return drill1;
             yield return drill2;
 
-            int totalScore = 100 + (targets1.Count + targets2.Count) * 50;
-            Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore}");
+            int totalScore = 100 + blockScoreSum;
+            Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:100 + blockTierSum:{blockScoreSum})");
             OnDrillComplete?.Invoke(totalScore);
             activeDrillCount--;
         }
