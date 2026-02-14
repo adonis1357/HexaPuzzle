@@ -156,23 +156,23 @@ namespace JewelsHexaPuzzle.Data
             {
                 case GemType.Red:
                 case GemType.Ruby:
-                    return new Color(0.85f, 0.25f, 0.22f);    // 베리 레드 (따뜻한 붉은색)
+                    return new Color(0.93f, 0.18f, 0.18f);    // 선명한 빨강
                 case GemType.Blue:
                 case GemType.Sapphire:
-                    return new Color(0.3f, 0.55f, 0.78f);     // 이슬 블루 (부드러운 하늘색)
+                    return new Color(0.15f, 0.45f, 0.95f);    // 선명한 파랑
                 case GemType.Green:
                 case GemType.Emerald:
-                    return new Color(0.35f, 0.7f, 0.32f);     // 잎사귀 그린 (따뜻한 올리브)
+                    return new Color(0.18f, 0.78f, 0.28f);    // 선명한 초록
                 case GemType.Yellow:
                 case GemType.Amber:
-                    return new Color(0.92f, 0.75f, 0.2f);     // 꿀 골드 (진한 앰버)
+                    return new Color(1.0f, 0.82f, 0.08f);     // 선명한 노랑
                 case GemType.Purple:
                 case GemType.Amethyst:
-                    return new Color(0.6f, 0.35f, 0.72f);     // 라벤더 (따뜻한 보라)
+                    return new Color(0.62f, 0.2f, 0.88f);     // 선명한 보라
                 case GemType.Orange:
-                    return new Color(0.9f, 0.55f, 0.18f);     // 넥타 오렌지 (꿀벌 주황)
+                    return new Color(1.0f, 0.5f, 0.05f);      // 선명한 주황
                 default:
-                    return new Color(0.55f, 0.45f, 0.35f);    // 밀랍 브라운
+                    return new Color(0.75f, 0.68f, 0.6f);     // 베이지
             }
         }
     }
