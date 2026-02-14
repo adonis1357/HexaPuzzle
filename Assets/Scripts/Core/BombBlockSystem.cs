@@ -19,10 +19,6 @@ namespace JewelsHexaPuzzle.Core
         [Header("Bomb Settings")]
         [SerializeField] private float explosionDelay = 0.08f;
 
-        [Header("Effect Settings")]
-        [SerializeField] private int debrisCount = 8;
-        [SerializeField] private float shakeIntensity = 12f;
-
         public event System.Action<int> OnBombComplete;
 
         private int activeBombCount = 0;

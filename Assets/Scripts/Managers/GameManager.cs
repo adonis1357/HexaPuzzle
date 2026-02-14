@@ -45,7 +45,6 @@ namespace JewelsHexaPuzzle.Managers
         private bool isProcessingChainDrill = false;
         private bool isInPostRecovery = false;
         private bool isPaused = false;
-        private bool bigBangTriggered = false;
 
         // Stuck 상태 감지 워치독
         private float processingStartTime = 0f;
@@ -448,8 +447,6 @@ private void InitializeSystems()
             }
 
             currentTurns = initialTurns;
-            bigBangTriggered = false;
-
             if (uiManager != null)
                 uiManager.SetMaxTurns(initialTurns);
 
@@ -972,7 +969,6 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
         
 private void OnBigBang()
         {
-            bigBangTriggered = true;
             Debug.Log("BIG BANG triggered!");
         }
 

@@ -16,10 +16,6 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private float drillSpeed = 0.06f;
         [SerializeField] private float projectileSpeed = 1200f;
 
-        [Header("Effect Settings")]
-        [SerializeField] private int debrisCount = 6;
-        [SerializeField] private float shakeIntensity = 8f;
-
         public event System.Action<int> OnDrillComplete;
 
         private int activeDrillCount = 0;

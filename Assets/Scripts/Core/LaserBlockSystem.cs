@@ -20,9 +20,6 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private float laserSpeed = 0.04f;
         [SerializeField] private float beamDuration = 0.3f;
 
-        [Header("Effect Settings")]
-        [SerializeField] private float shakeIntensity = 10f;
-
         public event System.Action<int> OnLaserComplete;
 
         private int activeLaserCount = 0;
