@@ -31,7 +31,9 @@
 
 ## 1. 개요
 
-본 문서는 MatchMine 헥사 퍼즐 프로젝트의 **5개 특수 블록 시스템**에 대한 기술 명세입니다. 각 시스템은 독립된 MonoBehaviour로 구현되어 있으며, `BlockRemovalSystem`과 연동하여 매칭 → 생성 → 발동 → 연쇄의 전체 흐름을 처리합니다.
+본 문서는 MatchMine 헥사 퍼즐 프로젝트의 **4개 특수 블록 타입** (5개 코드 모듈)에 대한 기술 명세입니다. 각 시스템은 독립된 MonoBehaviour로 구현되어 있으며, `BlockRemovalSystem`과 연동하여 매칭 → 생성 → 발동 → 연쇄의 전체 흐름을 처리합니다.
+
+> **중요:** 도넛(DonutBlockSystem)과 X블록(XBlockSystem)은 **동일한 특수 블록**입니다. 도넛 모양은 X블록의 시각적 표현이며, 생성 조건만 다릅니다 (7+매치 → DonutBlockSystem, 링매치 → XBlockSystem). 코드상 2개 시스템으로 분리되어 있으나 게임 내에서는 하나의 특수 블록 타입입니다.
 
 ### 특수 블록 요약 테이블
 
@@ -42,6 +44,8 @@
 | **LaserBlockSystem** | `Laser` | 872줄 | 6블록 매치 | 3축 x 양방향 직선 파괴 (6방향) | 300 | +60 |
 | **DonutBlockSystem** | `Rainbow` | 802줄 | 7+ 블록 매치 | 같은 색 보드 전체 제거 | 500 | +100 |
 | **XBlockSystem** | `XBlock` | 833줄 | 링 매치 (중앙+6칸 동색) | 같은 색 보드 전체 제거 | 500 | +100 |
+
+> **참고:** 위 DonutBlockSystem과 XBlockSystem은 **동일한 특수 블록**(도넛)의 2가지 생성 경로입니다. 발동 효과(같은 색 보드 전체 제거)와 점수가 동일합니다.
 
 > **참고:** DonutBlock의 `SpecialBlockType`은 `Rainbow`로 정의되어 있습니다. 코드상 `BlockData.IsDonut()`은 `specialType == SpecialBlockType.Rainbow`를 확인합니다.
 
@@ -435,7 +439,7 @@ public class XBlockSystem : MonoBehaviour
 
 **링 매치 패턴:** 중앙 블록의 주변 6개가 모두 같은 색일 때, 중앙 위치에 XBlock이 생성됩니다.
 
-> Donut(Rainbow)과 발동 범위는 동일(같은 색 보드 전체 제거)하나, 생성 조건이 다릅니다.
+> **도넛과 X블록은 동일한 특수 블록입니다.** DonutBlockSystem(7+매치)과 XBlockSystem(링매치)은 같은 블록의 2가지 생성 경로이며, 발동 효과는 동일합니다 (같은 색 보드 전체 제거).
 
 #### 3.5.3 발동 흐름
 

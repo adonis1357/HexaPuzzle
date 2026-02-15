@@ -39,7 +39,7 @@
 |----------|------|------|
 | 일반 매칭 | **x1.0** | 기본 점수 |
 | 특수 블록 (드릴/폭탄) | **x1.2** | 전략적 사용 보상 |
-| 특수 블록 (레이저/도넛/X블록) | **x1.5** | 고급 특수 블록 보상 |
+| 특수 블록 (레이저/도넛) | **x1.5** | 고급 특수 블록 보상 |
 | 아이템 사용 | **x0.5** | 아이템은 편의 수단, 점수 메리트 감소 |
 
 ---
@@ -52,7 +52,7 @@
 | 분열체 무분열 제거 | **+200** | 폭탄/레이저/도넛으로 분열 없이 제거 시 |
 | 공명 트윈 동시 제거 | **+500** (쌍 보너스) | 한 턴에 쌍둥이 둘 다 제거 시 추가 |
 | 반사 장막 1회 제거 | **+300** | 도넛/일반 매칭으로 한 방에 제거 시 |
-| 카오스 군주 1회 제거 | **+1000** | 도넛/X블록으로 한 방에 제거 시 |
+| 카오스 군주 1회 제거 | **+1000** | 도넛으로 한 방에 제거 시 |
 | 연쇄 중 적군 제거 | 기존 cascade 배율 적용 | cascade depth에 따라 1.0x~1.8x |
 
 ---
@@ -140,7 +140,7 @@ private const int EnemyScoreChaosOverlord = 1500;
 // 제거 방법 배율
 private const float RemovalMultiplierMatch = 1.0f;
 private const float RemovalMultiplierSpecialBasic = 1.2f;   // 드릴/폭탄
-private const float RemovalMultiplierSpecialAdvanced = 1.5f; // 레이저/도넛/X블록
+private const float RemovalMultiplierSpecialAdvanced = 1.5f; // 레이저/도넛
 private const float RemovalMultiplierItem = 0.5f;
 
 // 특수 상황 보너스
@@ -186,7 +186,7 @@ public enum RemovalMethod
 {
     Match,           // 일반 매칭
     SpecialBasic,    // 드릴/폭탄
-    SpecialAdvanced, // 레이저/도넛/X블록
+    SpecialAdvanced, // 레이저/도넛
     Item             // 아이템 사용
 }
 

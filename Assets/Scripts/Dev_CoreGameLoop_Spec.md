@@ -22,7 +22,7 @@
 **본 문서의 범위 밖:**
 - 점수 계산 및 HUD UI (별도 문서 `Dev_ScoreSystem_Spec.md` 참조)
 - 스테이지 구성 및 미션 시스템
-- 특수 블록 개별 시스템(Drill, Bomb, Laser, XBlock, Donut)의 내부 상세
+- 특수 블록 개별 시스템(Drill, Bomb, Laser, Donut/XBlock)의 내부 상세 (※ 도넛과 X블록은 동일 특수 블록)
 
 ### 1-2. 핵심 시스템 목록
 
@@ -260,7 +260,7 @@ y = hexSize * -sqrt(3) * (r + q / 2)
 | 3 | Rainbow (Donut) | 7+매치 | 동색 전체 제거 |
 | 4 | TimeBomb | 스테이지 배치 | 제한 턴 내 미제거 시 게임 오버 |
 | 5 | FixedBlock | 스테이지 배치 | 이동 불가 장애물 |
-| 6 | XBlock | 6매치 (링) | X자 방향 제거 |
+| 6 | XBlock | 6칸 링매치 | 동색 전체 제거 (**도넛과 동일 블록**, 생성 조건만 다름) |
 | 7 | Laser | 6매치 | 직선 방향 관통 제거 |
 | 8 | Vinyl | 스테이지 배치 | 다층 보호막 (제거 시 레이어 감소) |
 
@@ -478,9 +478,9 @@ y = hexSize * -sqrt(3) * (r + q / 2)
 | 4개 | 드릴 | Drill | 방향 자동 결정 (아래 참조) |
 | 5개 | 폭탄 | Bomb | 범위 폭발 |
 | 6개 | 레이저 | Laser | 직선 관통 |
-| 7개 이상 | 도넛 (레인보우) | Rainbow | 동색 전체 제거 |
+| 7개 이상 | 도넛 (레인보우) | Rainbow | 동색 전체 제거 (도넛 = X블록, 동일 특수 블록) |
 
-> **링 매칭(6칸 링):** 매치 블록 수와 무관하게 항상 **XBlock**을 생성합니다.
+> **링 매칭(6칸 링):** 매치 블록 수와 무관하게 항상 **XBlock**을 생성합니다. (도넛과 동일한 특수 블록이며, 생성 조건만 다릅니다)
 
 ### 8-6. 드릴 방향 자동 결정
 
@@ -521,9 +521,9 @@ y = hexSize * -sqrt(3) * (r + q / 2)
 | MatchingSystem | 연쇄 시 추가 매칭 검사 |
 | DrillBlockSystem | 드릴 블록 발동 처리 |
 | BombBlockSystem | 폭탄 블록 발동 처리 |
-| XBlockSystem | X블록 발동 처리 |
+| XBlockSystem | 도넛(X블록) 발동 처리 - 링매치 생성 경로 |
 | LaserBlockSystem | 레이저 블록 발동 처리 |
-| DonutBlockSystem | 도넛(레인보우) 블록 발동 처리 |
+| DonutBlockSystem | 도넛(레인보우) 발동 처리 - 7+매치 생성 경로 (※ XBlock과 동일 특수 블록) |
 
 ### 9-2. 이벤트
 
@@ -764,7 +764,7 @@ CascadeWithPendingLoop (반복 최대 20회)
 | 5 | Bomb | MatchingSystem |
 | 6 | Laser | MatchingSystem |
 | 7+ | Rainbow (Donut) | MatchingSystem |
-| 6칸 링 | XBlock | MatchingSystem.FindRingMatches |
+| 6칸 링 | XBlock (=Donut, 동일 블록) | MatchingSystem.FindRingMatches |
 
 ### 11-5. 낙하 물리
 
