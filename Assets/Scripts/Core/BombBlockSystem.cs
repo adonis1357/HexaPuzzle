@@ -23,13 +23,16 @@ namespace JewelsHexaPuzzle.Core
 
         private int activeBombCount = 0;
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
+        private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
         public bool IsBombing => activeBombCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
+        public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
         public void ForceReset()
         {
             activeBombCount = 0;
             pendingSpecialBlocks.Clear();
+            activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
             Debug.LogWarning("[BombBlockSystem] ForceReset called");
@@ -128,24 +131,24 @@ namespace JewelsHexaPuzzle.Core
                     Vector2 p = new Vector2(x, y);
                     float dist = Vector2.Distance(p, center);
 
-                    // 원형 본체
+                    // 원형 본체 (파스텔 코랄 핑크)
                     if (dist < bodyRadius)
                     {
                         float edge = dist / bodyRadius;
                         float highlight = Mathf.Pow(1f - edge, 3f) * 0.3f;
-                        Color c = new Color(0.15f + highlight, 0.15f + highlight, 0.18f + highlight, 1f);
+                        Color c = new Color(0.92f + highlight * 0.05f, 0.68f + highlight * 0.05f, 0.70f + highlight * 0.05f, 1f);
                         // 하이라이트 (좌상단 빛)
                         Vector2 lightDir = (p - center).normalized;
                         float lightDot = Vector2.Dot(lightDir, new Vector2(-0.5f, 0.5f));
                         if (lightDot > 0)
-                            c = Color.Lerp(c, new Color(0.5f, 0.5f, 0.55f, 1f), lightDot * 0.4f * (1f - edge));
+                            c = Color.Lerp(c, new Color(0.98f, 0.85f, 0.86f, 1f), lightDot * 0.4f * (1f - edge));
                         // 안티앨리어싱
                         float aa = Mathf.Clamp01((bodyRadius - dist) * 2f);
                         c.a = aa;
                         pixels[y * size + x] = c;
                     }
 
-                    // 도화선 (본체 위쪽에서 오른쪽 위로 곡선)
+                    // 도화선 (크림 브라운)
                     float fuseX = center.x + (y - (center.y + bodyRadius * 0.7f)) * 0.4f;
                     float fuseY = y;
                     if (fuseY > center.y + bodyRadius * 0.6f && fuseY < center.y + bodyRadius * 1.6f)
@@ -154,20 +157,20 @@ namespace JewelsHexaPuzzle.Core
                         if (fuseDist < 2f)
                         {
                             float fa = Mathf.Clamp01((2f - fuseDist) * 0.8f);
-                            Color fuseColor = new Color(0.4f, 0.3f, 0.2f, fa);
+                            Color fuseColor = new Color(0.82f, 0.70f, 0.58f, fa);
                             if (pixels[y * size + x].a < fa)
                                 pixels[y * size + x] = fuseColor;
                         }
                     }
 
-                    // 스파크 (도화선 끝)
+                    // 스파크 (파스텔 옐로)
                     float sparkCenterX = center.x + (center.y + bodyRadius * 1.5f - (center.y + bodyRadius * 0.7f)) * 0.4f;
                     float sparkCenterY = center.y + bodyRadius * 1.5f;
                     float sparkDist = Vector2.Distance(p, new Vector2(sparkCenterX, sparkCenterY));
                     if (sparkDist < size * 0.08f)
                     {
                         float sa = Mathf.Clamp01((size * 0.08f - sparkDist) / (size * 0.08f));
-                        Color sparkColor = new Color(1f, 0.8f, 0.2f, sa * 0.9f);
+                        Color sparkColor = new Color(1f, 0.92f, 0.70f, sa * 0.9f);
                         pixels[y * size + x] = Color.Lerp(pixels[y * size + x], sparkColor, sa);
                     }
                 }
@@ -207,6 +210,7 @@ namespace JewelsHexaPuzzle.Core
 private IEnumerator BombCoroutine(HexBlock bombBlock)
         {
             activeBombCount++;
+            activeBlocks.Add(bombBlock);
 
             HexCoord bombCoord = bombBlock.Coord;
             Vector3 bombWorldPos = bombBlock.transform.position;
@@ -223,47 +227,62 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             // Zoom Punch (Large tier)
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
 
-            // 폭탄 블록 자체 클리어
+            // 발사 순간 블록 클리어
             bombBlock.ClearData();
 
-            // 인접 6칸 타겟 수집
-            List<HexBlock> targets = new List<HexBlock>();
+            // 반경 2칸 타겟 수집 (1칸/2칸 분리)
+            List<HexBlock> ring1Targets = new List<HexBlock>();
+            List<HexBlock> ring2Targets = new List<HexBlock>();
+            HashSet<HexCoord> visitedCoords = new HashSet<HexCoord>();
+            visitedCoords.Add(bombCoord);
+
             if (hexGrid != null)
             {
-                var neighbors = hexGrid.GetNeighbors(bombCoord);
-                foreach (var neighbor in neighbors)
+                // 1칸 인접
+                var ring1 = hexGrid.GetNeighbors(bombCoord);
+                foreach (var neighbor in ring1)
                 {
-                    if (neighbor != null && neighbor.Data != null && neighbor.Data.gemType != GemType.None)
-                        targets.Add(neighbor);
+                    if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
+                    {
+                        visitedCoords.Add(neighbor.Coord);
+                        if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
+                            ring1Targets.Add(neighbor);
+                    }
+                }
+
+                // 2칸 인접
+                foreach (var ring1Block in ring1)
+                {
+                    if (ring1Block == null) continue;
+                    var ring2 = hexGrid.GetNeighbors(ring1Block.Coord);
+                    foreach (var neighbor in ring2)
+                    {
+                        if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
+                        {
+                            visitedCoords.Add(neighbor.Coord);
+                            if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
+                                ring2Targets.Add(neighbor);
+                        }
+                    }
                 }
             }
 
-            Debug.Log($"[BombBlockSystem] Targets: {targets.Count} neighbors");
+            Debug.Log($"[BombBlockSystem] Targets: ring1={ring1Targets.Count}, ring2={ring2Targets.Count}");
 
-            // 폭발 시작 이펙트
+            // === 1칸 동시 폭발 ===
             StartCoroutine(BombExplosionEffect(bombWorldPos, bombColor));
             StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
-            // 약간의 딜레이 후 주변 블록 파괴
-            yield return new WaitForSeconds(0.05f);
-
-            // 방사형으로 순차 파괴 - 모든 파괴 코루틴을 추적
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
 
-            for (int i = 0; i < targets.Count; i++)
+            foreach (var target in ring1Targets)
             {
-                HexBlock target = targets[i];
-                if (target == null) continue;
+                if (target == null || target.Data == null || target.Data.gemType == GemType.None) continue;
 
-                // Bug #15 fix: target.Data가 동시 실행 중 null이 될 수 있음
-                if (target.Data == null || target.Data.gemType == GemType.None) continue;
-
-                // 특수 블록이면 pending에 추가
                 if (target.Data.specialType != SpecialBlockType.None &&
                     target.Data.specialType != SpecialBlockType.FixedBlock)
                 {
-                    Debug.Log($"[BombBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
                     if (!pendingSpecialBlocks.Contains(target))
                     {
                         pendingSpecialBlocks.Add(target);
@@ -277,8 +296,33 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
                 }
+            }
 
-                yield return new WaitForSeconds(explosionDelay);
+            // === 0.1초 후 2칸 동시 폭발 ===
+            yield return new WaitForSeconds(0.1f);
+
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity * 0.6f, VisualConstants.ShakeLargeDuration * 0.7f));
+
+            foreach (var target in ring2Targets)
+            {
+                if (target == null || target.Data == null || target.Data.gemType == GemType.None) continue;
+
+                if (target.Data.specialType != SpecialBlockType.None &&
+                    target.Data.specialType != SpecialBlockType.FixedBlock)
+                {
+                    if (!pendingSpecialBlocks.Contains(target))
+                    {
+                        pendingSpecialBlocks.Add(target);
+                        target.SetPendingActivation();
+                        target.StartWarningBlink(10f);
+                    }
+                }
+                else
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+                    Color blockColor = GemColors.GetColor(target.Data.gemType);
+                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
+                }
             }
 
             // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
@@ -288,6 +332,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             int totalScore = 200 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
             OnBombComplete?.Invoke(totalScore);
+            activeBlocks.Remove(bombBlock);
             activeBombCount--;
         }
 
@@ -591,6 +636,27 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
         // ============================================================
         // 화면 흔들림 (Bug #11 fix: 동시 실행 시 위치 드리프트 방지)
         // ============================================================
+
+        private IEnumerator FadeOutAndDestroy(GameObject obj)
+        {
+            var img = obj.GetComponent<UnityEngine.UI.Image>();
+            if (img == null) { Destroy(obj); yield break; }
+
+            Color c = img.color;
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                c.a = 1f - t;
+                img.color = c;
+                yield return null;
+            }
+
+            Destroy(obj);
+        }
 
         private int shakeCount = 0;
         private Vector3 shakeOriginalPos;

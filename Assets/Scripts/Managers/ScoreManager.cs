@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Collections.Generic;
 
 namespace JewelsHexaPuzzle.Managers
 {
@@ -47,6 +48,12 @@ namespace JewelsHexaPuzzle.Managers
 
         private const string HIGH_SCORE_KEY = "HighScore";
         private const string TOTAL_GOLD_KEY = "TotalGold";
+        private const string RANKING_KEY = "InfiniteRanking";
+        private const string MAX_MOVES_KEY = "MaxMoves";
+        private const int MAX_RANKING_COUNT = 10;
+
+        private int maxMoves = 0;
+        public int MaxMoves => maxMoves;
 
         private void Awake()
         {
@@ -69,6 +76,7 @@ namespace JewelsHexaPuzzle.Managers
         {
             highScore = PlayerPrefs.GetInt(HIGH_SCORE_KEY, 0);
             totalGoldEarned = PlayerPrefs.GetInt(TOTAL_GOLD_KEY, 0);
+            maxMoves = PlayerPrefs.GetInt(MAX_MOVES_KEY, 0);
         }
 
         /// <summary>
@@ -273,6 +281,71 @@ namespace JewelsHexaPuzzle.Managers
         public int GetTotalGold()
         {
             return totalGoldEarned;
+        }
+
+        /// <summary>
+        /// 현재 점수를 랭킹에 저장 (Top 10, 내림차순)
+        /// </summary>
+        public void SaveScoreToRanking(int score, int moves = 0)
+        {
+            if (score <= 0) return;
+
+            // 최대 이동횟수 갱신
+            if (moves > maxMoves)
+            {
+                maxMoves = moves;
+                PlayerPrefs.SetInt(MAX_MOVES_KEY, maxMoves);
+            }
+
+            List<int> scores = new List<int>(GetTopScores());
+            scores.Add(score);
+            scores.Sort((a, b) => b.CompareTo(a));
+
+            if (scores.Count > MAX_RANKING_COUNT)
+                scores.RemoveRange(MAX_RANKING_COUNT, scores.Count - MAX_RANKING_COUNT);
+
+            string[] parts = new string[scores.Count];
+            for (int i = 0; i < scores.Count; i++)
+                parts[i] = scores[i].ToString();
+
+            PlayerPrefs.SetString(RANKING_KEY, string.Join(",", parts));
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// Top 10 점수 배열 반환 (내림차순)
+        /// </summary>
+        public int[] GetTopScores()
+        {
+            string data = PlayerPrefs.GetString(RANKING_KEY, "");
+            if (string.IsNullOrEmpty(data)) return new int[0];
+
+            string[] parts = data.Split(',');
+            List<int> scores = new List<int>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                int val;
+                if (int.TryParse(parts[i], out val) && val > 0)
+                    scores.Add(val);
+            }
+            scores.Sort((a, b) => b.CompareTo(a));
+            return scores.ToArray();
+        }
+
+        /// <summary>
+        /// 해당 점수의 순위 반환 (1부터 시작, 기록 없으면 -1)
+        /// </summary>
+        public int GetRankForScore(int score)
+        {
+            if (score <= 0) return -1;
+
+            int[] top = GetTopScores();
+            for (int i = 0; i < top.Length; i++)
+            {
+                if (top[i] == score)
+                    return i + 1;
+            }
+            return top.Length + 1;
         }
     }
 

@@ -28,13 +28,16 @@ namespace JewelsHexaPuzzle.Core
 
         private int activeDonutCount = 0;
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
+        private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
         public bool IsActivating => activeDonutCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
+        public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
         public void ForceReset()
         {
             activeDonutCount = 0;
             pendingSpecialBlocks.Clear();
+            activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
             Debug.LogWarning("[DonutBlockSystem] ForceReset called");
@@ -138,12 +141,12 @@ namespace JewelsHexaPuzzle.Core
                         // 무지개 그라디언트 (각도 기반)
                         float angle = Mathf.Atan2(p.y - center.y, p.x - center.x);
                         float hue = (angle / (2f * Mathf.PI) + 1f) % 1f;
-                        Color c = Color.HSVToRGB(hue, 0.8f, 0.95f);
+                        Color c = Color.HSVToRGB(hue, 0.30f, 0.95f); // 파스텔 무지개
 
-                        // 3D 느낌 - 중심에서 바깥으로 하이라이트
+                        // 3D 느낌 - 중심에서 바깥으로 하이라이트 (감쇠)
                         float ringCenter = (outerRadius + innerRadius) * 0.5f;
                         float ringT = 1f - Mathf.Abs(dist - ringCenter) / ((outerRadius - innerRadius) * 0.5f);
-                        float highlight = Mathf.Pow(ringT, 2f) * 0.3f;
+                        float highlight = Mathf.Pow(ringT, 2f) * 0.20f;
                         c = new Color(
                             Mathf.Min(1f, c.r + highlight),
                             Mathf.Min(1f, c.g + highlight),
@@ -204,6 +207,7 @@ namespace JewelsHexaPuzzle.Core
         private IEnumerator DonutCoroutine(HexBlock donutBlock)
         {
             activeDonutCount++;
+            activeBlocks.Add(donutBlock);
 
             HexCoord donutCoord = donutBlock.Coord;
             Vector3 donutWorldPos = donutBlock.transform.position;
@@ -221,7 +225,7 @@ namespace JewelsHexaPuzzle.Core
             // Zoom Punch (Small tier)
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
-            // 도넛 블록 자체 클리어
+            // 발사 순간 블록 클리어
             donutBlock.ClearData();
 
             // 같은 색 블록 전부 수집
@@ -302,6 +306,7 @@ namespace JewelsHexaPuzzle.Core
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
             OnDonutComplete?.Invoke(totalScore);
+            activeBlocks.Remove(donutBlock);
             activeDonutCount--;
         }
 
@@ -624,6 +629,27 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
         // 화면 흔들림 (newly added for Donut)
         // ============================================================
+
+        private IEnumerator FadeOutAndDestroy(GameObject obj)
+        {
+            var img = obj.GetComponent<UnityEngine.UI.Image>();
+            if (img == null) { Destroy(obj); yield break; }
+
+            Color c = img.color;
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                c.a = 1f - t;
+                img.color = c;
+                yield return null;
+            }
+
+            Destroy(obj);
+        }
 
         private int shakeCount = 0;
         private Vector3 shakeOriginalPos;

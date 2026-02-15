@@ -38,7 +38,7 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite donutIconSprite;
         private static Sprite xBlockIconSprite;
         private static Sprite laserIconSprite;
-
+        private static Sprite chainOverlaySprite;
 
 
 
@@ -60,6 +60,17 @@ namespace JewelsHexaPuzzle.Core
                 hexFillSprite = CreateAAHexSprite(TEX_SIZE, 0, false);
             }
             return hexFillSprite;
+        }
+
+        public static Sprite GetHexBorderSprite()
+        {
+            if (hexBorderSprite == null)
+            {
+                const int TEX_SIZE = 512;
+                float scale = TEX_SIZE / 128f;
+                hexBorderSprite = CreateAAHexSprite(TEX_SIZE, INNER_BORDER_WIDTH * scale, true);
+            }
+            return hexBorderSprite;
         }
 
         public HexCoord Coord => coord;
@@ -193,7 +204,7 @@ namespace JewelsHexaPuzzle.Core
             Vector2 center = new Vector2(size / 2f, size / 2f);
             float outerRadius = size / 2f - 2f;
             float innerRadius = outerRadius - borderWidth;
-            float aa = 2.0f;
+            float aa = 3.0f; // AA 폭 1.5배 확대
             // 조명 방향 (좌상단에서 우하단으로)
             Vector2 lightDir = new Vector2(-0.707f, 0.707f);
             float maxPixelDist = outerRadius * 0.8660254f; // hex apothem
@@ -218,7 +229,7 @@ namespace JewelsHexaPuzzle.Core
                         float dirLen = dir.magnitude;
                         if (dirLen > 0.001f) dir /= dirLen;
                         float lightDot = Vector2.Dot(dir, lightDir);
-                        float bevel = 0.7f + lightDot * 0.15f; // 0.55 ~ 0.85
+                        float bevel = 0.78f + lightDot * 0.10f; // 0.68 ~ 0.88 (축소된 베벨)
 
                         // 링 중심부 밝기 부스트 (매트: 미세)
                         float ringCenter = Mathf.Min(outerAlpha, innerAlpha);
@@ -233,25 +244,25 @@ namespace JewelsHexaPuzzle.Core
                     }
                     else
                     {
-                        // === 움푹 들어간 배경 슬롯 ===
+                        // === 부드러운 볼록 쿠션 배경 ===
                         float alpha = Mathf.Clamp01(1f - outerDist / aa);
 
                         Vector2 offset = point - center;
                         float pixelDist = offset.magnitude;
                         float normDist = Mathf.Clamp01(pixelDist / maxPixelDist);
 
-                        // 중심부 어둡고 가장자리 밝게 (움푹 파인 느낌)
-                        float depression = 0.65f + normDist * 0.3f;
+                        // 중심부 밝고 가장자리 약간 어둡게 (볼록 쿠션 느낌)
+                        float cushion = 0.90f + (1f - normDist) * 0.08f;
 
                         // 방향성 조명 (좌상단 약간 밝게)
                         float dirLen = offset.magnitude;
                         if (dirLen > 0.001f)
                         {
                             Vector2 dir = offset / dirLen;
-                            depression += Vector2.Dot(dir, lightDir) * 0.06f;
+                            cushion += Vector2.Dot(dir, lightDir) * 0.04f;
                         }
 
-                        float b = Mathf.Clamp01(depression);
+                        float b = Mathf.Clamp01(cushion);
                         pixels[y * size + x] = new Color(b, b, b, alpha);
                     }
                 }
@@ -272,7 +283,7 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private static Sprite CreateAAInnerHexSprite(int size, float borderWidth)
         {
-            // 깨끗한 흰색 육각형 - 모든 시각 효과는 셰이더(HexGem/HexSpecialGem)가 담당
+            // 마카롱 표면 미세 질감 + 셰이더(HexGem/HexSpecialGem)가 깊이/하이라이트/SSS 처리
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
@@ -296,8 +307,10 @@ namespace JewelsHexaPuzzle.Core
                         continue;
                     }
 
-                    // 순수 흰색 텍스처 → Image.color(젬 색상)로 틴팅 → 셰이더가 깊이/하이라이트/패싯 적용
-                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    // PerlinNoise로 마카롱 표면 미세 질감 (0.97~1.0 범위, 셰이더 이중적용 방지)
+                    float noise = Mathf.PerlinNoise(x * 0.08f, y * 0.08f);
+                    float texVal = 0.97f + noise * 0.03f; // 최대 3% 변화만
+                    pixels[y * size + x] = new Color(texVal, texVal, texVal, alpha);
                 }
             }
 
@@ -350,7 +363,7 @@ namespace JewelsHexaPuzzle.Core
                         if (Mathf.Abs(rx) < arrowHead) inArrow = true;
                     }
 
-                    if (inArrow) pixels[y * size + x] = Color.white;
+                    if (inArrow) pixels[y * size + x] = new Color(0.98f, 0.95f, 0.90f, 1f); // 크림 아이보리
                 }
             }
 
@@ -359,7 +372,120 @@ namespace JewelsHexaPuzzle.Core
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        // (�� �޼��� ���ŵ� - CreateAAHexSprite/CreateAAInnerHexSprite�� ��ü)
+        /// <summary>
+        /// 프로시저럴 사슬 오버레이 스프라이트 생성
+        /// 육각형 위에 X자 형태로 교차하는 체인 링크 패턴
+        /// </summary>
+        private static Sprite CreateChainOverlaySprite(int size)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = Color.clear;
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float hexRadius = size * 0.42f;
+
+            // 체인 링크 파라미터
+            float linkWidth = size * 0.12f;   // 링크 타원 장축
+            float linkHeight = size * 0.07f;  // 링크 타원 단축
+            float ringThickness = size * 0.02f; // 링크 두께
+            float edgeAA = 1.5f; // AA 영역
+
+            // 체인 색상 (메탈릭 실버)
+            Color chainLight = new Color(0.82f, 0.82f, 0.85f, 0.92f);
+            Color chainDark = new Color(0.45f, 0.45f, 0.50f, 0.92f);
+            Color chainMid = new Color(0.62f, 0.62f, 0.68f, 0.92f);
+
+            // 링크 배치: 대각선 두 줄 (\ 방향 + / 방향)이 교차하며 체인 형성
+            // 각 줄에 5개 링크, 번갈아 가며 방향 전환
+            float[] angles = { 45f, -45f }; // 두 대각선 방향
+            float spacing = size * 0.13f;
+
+            for (int lineIdx = 0; lineIdx < 2; lineIdx++)
+            {
+                float baseAngle = angles[lineIdx];
+                float perpAngle = baseAngle + 90f;
+                float baseRad = baseAngle * Mathf.Deg2Rad;
+
+                for (int linkIdx = -2; linkIdx <= 2; linkIdx++)
+                {
+                    // 링크 중심 위치
+                    float cx = center.x + Mathf.Cos(baseRad) * linkIdx * spacing;
+                    float cy = center.y + Mathf.Sin(baseRad) * linkIdx * spacing;
+
+                    // 육각형 내부인지 체크 (여유 포함)
+                    float hexDist = HexSignedDistance(new Vector2(cx, cy), center, hexRadius);
+                    if (hexDist > -size * 0.05f) continue;
+
+                    // 링크 방향: 링크마다 번갈아 기울어짐
+                    float linkAngle = (linkIdx % 2 == 0) ? baseAngle : perpAngle;
+                    float linkRad = linkAngle * Mathf.Deg2Rad;
+                    float cosA = Mathf.Cos(-linkRad);
+                    float sinA = Mathf.Sin(-linkRad);
+
+                    // 링크 렌더링 범위
+                    int minX = Mathf.Max(0, (int)(cx - linkWidth - 4));
+                    int maxX = Mathf.Min(size - 1, (int)(cx + linkWidth + 4));
+                    int minY = Mathf.Max(0, (int)(cy - linkWidth - 4));
+                    int maxY = Mathf.Min(size - 1, (int)(cy + linkWidth + 4));
+
+                    for (int y = minY; y <= maxY; y++)
+                    {
+                        for (int x = minX; x <= maxX; x++)
+                        {
+                            // 로컬 좌표 변환 (회전)
+                            float lx = (x - cx) * cosA - (y - cy) * sinA;
+                            float ly = (x - cx) * sinA + (y - cy) * cosA;
+
+                            // 타원 거리 (링크 외곽)
+                            float ex = lx / linkWidth;
+                            float ey = ly / linkHeight;
+                            float ellipseDist = Mathf.Sqrt(ex * ex + ey * ey);
+
+                            // 링 형태: 외곽 - 내곽 사이
+                            float outerDist = Mathf.Abs(ellipseDist - 1f) * linkHeight;
+
+                            if (outerDist < ringThickness + edgeAA)
+                            {
+                                // AA 알파
+                                float alpha = 1f - Mathf.Clamp01((outerDist - ringThickness) / edgeAA);
+
+                                // 방향성 조명 (위에서 빛)
+                                float lightFactor = Mathf.Clamp01(0.5f + ly / (linkHeight * 2f));
+                                Color linkColor = Color.Lerp(chainDark, chainLight, lightFactor);
+
+                                // 하이라이트 (상단 가장자리)
+                                if (ly > 0 && outerDist < ringThickness * 0.6f)
+                                    linkColor = Color.Lerp(linkColor, chainLight, 0.4f);
+
+                                int idx = y * size + x;
+                                Color existing = pixels[idx];
+                                // 교차 영역: 뒤쪽 링크는 어둡게 (깊이감)
+                                if (existing.a > 0.1f && lineIdx > 0)
+                                {
+                                    // 앞쪽 링크(lineIdx=1)가 뒤쪽(lineIdx=0) 위에 오버레이
+                                    linkColor.a *= alpha;
+                                    pixels[idx] = Color.Lerp(existing, linkColor, linkColor.a);
+                                    pixels[idx].a = Mathf.Min(1f, existing.a + linkColor.a * 0.5f);
+                                }
+                                else
+                                {
+                                    linkColor.a *= alpha;
+                                    if (linkColor.a > existing.a)
+                                        pixels[idx] = linkColor;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            tex.filterMode = FilterMode.Bilinear;
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
 
         private void SetupBorder()
         {
@@ -367,7 +493,7 @@ namespace JewelsHexaPuzzle.Core
             if (backgroundImage != null)
             {
                 backgroundImage.sprite = GemSpriteProvider.GetBackgroundSprite() ?? hexFillSprite;
-                backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
+                backgroundImage.color = new Color(0.96f, 0.93f, 0.90f, 0.28f);
                 backgroundImage.type = Image.Type.Simple;
             }
 
@@ -413,7 +539,7 @@ namespace JewelsHexaPuzzle.Core
             }
 
             borderImage.sprite = GemSpriteProvider.GetBorderSprite() ?? hexBorderSprite;
-            borderImage.color = new Color(0.15f, 0.15f, 0.15f, 1f);
+            borderImage.color = new Color(0.92f, 0.88f, 0.85f, 0.30f);
             borderImage.raycastTarget = false;
             borderImage.type = Image.Type.Simple;
         }
@@ -465,7 +591,7 @@ namespace JewelsHexaPuzzle.Core
 
         private void SetupVisuals()
         {
-            if (backgroundImage != null) backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
+            if (backgroundImage != null) backgroundImage.color = new Color(0.96f, 0.93f, 0.90f, 0.28f);
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
             if (drillIndicator != null) drillIndicator.enabled = false;
@@ -491,6 +617,15 @@ public void SetBlockData(BlockData data)
                 isPendingActivation = true;
                 StartWarningBlink(10f);
             }
+        }
+
+        /// <summary>
+        /// 비주얼 업데이트 없이 데이터만 교체 (가상 회전 체크용)
+        /// Clone하지 않고 참조만 교체하므로 반드시 원복해야 함
+        /// </summary>
+        public void SetBlockDataSilent(BlockData data)
+        {
+            blockData = data;
         }
 
         /// <summary>
@@ -545,7 +680,7 @@ public void UpdateVisuals()
 
             if (backgroundImage != null)
             {
-                backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
+                backgroundImage.color = new Color(0.96f, 0.93f, 0.90f, 0.28f);
             }
 
             Color gemColor = GemColors.GetColor(blockData.gemType);
@@ -556,9 +691,9 @@ public void UpdateVisuals()
             {
                 borderImage.enabled = true;
                 if (blockData.pendingActivation)
-                    borderImage.color = new Color(1f, 0.15f, 0.1f, 1f);
+                    borderImage.color = new Color(0.95f, 0.72f, 0.68f, 0.8f);
                 else
-                    borderImage.color = isMatched ? Color.white : new Color(0.15f, 0.15f, 0.15f, 1f);
+                    borderImage.color = isMatched ? Color.white : new Color(0.92f, 0.88f, 0.85f, 0.30f);
             }
 
             // 특수 블록 아이콘/추가 시각 처리 (통합)
@@ -618,12 +753,12 @@ private void UpdateSpecialIndicator()
 
                 case SpecialBlockType.MoveBlock:
                     if (drillIndicator != null) drillIndicator.enabled = false;
-                    SetGemColor(new Color(0.5f, 0.5f, 0.5f, 0.8f));
+                    SetGemColor(new Color(0.82f, 0.78f, 0.75f, 0.8f));
                     break;
 
                 case SpecialBlockType.FixedBlock:
                     if (drillIndicator != null) drillIndicator.enabled = false;
-                    SetGemColor(new Color(0.3f, 0.3f, 0.35f, 1f));
+                    SetGemColor(new Color(0.7f, 0.68f, 0.72f, 1f));
                     break;
 
                 default:
@@ -758,13 +893,11 @@ public void ShowBombIndicator()
                 gemImage.enabled = false;      // ��Ȱ��ȭ
             }
 
-            // ��浵 �����ϰ�
             if (backgroundImage != null)
             {
-                backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.1f);
+                backgroundImage.color = new Color(0.96f, 0.93f, 0.90f, 0.04f);
             }
 
-            // �׵θ� ����
             if (borderImage != null)
             {
                 borderImage.enabled = false;
@@ -780,17 +913,23 @@ public void ShowBombIndicator()
             if (overlayImage == null || blockData == null) return;
             if (blockData.hasChain)
             {
-                overlayImage.color = new Color(0.4f, 0.6f, 0.4f, 0.8f);
+                // 사슬 오버레이 스프라이트 사용
+                if (chainOverlaySprite == null)
+                    chainOverlaySprite = CreateChainOverlaySprite(256);
+                overlayImage.sprite = chainOverlaySprite;
+                overlayImage.color = Color.white;
                 overlayImage.enabled = true;
             }
             else if (blockData.vinylLayer > 0)
             {
+                overlayImage.sprite = null;
                 float alpha = blockData.vinylLayer == 2 ? 0.6f : 0.3f;
                 overlayImage.color = new Color(1f, 1f, 1f, alpha);
                 overlayImage.enabled = true;
             }
             else
             {
+                overlayImage.sprite = null;
                 overlayImage.enabled = false;
             }
         }
@@ -814,7 +953,7 @@ public void ShowBombIndicator()
             {
                 // ���̶���Ʈ ������ ���� ������� ���� (����� ���)
                 if (highlighted) borderImage.color = new Color(1f, 1f, 1f, 1f);
-                else if (!isMatched) borderImage.color = new Color(0.15f, 0.15f, 0.15f, 1f);
+                else if (!isMatched) borderImage.color = new Color(0.92f, 0.88f, 0.85f, 0.30f);
             }
         }
 
@@ -822,7 +961,7 @@ public void ShowBombIndicator()
         {
             isMatched = matched;
             if (borderImage != null)
-                borderImage.color = matched ? Color.white : new Color(0.15f, 0.15f, 0.15f, 1f);
+                borderImage.color = matched ? Color.white : new Color(0.92f, 0.88f, 0.85f, 0.30f);
         }
 
 // === 빨간색 테두리 점멸 (특수 블록 연쇄 발동 예고) ===
@@ -860,7 +999,7 @@ public void StopWarningBlink()
             isPendingActivation = false;
             if (borderImage != null)
             {
-                borderImage.color = isMatched ? Color.white : new Color(0.15f, 0.15f, 0.15f, 1f);
+                borderImage.color = isMatched ? Color.white : new Color(0.92f, 0.88f, 0.85f, 0.30f);
             }
         }
 
@@ -868,8 +1007,8 @@ private IEnumerator WarningBlinkCoroutine(float totalDuration)
         {
             // 빨간색 테두리는 SetPendingActivation에서 이미 설정됨
             // 여기서는 점멸 속도를 점점 빨리 하여 발동 예고
-            Color blinkColor = new Color(1f, 0.15f, 0.1f, 1f); // 빨간색
-            Color dimColor = new Color(0.6f, 0.05f, 0.03f, 1f); // 어두운 빨간색
+            Color blinkColor = new Color(0.95f, 0.72f, 0.68f, 0.8f); // 빨간색
+            Color dimColor = new Color(0.85f, 0.60f, 0.55f, 0.5f); // 어두운 파스텔 코랄
             float elapsed = 0f;
 
             // 초기 점멸 주기 0.4초 → 발동 직전 0.06초까지 가속
@@ -930,7 +1069,126 @@ private IEnumerator WarningBlinkCoroutine(float totalDuration)
             {
                 blockData.hasChain = false;
                 UpdateOverlay();
+                StartCoroutine(ChainBreakEffect());
             }
+        }
+
+        /// <summary>
+        /// 사슬 파괴 이펙트 — 사슬 조각 산개 + 플래시 + 스케일 펄스
+        /// </summary>
+        private IEnumerator ChainBreakEffect()
+        {
+            Vector3 center = transform.position;
+
+            // 1. 백색 플래시
+            GameObject flash = new GameObject("ChainBreakFlash");
+            flash.transform.SetParent(transform, false);
+            flash.transform.localPosition = Vector3.zero;
+            var flashImg = flash.AddComponent<Image>();
+            flashImg.raycastTarget = false;
+            flashImg.sprite = GetHexFlashSprite();
+            flashImg.color = new Color(0.8f, 0.85f, 0.9f, 0.8f);
+            RectTransform flashRt = flash.GetComponent<RectTransform>();
+            flashRt.sizeDelta = new Vector2(40f, 40f);
+
+            // 2. 사슬 조각 산개 (8개)
+            for (int i = 0; i < 8; i++)
+                StartCoroutine(AnimateChainShard(center));
+
+            // 3. 블록 스케일 펄스 + 플래시 페이드
+            float duration = 0.25f;
+            float elapsed = 0f;
+            Vector3 origScale = transform.localScale;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // 스케일: 1.0 → 1.15 → 1.0
+                float pulse = 1f + 0.15f * Mathf.Sin(t * Mathf.PI);
+                transform.localScale = origScale * pulse;
+
+                // 플래시 확대 + 페이드
+                float flashScale = 1f + t * 4f;
+                flashRt.sizeDelta = new Vector2(40f * flashScale, 40f * flashScale);
+                flashImg.color = new Color(0.8f, 0.85f, 0.9f, 0.8f * (1f - t));
+
+                yield return null;
+            }
+
+            transform.localScale = origScale;
+            Destroy(flash);
+        }
+
+        /// <summary>
+        /// 개별 사슬 파편 애니메이션 — 메탈릭 실버 파편이 회전하며 산개
+        /// </summary>
+        private IEnumerator AnimateChainShard(Vector3 center)
+        {
+            // 사슬 조각이 블록 위에 그려지도록 부모의 부모(그리드)에 생성
+            Transform effectParent = transform.parent != null ? transform.parent : transform;
+
+            GameObject shard = new GameObject("ChainShard");
+            shard.transform.SetParent(effectParent, false);
+            shard.transform.position = center;
+
+            var image = shard.AddComponent<Image>();
+            image.raycastTarget = false;
+
+            RectTransform rt = shard.GetComponent<RectTransform>();
+            // 직사각형 파편 (사슬 링크 조각 느낌)
+            float w = UnityEngine.Random.Range(4f, 10f);
+            float h = UnityEngine.Random.Range(2f, 5f);
+            rt.sizeDelta = new Vector2(w, h);
+
+            // 랜덤 방향 산개
+            float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float speed = UnityEngine.Random.Range(120f, 280f);
+            Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+
+            // 메탈릭 실버 색상 (밝기 랜덤)
+            float gray = UnityEngine.Random.Range(0.55f, 0.9f);
+            Color shardColor = new Color(gray, gray, gray + 0.05f, 1f);
+            image.color = shardColor;
+
+            // 초기 회전
+            float rotSpeed = UnityEngine.Random.Range(-600f, 600f);
+            float initRot = UnityEngine.Random.Range(0f, 360f);
+            shard.transform.localRotation = Quaternion.Euler(0, 0, initRot);
+
+            float lifetime = UnityEngine.Random.Range(0.25f, 0.45f);
+            float elapsedTime = 0f;
+            float gravityY = -400f; // 아래로 떨어지는 중력
+
+            while (elapsedTime < lifetime)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = elapsedTime / lifetime;
+
+                // 이동 + 중력
+                velocity.y += gravityY * Time.deltaTime;
+                Vector3 pos = shard.transform.position;
+                pos.x += velocity.x * Time.deltaTime;
+                pos.y += velocity.y * Time.deltaTime;
+                shard.transform.position = pos;
+
+                // 감속
+                velocity.x *= 0.97f;
+
+                // 회전
+                shard.transform.Rotate(0, 0, rotSpeed * Time.deltaTime);
+
+                // 페이드 + 축소
+                shardColor.a = 1f - t * t;
+                image.color = shardColor;
+                float scale = 1f - t * 0.4f;
+                rt.sizeDelta = new Vector2(w * scale, h * scale);
+
+                yield return null;
+            }
+
+            Destroy(shard);
         }
 
         public void OnPointerClick(PointerEventData eventData) { OnBlockClicked?.Invoke(this); }
@@ -947,6 +1205,31 @@ private IEnumerator WarningBlinkCoroutine(float totalDuration)
     
 
 /// <summary>
+        /// 특수 블록 아이콘을 별도 GameObject로 복제하여 부모 아래에 배치.
+        /// ClearData 후에도 아이콘이 남아 있도록 하기 위함.
+        /// 호출자가 반환된 GameObject의 수명을 관리해야 함.
+        /// </summary>
+public GameObject CreateFloatingSpecialIcon(Transform parent)
+        {
+            if (drillIndicator == null || !drillIndicator.enabled || drillIndicator.sprite == null)
+                return null;
+
+            GameObject floatingIcon = new GameObject("FloatingSpecialIcon");
+            floatingIcon.transform.SetParent(parent, false);
+            floatingIcon.transform.position = transform.position;
+
+            var img = floatingIcon.AddComponent<Image>();
+            img.sprite = drillIndicator.sprite;
+            img.color = drillIndicator.color;
+            img.raycastTarget = false;
+
+            RectTransform rt = floatingIcon.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(40f, 40f);
+
+            return floatingIcon;
+        }
+
+/// <summary>
         /// 드릴에 의해 영향받은 즉시 호출 - 빨간색 테두리로 변경
         /// 이후 실제 발동 전에 StartWarningBlink로 점멸 가속
         /// </summary>
@@ -959,7 +1242,7 @@ public void SetPendingActivation()
             if (borderImage != null)
             {
                 borderImage.enabled = true;
-                borderImage.color = new Color(1f, 0.15f, 0.1f, 1f);
+                borderImage.color = new Color(0.95f, 0.72f, 0.68f, 0.8f);
             }
         }
 }

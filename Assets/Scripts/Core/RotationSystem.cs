@@ -67,7 +67,14 @@ namespace JewelsHexaPuzzle.Core
         {
             if (isRotating) return;
             if (block1 == null || block2 == null || block3 == null) return;
-            if (!IsValidTriangle(block1, block2, block3)) return;
+            if (!IsValidTriangle(block1, block2, block3))
+            {
+                Debug.LogWarning($"[RotationSystem] REJECTED: Not a valid triangle! " +
+                    $"({block1.Coord}↔{block2.Coord}={block1.Coord.DistanceTo(block2.Coord)}, " +
+                    $"{block2.Coord}↔{block3.Coord}={block2.Coord.DistanceTo(block3.Coord)}, " +
+                    $"{block1.Coord}↔{block3.Coord}={block1.Coord.DistanceTo(block3.Coord)})");
+                return;
+            }
             if (!CanRotate(block1, block2, block3)) return;
 
             // 블록을 시계방향 순서로 정렬
@@ -77,23 +84,38 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// RectTransform의 anchoredPosition을 안전하게 가져오기
+        /// UI 블록은 anchoredPosition으로 배치되므로 localPosition 대신 사용
+        /// </summary>
+        private Vector2 GetAnchoredPos(HexBlock block)
+        {
+            RectTransform rt = block.GetComponent<RectTransform>();
+            return rt != null ? rt.anchoredPosition : (Vector2)block.transform.localPosition;
+        }
+
+        private void SetAnchoredPos(HexBlock block, Vector2 pos)
+        {
+            RectTransform rt = block.GetComponent<RectTransform>();
+            if (rt != null) rt.anchoredPosition = pos;
+            else block.transform.localPosition = new Vector3(pos.x, pos.y, 0);
+        }
+
+        /// <summary>
         /// 3개 블록을 시계방향 순서로 정렬
-        /// 중심점 기준으로 각도를 계산하여 시계방향(각도 감소) 순서로 배치
+        /// RectTransform.anchoredPosition 기준으로 각도 계산
         /// </summary>
         private HexBlock[] SortBlocksClockwise(HexBlock a, HexBlock b, HexBlock c)
         {
-            Vector3 posA = a.transform.localPosition;
-            Vector3 posB = b.transform.localPosition;
-            Vector3 posC = c.transform.localPosition;
+            Vector2 posA = GetAnchoredPos(a);
+            Vector2 posB = GetAnchoredPos(b);
+            Vector2 posC = GetAnchoredPos(c);
 
-            Vector3 center = (posA + posB + posC) / 3f;
+            Vector2 center = (posA + posB + posC) / 3f;
 
-            // 각 블록의 각도 계산 (Y축이 반전된 UI 좌표계)
             float angleA = Mathf.Atan2(posA.y - center.y, posA.x - center.x) * Mathf.Rad2Deg;
             float angleB = Mathf.Atan2(posB.y - center.y, posB.x - center.x) * Mathf.Rad2Deg;
             float angleC = Mathf.Atan2(posC.y - center.y, posC.x - center.x) * Mathf.Rad2Deg;
 
-            // 시계방향 = 각도 내림차순 (Unity UI에서 Y 반전이므로 오름차순이 시계방향)
             HexBlock[] arr = { a, b, c };
             float[] angles = { angleA, angleB, angleC };
 
@@ -125,6 +147,9 @@ namespace JewelsHexaPuzzle.Core
         {
             if (b1.Data == null || b2.Data == null || b3.Data == null)
                 return false;
+            // 빈 블록(GemType.None)은 회전 불가
+            if (b1.Data.gemType == GemType.None || b2.Data.gemType == GemType.None || b3.Data.gemType == GemType.None)
+                return false;
             return b1.Data.CanMove() && b2.Data.CanMove() && b3.Data.CanMove();
         }
 
@@ -142,60 +167,48 @@ namespace JewelsHexaPuzzle.Core
             // 원본 데이터 백업
             BlockData[] originalData = new BlockData[3];
             for (int i = 0; i < 3; i++)
-            {
                 originalData[i] = blocks[i].Data.Clone();
-            }
 
-            // 원래 위치 저장
-            Vector3[] originalPositions = new Vector3[3];
+            // 원래 위치 저장 (anchoredPosition 사용 - UI 블록 위치 일관성)
+            Vector2[] originalPositions = new Vector2[3];
             for (int i = 0; i < 3; i++)
-            {
-                originalPositions[i] = blocks[i].transform.localPosition;
-            }
+                originalPositions[i] = GetAnchoredPos(blocks[i]);
 
-            Debug.Log($"[Rotation] Start ({(clockwiseRotation ? "CW" : "CCW")}) - B0:{originalData[0].gemType} B1:{originalData[1].gemType} B2:{originalData[2].gemType}");
+            // 삼각형 유효성 검증 로그
+            float d01 = blocks[0].Coord.DistanceTo(blocks[1].Coord);
+            float d12 = blocks[1].Coord.DistanceTo(blocks[2].Coord);
+            float d02 = blocks[0].Coord.DistanceTo(blocks[2].Coord);
+            Vector2 centroid = (originalPositions[0] + originalPositions[1] + originalPositions[2]) / 3f;
+
+            Debug.Log($"[Rotation] Start ({(clockwiseRotation ? "CW" : "CCW")}) " +
+                $"coords=({blocks[0].Coord},{blocks[1].Coord},{blocks[2].Coord}) " +
+                $"hexDist=({d01},{d12},{d02}) " +
+                $"pos=({originalPositions[0]},{originalPositions[1]},{originalPositions[2]}) " +
+                $"centroid={centroid} " +
+                $"gems=({originalData[0].gemType},{originalData[1].gemType},{originalData[2].gemType})");
+
+            if (d01 != 1 || d12 != 1 || d02 != 1)
+            {
+                Debug.LogError($"[Rotation] NON-TRIANGLE DETECTED! hexDist=({d01},{d12},{d02}) — aborting rotation");
+                isRotating = false;
+                OnRotationComplete?.Invoke(false);
+                yield break;
+            }
 
             // === 첫 번째 회전 (120도) ===
             yield return StartCoroutine(AnimateRotation(blocks, originalPositions));
 
             for (int i = 0; i < 3; i++)
-                blocks[i].transform.localPosition = originalPositions[i];
+                SetAnchoredPos(blocks[i], originalPositions[i]);
 
             SwapData(blocks);
             yield return null;
 
-            // 디버그: 회전 후 3블록의 실제 상태 출력
-                for (int dbg = 0; dbg < 3; dbg++)
-                {
-                    var bd = blocks[dbg].Data;
-                    string info = bd != null ? $"gem={bd.gemType}, special={bd.specialType}" : "NULL DATA";
-                    var nbs = hexGrid != null ? hexGrid.GetNeighbors(blocks[dbg].Coord) : null;
-                    int sameColorCount = 0;
-                    if (nbs != null && bd != null)
-                    {
-                        foreach (var nb in nbs)
-                            if (nb.Data != null && nb.Data.gemType == bd.gemType) sameColorCount++;
-                    }
-                    Debug.Log($"[Rotation] Block[{dbg}] coord=({blocks[dbg].Coord}), {info}, sameColorNeighbors={sameColorCount}");
-                }
-                // 3블록이 서로 이웃인지 확인
-                Debug.Log($"[Rotation] Mutual neighbors: 0-1={blocks[0].Coord.DistanceTo(blocks[1].Coord)}, 1-2={blocks[1].Coord.DistanceTo(blocks[2].Coord)}, 0-2={blocks[0].Coord.DistanceTo(blocks[2].Coord)}");
-
-                Debug.Log($"[Rotation] After 120° - B0:{blocks[0].Data.gemType} B1:{blocks[1].Data.gemType} B2:{blocks[2].Data.gemType}");
-
             List<MatchingSystem.MatchGroup> matches = matchingSystem.FindMatches();
-            Debug.Log($"[Rotation] 240° FindMatches returned {matches.Count} groups");
-            foreach (var m in matches)
-                Debug.Log($"[Rotation]   240° match: {m.gemType} x{m.blocks.Count} coords=[{string.Join(",", m.blocks.ConvertAll(b => b.Coord.ToString()))}]");
-
-            Debug.Log($"[Rotation] FindMatches returned {matches.Count} groups");
-            foreach (var m in matches)
-                Debug.Log($"[Rotation]   match: {m.gemType} x{m.blocks.Count} coords=[{string.Join(",", m.blocks.ConvertAll(b => b.Coord.ToString()))}]");
 
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 120°! ({matches.Count} groups)");
-                // 매칭 성공 사운드
                 if (AudioManager.Instance != null)
                 {
                     int totalBlocks = 0;
@@ -211,18 +224,15 @@ namespace JewelsHexaPuzzle.Core
             yield return StartCoroutine(AnimateRotation(blocks, originalPositions));
 
             for (int i = 0; i < 3; i++)
-                blocks[i].transform.localPosition = originalPositions[i];
+                SetAnchoredPos(blocks[i], originalPositions[i]);
 
             SwapData(blocks);
             yield return null;
-
-            Debug.Log($"[Rotation] After 240° - B0:{blocks[0].Data.gemType} B1:{blocks[1].Data.gemType} B2:{blocks[2].Data.gemType}");
 
             matches = matchingSystem.FindMatches();
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 240°! ({matches.Count} groups)");
-                // 매칭 성공 사운드
                 if (AudioManager.Instance != null)
                 {
                     int totalBlocks = 0;
@@ -238,13 +248,12 @@ namespace JewelsHexaPuzzle.Core
             yield return StartCoroutine(AnimateRotation(blocks, originalPositions));
 
             for (int i = 0; i < 3; i++)
-                blocks[i].transform.localPosition = originalPositions[i];
+                SetAnchoredPos(blocks[i], originalPositions[i]);
 
             for (int i = 0; i < 3; i++)
                 blocks[i].SetBlockData(originalData[i]);
 
             Debug.Log("[Rotation] No match, reverted");
-            // 매칭 실패 (원복) 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayFailSound();
             isRotating = false;
@@ -252,12 +261,12 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 회전 애니메이션 (120도)
+        /// 회전 애니메이션 (120도) - anchoredPosition 사용
         /// 시계방향: -120도, 반시계방향: +120도
         /// </summary>
-        private IEnumerator AnimateRotation(HexBlock[] blocks, Vector3[] originalPositions)
+        private IEnumerator AnimateRotation(HexBlock[] blocks, Vector2[] originalPositions)
         {
-            Vector3 center = (originalPositions[0] + originalPositions[1] + originalPositions[2]) / 3f;
+            Vector2 center = (originalPositions[0] + originalPositions[1] + originalPositions[2]) / 3f;
 
             float elapsed = 0f;
             float targetAngle = clockwiseRotation ? -120f : 120f;
@@ -266,24 +275,35 @@ namespace JewelsHexaPuzzle.Core
             {
                 elapsed += Time.deltaTime;
                 float t = rotationCurve.Evaluate(elapsed / rotationDuration);
-                float angle = targetAngle * t;
+                float angle = targetAngle * t * Mathf.Deg2Rad;
+                float cos = Mathf.Cos(angle);
+                float sin = Mathf.Sin(angle);
 
                 for (int i = 0; i < 3; i++)
                 {
-                    Vector3 offset = originalPositions[i] - center;
-                    Vector3 rotated = Quaternion.Euler(0, 0, angle) * offset;
-                    blocks[i].transform.localPosition = center + rotated;
+                    Vector2 offset = originalPositions[i] - center;
+                    Vector2 rotated = new Vector2(
+                        offset.x * cos - offset.y * sin,
+                        offset.x * sin + offset.y * cos
+                    );
+                    SetAnchoredPos(blocks[i], center + rotated);
                 }
 
                 yield return null;
             }
 
-            float finalAngle = targetAngle;
+            // 최종 위치 보정
+            float finalAngle = targetAngle * Mathf.Deg2Rad;
+            float finalCos = Mathf.Cos(finalAngle);
+            float finalSin = Mathf.Sin(finalAngle);
             for (int i = 0; i < 3; i++)
             {
-                Vector3 offset = originalPositions[i] - center;
-                Vector3 rotated = Quaternion.Euler(0, 0, finalAngle) * offset;
-                blocks[i].transform.localPosition = center + rotated;
+                Vector2 offset = originalPositions[i] - center;
+                Vector2 rotated = new Vector2(
+                    offset.x * finalCos - offset.y * finalSin,
+                    offset.x * finalSin + offset.y * finalCos
+                );
+                SetAnchoredPos(blocks[i], center + rotated);
             }
         }
 

@@ -79,7 +79,7 @@ namespace JewelsHexaPuzzle.Core
                 GameObject child = transform.GetChild(i).gameObject;
                 if (child.name.StartsWith("Spark") || child.name.StartsWith("LightningArc") ||
                     child.name.StartsWith("DestroyFlash") || child.name.StartsWith("BloomLayer") ||
-                    child.name.StartsWith("MatchPulseGlow"))
+                    child.name.StartsWith("MatchPulseGlow") || child.name.StartsWith("GrayShard"))
                     Destroy(child);
             }
 
@@ -96,7 +96,8 @@ namespace JewelsHexaPuzzle.Core
                             child.name.StartsWith("SpecialImpact") ||
                             child.name.StartsWith("SpawnGlow") ||
                             child.name.StartsWith("DestroyFlash") ||
-                            child.name.StartsWith("MatchPulseGlow"))
+                            child.name.StartsWith("MatchPulseGlow") ||
+                            child.name.StartsWith("GrayCrack"))
                             Destroy(child);
                     }
                 }
@@ -315,8 +316,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                         drillSystem.ActivateDrill(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (drillSystem.IsDrilling && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (drillSystem.IsDrilling) { Debug.LogError("[BRS] Drill timeout! ForceReset"); drillSystem.ForceReset(); }
+                        while (drillSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (drillSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Drill timeout! ForceReset"); drillSystem.ForceReset(); }
                     }
                     break;
 
@@ -327,8 +328,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                         bombSystem.ActivateBomb(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (bombSystem.IsBombing && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (bombSystem.IsBombing) { Debug.LogError("[BRS] Bomb timeout! ForceReset"); bombSystem.ForceReset(); }
+                        while (bombSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (bombSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Bomb timeout! ForceReset"); bombSystem.ForceReset(); }
                     }
                     break;
 
@@ -339,8 +340,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                         donutSystem.ActivateDonut(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (donutSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (donutSystem.IsActivating) { Debug.LogError("[BRS] Donut timeout! ForceReset"); donutSystem.ForceReset(); }
+                        while (donutSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (donutSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Donut timeout! ForceReset"); donutSystem.ForceReset(); }
                     }
                     break;
 
@@ -351,8 +352,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                         xBlockSystem.ActivateXBlock(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (xBlockSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (xBlockSystem.IsActivating) { Debug.LogError("[BRS] XBlock timeout! ForceReset"); xBlockSystem.ForceReset(); }
+                        while (xBlockSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (xBlockSystem.IsBlockActive(block)) { Debug.LogError("[BRS] XBlock timeout! ForceReset"); xBlockSystem.ForceReset(); }
                     }
                     break;
 
@@ -363,8 +364,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                         laserSystem.ActivateLaser(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (laserSystem.IsActivating && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (laserSystem.IsActivating) { Debug.LogError("[BRS] Laser timeout! ForceReset"); laserSystem.ForceReset(); }
+                        while (laserSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (laserSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Laser timeout! ForceReset"); laserSystem.ForceReset(); }
                     }
                     break;
             }
@@ -395,7 +396,8 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
 
             foreach (var block in blocks)
             {
-                if (block != null && block != spawnBlock)
+                if (block != null && block != spawnBlock &&
+                    (block.Data == null || block.Data.specialType == SpecialBlockType.None))
                 {
                     startPositions[block] = block.transform.position;
                     startScales[block] = block.transform.localScale;
@@ -849,6 +851,143 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
             }
 
             block.transform.localScale = Vector3.zero;
+        }
+
+        /// <summary>
+        /// 회색(적군) 블록 폭발 이펙트
+        /// 인접 매칭으로 제거될 때 사용 — 빠른 팽창 + 밝은 플래시 + 충격파 링 + 파편 산개
+        /// </summary>
+        private IEnumerator AnimateGrayCrumble(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            Vector3 burstCenter = block.transform.position;
+
+            // 1. 밝은 백색 플래시 (폭발 순간)
+            GameObject flash = new GameObject("GrayBurstFlash");
+            flash.transform.SetParent(block.transform, false);
+            flash.transform.localPosition = Vector3.zero;
+            var flashImg = flash.AddComponent<UnityEngine.UI.Image>();
+            flashImg.raycastTarget = false;
+            flashImg.sprite = HexBlock.GetHexFlashSprite();
+            flashImg.color = new Color(1f, 1f, 1f, 0.95f);
+            RectTransform flashRt = flash.GetComponent<RectTransform>();
+            flashRt.sizeDelta = new Vector2(30f, 30f);
+
+            // 2. 충격파 링
+            GameObject ring = new GameObject("GrayBurstRing");
+            ring.transform.SetParent(transform, false);
+            ring.transform.position = burstCenter;
+            var ringImg = ring.AddComponent<UnityEngine.UI.Image>();
+            ringImg.raycastTarget = false;
+            ringImg.sprite = HexBlock.GetHexBorderSprite();
+            ringImg.color = new Color(0.8f, 0.8f, 0.85f, 0.9f);
+            RectTransform ringRt = ring.GetComponent<RectTransform>();
+            ringRt.sizeDelta = new Vector2(20f, 20f);
+
+            // 3. 파편 대량 산개 (폭발적)
+            for (int i = 0; i < 14; i++)
+                StartCoroutine(AnimateGrayShard(burstCenter));
+
+            // 4. 블록 빠른 팽창 → 소멸
+            float duration = 0.18f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // 블록: 빠르게 확대되며 투명해짐 (팡! 터지는 느낌)
+                float expandScale = 1f + t * 1.5f;
+                block.transform.localScale = Vector3.one * expandScale;
+
+                // 플래시: 급팽창 + 페이드아웃
+                float flashScale = 1f + t * 8f;
+                flashRt.sizeDelta = new Vector2(30f * flashScale, 30f * flashScale);
+                flashImg.color = new Color(1f, 1f, 1f, 0.95f * (1f - t * t));
+
+                // 충격파 링: 확산
+                float ringScale = 1f + t * 6f;
+                ringRt.sizeDelta = new Vector2(20f * ringScale, 20f * ringScale);
+                ringImg.color = new Color(0.8f, 0.8f, 0.85f, 0.9f * (1f - t));
+
+                yield return null;
+            }
+
+            block.transform.localScale = Vector3.zero;
+            block.transform.localRotation = Quaternion.identity;
+
+            // 잔여 글로우 페이드 (0.12초)
+            float fadeDuration = 0.12f;
+            elapsed = 0f;
+            while (elapsed < fadeDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDuration);
+                flashImg.color = new Color(1f, 1f, 1f, 0.1f * (1f - t));
+                ringImg.color = new Color(0.8f, 0.8f, 0.85f, 0.15f * (1f - t));
+                float rs = 1f + t * 3f;
+                ringRt.sizeDelta = new Vector2(20f * (7f + rs), 20f * (7f + rs));
+                yield return null;
+            }
+
+            Destroy(flash);
+            Destroy(ring);
+        }
+
+        /// <summary>
+        /// 회색 블록 폭발 파편 (밝은 톤, 빠르고 넓게 산개)
+        /// </summary>
+        private IEnumerator AnimateGrayShard(Vector3 center)
+        {
+            GameObject shard = new GameObject("GrayShard");
+            shard.transform.SetParent(transform, false);
+            shard.transform.position = center;
+
+            var image = shard.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+
+            RectTransform rt = shard.GetComponent<RectTransform>();
+            float size = Random.Range(3f, 9f);
+            rt.sizeDelta = new Vector2(size, size);
+
+            // 빠르고 넓은 산개
+            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float speed = Random.Range(150f, 350f);
+            Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+
+            // 밝은 회색~흰색 톤 (시원한 느낌)
+            float gray = Random.Range(0.6f, 0.95f);
+            Color shardColor = new Color(gray, gray, gray + 0.05f, 1f);
+            image.color = shardColor;
+
+            float lifetime = Random.Range(0.2f, 0.4f);
+            float elapsedTime = 0f;
+
+            while (elapsedTime < lifetime)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = elapsedTime / lifetime;
+
+                Vector3 pos = shard.transform.position;
+                pos.x += velocity.x * Time.deltaTime;
+                pos.y += velocity.y * Time.deltaTime;
+                shard.transform.position = pos;
+
+                velocity *= 0.94f;
+
+                shardColor.a = 1f - t * t;
+                image.color = shardColor;
+                float s = size * (1f - t * 0.5f);
+                rt.sizeDelta = new Vector2(s, s);
+
+                shard.transform.Rotate(0, 0, velocity.magnitude * Time.deltaTime * 0.8f);
+
+                yield return null;
+            }
+
+            Destroy(shard);
         }
 
         /// <summary>
@@ -1733,7 +1872,30 @@ public void TriggerBigBang()
             }
             if (posCount > 0) avgPosition /= posCount;
 
-            // 5. 삭제 애니메이션 (일반 블록만) + 파괴 사운드
+            // 5. 인접 회색(적군) 블록 수집 + 인접 체인 해제
+            //    삭제되는 블록 + 새로 생성된 특수 블록 모두의 인접을 확인
+            HashSet<HexBlock> grayToRemove = new HashSet<HexBlock>();
+            HashSet<HexBlock> allAffected = new HashSet<HexBlock>(blocksToRemove);
+            foreach (var sp in newlyCreatedSpecials)
+                allAffected.Add(sp);
+
+            foreach (var block in allAffected)
+            {
+                if (block == null) continue;
+                foreach (var neighbor in hexGrid.GetNeighbors(block.Coord))
+                {
+                    if (neighbor == null || neighbor.Data == null) continue;
+                    if (neighbor.Data.gemType == GemType.Gray && !allAffected.Contains(neighbor))
+                        grayToRemove.Add(neighbor);
+                    if (neighbor.Data.hasChain)
+                    {
+                        neighbor.RemoveChain();
+                        Debug.Log($"[BRS] 체인 해제: ({neighbor.Coord}) - 인접 블록 매칭으로 해제");
+                    }
+                }
+            }
+
+            // 6. 삭제 애니메이션 (일반 블록만) + 파괴 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBlockDestroySound();
             foreach (var block in blocksToRemove)
@@ -1741,7 +1903,7 @@ public void TriggerBigBang()
 
             yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
 
-            // 6. 일반 블록 데이터 클리어
+            // 7. 일반 블록 데이터 클리어
             foreach (var block in blocksToRemove)
             {
                 if (block != null)
@@ -1754,6 +1916,33 @@ public void TriggerBigBang()
             }
 
             OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
+
+            // 8. 인접 회색 블록 딜레이 제거 (0.3초 후 균열 이펙트)
+            if (grayToRemove.Count > 0)
+            {
+                yield return new WaitForSeconds(0.3f);
+
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayBlockDestroySound();
+
+                foreach (var gray in grayToRemove)
+                    StartCoroutine(AnimateGrayCrumble(gray));
+
+                yield return new WaitForSeconds(VisualConstants.DestroyDuration + 0.05f);
+
+                foreach (var gray in grayToRemove)
+                {
+                    if (gray != null)
+                    {
+                        gray.ClearData();
+                        gray.SetMatched(false);
+                        RestoreBlockToSlot(gray);
+                        gray.transform.localScale = Vector3.one;
+                    }
+                }
+
+                OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
+            }
 
             // 6. 매칭 특수블록 + pending 특수블록 동시 발동
             List<HexBlock> allSpecialsToActivate = new List<HexBlock>();

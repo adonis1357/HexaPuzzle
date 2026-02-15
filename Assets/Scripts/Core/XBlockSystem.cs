@@ -27,13 +27,16 @@ namespace JewelsHexaPuzzle.Core
 
         private int activeXBlockCount = 0;
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
+        private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
         public bool IsActivating => activeXBlockCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
+        public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
         public void ForceReset()
         {
             activeXBlockCount = 0;
             pendingSpecialBlocks.Clear();
+            activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
             Debug.LogWarning("[XBlockSystem] ForceReset called");
@@ -143,7 +146,7 @@ namespace JewelsHexaPuzzle.Core
 
                     float minDist = Mathf.Min(dist1, dist2);
 
-                    // 코어 X (흰색, 불투명)
+                    // 코어 X (파스텔 라벤더)
                     if (minDist < armWidth && fromCenter <= armLength)
                     {
                         float edge = minDist / armWidth;
@@ -151,10 +154,10 @@ namespace JewelsHexaPuzzle.Core
 
                         // 3D 느낌 - 중앙이 밝고 가장자리가 어두움
                         float highlight = Mathf.Pow(1f - edge, 2f) * 0.3f;
-                        Color c = new Color(0.95f + highlight * 0.05f, 0.95f + highlight * 0.05f, 1f, aa);
+                        Color c = new Color(0.88f + highlight * 0.05f, 0.80f + highlight * 0.05f, 0.96f, aa);
                         pixels[y * size + x] = c;
                     }
-                    // 글로우 (부드러운 바깥 빛)
+                    // 글로우 (파스텔 라벤더 글로우)
                     else if (minDist < armWidth + glowRadius && fromCenter <= armLength + glowRadius)
                     {
                         float glowT = (minDist - armWidth) / glowRadius;
@@ -164,7 +167,7 @@ namespace JewelsHexaPuzzle.Core
                         float edgeFade = Mathf.Clamp01((armLength + glowRadius - fromCenter) / glowRadius);
                         glowAlpha *= edgeFade;
 
-                        Color glowColor = new Color(0.7f, 0.85f, 1f, glowAlpha);
+                        Color glowColor = new Color(0.82f, 0.76f, 0.95f, glowAlpha);
                         if (pixels[y * size + x].a < glowAlpha)
                             pixels[y * size + x] = glowColor;
                     }
@@ -220,6 +223,7 @@ namespace JewelsHexaPuzzle.Core
         private IEnumerator XBlockCoroutine(HexBlock xBlock)
         {
             activeXBlockCount++;
+            activeBlocks.Add(xBlock);
 
             HexCoord xCoord = xBlock.Coord;
             Vector3 xWorldPos = xBlock.transform.position;
@@ -237,7 +241,7 @@ namespace JewelsHexaPuzzle.Core
             // Zoom Punch (Small tier)
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
-            // X블록 자체 클리어
+            // 발사 순간 블록 클리어
             xBlock.ClearData();
 
             // 같은 색 블록 전부 수집
@@ -318,6 +322,7 @@ namespace JewelsHexaPuzzle.Core
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
             OnXBlockComplete?.Invoke(totalScore);
+            activeBlocks.Remove(xBlock);
             activeXBlockCount--;
         }
 
@@ -655,6 +660,27 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
         // 화면 흔들림 (newly added for XBlock)
         // ============================================================
+
+        private IEnumerator FadeOutAndDestroy(GameObject obj)
+        {
+            var img = obj.GetComponent<UnityEngine.UI.Image>();
+            if (img == null) { Destroy(obj); yield break; }
+
+            Color c = img.color;
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                c.a = 1f - t;
+                img.color = c;
+                yield return null;
+            }
+
+            Destroy(obj);
+        }
 
         private int shakeCount = 0;
         private Vector3 shakeOriginalPos;

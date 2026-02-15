@@ -2,6 +2,12 @@ using UnityEngine;
 
 namespace JewelsHexaPuzzle.Data
 {
+    public enum GameMode
+    {
+        Stage,
+        Infinite
+    }
+
     public enum GemType
     {
         None = 0,
@@ -15,7 +21,8 @@ namespace JewelsHexaPuzzle.Data
         Emerald = 8,
         Sapphire = 9,
         Amber = 10,
-        Amethyst = 11
+        Amethyst = 11,
+        Gray = 12
     }
 
     public enum SpecialBlockType
@@ -128,7 +135,7 @@ namespace JewelsHexaPuzzle.Data
 
         public bool CanMove()
         {
-            return specialType != SpecialBlockType.FixedBlock;
+            return specialType != SpecialBlockType.FixedBlock && !hasChain;
         }
     }
 
@@ -171,6 +178,8 @@ namespace JewelsHexaPuzzle.Data
                     return new Color(0.62f, 0.2f, 0.88f);     // 선명한 보라
                 case GemType.Orange:
                     return new Color(1.0f, 0.5f, 0.05f);      // 선명한 주황
+                case GemType.Gray:
+                    return new Color(0.55f, 0.55f, 0.58f);     // 적군 회색
                 default:
                     return new Color(0.75f, 0.68f, 0.6f);     // 베이지
             }

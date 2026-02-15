@@ -24,14 +24,17 @@ namespace JewelsHexaPuzzle.Core
 
         private int activeLaserCount = 0;
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
+        private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
         public bool IsActivating => activeLaserCount > 0;
+        public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
 
         public void ForceReset()
         {
             StopAllCoroutines();
             activeLaserCount = 0;
             pendingSpecialBlocks.Clear();
+            activeBlocks.Clear();
             CleanupEffects();
             Debug.LogWarning("[LaserBlockSystem] ForceReset called");
         }
@@ -144,9 +147,9 @@ namespace JewelsHexaPuzzle.Core
 
                             float glow = Mathf.Pow(edgeFade, 2f);
                             Color c = new Color(
-                                0.3f + glow * 0.7f,
-                                0.6f + glow * 0.4f,
-                                1f,
+                                0.65f + glow * 0.15f,
+                                0.82f + glow * 0.08f,
+                                0.98f,
                                 alpha * 0.9f
                             );
 
@@ -208,6 +211,7 @@ namespace JewelsHexaPuzzle.Core
         private IEnumerator LaserCoroutine(HexBlock laserBlock)
         {
             activeLaserCount++;
+            activeBlocks.Add(laserBlock);
 
             HexCoord startCoord = laserBlock.Coord;
             Vector3 laserWorldPos = laserBlock.transform.position;
@@ -224,7 +228,7 @@ namespace JewelsHexaPuzzle.Core
             // Zoom Punch (Large tier)
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
 
-            // 레이저 블록 자체 클리어
+            // 발사 순간 블록 클리어
             laserBlock.ClearData();
 
             // 3축 × 양방향 = 6방향 타겟 수집
@@ -284,6 +288,7 @@ namespace JewelsHexaPuzzle.Core
             int totalScore = 300 + blockScoreSum;
             Debug.Log($"[LaserBlockSystem] === LASER COMPLETE === Score={totalScore} (base:300 + blockTierSum:{blockScoreSum})");
             OnLaserComplete?.Invoke(totalScore);
+            activeBlocks.Remove(laserBlock);
             activeLaserCount--;
         }
 
@@ -685,6 +690,27 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
         // 화면 흔들림 (Bug #11 fix: 동시 실행 시 위치 드리프트 방지)
         // ============================================================
 
+        private IEnumerator FadeOutAndDestroy(GameObject obj)
+        {
+            var img = obj.GetComponent<UnityEngine.UI.Image>();
+            if (img == null) { Destroy(obj); yield break; }
+
+            Color c = img.color;
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                c.a = 1f - t;
+                img.color = c;
+                yield return null;
+            }
+
+            Destroy(obj);
+        }
+
         private int shakeCount = 0;
         private Vector3 shakeOriginalPos;
 
@@ -722,13 +748,15 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
 
         private float GetDirectionAngle(DrillDirection direction, bool positive)
         {
+            // Y반전 좌표계 기반 실제 화면 방향 (beam pivot=bottom, 0°=up)
+            // Vertical(0,+r): 화면 아래, Slash(+q,-r): 화면 우상, BackSlash(+q,0): 화면 우하
             float angle;
             switch (direction)
             {
-                case DrillDirection.Vertical:  angle = -90f; break;
-                case DrillDirection.Slash:     angle = 30f;  break;
-                case DrillDirection.BackSlash: angle = -30f; break;
-                default: angle = -90f; break;
+                case DrillDirection.Vertical:  angle = 180f;  break;
+                case DrillDirection.Slash:     angle = -60f;  break;
+                case DrillDirection.BackSlash: angle = -120f; break;
+                default: angle = 180f; break;
             }
             return positive ? angle : angle + 180f;
         }

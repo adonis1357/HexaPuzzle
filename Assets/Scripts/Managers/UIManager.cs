@@ -73,8 +73,13 @@ namespace JewelsHexaPuzzle.Managers
 
         // 이동 횟수 애니메이션
         private int maxTurns = 30;
+        private bool isInfiniteMode = false;
         private Coroutine turnBounceCoroutine;
         private Coroutine turnPulseCoroutine;
+
+        public void SetTurnText(Text text) { if (turnText == null) turnText = text; }
+        public void SetScoreText(Text text) { if (goldText == null) goldText = text; }
+        public void SetGameOverPopup(GameObject popup) { if (gameOverPopup == null) gameOverPopup = popup; }
 
         private void Start()
         {
@@ -132,6 +137,19 @@ namespace JewelsHexaPuzzle.Managers
 
             turnText.text = turns.ToString();
 
+            // 무한모드: 경고/펄스 비활성화, 항상 흰색
+            if (isInfiniteMode)
+            {
+                turnText.color = Color.white;
+                StopTurnPulse();
+
+                // 바운스 애니메이션만 적용
+                if (turnBounceCoroutine != null)
+                    StopCoroutine(turnBounceCoroutine);
+                turnBounceCoroutine = StartCoroutine(TurnBounceAnimation());
+                return;
+            }
+
             // 최대 턴 표시
             if (moveMaxText != null)
                 moveMaxText.text = $"/{maxTurns}";
@@ -172,6 +190,32 @@ namespace JewelsHexaPuzzle.Managers
             if (turnBounceCoroutine != null)
                 StopCoroutine(turnBounceCoroutine);
             turnBounceCoroutine = StartCoroutine(TurnBounceAnimation());
+        }
+
+        /// <summary>
+        /// 무한모드 설정
+        /// </summary>
+        public void SetInfiniteMode(bool infinite)
+        {
+            isInfiniteMode = infinite;
+            if (infinite)
+            {
+                // 프로그레스 링, 최대 턴 표시 비활성화
+                if (moveProgressRing != null)
+                    moveProgressRing.gameObject.SetActive(false);
+                if (moveMaxText != null)
+                    moveMaxText.gameObject.SetActive(false);
+
+                // 펄스 중지
+                StopTurnPulse();
+            }
+            else
+            {
+                if (moveProgressRing != null)
+                    moveProgressRing.gameObject.SetActive(true);
+                if (moveMaxText != null)
+                    moveMaxText.gameObject.SetActive(true);
+            }
         }
 
         /// <summary>
@@ -623,6 +667,7 @@ namespace JewelsHexaPuzzle.Managers
         {
             if (popup == null) return;
 
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayPopupOpen();
             popup.SetActive(true);
             StartCoroutine(AnimatePopupIn(popup));
         }
@@ -756,6 +801,7 @@ namespace JewelsHexaPuzzle.Managers
 
         private void OnRetryButtonClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             HideAllPopups();
             Time.timeScale = 1f;
             GameManager.Instance?.RetryStage();
@@ -763,6 +809,7 @@ namespace JewelsHexaPuzzle.Managers
 
         private void OnBuyTurnButtonClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             // 턴 구매 프로세스
             // TODO: IAP 연동
             Debug.Log("Buy Turn Clicked");
@@ -774,6 +821,7 @@ namespace JewelsHexaPuzzle.Managers
 
         private void OnNextStageButtonClicked()
         {
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
             HidePopup(stageClearPopup);
             GameManager.Instance?.NextStage();
         }

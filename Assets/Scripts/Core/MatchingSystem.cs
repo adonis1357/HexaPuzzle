@@ -46,24 +46,41 @@ public List<MatchGroup> FindMatches()
                 return allMatches;
             }
 
+            // 1) 링(도넛) 매칭 최우선 감지 — X블록 패턴이 다른 매칭보다 우선
+            var ringMatches = FindRingMatches();
+            HashSet<HexBlock> ringUsedBlocks = new HashSet<HexBlock>();
+            foreach (var ring in ringMatches)
+                foreach (var block in ring.blocks)
+                    ringUsedBlocks.Add(block);
+
             int totalBlocks = 0;
             int validBlocks = 0;
             int nullDataBlocks = 0;
             int noneGemBlocks = 0;
             int fixedBlocks = 0;
 
-            // 1) 삼각형 매칭
+            // 2) 삼각형 매칭 — 링에 사용된 블록 제외
             foreach (var block in hexGrid.GetAllBlocks())
             {
                 totalBlocks++;
                 if (block.Data == null) { nullDataBlocks++; continue; }
-                if (block.Data.gemType == GemType.None) { noneGemBlocks++; continue; }
+                if (block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) { noneGemBlocks++; continue; }
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) { fixedBlocks++; continue; }
                 validBlocks++;
+
+                if (ringUsedBlocks.Contains(block)) continue;
 
                 var triangles = FindTrianglesContaining(block);
                 foreach (var triangle in triangles)
                 {
+                    // 링 블록이 포함된 삼각형은 제외
+                    bool containsRingBlock = false;
+                    foreach (var tb in triangle)
+                    {
+                        if (ringUsedBlocks.Contains(tb)) { containsRingBlock = true; break; }
+                    }
+                    if (containsRingBlock) continue;
+
                     string key = GetTriangleKey(triangle);
                     if (!foundTriangles.Contains(key))
                     {
@@ -79,13 +96,12 @@ public List<MatchGroup> FindMatches()
                 }
             }
 
-            Debug.Log($"[MatchingSystem] FindMatches scan: total={totalBlocks}, valid={validBlocks}, nullData={nullDataBlocks}, noneGem={noneGemBlocks}, fixed={fixedBlocks}, triangles={allMatches.Count}");
+            Debug.Log($"[MatchingSystem] FindMatches scan: total={totalBlocks}, valid={validBlocks}, nullData={nullDataBlocks}, noneGem={noneGemBlocks}, fixed={fixedBlocks}, triangles={allMatches.Count}, rings={ringMatches.Count}");
 
-            // 2) 삼각형 매칭만 병합 (링은 병합하지 않음)
+            // 3) 삼각형 매칭만 병합 (링은 병합하지 않음)
             allMatches = MergeAdjacentMatches(allMatches);
 
-            // 3) 링(도넛) 매칭 - 병합 후 별도로 추가 (링 6개만 삭제, 중앙에 특수블록)
-            var ringMatches = FindRingMatches();
+            // 4) 링 매칭 추가
             allMatches.AddRange(ringMatches);
 
             if (allMatches.Count > 0)
@@ -109,7 +125,7 @@ private List<MatchGroup> FindRingMatches()
                 var neighbors = hexGrid.GetNeighbors(center);
                 if (neighbors.Count < 6) continue;
 
-                if (block.Data == null || block.Data.gemType == GemType.None) continue;
+                if (block.Data == null || block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) continue;
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
 
                 GemType ringColor = GemType.None;
@@ -119,6 +135,7 @@ private List<MatchGroup> FindRingMatches()
                 foreach (var neighbor in neighbors)
                 {
                     if (neighbor.Data == null || neighbor.Data.gemType == GemType.None ||
+                        neighbor.Data.gemType == GemType.Gray ||
                         neighbor.Data.specialType == SpecialBlockType.FixedBlock)
                     { validRing = false; break; }
 
@@ -163,11 +180,16 @@ private List<MatchGroup> FindRingMatches()
         {
             List<List<HexBlock>> triangles = new List<List<HexBlock>>();
             GemType targetType = centerBlock.Data.gemType;
+
+            // Gray 블록은 매칭 불가
+            if (targetType == GemType.Gray) return triangles;
+
             var neighbors = hexGrid.GetNeighbors(centerBlock.Coord);
 
             var sameColorNeighbors = neighbors
                 .Where(n => n.Data != null &&
                            n.Data.gemType == targetType &&
+                           n.Data.gemType != GemType.Gray &&
                            n.Data.specialType != SpecialBlockType.FixedBlock)
                 .ToList();
 
@@ -239,7 +261,8 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 merged.score = CalculateScore(merged.blocks.Count);
 
                 // 특수 블록 우선순위: 도넛(7+링) > 레이저(6) > 폭탄(5) > 드릴(4)
-                // X블록은 FindRingMatches에서 별도 감지 (6이웃 동색 도넛 패턴)
+                // 뭉친 형태(compact)만 허용: 중심 블록의 그룹 내 인접 수로 검증
+                // 비정형 병합(흩어진 형태)에서는 특수 블록 미생성
                 if (merged.blocks.Count >= 7)
                 {
                     if (!CheckForDonutPattern(merged))
@@ -366,6 +389,13 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
             if (centerBlock == null) return;
 
+            // 뭉친 형태 검증: 중심 블록이 그룹 내 4개 이상과 인접해야 함
+            if (maxNeighborCount < 4)
+            {
+                Debug.Log($"[MatchingSystem] BOMB REJECTED: Count={group.blocks.Count}, MaxNeighbor={maxNeighborCount} < 4 (비정형)");
+                return;
+            }
+
             group.createdSpecialType = SpecialBlockType.Bomb;
             group.specialSpawnBlock = centerBlock;
             Debug.Log($"[MatchingSystem] BOMB: Count={group.blocks.Count}, Center=({centerBlock.Coord}), NeighborCount={maxNeighborCount}");
@@ -402,6 +432,13 @@ private void CheckForLaserPattern(MatchGroup group)
             }
 
             if (centerBlock == null) return;
+
+            // 뭉친 형태 검증: 중심 블록이 그룹 내 5개와 인접해야 함
+            if (maxNeighborCount < 5)
+            {
+                Debug.Log($"[MatchingSystem] LASER REJECTED: Count={group.blocks.Count}, MaxNeighbor={maxNeighborCount} < 5 (비정형)");
+                return;
+            }
 
             group.createdSpecialType = SpecialBlockType.Laser;
             group.specialSpawnBlock = centerBlock;
@@ -511,6 +548,124 @@ private void CheckForLaserPattern(MatchGroup group)
             foreach (var match in matches)
                 if (match.blocks.Contains(block)) return true;
             return false;
+        }
+
+        // ============================================================
+        // 무한 모드: 매칭 가능 여부 체크
+        // ============================================================
+
+        /// <summary>
+        /// 보드에 가능한 움직임이 있는지 확인
+        /// 모든 삼각형 클러스터를 순회하며 CW/CCW 가상 회전 후 매칭 여부 확인
+        /// SetBlockDataSilent로 비주얼 업데이트 없이 데이터만 교체하여 성능 최적화
+        /// </summary>
+        public bool HasPossibleMoves()
+        {
+            if (hexGrid == null) return false;
+
+            // 이미 매칭이 있으면 true
+            if (HasAnyTriangleMatch()) return true;
+
+            // 모든 유효한 삼각형 클러스터 열거
+            var clusters = GetAllClusters();
+
+            foreach (var cluster in clusters)
+            {
+                // 원본 데이터 참조 저장
+                BlockData d0 = cluster[0].Data;
+                BlockData d1 = cluster[1].Data;
+                BlockData d2 = cluster[2].Data;
+
+                // CW 회전 시뮬레이션 (비주얼 업데이트 없음)
+                cluster[0].SetBlockDataSilent(d2);
+                cluster[1].SetBlockDataSilent(d0);
+                cluster[2].SetBlockDataSilent(d1);
+
+                bool hasCWMatch = HasAnyTriangleMatch();
+
+                // 원복
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+
+                if (hasCWMatch) return true;
+
+                // CCW 회전 시뮬레이션
+                cluster[0].SetBlockDataSilent(d1);
+                cluster[1].SetBlockDataSilent(d2);
+                cluster[2].SetBlockDataSilent(d0);
+
+                bool hasCCWMatch = HasAnyTriangleMatch();
+
+                // 원복
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+
+                if (hasCCWMatch) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 삼각형 매칭이 하나라도 있는지 빠르게 확인 (이벤트 미발생, 병합/링 체크 생략)
+        /// </summary>
+        private bool HasAnyTriangleMatch()
+        {
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block.Data == null) continue;
+                if (block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) continue;
+                if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+
+                var triangles = FindTrianglesContaining(block);
+                if (triangles.Count > 0) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 모든 유효한 삼각형 클러스터(3블록) 수집
+        /// 중복 방지: 좌표 정렬 기반 HashSet
+        /// </summary>
+        private List<HexBlock[]> GetAllClusters()
+        {
+            List<HexBlock[]> clusters = new List<HexBlock[]>();
+            HashSet<string> seen = new HashSet<string>();
+
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+
+                var neighbors = hexGrid.GetNeighbors(block.Coord);
+
+                for (int i = 0; i < neighbors.Count; i++)
+                {
+                    for (int j = i + 1; j < neighbors.Count; j++)
+                    {
+                        // 이웃 쌍이 서로 인접해야 삼각형
+                        if (neighbors[i].Coord.DistanceTo(neighbors[j].Coord) != 1) continue;
+
+                        // 중복 방지 키 생성
+                        var coords = new HexCoord[] { block.Coord, neighbors[i].Coord, neighbors[j].Coord };
+                        System.Array.Sort(coords, (a, b) => a.q != b.q ? a.q.CompareTo(b.q) : a.r.CompareTo(b.r));
+                        string key = $"{coords[0].q},{coords[0].r}|{coords[1].q},{coords[1].r}|{coords[2].q},{coords[2].r}";
+
+                        if (seen.Contains(key)) continue;
+                        seen.Add(key);
+
+                        // 회전 불가 블록(FixedBlock) 포함 클러스터 제외
+                        if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+                        if (neighbors[i].Data != null && neighbors[i].Data.specialType == SpecialBlockType.FixedBlock) continue;
+                        if (neighbors[j].Data != null && neighbors[j].Data.specialType == SpecialBlockType.FixedBlock) continue;
+
+                        clusters.Add(new HexBlock[] { block, neighbors[i], neighbors[j] });
+                    }
+                }
+            }
+
+            return clusters;
         }
     }
 }

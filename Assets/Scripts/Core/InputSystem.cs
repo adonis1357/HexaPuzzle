@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -95,8 +96,31 @@ namespace JewelsHexaPuzzle.Core
             }
         }
 
+private float lastBlockedLogTime = -10f;
+
 private void Update()
         {
+            // 클릭 시 입력 차단 원인 로그 (1초에 최대 1회)
+            if (Input.GetMouseButtonDown(0) && Time.time - lastBlockedLogTime > 1f)
+            {
+                if (!isEnabled)
+                { Debug.LogWarning("[InputSystem] BLOCKED: isEnabled=false"); lastBlockedLogTime = Time.time; }
+                else if (hexGrid == null || hexGrid.BlockCount == 0)
+                { Debug.LogWarning($"[InputSystem] BLOCKED: hexGrid null={hexGrid == null}, count={hexGrid?.BlockCount}"); lastBlockedLogTime = Time.time; }
+                else if (rotationSystem != null && rotationSystem.IsRotating)
+                { Debug.LogWarning("[InputSystem] BLOCKED: IsRotating=true"); lastBlockedLogTime = Time.time; }
+                else if (drillSystem != null && drillSystem.IsDrilling)
+                { Debug.LogWarning("[InputSystem] BLOCKED: IsDrilling=true"); lastBlockedLogTime = Time.time; }
+                else if (bombSystem != null && bombSystem.IsBombing)
+                { Debug.LogWarning("[InputSystem] BLOCKED: IsBombing=true"); lastBlockedLogTime = Time.time; }
+                else if (xBlockSystem != null && xBlockSystem.IsActivating)
+                { Debug.LogWarning("[InputSystem] BLOCKED: XBlock.IsActivating=true"); lastBlockedLogTime = Time.time; }
+                else if (laserSystem != null && laserSystem.IsActivating)
+                { Debug.LogWarning("[InputSystem] BLOCKED: Laser.IsActivating=true"); lastBlockedLogTime = Time.time; }
+                else if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing)
+                { Debug.LogWarning("[InputSystem] BLOCKED: BRS.IsProcessing=true"); lastBlockedLogTime = Time.time; }
+            }
+
             if (!isEnabled) return;
             if (hexGrid == null || hexGrid.BlockCount == 0) return;
             if (rotationSystem != null && rotationSystem.IsRotating) return;
@@ -170,6 +194,7 @@ private void Update()
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
                 Debug.Log($"[InputSystem] Drill block clicked at {clickedBlock.Coord}");
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
                 drillSystem.ActivateDrill(clickedBlock);
                 ClearHighlight();
                 hasValidCluster = false;
@@ -183,6 +208,7 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] Bomb block clicked at {clickedBlock.Coord}");
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
                     bombSystem.ActivateBomb(clickedBlock);
                     ClearHighlight();
                     hasValidCluster = false;
@@ -198,6 +224,7 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] X-block clicked at {clickedBlock.Coord}");
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
                     xBlockSystem.ActivateXBlock(clickedBlock);
                     ClearHighlight();
                     hasValidCluster = false;
@@ -213,6 +240,7 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] Laser block clicked at {clickedBlock.Coord}");
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
                     laserSystem.ActivateLaser(clickedBlock);
                     ClearHighlight();
                     hasValidCluster = false;
@@ -308,10 +336,15 @@ private void Update()
 
         private void ExecuteRotation()
         {
-            if (!hasValidCluster) return;
+            if (!hasValidCluster)
+            {
+                Debug.LogWarning("[InputSystem] ExecuteRotation: no valid cluster");
+                return;
+            }
             if (rotationSystem == null) return;
             if (currentCluster[0] == null || currentCluster[1] == null || currentCluster[2] == null) return;
 
+            Debug.Log($"[InputSystem] ExecuteRotation: cluster=({currentCluster[0].Coord}, {currentCluster[1].Coord}, {currentCluster[2].Coord})");
             rotationSystem.TryRotate(currentCluster[0], currentCluster[1], currentCluster[2]);
 
             ClearHighlight();

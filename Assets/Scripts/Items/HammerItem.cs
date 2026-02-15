@@ -170,7 +170,7 @@ namespace JewelsHexaPuzzle.Items
                         {
                             drillSystem.ActivateDrill(block);
                             yield return new WaitForSeconds(0.1f);
-                            while (drillSystem.IsDrilling) yield return null;
+                            while (drillSystem.IsBlockActive(block)) yield return null;
                         }
                         break;
                 }
@@ -183,6 +183,10 @@ namespace JewelsHexaPuzzle.Items
 
             if (blockRemovalSystem != null)
             {
+                // 아이템 사용 시 회색 블록 생성 방지
+                if (GameManager.Instance != null)
+                    GameManager.Instance.IsItemAction = true;
+
                 blockRemovalSystem.TriggerFallOnly();
                 while (blockRemovalSystem.IsProcessing) yield return null;
             }

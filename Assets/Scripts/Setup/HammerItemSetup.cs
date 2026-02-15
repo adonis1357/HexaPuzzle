@@ -38,10 +38,10 @@ namespace JewelsHexaPuzzle.Setup
             GameObject btnObj = new GameObject("HammerButton");
             btnObj.transform.SetParent(targetCanvas.transform, false);
             RectTransform btnRt = btnObj.AddComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(1f, 0.5f);
-            btnRt.anchorMax = new Vector2(1f, 0.5f);
-            btnRt.pivot = new Vector2(1f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(-20f, -450f);
+            btnRt.anchorMin = new Vector2(1f, 0f);
+            btnRt.anchorMax = new Vector2(1f, 0f);
+            btnRt.pivot = new Vector2(1f, 0f);
+            btnRt.anchoredPosition = new Vector2(-20f, 20f);
             btnRt.sizeDelta = new Vector2(80f, 80f);
             var btnImage = btnObj.AddComponent<Image>();
             btnImage.color = new Color(0.25f, 0.25f, 0.35f, 0.9f);
@@ -94,6 +94,9 @@ namespace JewelsHexaPuzzle.Setup
             textRt.anchorMax = new Vector2(1f, 0f);
             textRt.anchoredPosition = new Vector2(0f, 8f);
             textRt.sizeDelta = new Vector2(0f, 16f);
+
+            // 최상위 렌더링
+            btnObj.transform.SetAsLastSibling();
 
             var hammer = btnObj.AddComponent<HammerItem>();
             var type = typeof(HammerItem);

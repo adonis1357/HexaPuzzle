@@ -20,13 +20,16 @@ namespace JewelsHexaPuzzle.Core
 
         private int activeDrillCount = 0;
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
+        private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
         public bool IsDrilling => activeDrillCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
+        public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
         public void ForceReset()
         {
             activeDrillCount = 0;
             pendingSpecialBlocks.Clear();
+            activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
             Debug.LogWarning("[DrillBlockSystem] ForceReset called");
@@ -125,6 +128,7 @@ namespace JewelsHexaPuzzle.Core
 private IEnumerator DrillCoroutine(HexBlock drillBlock)
         {
             activeDrillCount++;
+            activeBlocks.Add(drillBlock);
 
             DrillDirection direction = drillBlock.Data.drillDirection;
             HexCoord startCoord = drillBlock.Coord;
@@ -142,7 +146,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             // Zoom Punch (Small tier)
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
-            // 드릴 블록 자체를 먼저 클리어
+            // 발사 순간 블록 클리어
             drillBlock.ClearData();
 
             // 양방향 타겟 수집
@@ -185,6 +189,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             int totalScore = 100 + blockScoreSum;
             Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:100 + blockTierSum:{blockScoreSum})");
             OnDrillComplete?.Invoke(totalScore);
+            activeBlocks.Remove(drillBlock);
             activeDrillCount--;
         }
 
@@ -900,6 +905,27 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         // ============================================================
         // 유틸리티
         // ============================================================
+
+        private IEnumerator FadeOutAndDestroy(GameObject obj)
+        {
+            var img = obj.GetComponent<UnityEngine.UI.Image>();
+            if (img == null) { Destroy(obj); yield break; }
+
+            Color c = img.color;
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                c.a = 1f - t;
+                img.color = c;
+                yield return null;
+            }
+
+            Destroy(obj);
+        }
 
         private Color GetDrillColor(HexBlock block)
         {

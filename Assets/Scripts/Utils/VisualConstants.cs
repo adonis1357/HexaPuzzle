@@ -149,71 +149,78 @@ namespace JewelsHexaPuzzle.Core
         public const float FlashDuration = 0.35f;
         public const float FlashExpand = 7f;
 
-        // System-specific flash colors
-        public static readonly Color FlashColorDrill = new Color(1f, 1f, 0.8f);
-        public static readonly Color FlashColorBomb = new Color(1f, 0.9f, 0.4f);
-        public static readonly Color FlashColorLaser = new Color(0.7f, 0.85f, 1f);
+        // System-specific flash colors (pastel)
+        public static readonly Color FlashColorDrill = new Color(1f, 0.96f, 0.92f);
+        public static readonly Color FlashColorBomb = new Color(1f, 0.94f, 0.90f);
+        public static readonly Color FlashColorLaser = new Color(0.92f, 0.94f, 1f);
+
+        // === Background / Border color constants (hardcoding 제거용) ===
+        public static readonly Color SlotBackgroundColor = new Color(0.96f, 0.93f, 0.90f, 0.28f);
+        public static readonly Color SlotBorderColor = new Color(0.92f, 0.88f, 0.85f, 0.30f);
+        public static readonly Color SlotEmptyColor = new Color(0.96f, 0.93f, 0.90f, 0.04f);
+        public static readonly Color WarningBlinkColor = new Color(0.95f, 0.72f, 0.68f, 0.8f);
+        public static readonly Color WarningDimColor = new Color(0.85f, 0.60f, 0.55f, 0.5f);
 
         // ============================================================
         // Color Helpers
         // ============================================================
 
         /// <summary>
-        /// Standard brighten: adds +0.3 to each channel
+        /// Standard brighten: adds +0.08 to each channel (pastel-safe)
         /// </summary>
         public static Color Brighten(Color c)
         {
             return new Color(
-                Mathf.Min(1f, c.r + 0.3f),
-                Mathf.Min(1f, c.g + 0.3f),
-                Mathf.Min(1f, c.b + 0.3f),
+                Mathf.Min(1f, c.r + 0.08f),
+                Mathf.Min(1f, c.g + 0.08f),
+                Mathf.Min(1f, c.b + 0.08f),
                 c.a
             );
         }
 
         /// <summary>
-        /// Standard darken: multiply by 0.6
+        /// Standard darken: multiply by 0.82 (pastel - very gentle darkening)
         /// </summary>
         public static Color Darken(Color c)
         {
-            return new Color(c.r * 0.6f, c.g * 0.6f, c.b * 0.6f, c.a);
+            return new Color(c.r * 0.82f, c.g * 0.82f, c.b * 0.82f, c.a);
         }
 
         /// <summary>
-        /// Bomb-specific warm brighten (more red/yellow, less blue)
+        /// Bomb-specific warm brighten (gentle warm shift)
         /// </summary>
         public static Color BombBrighten(Color c)
         {
             return new Color(
-                Mathf.Min(1f, c.r + 0.4f),
-                Mathf.Min(1f, c.g + 0.3f),
-                Mathf.Min(1f, c.b + 0.1f),
+                Mathf.Min(1f, c.r + 0.2f),
+                Mathf.Min(1f, c.g + 0.15f),
+                Mathf.Min(1f, c.b + 0.05f),
                 c.a
             );
         }
 
         /// <summary>
-        /// Laser-specific cool brighten (more blue)
+        /// Laser-specific cool brighten (gentle cool shift)
         /// </summary>
         public static Color LaserBrighten(Color c)
         {
             return new Color(
-                Mathf.Min(1f, c.r + 0.3f),
-                Mathf.Min(1f, c.g + 0.3f),
-                Mathf.Min(1f, c.b + 0.4f),
+                Mathf.Min(1f, c.r + 0.15f),
+                Mathf.Min(1f, c.g + 0.15f),
+                Mathf.Min(1f, c.b + 0.2f),
                 c.a
             );
         }
 
         /// <summary>
-        /// Drill-specific brighten (warm yellow tint)
+        /// Drill-specific brighten (gentle warm tint)
         /// </summary>
         public static Color DrillBrighten(Color c)
         {
             return new Color(
-                Mathf.Min(1f, c.r + 0.35f),
-                Mathf.Min(1f, c.g + 0.35f),
-                Mathf.Min(1f, c.b + 0.2f),
+                Mathf.Min(1f, c.r + 0.18f),
+                Mathf.Min(1f, c.g + 0.18f),
+                Mathf.Min(1f, c.b + 0.1f),
                 c.a
             );
         }

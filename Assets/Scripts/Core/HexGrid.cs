@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
 
@@ -16,6 +17,7 @@ namespace JewelsHexaPuzzle.Core
 
         private Dictionary<HexCoord, HexBlock> blocks = new Dictionary<HexCoord, HexBlock>();
         private List<HexCoord> allCoords = new List<HexCoord>();
+        private GameObject backgroundGridContainer;
 
         // Flat-top 육각형 기하학:
         // 너비 (width) = 2 * size
@@ -36,6 +38,7 @@ namespace JewelsHexaPuzzle.Core
         {
             ClearGrid();
             GenerateGridCoordinates();
+            CreateBackgroundGrid();
             CreateBlocks();
         }
 
@@ -44,6 +47,66 @@ namespace JewelsHexaPuzzle.Core
             allCoords.Clear();
             allCoords = HexCoord.GetHexesInRadius(new HexCoord(0, 0), gridRadius);
             Debug.Log("Generated " + allCoords.Count + " hex coordinates");
+        }
+
+        private void CreateBackgroundGrid()
+        {
+            if (backgroundGridContainer != null)
+                Destroy(backgroundGridContainer);
+
+            backgroundGridContainer = new GameObject("GridBackground");
+            backgroundGridContainer.transform.SetParent(gridContainer, false);
+
+            RectTransform bgRT = backgroundGridContainer.AddComponent<RectTransform>();
+            bgRT.anchorMin = new Vector2(0.5f, 0.5f);
+            bgRT.anchorMax = new Vector2(0.5f, 0.5f);
+            bgRT.anchoredPosition = Vector2.zero;
+            bgRT.sizeDelta = Vector2.zero;
+
+            // 블록보다 뒤에 렌더링되도록 첫 번째 자식으로
+            backgroundGridContainer.transform.SetAsFirstSibling();
+
+            float hexWidth = 2f * hexSize;
+            float hexHeight = Mathf.Sqrt(3f) * hexSize;
+
+            Sprite fillSprite = HexBlock.GetHexFlashSprite();
+            Sprite borderSprite = HexBlock.GetHexBorderSprite();
+
+            foreach (var coord in allCoords)
+            {
+                Vector2 pos = CalculateFlatTopHexPosition(coord);
+
+                // 셀 컨테이너
+                GameObject cellObj = new GameObject("BgCell");
+                cellObj.transform.SetParent(backgroundGridContainer.transform, false);
+
+                RectTransform cellRT = cellObj.AddComponent<RectTransform>();
+                cellRT.anchoredPosition = pos;
+                cellRT.sizeDelta = new Vector2(hexWidth, hexHeight);
+
+                // 어두운 배경 (움푹 들어간 바닥)
+                Image bgImg = cellObj.AddComponent<Image>();
+                bgImg.sprite = fillSprite;
+                bgImg.color = new Color(0.03f, 0.02f, 0.06f, 0.22f);
+                bgImg.raycastTarget = false;
+                bgImg.type = Image.Type.Simple;
+
+                // 밝은 테두리 (빛 받는 가장자리)
+                GameObject borderObj = new GameObject("Border");
+                borderObj.transform.SetParent(cellObj.transform, false);
+
+                RectTransform borderRT = borderObj.AddComponent<RectTransform>();
+                borderRT.anchorMin = Vector2.zero;
+                borderRT.anchorMax = Vector2.one;
+                borderRT.offsetMin = Vector2.zero;
+                borderRT.offsetMax = Vector2.zero;
+
+                Image borderImg = borderObj.AddComponent<Image>();
+                borderImg.sprite = borderSprite;
+                borderImg.color = new Color(0.95f, 0.92f, 0.90f, 0.30f);
+                borderImg.raycastTarget = false;
+                borderImg.type = Image.Type.Simple;
+            }
         }
 
         private void CreateBlocks()
@@ -207,6 +270,15 @@ namespace JewelsHexaPuzzle.Core
             return block.transform.localPosition;
         }
 
+        /// <summary>
+        /// 블록이 회전 가능한 상태인지 확인 (데이터 있고, 젬 있고, 이동 가능)
+        /// </summary>
+        private bool IsBlockRotatable(HexBlock block)
+        {
+            return block != null && block.Data != null &&
+                   block.Data.gemType != GemType.None && block.Data.CanMove();
+        }
+
         public (HexBlock, HexBlock, HexBlock)? GetClusterAtPosition(Vector2 localPos)
         {
             if (blocks.Count == 0)
@@ -222,6 +294,9 @@ namespace JewelsHexaPuzzle.Core
 
             foreach (var block in blocks.Values)
             {
+                // 빈 블록(GemType.None)은 가장 가까운 블록 후보에서 제외
+                if (!IsBlockRotatable(block)) continue;
+
                 Vector2 blockPos = GetBlockPosition(block);
                 float dist = Vector2.Distance(localPos, blockPos);
 
@@ -259,6 +334,9 @@ namespace JewelsHexaPuzzle.Core
                     HexBlock n1 = neighbors[i];
                     HexBlock n2 = neighbors[j];
 
+                    // 빈 블록이 포함된 삼각형은 제외
+                    if (!IsBlockRotatable(n1) || !IsBlockRotatable(n2)) continue;
+
                     if (!AreNeighbors(n1.Coord, n2.Coord)) continue;
 
                     Vector2 center = (
@@ -280,6 +358,9 @@ namespace JewelsHexaPuzzle.Core
             // 이웃 블록 기준 삼각형도 확인
             foreach (var neighbor in neighbors)
             {
+                // 빈 이웃은 스킵
+                if (!IsBlockRotatable(neighbor)) continue;
+
                 var neighborNeighbors = GetNeighbors(neighbor.Coord);
 
                 for (int i = 0; i < neighborNeighbors.Count; i++)
@@ -291,6 +372,9 @@ namespace JewelsHexaPuzzle.Core
 
                         bool hasClosest = (n1 == closestBlock || n2 == closestBlock);
                         if (!hasClosest) continue;
+
+                        // 빈 블록이 포함된 삼각형은 제외
+                        if (!IsBlockRotatable(n1) || !IsBlockRotatable(n2)) continue;
 
                         if (!AreNeighbors(n1.Coord, n2.Coord)) continue;
                         if (!AreNeighbors(neighbor.Coord, n1.Coord)) continue;
@@ -313,6 +397,22 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
+            // 최종 검증: 반환 전 삼각형 유효성 재확인
+            if (bestTriangle.HasValue)
+            {
+                var (b1, b2, b3) = bestTriangle.Value;
+                bool valid = AreNeighbors(b1.Coord, b2.Coord) &&
+                             AreNeighbors(b2.Coord, b3.Coord) &&
+                             AreNeighbors(b1.Coord, b3.Coord);
+                if (!valid)
+                {
+                    Debug.LogError($"[HexGrid] INVALID triangle! " +
+                        $"({b1.Coord}, {b2.Coord}, {b3.Coord}) " +
+                        $"dist: {b1.Coord.DistanceTo(b2.Coord)},{b2.Coord.DistanceTo(b3.Coord)},{b1.Coord.DistanceTo(b3.Coord)}");
+                    return null;
+                }
+            }
+
             return bestTriangle;
         }
 
@@ -330,6 +430,12 @@ namespace JewelsHexaPuzzle.Core
             }
             blocks.Clear();
             allCoords.Clear();
+
+            if (backgroundGridContainer != null)
+            {
+                Destroy(backgroundGridContainer);
+                backgroundGridContainer = null;
+            }
         }
 
         public IEnumerable<HexBlock> GetAllBlocks()

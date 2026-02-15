@@ -13,16 +13,23 @@ Shader "UI/HexSpecialGem"
         _ColorMask ("Color Mask", Float) = 15
 
         // Base gem properties (same as HexGem)
-        _HighlightPos ("Highlight Position", Vector) = (0.35, 0.65, 0, 0)
-        _HighlightSize ("Highlight Size", Range(0.05, 0.4)) = 0.13
-        _HighlightIntensity ("Highlight Intensity", Range(0, 2)) = 0.7
-        _SecondaryHighlightPos ("Secondary Highlight Pos", Vector) = (0.62, 0.28, 0, 0)
-        _SecondaryHighlightSize ("Secondary Highlight Size", Range(0.02, 0.2)) = 0.06
-        _EdgeDarken ("Edge Darkening", Range(0, 1)) = 0.45
-        _InnerGlow ("Inner Glow Intensity", Range(0, 1)) = 0.18
-        _DepthGradient ("Depth Gradient Strength", Range(0, 1)) = 0.4
+        _HighlightPos ("Highlight Position", Vector) = (0.3, 0.7, 0, 0)
+        _HighlightSize ("Highlight Size", Range(0.05, 0.5)) = 0.30
+        _HighlightIntensity ("Highlight Intensity", Range(0, 2)) = 0.18
+        _SecondaryHighlightPos ("Secondary Highlight Pos", Vector) = (0.68, 0.25, 0, 0)
+        _SecondaryHighlightSize ("Secondary Highlight Size", Range(0.02, 0.2)) = 0.12
+        _EdgeDarken ("Edge Darkening", Range(0, 1)) = 0.05
+        _InnerGlow ("Inner Glow Intensity", Range(0, 1)) = 0.45
+        _DepthGradient ("Depth Gradient Strength", Range(0, 1)) = 0.10
         _FacetCount ("Facet Count", Float) = 6
-        _FacetIntensity ("Facet Intensity", Range(0, 0.3)) = 0.08
+        _FacetIntensity ("Facet Intensity", Range(0, 0.3)) = 0.0
+
+        // SSS (Sub-Surface Scattering) simulation
+        _SSSStrength ("SSS Strength", Range(0, 1)) = 0.25
+        _SSSColor ("SSS Color", Color) = (1, 0.97, 0.95, 1)
+
+        // Soft Edge feathering
+        _SoftEdge ("Soft Edge", Range(0, 0.1)) = 0.04
 
         // Special block animation properties
         _ShimmerSpeed ("Shimmer Speed", Range(0, 5)) = 1.5
@@ -104,6 +111,11 @@ Shader "UI/HexSpecialGem"
             float _DepthGradient;
             float _FacetCount;
             float _FacetIntensity;
+
+            // SSS & SoftEdge
+            float _SSSStrength;
+            fixed4 _SSSColor;
+            float _SoftEdge;
 
             // Special animation
             float _ShimmerSpeed;
@@ -187,13 +199,13 @@ Shader "UI/HexSpecialGem"
                 float dist = length(centered);
                 float normalizedDist = saturate(dist / 0.43);
 
-                // === Base gem effects (same as HexGem) ===
+                // === Base gem effects (same as HexGem with SSS/SoftEdge) ===
 
                 // Radial depth gradient
                 float depthFactor = 1.0 - normalizedDist * normalizedDist * _DepthGradient;
 
-                // Edge darkening
-                float edgeDark = 1.0 - smoothstep(0.25, 0.43, dist) * _EdgeDarken;
+                // Edge darkening with soft edge feathering
+                float edgeDark = 1.0 - smoothstep(0.25, 0.43 + _SoftEdge, dist) * _EdgeDarken;
 
                 // Facet pattern
                 float facetBright = 1.0;
@@ -204,16 +216,20 @@ Shader "UI/HexSpecialGem"
                     facetBright = 1.0 + (sin(facetAngle * 2.0 * 3.14159) * 0.5 + 0.5) * _FacetIntensity;
                 }
 
-                // Primary specular highlight
+                // Primary specular highlight — Gaussian (exp) for soft macaron glow
                 float highlightDist = length(uv - _HighlightPos.xy);
-                float highlight = smoothstep(_HighlightSize, 0.0, highlightDist) * _HighlightIntensity;
+                float highlight = exp(-highlightDist * highlightDist / (_HighlightSize * _HighlightSize * 0.1)) * _HighlightIntensity;
 
-                // Secondary specular highlight
+                // Secondary specular highlight — Gaussian
                 float secDist = length(uv - _SecondaryHighlightPos.xy);
-                float secHighlight = smoothstep(_SecondaryHighlightSize, 0.0, secDist) * _HighlightIntensity * 0.4;
+                float secHighlight = exp(-secDist * secDist / (_SecondaryHighlightSize * _SecondaryHighlightSize * 0.1)) * _HighlightIntensity * 0.4;
 
                 // Inner glow
                 float innerGlow = (1.0 - normalizedDist) * (1.0 - normalizedDist) * _InnerGlow;
+
+                // SSS simulation — edge light transmittance
+                float sss = smoothstep(0.2, 0.43, dist) * _SSSStrength;
+                float3 sssContrib = _SSSColor.rgb * sss;
 
                 // === Special block animation effects ===
 
@@ -223,28 +239,37 @@ Shader "UI/HexSpecialGem"
                 float shimmer = smoothstep(0.08, 0.0, abs(dot(centered, float2(0.707, 0.707)) - shimmerPos));
                 shimmer *= _ShimmerIntensity;
 
-                // Energy pulse: subtle brightness oscillation
-                float energy = sin(_Time.y * 3.0) * 0.5 + 0.5;
-                float energyMul = 1.0 + energy * _EnergyPulse;
+                // Energy pulse: subtle brightness oscillation (dampened: speed 2.5, intensity 80%)
+                float energy = sin(_Time.y * 2.5) * 0.5 + 0.5;
+                float energyMul = 1.0 + energy * _EnergyPulse * 0.8;
 
                 // Composite color (texture RGB * vertex color)
                 float3 baseColor = texColor.rgb * i.color.rgb;
 
-                // Apply rainbow shift if enabled
+                // Apply rainbow shift if enabled (with pastel saturation cap)
                 if (_RainbowStrength > 0.01)
                 {
                     float3 hsl = RGBtoHSL(baseColor);
                     hsl.x = frac(hsl.x + _Time.y * 0.3 * _RainbowStrength);
+                    hsl.y = min(hsl.y, 0.35); // Pastel range saturation cap
                     baseColor = HSLtoRGB(hsl);
                 }
 
                 float3 gemColor = baseColor * depthFactor * edgeDark * facetBright * energyMul;
                 gemColor += baseColor * innerGlow;
-                gemColor += float3(1, 1, 1) * highlight;
-                gemColor += float3(1, 1, 1) * secHighlight;
-                gemColor += float3(1, 1, 1) * shimmer;
 
-                float alpha = texColor.a * i.color.a;
+                // Warm cream tinted highlight (macaron style)
+                float3 tintedHighlight = lerp(baseColor, float3(1, 0.98, 0.96), 0.5);
+                gemColor += tintedHighlight * highlight;
+                gemColor += tintedHighlight * secHighlight * 0.5;
+                gemColor += tintedHighlight * shimmer;
+
+                // Add SSS contribution
+                gemColor += baseColor * sssContrib;
+
+                // Soft edge alpha feathering
+                float softAlpha = 1.0 - smoothstep(0.43 - _SoftEdge, 0.43 + _SoftEdge, dist);
+                float alpha = texColor.a * i.color.a * softAlpha;
 
                 #ifdef UNITY_UI_CLIP_RECT
                 alpha *= UnityGet2DClipping(i.worldPosition.xy, _ClipRect);

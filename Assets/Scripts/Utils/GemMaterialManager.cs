@@ -77,37 +77,38 @@ namespace JewelsHexaPuzzle.Utils
                 Material mat = new Material(shader);
                 mat.name = $"SpecialGem_{type} (Runtime)";
 
+                // 파스텔 톤에 맞게 shimmer/energy 전체 감쇠
                 switch (type)
                 {
                     case SpecialBlockType.Drill:
-                        mat.SetFloat("_ShimmerSpeed", 3.0f);
-                        mat.SetFloat("_ShimmerIntensity", 0.15f);
-                        mat.SetFloat("_EnergyPulse", 0.2f);
+                        mat.SetFloat("_ShimmerSpeed", 1.5f);
+                        mat.SetFloat("_ShimmerIntensity", 0.08f);
+                        mat.SetFloat("_EnergyPulse", 0.10f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.Bomb:
-                        mat.SetFloat("_ShimmerSpeed", 1.5f);
-                        mat.SetFloat("_ShimmerIntensity", 0.18f);
-                        mat.SetFloat("_EnergyPulse", 0.35f);
+                        mat.SetFloat("_ShimmerSpeed", 0.8f);
+                        mat.SetFloat("_ShimmerIntensity", 0.10f);
+                        mat.SetFloat("_EnergyPulse", 0.18f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.Laser:
-                        mat.SetFloat("_ShimmerSpeed", 3.5f);
-                        mat.SetFloat("_ShimmerIntensity", 0.18f);
-                        mat.SetFloat("_EnergyPulse", 0.25f);
+                        mat.SetFloat("_ShimmerSpeed", 1.8f);
+                        mat.SetFloat("_ShimmerIntensity", 0.10f);
+                        mat.SetFloat("_EnergyPulse", 0.12f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.XBlock:
-                        mat.SetFloat("_ShimmerSpeed", 2.0f);
-                        mat.SetFloat("_ShimmerIntensity", 0.15f);
-                        mat.SetFloat("_EnergyPulse", 0.22f);
+                        mat.SetFloat("_ShimmerSpeed", 1.0f);
+                        mat.SetFloat("_ShimmerIntensity", 0.08f);
+                        mat.SetFloat("_EnergyPulse", 0.10f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.Rainbow:
-                        mat.SetFloat("_ShimmerSpeed", 2.0f);
-                        mat.SetFloat("_ShimmerIntensity", 0.15f);
-                        mat.SetFloat("_EnergyPulse", 0.2f);
-                        mat.SetFloat("_RainbowStrength", 1.0f);
+                        mat.SetFloat("_ShimmerSpeed", 1.5f);
+                        mat.SetFloat("_ShimmerIntensity", 0.10f);
+                        mat.SetFloat("_EnergyPulse", 0.15f);
+                        mat.SetFloat("_RainbowStrength", 0.4f);
                         break;
                 }
 

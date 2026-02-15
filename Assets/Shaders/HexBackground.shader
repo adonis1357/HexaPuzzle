@@ -13,10 +13,13 @@ Shader "UI/HexBackground"
         _ColorMask ("Color Mask", Float) = 15
 
         // Background effect properties
-        _ShadowIntensity ("Inner Shadow Intensity", Range(0, 1)) = 0.35
-        _ShadowOffset ("Shadow Offset", Vector) = (0.03, -0.05, 0, 0)
-        _VignetteStrength ("Vignette Strength", Range(0, 1)) = 0.4
-        _RimLightIntensity ("Rim Light Intensity", Range(0, 0.3)) = 0.12
+        _ShadowIntensity ("Inner Shadow Intensity", Range(0, 1)) = 0.04
+        _ShadowOffset ("Shadow Offset", Vector) = (0.01, -0.02, 0, 0)
+        _VignetteStrength ("Vignette Strength", Range(0, 1)) = 0.06
+        _RimLightIntensity ("Rim Light Intensity", Range(0, 0.3)) = 0.08
+
+        // Cushion bulge (slight convex feel)
+        _CushionBulge ("Cushion Bulge", Range(0, 0.3)) = 0.12
     }
 
     SubShader
@@ -85,6 +88,7 @@ Shader "UI/HexBackground"
             float4 _ShadowOffset;
             float _VignetteStrength;
             float _RimLightIntensity;
+            float _CushionBulge;
 
             v2f vert(appdata_t v)
             {
@@ -115,7 +119,10 @@ Shader "UI/HexBackground"
                 float rimDot = dot(normalize(centered + 0.001), rimDir);
                 float rim = saturate(rimDot) * _RimLightIntensity * smoothstep(0.3, 0.45, edgeDist);
 
-                float3 bgColor = i.color.rgb * vignette + float3(rim, rim, rim);
+                // Cushion bulge — slight convex brightness (center brighter)
+                float cushion = (1.0 - edgeDist * edgeDist * 4.0) * _CushionBulge;
+
+                float3 bgColor = i.color.rgb * vignette + float3(rim, rim, rim) + float3(cushion, cushion, cushion);
 
                 float alpha = texColor.a * i.color.a;
 
