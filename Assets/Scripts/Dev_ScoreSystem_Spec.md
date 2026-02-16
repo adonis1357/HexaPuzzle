@@ -207,7 +207,7 @@ turnCreationBonus = sum(각 생성 가산점) + multiCreationBonus
 |---|------|--------|-------------|------|
 | 1 | 색상 도둑 (Chromophage) | ★ | **100** | 가장 쉬운 입문용, Normal 블록 2배 |
 | 2 | 속박의 사슬 (Chain Anchor) | ★★ | **150** | 회전 불가 불편함 보상 |
-| 3 | 가시 기생충 (Thorn Parasite) | ★★ | **200** | 턴 -1 페널티 리스크 보상 |
+| 3 | 가시 기생충 (Thorn Parasite) | ★★ | **200** (무페널티 제거 시만) | 매칭 제거 시 점수 없음 + 턴 -1 페널티 |
 | 4 | 분열체 (Divider) | ★★★ | **300** | 확산 위험 대처 보상 |
 | 5 | 중력 왜곡자 (Gravity Warper) | ★★★★ | **400** | 낙하 차단 해소 보상 |
 | 6 | 반사 장막 (Reflection Shield) | ★★★★ | **450** | 2회 공격 필요 보상 |
@@ -220,7 +220,7 @@ turnCreationBonus = sum(각 생성 가산점) + multiCreationBonus
 
 | 제거 방법 | 배율 | 설명 |
 |----------|------|------|
-| 일반 매칭 | **x1.0** | 기본 점수 |
+| 일반 매칭 | **x1.0** | 기본 점수 (※ 가시 기생충은 매칭 제거 시 점수 0) |
 | 특수 블록 (드릴/폭탄) | **x1.2** | 전략적 사용 보상 |
 | 특수 블록 (레이저/도넛) | **x1.5** | 고급 특수 블록 보상 |
 | 아이템 사용 | **x0.5** | 아이템은 편의 수단, 점수 메리트 감소 |
@@ -575,6 +575,8 @@ public static int GetEnemyBaseScore(EnemyType type);
 public static float GetRemovalMethodMultiplier(RemovalMethod method);
 public static int GetEnemySpecialBonus(EnemyType type, RemovalCondition condition);
 public static int GetMultiKillBonus(int enemyCount);
+/// 단일 적군 최종 점수 계산
+/// ※ 가시 기생충(ThornParasite)을 일반 매칭(Match)으로 제거 시 → 0점 반환
 public static int CalculateEnemyScore(EnemyType type, RemovalMethod method, RemovalCondition condition);
 public static int CalculateTurnEnemyScore(List<EnemyKillData> kills, int cascadeDepth);
 ```
@@ -712,7 +714,23 @@ cascade 배율 (depth 1): ×1.2
 → 총 적군 파괴 점수: 3,250점
 ```
 
-### 예시 6: 스테이지 클리어 (30턴 중 12턴 사용)
+### 예시 6: 일반 매칭으로 가시 기생충 제거 (페널티 발생)
+
+```
+기본 파괴 점수: 0점 (매칭 제거 시 파괴 점수 없음)
+턴 -1 페널티 발생
+→ 총 적군 파괴 점수: 0점 + 턴 1 손실
+```
+
+### 예시 7: 드릴로 가시 기생충 무페널티 제거
+
+```
+기본 파괴 점수: 200 × 1.2 = 240
+무페널티 보너스: +150
+→ 총 적군 파괴 점수: 390점 (턴 페널티 없음)
+```
+
+### 예시 8: 스테이지 클리어 (30턴 중 12턴 사용)
 
 ```
 남은 턴 보너스 = 18 × 200 = 3,600
@@ -747,14 +765,22 @@ cascade 배율 (depth 1): ×1.2
 - [ ] 3초간 매치 없으면 콤보 리셋
 - [ ] 콤보 x4 이상에서 흔들림 효과
 
-### (라) UI
+### (라) 적군 파괴 점수
+
+- [ ] 일반 매칭으로 가시 기생충 제거 시 파괴 점수 0점 + 턴 -1 페널티 확인
+- [ ] 특수 블록으로 가시 기생충 제거 시 200점 + 무페널티 보너스 +150 확인
+- [ ] 폭탄으로 분열체 제거 시 무분열 보너스 +200 확인
+- [ ] 한 턴에 적군 3마리 제거 시 멀티킬 +500 확인
+- [ ] 도넛으로 카오스 군주 1회 제거 시 1회 제거 보너스 +1000 확인
+
+### (마) UI
 
 - [ ] 점수 텍스트 카운팅 애니메이션 + 금색 하이라이트
 - [ ] 턴 사용 시 턴 숫자 바운스 (1.15배)
 - [ ] 남은 5턴 이하에서 빨간색 깜빡임
 - [ ] 스테이지 클리어 시 점수 항목 순차 등장 + 별 애니메이션
 
-### (마) 통합 / 예외
+### (바) 통합 / 예외
 
 - [ ] 특수 블록 연쇄 발동 시 점수 정상 누적
 - [ ] BigBang 발생 시 다수 팝업 동시 표시 오류 없음
