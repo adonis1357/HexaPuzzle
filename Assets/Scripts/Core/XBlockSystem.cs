@@ -283,6 +283,7 @@ namespace JewelsHexaPuzzle.Core
             // 파도처럼 순차 파괴 - 모든 파괴 코루틴을 추적
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
+            int basicBlockCount = 0;  // 기본 블록(GemType 1-5) 카운트
 
             for (int i = 0; i < targets.Count; i++)
             {
@@ -309,6 +310,10 @@ namespace JewelsHexaPuzzle.Core
                 {
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
 
+                    // 기본 블록 카운트 (GemType 1-5)
+                    if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
+                        basicBlockCount++;
+
                     // 적군 점수 (X블록 = SpecialAdvanced)
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
                     if (sm != null)
@@ -334,6 +339,13 @@ namespace JewelsHexaPuzzle.Core
             // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
             foreach (var co in destroyCoroutines)
                 yield return co;
+
+            // X블록이 파괴한 기본 블록 미션 카운팅
+            if (basicBlockCount > 0 && GameManager.Instance != null)
+            {
+                Debug.Log($"[XBlockSystem] 📊 X블록 미션: 기본블록 {basicBlockCount}개 제거");
+                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "XBlock");
+            }
 
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");

@@ -1610,6 +1610,23 @@ private void OnRotationComplete(bool matchFound)
         }
 
         /// <summary>
+        /// 특수 블록(드릴, 폭탄 등)이 파괴한 기본 블록 미션 카운팅
+        /// </summary>
+        public void OnSpecialBlockDestroyedBasicBlocks(int basicBlockCount, string specialBlockType)
+        {
+            if (currentGameMode != GameMode.Stage) return;
+            if (basicBlockCount <= 0) return;
+
+            Debug.Log($"[GameManager] 💣 특수블록 파괴: {specialBlockType}로 기본블록 {basicBlockCount}개 제거");
+
+            if (stageManager != null)
+            {
+                // 특수 블록으로 제거된 블록들은 모두 기본 블록이므로 gemType=None으로 전달
+                stageManager.OnGemCollected(GemType.None, basicBlockCount);
+            }
+        }
+
+        /// <summary>
         /// 연쇄 완료 이벤트
         /// </summary>
 private void OnCascadeComplete()

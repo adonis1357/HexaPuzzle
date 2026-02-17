@@ -161,6 +161,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
 
             // 파괴 대상 블록의 티어별 기본 점수 미리 계산 (ClearData 전)
             int blockScoreSum = 0;
+            int basicBlockCount = 0;  // 기본 블록(GemType 1-5) 카운트
             var sm = GameManager.Instance?.GetComponent<ScoreManager>();
             List<HexBlock> allDrillTargets = new List<HexBlock>(targets1);
             allDrillTargets.AddRange(targets2);
@@ -169,6 +170,10 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                 if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
                 if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
                 blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+
+                // 기본 블록 카운트 (GemType 1-5)
+                if ((int)t.Data.gemType >= 1 && (int)t.Data.gemType <= 5)
+                    basicBlockCount++;
 
                 // 적군 점수 (드릴 = SpecialBasic)
                 if (sm != null)
@@ -200,6 +205,13 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
 
             yield return drill1;
             yield return drill2;
+
+            // 드릴이 파괴한 기본 블록 미션 카운팅
+            if (basicBlockCount > 0 && GameManager.Instance != null)
+            {
+                Debug.Log($"[DrillBlockSystem] 📊 드릴 미션: 기본블록 {basicBlockCount}개 제거");
+                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "Drill");
+            }
 
             int totalScore = 100 + blockScoreSum;
             Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:100 + blockTierSum:{blockScoreSum})");

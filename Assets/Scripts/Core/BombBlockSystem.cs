@@ -275,6 +275,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
+            int basicBlockCount = 0;  // 기본 블록(GemType 1-5) 카운트
             var sm = GameManager.Instance?.GetComponent<ScoreManager>();
 
             foreach (var target in ring1Targets)
@@ -298,6 +299,10 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 else
                 {
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+
+                    // 기본 블록 카운트 (GemType 1-5)
+                    if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
+                        basicBlockCount++;
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -345,6 +350,10 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 {
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
 
+                    // 기본 블록 카운트 (GemType 1-5)
+                    if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
+                        basicBlockCount++;
+
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
                     {
@@ -367,6 +376,13 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
             foreach (var co in destroyCoroutines)
                 yield return co;
+
+            // 폭탄이 파괴한 기본 블록 미션 카운팅
+            if (basicBlockCount > 0 && GameManager.Instance != null)
+            {
+                Debug.Log($"[BombBlockSystem] 📊 폭탄 미션: 기본블록 {basicBlockCount}개 제거");
+                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "Bomb");
+            }
 
             int totalScore = 200 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
