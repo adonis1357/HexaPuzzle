@@ -1372,18 +1372,44 @@ namespace JewelsHexaPuzzle.Managers
     {
         [SerializeField] private Image iconImage;
         [SerializeField] private Text countText;
-        [SerializeField] private Image progressFill;
+        [SerializeField] private RectTransform frameRect;
 
         private MissionData missionData;
+        private int displayCount = 0;
+
+        private void Awake()
+        {
+            // 좌측 상단에 사각 프레임 설정
+            if (frameRect == null)
+                frameRect = GetComponent<RectTransform>();
+
+            if (frameRect != null)
+            {
+                frameRect.anchorMin = Vector2.zero;
+                frameRect.anchorMax = Vector2.zero;
+                frameRect.pivot = Vector2.zero;
+                frameRect.anchoredPosition = new Vector2(20, -20);
+            }
+        }
 
         public void SetMission(MissionData data)
         {
             missionData = data;
+            displayCount = data.targetCount - data.currentCount;
 
-            if (iconImage != null && data.icon != null)
+            // 미션 타입에 따른 아이콘 생성
+            if (iconImage != null)
             {
-                iconImage.sprite = data.icon;
-                iconImage.color = GemColors.GetColor(data.targetGemType);
+                if (data.type == MissionType.CollectGem && data.targetGemType == GemType.None)
+                {
+                    // 아무 색 보석 모으기: 6색 구역 분할 육각형
+                    iconImage.sprite = CreateMultiColorHexagon();
+                }
+                else if (data.icon != null)
+                {
+                    iconImage.sprite = data.icon;
+                    iconImage.color = GemColors.GetColor(data.targetGemType);
+                }
             }
 
             UpdateProgress(data.currentCount, data.targetCount);
@@ -1391,15 +1417,101 @@ namespace JewelsHexaPuzzle.Managers
 
         public void UpdateProgress(int current, int target)
         {
+            int remaining = target - current;
+
             if (countText != null)
             {
-                countText.text = $"x {target - current}";
+                // 숫자 감소 애니메이션
+                StopAllCoroutines();
+                StartCoroutine(AnimateCountDown(displayCount, remaining));
+            }
+        }
+
+        /// <summary>
+        /// 숫자 감소 애니메이션 (부드러운 효과)
+        /// </summary>
+        private IEnumerator AnimateCountDown(int from, int to)
+        {
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = Mathf.Clamp01(elapsed / duration);
+                int current = Mathf.RoundToInt(Mathf.Lerp(from, to, progress));
+
+                if (countText != null)
+                {
+                    countText.text = $"x {current}";
+                }
+
+                yield return null;
             }
 
-            if (progressFill != null)
+            displayCount = to;
+            if (countText != null)
             {
-                progressFill.fillAmount = (float)current / target;
+                countText.text = $"x {to}";
             }
+        }
+
+        /// <summary>
+        /// 6색 구역 분할 육각형 생성 (프로시저럴)
+        /// </summary>
+        private Sprite CreateMultiColorHexagon()
+        {
+            const int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
+            Color[] pixels = new Color[size * size];
+
+            Color[] gemColors = new Color[]
+            {
+                GemColors.GetColor(GemType.Red),      // 빨강
+                GemColors.GetColor(GemType.Green),    // 초록
+                GemColors.GetColor(GemType.Blue),     // 파랑
+                GemColors.GetColor(GemType.Yellow),   // 노랑
+                GemColors.GetColor(GemType.Purple),   // 보라
+                GemColors.GetColor(GemType.Orange)    // 주황
+            };
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float radius = size * 0.4f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2;
+
+                    float distance = pos.magnitude;
+
+                    // 육각형 내부
+                    if (distance < radius)
+                    {
+                        // 6개 섹터로 나누기 (각 섹터 60도)
+                        int sector = Mathf.FloorToInt((angle / (Mathf.PI * 2)) * 6) % 6;
+                        pixels[y * size + x] = gemColors[sector];
+
+                        // 중앙 원 (경계선)
+                        if (distance < radius * 0.1f)
+                        {
+                            pixels[y * size + x] = Color.white;
+                        }
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0); // 투명
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f);
         }
     }
 
