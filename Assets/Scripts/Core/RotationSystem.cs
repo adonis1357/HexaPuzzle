@@ -18,12 +18,14 @@ namespace JewelsHexaPuzzle.Core
 
         private bool clockwiseRotation = true;
         private bool isRotating = false;
+        private int lastRotationCost = 1;
 
         public event System.Action<bool> OnRotationComplete;
         public event System.Action OnRotationStarted;
 
         public bool IsRotating => isRotating;
         public bool IsClockwise => clockwiseRotation;
+        public int LastRotationCost => lastRotationCost;
 
         private void Start()
         {
@@ -150,6 +152,16 @@ namespace JewelsHexaPuzzle.Core
             // 빈 블록(GemType.None)은 회전 불가
             if (b1.Data.gemType == GemType.None || b2.Data.gemType == GemType.None || b3.Data.gemType == GemType.None)
                 return false;
+
+            // ChaosOverlord ChainAnchor 효과: 회전 불가
+            if (EnemySystem.Instance != null)
+            {
+                if (EnemySystem.Instance.IsRotationBlocked(b1) ||
+                    EnemySystem.Instance.IsRotationBlocked(b2) ||
+                    EnemySystem.Instance.IsRotationBlocked(b3))
+                    return false;
+            }
+
             return b1.Data.CanMove() && b2.Data.CanMove() && b3.Data.CanMove();
         }
 
@@ -157,6 +169,11 @@ namespace JewelsHexaPuzzle.Core
         {
             isRotating = true;
             OnRotationStarted?.Invoke();
+
+            // TimeFreezer 비용 계산
+            lastRotationCost = 1;
+            if (EnemySystem.Instance != null)
+                lastRotationCost = EnemySystem.Instance.GetRotationCost(block1, block2, block3);
 
             // 회전 시작 사운드
             if (AudioManager.Instance != null)

@@ -249,6 +249,7 @@ namespace JewelsHexaPuzzle.Core
 
             // 파괴 대상 블록의 티어별 기본 점수 미리 계산 (ClearData 전)
             int blockScoreSum = 0;
+            var sm = GameManager.Instance?.GetComponent<ScoreManager>();
             foreach (var line in allTargetLines)
             {
                 foreach (var t in line)
@@ -256,6 +257,20 @@ namespace JewelsHexaPuzzle.Core
                     if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
                     if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+
+                    // 적군 점수 (레이저 = SpecialAdvanced)
+                    if (sm != null)
+                    {
+                        if (t.Data.hasThorn)
+                            sm.AddEnemyScore(EnemyType.ThornParasite, RemovalMethod.SpecialAdvanced,
+                                RemovalCondition.Normal, t.transform.position);
+                        if (t.Data.hasChain)
+                            sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.SpecialAdvanced,
+                                RemovalCondition.Normal, t.transform.position);
+                        if (t.Data.gemType == GemType.Gray)
+                            sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.SpecialAdvanced,
+                                RemovalCondition.Normal, t.transform.position);
+                    }
                 }
             }
 
@@ -343,6 +358,10 @@ private IEnumerator DestroyLine(List<HexBlock> targets, Color laserColor, Vector
 
                 // Bug #15 fix: target.Data가 동시 실행 중 null이 될 수 있음
                 if (target.Data == null || target.Data.gemType == GemType.None) continue;
+
+                // ReflectionShield: 방패 흡수 (레이저 = 고급 특수)
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
+                    continue;
 
                 if (target.Data.specialType != SpecialBlockType.None &&
                     target.Data.specialType != SpecialBlockType.FixedBlock)

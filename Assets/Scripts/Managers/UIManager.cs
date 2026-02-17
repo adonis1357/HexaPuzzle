@@ -77,8 +77,12 @@ namespace JewelsHexaPuzzle.Managers
         private Coroutine turnBounceCoroutine;
         private Coroutine turnPulseCoroutine;
 
-        public void SetTurnText(Text text) { if (turnText == null) turnText = text; }
-        public void SetScoreText(Text text) { if (goldText == null) goldText = text; }
+        public void SetTurnText(Text text) { turnText = text; }
+        public void SetScoreText(Text text)
+        {
+            goldText = text;
+            if (text != null) scoreDefaultColor = text.color;
+        }
         public void SetGameOverPopup(GameObject popup) { if (gameOverPopup == null) gameOverPopup = popup; }
 
         private void Start()
@@ -840,6 +844,523 @@ namespace JewelsHexaPuzzle.Managers
                 HidePopup(helpPopup);
                 ShowPopup(pausePopup);
             }
+        }
+
+        // ============================================================
+        // 생존 미션 UI
+        // ============================================================
+
+        private GameObject survivalMissionPanel;
+        private Text missionWaveText;
+        private Text missionDescText;
+        private Image missionProgressFill;
+        private Text missionCountText;
+        private Coroutine missionSlideCoroutine;
+        private Coroutine missionCompleteCoroutine;
+
+        /// <summary>
+        /// 프로시저럴 생존 미션 UI 생성 (좌상단)
+        /// </summary>
+        public void CreateSurvivalMissionUI(Canvas canvas)
+        {
+            if (survivalMissionPanel != null) return;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // 메인 패널
+            survivalMissionPanel = new GameObject("SurvivalMissionPanel");
+            survivalMissionPanel.transform.SetParent(canvas.transform, false);
+            RectTransform panelRt = survivalMissionPanel.AddComponent<RectTransform>();
+            panelRt.anchorMin = new Vector2(0f, 1f);
+            panelRt.anchorMax = new Vector2(0f, 1f);
+            panelRt.pivot = new Vector2(0f, 1f);
+            panelRt.anchoredPosition = new Vector2(10f, -10f);
+            panelRt.sizeDelta = new Vector2(320f, 100f);
+
+            Image panelBg = survivalMissionPanel.AddComponent<Image>();
+            panelBg.color = new Color(0.05f, 0.05f, 0.15f, 0.75f);
+            panelBg.raycastTarget = false;
+
+            // 웨이브/미션 번호
+            GameObject waveObj = new GameObject("WaveText");
+            waveObj.transform.SetParent(survivalMissionPanel.transform, false);
+            missionWaveText = waveObj.AddComponent<Text>();
+            missionWaveText.font = font;
+            missionWaveText.fontSize = 13;
+            missionWaveText.color = new Color(0.6f, 0.8f, 1f);
+            missionWaveText.alignment = TextAnchor.MiddleLeft;
+            missionWaveText.raycastTarget = false;
+            missionWaveText.text = "WAVE 1 - MISSION #1";
+            RectTransform waveRt = waveObj.GetComponent<RectTransform>();
+            waveRt.anchorMin = new Vector2(0f, 1f);
+            waveRt.anchorMax = new Vector2(1f, 1f);
+            waveRt.pivot = new Vector2(0f, 1f);
+            waveRt.anchoredPosition = new Vector2(12f, -6f);
+            waveRt.sizeDelta = new Vector2(-24f, 20f);
+
+            // 미션 설명
+            GameObject descObj = new GameObject("DescText");
+            descObj.transform.SetParent(survivalMissionPanel.transform, false);
+            missionDescText = descObj.AddComponent<Text>();
+            missionDescText.font = font;
+            missionDescText.fontSize = 16;
+            missionDescText.color = Color.white;
+            missionDescText.alignment = TextAnchor.MiddleLeft;
+            missionDescText.raycastTarget = false;
+            missionDescText.text = "";
+            RectTransform descRt = descObj.GetComponent<RectTransform>();
+            descRt.anchorMin = new Vector2(0f, 1f);
+            descRt.anchorMax = new Vector2(1f, 1f);
+            descRt.pivot = new Vector2(0f, 1f);
+            descRt.anchoredPosition = new Vector2(12f, -28f);
+            descRt.sizeDelta = new Vector2(-24f, 24f);
+
+            // 진행도 바 배경
+            GameObject barBg = new GameObject("ProgressBarBg");
+            barBg.transform.SetParent(survivalMissionPanel.transform, false);
+            Image barBgImg = barBg.AddComponent<Image>();
+            barBgImg.color = new Color(0.2f, 0.2f, 0.3f, 0.8f);
+            barBgImg.raycastTarget = false;
+            RectTransform barBgRt = barBg.GetComponent<RectTransform>();
+            barBgRt.anchorMin = new Vector2(0f, 0f);
+            barBgRt.anchorMax = new Vector2(1f, 0f);
+            barBgRt.pivot = new Vector2(0f, 0f);
+            barBgRt.anchoredPosition = new Vector2(12f, 10f);
+            barBgRt.sizeDelta = new Vector2(-80f, 16f);
+
+            // 진행도 바 필
+            GameObject barFill = new GameObject("ProgressBarFill");
+            barFill.transform.SetParent(barBg.transform, false);
+            missionProgressFill = barFill.AddComponent<Image>();
+            missionProgressFill.color = new Color(0.3f, 0.8f, 1f, 0.9f);
+            missionProgressFill.raycastTarget = false;
+            missionProgressFill.type = Image.Type.Filled;
+            missionProgressFill.fillMethod = Image.FillMethod.Horizontal;
+            missionProgressFill.fillAmount = 0f;
+            RectTransform barFillRt = barFill.GetComponent<RectTransform>();
+            barFillRt.anchorMin = Vector2.zero;
+            barFillRt.anchorMax = Vector2.one;
+            barFillRt.offsetMin = Vector2.zero;
+            barFillRt.offsetMax = Vector2.zero;
+
+            // 카운트 텍스트 (바 우측)
+            GameObject countObj = new GameObject("CountText");
+            countObj.transform.SetParent(survivalMissionPanel.transform, false);
+            missionCountText = countObj.AddComponent<Text>();
+            missionCountText.font = font;
+            missionCountText.fontSize = 14;
+            missionCountText.color = new Color(0.8f, 0.9f, 1f);
+            missionCountText.alignment = TextAnchor.MiddleRight;
+            missionCountText.raycastTarget = false;
+            missionCountText.text = "0/0";
+            RectTransform countRt = countObj.GetComponent<RectTransform>();
+            countRt.anchorMin = new Vector2(1f, 0f);
+            countRt.anchorMax = new Vector2(1f, 0f);
+            countRt.pivot = new Vector2(1f, 0f);
+            countRt.anchoredPosition = new Vector2(-12f, 10f);
+            countRt.sizeDelta = new Vector2(60f, 16f);
+
+            // 초기 숨김 (첫 미션 배정 시 표시)
+            survivalMissionPanel.SetActive(false);
+        }
+
+        /// <summary>
+        /// 새 미션 표시 — 좌측에서 슬라이드 인 (EaseOutBack)
+        /// </summary>
+        public void ShowNewMission(SurvivalMission mission)
+        {
+            if (survivalMissionPanel == null || mission == null) return;
+
+            missionWaveText.text = $"WAVE {mission.waveNumber} - MISSION #{mission.missionNumber}";
+            missionDescText.text = mission.description;
+            missionProgressFill.fillAmount = 0f;
+
+            // 보석 수집 미션이면 해당 보석 색상으로 진행바 표시
+            Color barColor = GetMissionBarColor(mission);
+            missionProgressFill.color = barColor;
+
+            // 설명 텍스트에 보석 색상 강조
+            if (mission.type == SurvivalMissionType.CollectGem && mission.targetGemType != GemType.None)
+                missionDescText.color = Color.Lerp(Color.white, GemColors.GetColor(mission.targetGemType), 0.4f);
+            else
+                missionDescText.color = Color.white;
+
+            if (mission.type == SurvivalMissionType.CollectMulti)
+                missionCountText.text = $"{mission.currentCount}/{mission.targetCount} + {mission.currentCount2}/{mission.targetCount2}";
+            else
+                missionCountText.text = $"{mission.currentCount}/{mission.targetCount}";
+
+            survivalMissionPanel.SetActive(true);
+
+            if (missionSlideCoroutine != null) StopCoroutine(missionSlideCoroutine);
+            missionSlideCoroutine = StartCoroutine(SlideInMission());
+        }
+
+        /// <summary>
+        /// 미션 진행도 업데이트
+        /// </summary>
+        public void UpdateSurvivalMissionProgress(SurvivalMission mission)
+        {
+            if (survivalMissionPanel == null || mission == null) return;
+
+            float prevFill = missionProgressFill.fillAmount;
+            float newFill = Mathf.Clamp01(mission.Progress);
+            missionProgressFill.fillAmount = newFill;
+
+            if (mission.type == SurvivalMissionType.CollectMulti)
+                missionCountText.text = $"{mission.currentCount}/{mission.targetCount} + {mission.currentCount2}/{mission.targetCount2}";
+            else
+                missionCountText.text = $"{mission.currentCount}/{mission.targetCount}";
+
+            // 진행도가 증가했을 때 바 반짝임
+            if (newFill > prevFill)
+                StartCoroutine(ProgressBarFlash());
+        }
+
+        private IEnumerator ProgressBarFlash()
+        {
+            if (missionProgressFill == null) yield break;
+            Color origColor = missionProgressFill.color;
+            Color flashColor = new Color(
+                Mathf.Min(origColor.r + 0.3f, 1f),
+                Mathf.Min(origColor.g + 0.3f, 1f),
+                Mathf.Min(origColor.b + 0.3f, 1f),
+                1f);
+
+            missionProgressFill.color = flashColor;
+
+            float duration = 0.15f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                missionProgressFill.color = Color.Lerp(flashColor, origColor, t);
+                yield return null;
+            }
+            missionProgressFill.color = origColor;
+        }
+
+        /// <summary>
+        /// 미션 완료 애니메이션 — 진행바 금색 + 패널 펄스 + "CLEAR!" 텍스트
+        /// </summary>
+        public void AnimateMissionComplete(int reward)
+        {
+            if (survivalMissionPanel == null) return;
+            if (missionCompleteCoroutine != null) StopCoroutine(missionCompleteCoroutine);
+            missionCompleteCoroutine = StartCoroutine(MissionCompleteAnimation(reward));
+        }
+
+        private Color GetMissionBarColor(SurvivalMission mission)
+        {
+            switch (mission.type)
+            {
+                case SurvivalMissionType.CollectGem:
+                    Color gc = GemColors.GetColor(mission.targetGemType);
+                    return new Color(gc.r, gc.g, gc.b, 0.9f);
+                case SurvivalMissionType.CollectMulti:
+                    // 두 색상의 중간색
+                    Color c1 = GemColors.GetColor(mission.targetGemType);
+                    Color c2 = GemColors.GetColor(mission.targetGemType2);
+                    Color avg = (c1 + c2) * 0.5f;
+                    return new Color(avg.r, avg.g, avg.b, 0.9f);
+                case SurvivalMissionType.CollectAny:
+                    return new Color(0.9f, 0.9f, 0.95f, 0.9f); // 밝은 흰색
+                default:
+                    return new Color(0.3f, 0.8f, 1f, 0.9f);    // 기본 파란색
+            }
+        }
+
+        private IEnumerator SlideInMission()
+        {
+            RectTransform rt = survivalMissionPanel.GetComponent<RectTransform>();
+            Vector2 target = new Vector2(10f, -10f);
+            Vector2 start = new Vector2(-340f, -10f);
+            rt.anchoredPosition = start;
+
+            float duration = 0.4f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                // EaseOutBack
+                float c1 = 1.70158f;
+                float c3 = c1 + 1f;
+                float eased = 1f + c3 * Mathf.Pow(t - 1f, 3f) + c1 * Mathf.Pow(t - 1f, 2f);
+                rt.anchoredPosition = Vector2.LerpUnclamped(start, target, eased);
+                yield return null;
+            }
+            rt.anchoredPosition = target;
+        }
+
+        private IEnumerator MissionCompleteAnimation(int reward)
+        {
+            // 1. 진행바 금색 전환
+            if (missionProgressFill != null)
+            {
+                missionProgressFill.fillAmount = 1f;
+                missionProgressFill.color = new Color(1f, 0.84f, 0f, 1f); // 금색
+            }
+
+            // 2. "CLEAR!" 텍스트 표시
+            if (missionDescText != null)
+                missionDescText.text = $"CLEAR! +{reward} MOVES";
+
+            // 3. 패널 펄스 애니메이션
+            RectTransform rt = survivalMissionPanel.GetComponent<RectTransform>();
+            Vector3 origScale = rt.localScale;
+            float pulseDuration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < pulseDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / pulseDuration);
+                float scale = 1f + 0.1f * Mathf.Sin(t * Mathf.PI);
+                rt.localScale = Vector3.one * scale;
+                yield return null;
+            }
+            rt.localScale = origScale;
+
+            // 4. 잠시 표시 유지 후 슬라이드 아웃
+            yield return new WaitForSeconds(0.8f);
+
+            Vector2 current = rt.anchoredPosition;
+            Vector2 offScreen = new Vector2(-340f, current.y);
+            float slideDuration = 0.3f;
+            elapsed = 0f;
+
+            while (elapsed < slideDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / slideDuration);
+                float eased = t * t; // EaseInQuad
+                rt.anchoredPosition = Vector2.Lerp(current, offScreen, eased);
+                yield return null;
+            }
+
+            survivalMissionPanel.SetActive(false);
+            rt.anchoredPosition = new Vector2(10f, -10f);
+        }
+
+        // ============================================================
+        // 보석 날아가기 연출
+        // ============================================================
+
+        private int gemFlyActiveCount = 0;
+        private const int GEM_FLY_MAX = 8; // 동시 최대 개수
+
+        /// <summary>
+        /// 보석이 미션 패널로 날아가는 연출
+        /// 블록 제거 시 호출 — 색상별 작은 원이 곡선 경로로 이동
+        /// </summary>
+        public void SpawnGemFlyEffect(Vector3 worldPos, GemType gemType)
+        {
+            if (survivalMissionPanel == null || !survivalMissionPanel.activeInHierarchy) return;
+            if (gemFlyActiveCount >= GEM_FLY_MAX) return;
+
+            StartCoroutine(GemFlyAnimation(worldPos, gemType));
+        }
+
+        private IEnumerator GemFlyAnimation(Vector3 worldPos, GemType gemType)
+        {
+            gemFlyActiveCount++;
+
+            // 시차 랜덤 딜레이 (0~0.15초)
+            float startDelay = Random.Range(0f, 0.15f);
+            if (startDelay > 0f)
+                yield return new WaitForSeconds(startDelay);
+
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) { gemFlyActiveCount--; yield break; }
+
+            // 보석 오브젝트 생성
+            GameObject gem = new GameObject("GemFly");
+            gem.transform.SetParent(canvas.transform, false);
+
+            var img = gem.AddComponent<Image>();
+            img.raycastTarget = false;
+            Color gemColor = GemColors.GetColor(gemType);
+            img.color = gemColor;
+
+            RectTransform gemRt = gem.GetComponent<RectTransform>();
+            float size = Random.Range(14f, 20f);
+            gemRt.sizeDelta = new Vector2(size, size);
+
+            // 시작 위치 (월드 → 스크린 → 캔버스 로컬)
+            Camera cam = Camera.main;
+            if (cam == null) { Destroy(gem); gemFlyActiveCount--; yield break; }
+
+            Vector2 screenStart = RectTransformUtility.WorldToScreenPoint(cam, worldPos);
+            Vector2 localStart;
+            RectTransform canvasRt = canvas.GetComponent<RectTransform>();
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvasRt, screenStart, canvas.worldCamera, out localStart);
+
+            // 도착 위치 (미션 패널 중앙)
+            RectTransform panelRt = survivalMissionPanel.GetComponent<RectTransform>();
+            // 패널의 월드 위치 → 캔버스 로컬
+            Vector2 screenEnd = RectTransformUtility.WorldToScreenPoint(cam, survivalMissionPanel.transform.position);
+            Vector2 localEnd;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvasRt, screenEnd, canvas.worldCamera, out localEnd);
+
+            gemRt.anchoredPosition = localStart;
+
+            // 곡선 제어점 (위로 볼록한 포물선)
+            Vector2 mid = (localStart + localEnd) * 0.5f;
+            float curveHeight = Random.Range(80f, 160f);
+            Vector2 controlPoint = mid + Vector2.up * curveHeight + Vector2.right * Random.Range(-40f, 40f);
+
+            // 애니메이션
+            float duration = Random.Range(0.4f, 0.55f);
+            float elapsed = 0f;
+
+            // 트레일용 이전 위치
+            Color trailColor = new Color(gemColor.r, gemColor.g, gemColor.b, 0.4f);
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // EaseInQuad (시작 느리고 끝에 가속)
+                float eased = t * t;
+
+                // 2차 베지어 곡선
+                Vector2 p0 = localStart;
+                Vector2 p1 = controlPoint;
+                Vector2 p2 = localEnd;
+                float oneMinusT = 1f - eased;
+                Vector2 pos = oneMinusT * oneMinusT * p0 + 2f * oneMinusT * eased * p1 + eased * eased * p2;
+                gemRt.anchoredPosition = pos;
+
+                // 이동하면서 축소 + 밝아지기
+                float scale = Mathf.Lerp(1f, 0.5f, eased);
+                gemRt.localScale = Vector3.one * scale;
+
+                // 밝기 증가 (도착 지점 가까울수록 빛남)
+                float brightness = Mathf.Lerp(1f, 1.5f, eased);
+                img.color = new Color(
+                    Mathf.Min(gemColor.r * brightness, 1f),
+                    Mathf.Min(gemColor.g * brightness, 1f),
+                    Mathf.Min(gemColor.b * brightness, 1f),
+                    1f);
+
+                // 트레일 스폰 (매 3프레임마다)
+                if (Time.frameCount % 3 == 0)
+                    StartCoroutine(GemFlyTrail(canvas.transform, pos, size * scale * 0.6f, trailColor));
+
+                yield return null;
+            }
+
+            // 도착: 패널 카운트 펄스
+            if (missionCountText != null)
+                StartCoroutine(CountTextPulse());
+
+            // 도착 플래시
+            StartCoroutine(GemArrivalFlash(canvas.transform, localEnd, gemColor));
+
+            Destroy(gem);
+            gemFlyActiveCount--;
+        }
+
+        /// <summary>
+        /// 보석 트레일 (잔상)
+        /// </summary>
+        private IEnumerator GemFlyTrail(Transform parent, Vector2 pos, float size, Color color)
+        {
+            GameObject trail = new GameObject("GemTrail");
+            trail.transform.SetParent(parent, false);
+
+            var img = trail.AddComponent<Image>();
+            img.raycastTarget = false;
+            img.color = color;
+
+            RectTransform rt = trail.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(size, size);
+            rt.anchoredPosition = pos;
+
+            float duration = 0.15f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                img.color = new Color(color.r, color.g, color.b, color.a * (1f - t));
+                rt.localScale = Vector3.one * (1f - t * 0.5f);
+                yield return null;
+            }
+
+            Destroy(trail);
+        }
+
+        /// <summary>
+        /// 보석 도착 플래시
+        /// </summary>
+        private IEnumerator GemArrivalFlash(Transform parent, Vector2 pos, Color color)
+        {
+            GameObject flash = new GameObject("GemArrivalFlash");
+            flash.transform.SetParent(parent, false);
+
+            var img = flash.AddComponent<Image>();
+            img.raycastTarget = false;
+            img.color = new Color(color.r, color.g, color.b, 0.8f);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(8f, 8f);
+            rt.anchoredPosition = pos;
+
+            float duration = 0.2f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float s = 1f + t * 4f;
+                rt.sizeDelta = new Vector2(8f * s, 8f * s);
+                img.color = new Color(color.r, color.g, color.b, 0.8f * (1f - t));
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        /// <summary>
+        /// 카운트 텍스트 도착 펄스
+        /// </summary>
+        private IEnumerator CountTextPulse()
+        {
+            if (missionCountText == null) yield break;
+
+            RectTransform rt = missionCountText.GetComponent<RectTransform>();
+            Color origColor = missionCountText.color;
+
+            float duration = 0.2f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float scale = 1f + 0.2f * Mathf.Sin(t * Mathf.PI);
+                rt.localScale = Vector3.one * scale;
+
+                // 밝은 노란색 → 원래색
+                missionCountText.color = Color.Lerp(new Color(1f, 0.95f, 0.5f), origColor, t);
+
+                yield return null;
+            }
+
+            rt.localScale = Vector3.one;
+            missionCountText.color = origColor;
         }
     }
 

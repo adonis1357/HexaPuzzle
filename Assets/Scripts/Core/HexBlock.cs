@@ -128,7 +128,7 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 색상도둑 시각 처리: 회색 블록 + 펄스 애니메이션
+        /// 색상도둑 시각 처리: 회색 블록 + 빨간 테두리 강조 + 펄스 애니메이션
         /// </summary>
         private void ApplyChromophageVisuals()
         {
@@ -137,21 +137,54 @@ namespace JewelsHexaPuzzle.Core
             // 블록 색상을 회색으로 변경
             SetGemColor(new Color(0.5f, 0.5f, 0.5f, 1f));
 
-            // 색상도둑 오버레이 표시
+            // 색상도둑 오버레이 표시 (슬라임 느낌)
             if (overlayImage != null)
             {
-                overlayImage.color = new Color(0.6f, 0.6f, 0.6f, 0.4f); // 회색 슬라임
+                overlayImage.color = new Color(0.5f, 0.55f, 0.5f, 0.35f); // 약간 초록빛의 회색 슬라임
                 overlayImage.enabled = true;
             }
 
-            // 테두리를 회색으로
+            // 빨간 테두리 강조 애니메이션 시작
             if (borderImage != null)
+            {
+                StartCoroutine(ChromophageBorderHighlight());
+            }
+
+            // 펄스 애니메이션 시작 (오버레이)
+            StartCoroutine(ChromophagePulseAnimation());
+        }
+
+        /// <summary>
+        /// 색상도둑 빨간 테두리 강조 (처음 나타날 때)
+        /// </summary>
+        private IEnumerator ChromophageBorderHighlight()
+        {
+            if (borderImage == null) yield break;
+
+            // 1단계: 빨간 테두리 강조 (0.4초)
+            float highlightDuration = 0.4f;
+            float elapsed = 0f;
+
+            while (elapsed < highlightDuration && HasEnemyOfType(EnemyType.Chromophage))
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / highlightDuration);
+
+                // 빨강 강조에서 회색으로 페이드
+                Color highlightColor = Color.Lerp(
+                    new Color(1f, 0.3f, 0.3f, 0.9f),  // 빨간색
+                    new Color(0.4f, 0.4f, 0.4f, 0.7f),  // 회색
+                    VisualConstants.EaseOutCubic(t)
+                );
+                borderImage.color = highlightColor;
+                yield return null;
+            }
+
+            // 2단계: 회색 테두리로 고정
+            if (borderImage != null && HasEnemyOfType(EnemyType.Chromophage))
             {
                 borderImage.color = new Color(0.4f, 0.4f, 0.4f, 0.7f);
             }
-
-            // 펄스 애니메이션 시작
-            StartCoroutine(ChromophagePulseAnimation());
         }
 
         /// <summary>

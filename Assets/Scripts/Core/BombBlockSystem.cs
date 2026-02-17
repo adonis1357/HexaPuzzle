@@ -275,10 +275,15 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
+            var sm = GameManager.Instance?.GetComponent<ScoreManager>();
 
             foreach (var target in ring1Targets)
             {
                 if (target == null || target.Data == null || target.Data.gemType == GemType.None) continue;
+
+                // ReflectionShield: 방패 흡수 (폭탄 = 고급 특수)
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
+                    continue;
 
                 if (target.Data.specialType != SpecialBlockType.None &&
                     target.Data.specialType != SpecialBlockType.FixedBlock)
@@ -293,6 +298,21 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 else
                 {
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+
+                    // 적군 점수 (폭탄 = SpecialBasic)
+                    if (sm != null)
+                    {
+                        if (target.Data.hasThorn)
+                            sm.AddEnemyScore(EnemyType.ThornParasite, RemovalMethod.SpecialBasic,
+                                RemovalCondition.Normal, target.transform.position);
+                        if (target.Data.hasChain)
+                            sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.SpecialBasic,
+                                RemovalCondition.Normal, target.transform.position);
+                        if (target.Data.gemType == GemType.Gray)
+                            sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.SpecialBasic,
+                                RemovalCondition.Normal, target.transform.position);
+                    }
+
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
                 }
@@ -307,6 +327,10 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             {
                 if (target == null || target.Data == null || target.Data.gemType == GemType.None) continue;
 
+                // ReflectionShield: 방패 흡수 (폭탄 = 고급 특수)
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
+                    continue;
+
                 if (target.Data.specialType != SpecialBlockType.None &&
                     target.Data.specialType != SpecialBlockType.FixedBlock)
                 {
@@ -320,6 +344,21 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 else
                 {
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+
+                    // 적군 점수 (폭탄 = SpecialBasic)
+                    if (sm != null)
+                    {
+                        if (target.Data.hasThorn)
+                            sm.AddEnemyScore(EnemyType.ThornParasite, RemovalMethod.SpecialBasic,
+                                RemovalCondition.Normal, target.transform.position);
+                        if (target.Data.hasChain)
+                            sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.SpecialBasic,
+                                RemovalCondition.Normal, target.transform.position);
+                        if (target.Data.gemType == GemType.Gray)
+                            sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.SpecialBasic,
+                                RemovalCondition.Normal, target.transform.position);
+                    }
+
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
                 }

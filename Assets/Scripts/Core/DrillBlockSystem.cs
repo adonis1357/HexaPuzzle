@@ -161,17 +161,32 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
 
             // 파괴 대상 블록의 티어별 기본 점수 미리 계산 (ClearData 전)
             int blockScoreSum = 0;
-            foreach (var t in targets1)
+            var sm = GameManager.Instance?.GetComponent<ScoreManager>();
+            List<HexBlock> allDrillTargets = new List<HexBlock>(targets1);
+            allDrillTargets.AddRange(targets2);
+            foreach (var t in allDrillTargets)
             {
                 if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
                 if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
                 blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
-            }
-            foreach (var t in targets2)
-            {
-                if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
-                if (t.Data.specialType != SpecialBlockType.None && t.Data.specialType != SpecialBlockType.FixedBlock) continue;
-                blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+
+                // 적군 점수 (드릴 = SpecialBasic)
+                if (sm != null)
+                {
+                    if (t.Data.hasThorn)
+                        sm.AddEnemyScore(EnemyType.ThornParasite, RemovalMethod.SpecialBasic,
+                            RemovalCondition.Normal, t.transform.position);
+                    if (t.Data.hasChain)
+                        sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.SpecialBasic,
+                            RemovalCondition.Normal, t.transform.position);
+                    if (t.Data.gemType == GemType.Gray)
+                        sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.SpecialBasic,
+                            RemovalCondition.Normal, t.transform.position);
+                    if (t.Data.enemyType != EnemyType.None && t.Data.enemyType != EnemyType.Chromophage
+                        && t.Data.enemyType != EnemyType.ChainAnchor && t.Data.enemyType != EnemyType.ThornParasite)
+                        sm.AddEnemyScore(t.Data.enemyType, RemovalMethod.SpecialBasic,
+                            RemovalCondition.Normal, t.transform.position);
+                }
             }
 
             // 드릴 발사 시작 이펙트 (중앙 폭발)
@@ -292,6 +307,13 @@ private IEnumerator DrillLineWithProjectile(
 
                 // Bug #15 fix: target.Data가 동시 실행 중 null이 될 수 있음
                 if (target.Data == null || target.Data.gemType == GemType.None) continue;
+
+                // ReflectionShield: 방패 흡수 (드릴 = 특수블록)
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
+                {
+                    StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
+                    continue; // 방패가 흡수 → 블록 보존
+                }
 
                 if (target.Data.specialType != SpecialBlockType.None && target.Data.specialType != SpecialBlockType.FixedBlock)
                 {

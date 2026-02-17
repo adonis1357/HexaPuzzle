@@ -904,5 +904,43 @@ namespace JewelsHexaPuzzle.Utils
             clip.SetData(data, 0);
             return clip;
         }
+
+        /// <summary>
+        /// 적군 스폰 사운드 — 저음 럼블 + 불길한 단조 톤 (0.25s)
+        /// </summary>
+        public static AudioClip CreateEnemySpawnSound(float duration = 0.25f)
+        {
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            System.Random rng = new System.Random(777);
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float tNorm = (float)i / sampleCount;
+                float envelope = ADSR(tNorm, 0.01f, 0.15f, 0.4f, 0.3f);
+
+                // 저음 럼블 (60Hz → 40Hz 하강)
+                float rumbleFreq = Mathf.Lerp(60f, 40f, tNorm);
+                float rumble = Mathf.Sin(2f * Mathf.PI * rumbleFreq * t) * 0.5f;
+
+                // 불길한 단조 톤 (Eb minor: Eb4=311Hz, Gb4=370Hz)
+                float minor1 = Mathf.Sin(2f * Mathf.PI * 311f * t) * 0.2f * (1f - tNorm);
+                float minor2 = Mathf.Sin(2f * Mathf.PI * 370f * t) * 0.15f * (1f - tNorm * 1.2f);
+
+                // 노이즈 텍스처
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * 0.1f * (1f - tNorm);
+
+                data[i] = (rumble + minor1 + minor2 + noise) * envelope * 0.45f;
+            }
+
+            ApplyFades(data, 8, 64);
+            ApplyLowPass(data, 0.35f);
+            ApplyReverb(data, 15f, 0.25f, 2);
+
+            AudioClip clip = AudioClip.Create("EnemySpawn", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
     }
 }

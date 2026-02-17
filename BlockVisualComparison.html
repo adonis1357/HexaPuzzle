@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HexaPuzzle VFX 업그레이드 시각화</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a4d 100%);
+            color: #e0e0e0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #4a9eff;
+            padding-bottom: 20px;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #4a9eff, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header p {
+            color: #aaa;
+            font-size: 1.1em;
+        }
+
+        .toggle-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+
+        .toggle-btn {
+            padding: 12px 24px;
+            font-size: 1em;
+            border: 2px solid #4a9eff;
+            background: transparent;
+            color: #4a9eff;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .toggle-btn:hover {
+            background: #4a9eff;
+            color: #0f0f23;
+            transform: translateY(-2px);
+        }
+
+        .toggle-btn.active {
+            background: linear-gradient(90deg, #4a9eff, #a855f7);
+            border-color: #a855f7;
+            color: white;
+        }
+
+        .section {
+            background: rgba(30, 30, 50, 0.9);
+            border: 1px solid #3a3a6d;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        .section h2 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            color: #4a9eff;
+            border-bottom: 2px solid #4a9eff;
+            padding-bottom: 10px;
+        }
+
+        .section h3 {
+            font-size: 1.3em;
+            margin: 20px 0 15px 0;
+            color: #a855f7;
+        }
+
+        .hex-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+            align-items: center;
+        }
+
+        .hex-pair {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .hex-pair label {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+
+        .hex-canvas {
+            border: 2px solid #4a9eff;
+            border-radius: 12px;
+            background: rgba(15, 15, 35, 0.8);
+            box-shadow: 0 0 20px rgba(74, 158, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .hex-canvas:hover {
+            box-shadow: 0 0 30px rgba(74, 158, 255, 0.6);
+            border-color: #a855f7;
+        }
+
+        .color-picker-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .color-btn {
+            padding: 12px;
+            border: 3px solid #444;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .color-btn:hover {
+            transform: scale(1.05);
+            border-color: #fff;
+        }
+
+        .color-btn.active {
+            border-color: #fff;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+            transform: scale(1.1);
+        }
+
+        .improvement-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .improvement-card {
+            background: rgba(50, 50, 80, 0.9);
+            border: 1px solid #4a9eff;
+            border-radius: 10px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .improvement-card:hover {
+            background: rgba(70, 70, 100, 0.9);
+            border-color: #a855f7;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(168, 85, 247, 0.3);
+        }
+
+        .improvement-card h4 {
+            color: #4a9eff;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .improvement-card p {
+            color: #bbb;
+            font-size: 0.95em;
+            margin-bottom: 10px;
+        }
+
+        .priority {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .priority.high {
+            background: rgba(239, 68, 68, 0.3);
+            color: #ff6b6b;
+            border: 1px solid #ff6b6b;
+        }
+
+        .priority.medium {
+            background: rgba(251, 146, 60, 0.3);
+            color: #ffa500;
+            border: 1px solid #ffa500;
+        }
+
+        .priority.low {
+            background: rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+            border: 1px solid #4ade80;
+        }
+
+        .timeline-bar {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+            gap: 15px;
+        }
+
+        .timeline-label {
+            min-width: 100px;
+            font-weight: 600;
+            color: #4a9eff;
+        }
+
+        .timeline-fill {
+            flex-grow: 1;
+            height: 30px;
+            background: linear-gradient(90deg, #4a9eff, #a855f7);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .timeline-text {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: white;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-box {
+            background: rgba(50, 50, 80, 0.8);
+            border: 1px solid #3a3a6d;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #4a9eff;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        .brightness-chart {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            height: 150px;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(50, 50, 80, 0.8);
+            border-radius: 10px;
+        }
+
+        .brightness-bar {
+            flex: 1;
+            background: linear-gradient(to top, #4a9eff, #a855f7);
+            border-radius: 5px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 30px;
+        }
+
+        .brightness-bar:hover {
+            opacity: 0.8;
+            transform: scaleY(1.05);
+        }
+
+        .brightness-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8em;
+            color: #aaa;
+            white-space: nowrap;
+        }
+
+        .hex-grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .hex-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .hex-example {
+            width: 100px;
+            height: 100px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #4a9eff;
+            font-weight: 600;
+            color: white;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .hex-example:hover {
+            transform: scale(1.05);
+            border-color: #a855f7;
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+        }
+
+        .hierarchy-tree {
+            background: rgba(50, 50, 80, 0.8);
+            border-left: 4px solid #4a9eff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+        }
+
+        .tree-line {
+            color: #aaa;
+            margin: 5px 0;
+        }
+
+        .tree-item {
+            color: #4a9eff;
+            font-weight: 600;
+        }
+
+        .tree-sub {
+            margin-left: 20px;
+            color: #a855f7;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+            border-bottom: 1px dotted #4a9eff;
+        }
+
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: #4a9eff;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            white-space: nowrap;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            border: 1px solid #4a9eff;
+        }
+
+        @media (max-width: 768px) {
+            .hex-comparison {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .improvement-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .animation-demo {
+            width: 200px;
+            height: 200px;
+            background: rgba(50, 50, 80, 0.8);
+            border: 2px solid #4a9eff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            position: relative;
+        }
+
+        .animated-hex {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #4a9eff, #a855f7);
+            border-radius: 8px;
+            animation: pulse-breath 2s infinite;
+        }
+
+        @keyframes pulse-breath {
+            0% { transform: scale(0.97); opacity: 0.8; }
+            50% { transform: scale(1.03); opacity: 1; }
+            100% { transform: scale(0.97); opacity: 0.8; }
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .btn-primary {
+            padding: 12px 20px;
+            background: linear-gradient(90deg, #4a9eff, #a855f7);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(74, 158, 255, 0.3);
+        }
+
+        .info-box {
+            background: rgba(74, 158, 255, 0.1);
+            border-left: 4px solid #4a9eff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            color: #e0e0e0;
+        }
+
+        .info-box strong {
+            color: #4a9eff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 HexaPuzzle VFX 업그레이드 시각화</h1>
+            <p>특수 블록 시스템의 비주얼 개선사항 인터랙티브 가이드</p>
+        </header>
+
+        <div class="toggle-container">
+            <button class="toggle-btn active" onclick="switchSection('hexagon')">육각형 시각화</button>
+            <button class="toggle-btn" onclick="switchSection('improvements')">개선 항목</button>
+            <button class="toggle-btn" onclick="switchSection('timeline')">타임라인</button>
+            <button class="toggle-btn" onclick="switchSection('analysis')">분석</button>
+        </div>
+
+        <!-- Section 1: 육각형 시각화 -->
+        <div class="section" id="section-hexagon">
+            <h2>1. 특수 블록 비주얼 비교</h2>
+
+            <div class="info-box">
+                <strong>설명:</strong> 아래 캔버스에서 Before(현재) vs After(개선된) 육각형 블록을 비교합니다. 색상을 선택하면 각 블록 유형별 시각 변화를 확인할 수 있습니다.
+            </div>
+
+            <h3>색상 선택</h3>
+            <div class="color-picker-container">
+                <button class="color-btn active" style="background: #ff6b6b;" onclick="selectColor('red')">Red</button>
+                <button class="color-btn" style="background: #4ecdc4;" onclick="selectColor('blue')">Blue</button>
+                <button class="color-btn" style="background: #95e77d;" onclick="selectColor('green')">Green</button>
+                <button class="color-btn" style="background: #ffe66d;" onclick="selectColor('yellow')">Yellow</button>
+                <button class="color-btn" style="background: #b366ff;" onclick="selectColor('purple')">Purple</button>
+                <button class="color-btn" style="background: #ffb366;" onclick="selectColor('orange')">Orange</button>
+            </div>
+
+            <h3>Before (현재) vs After (개선)</h3>
+            <div class="hex-comparison">
+                <div class="hex-pair">
+                    <label>Before: 기본 블록</label>
+                    <canvas id="canvasBefore" class="hex-canvas" width="300" height="300"></canvas>
+                </div>
+                <div class="hex-pair">
+                    <label>After: 개선된 블록 (Pre-Fire + Bloom)</label>
+                    <canvas id="canvasAfter" class="hex-canvas" width="300" height="300"></canvas>
+                </div>
+            </div>
+
+            <h3>특수 블록 타입별 시각화</h3>
+            <div class="hex-grid-container">
+                <div class="hex-item">
+                    <div class="hex-example" style="background: linear-gradient(135deg, #ff6b6b, #ff4444);">
+                        💣<br><span style="font-size: 0.7em;">Bomb</span>
+                    </div>
+                    <small>폭탄</small>
+                </div>
+                <div class="hex-item">
+                    <div class="hex-example" style="background: linear-gradient(135deg, #a855f7, #7c3aed);">
+                        ⚡<br><span style="font-size: 0.7em;">Laser</span>
+                    </div>
+                    <small>레이저</small>
+                </div>
+                <div class="hex-item">
+                    <div class="hex-example" style="background: linear-gradient(135deg, #3b82f6, #1e40af);">
+                        🔷<br><span style="font-size: 0.7em;">Drill</span>
+                    </div>
+                    <small>드릴</small>
+                </div>
+                <div class="hex-item">
+                    <div class="hex-example" style="background: linear-gradient(90deg, #ff6b6b, #a855f7, #3b82f6, #95e77d);">
+                        🌈<br><span style="font-size: 0.7em;">Rainbow</span>
+                    </div>
+                    <small>레인보우</small>
+                </div>
+                <div class="hex-item">
+                    <div class="hex-example" style="background: linear-gradient(45deg, #ff6b6b, #a855f7, #3b82f6);">
+                        ✕<br><span style="font-size: 0.7em;">XBlock</span>
+                    </div>
+                    <small>X블록</small>
+                </div>
+                <div class="hex-item">
+                    <div class="hex-example" style="background: linear-gradient(135deg, #ffe66d, #ffb366);">
+                        🎯<br><span style="font-size: 0.7em;">Matched</span>
+                    </div>
+                    <small>매칭됨</small>
+                </div>
+            </div>
+
+            <h3>명도 범위 분포</h3>
+            <div class="brightness-chart">
+                <div class="brightness-bar" style="height: 60%;" data-tooltip="어두운 톤">
+                    <span class="brightness-label">다크</span>
+                </div>
+                <div class="brightness-bar" style="height: 85%;" data-tooltip="중간 톤">
+                    <span class="brightness-label">중간</span>
+                </div>
+                <div class="brightness-bar" style="height: 100%;" data-tooltip="밝은 톤">
+                    <span class="brightness-label">라이트</span>
+                </div>
+                <div class="brightness-bar" style="height: 90%;" data-tooltip="하이라이트">
+                    <span class="brightness-label">반사</span>
+                </div>
+            </div>
+
+            <h3>호흡 애니메이션 데모 (A-01)</h3>
+            <p style="text-align: center; color: #aaa; margin-bottom: 15px;">특수 블록의 유휴 상태 호흡 효과</p>
+            <div class="animation-demo">
+                <div class="animated-hex"></div>
+            </div>
+        </div>
+
+        <!-- Section 2: 개선 항목 상세 -->
+        <div class="section" id="section-improvements" style="display: none;">
+            <h2>2. VFX 개선 항목 (Phase별)</h2>
+
+            <div class="info-box">
+                <strong>주의:</strong> 모든 개선사항은 UI.Image 기반 프로시저럴 생성입니다. ParticleSystem이나 외부 에셋을 사용하지 않습니다.
+            </div>
+
+            <h3>Phase 1: 핵심 Juice (3~4일)</h3>
+            <div class="improvement-grid">
+                <div class="improvement-card">
+                    <h4>I-01: Hit Stop (순간 정지)</h4>
+                    <p>특수 블록 폭발 순간, 게임이 1~3프레임 멈추고 슬로모로 진행되는 효과</p>
+                    <p><strong>효과:</strong> 임팩트 체감 200% 증가</p>
+                    <p><strong>구현:</strong> Time.timeScale 조작 (WaitForSecondsRealtime 사용)</p>
+                    <span class="priority high">높음</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>I-02: 화이트 플래시</h4>
+                    <p>블록 파괴 순간 순백색 오버레이가 번쩍하고 사라지는 효과</p>
+                    <p><strong>효과:</strong> 파괴의 "시원한" 피드백</p>
+                    <p><strong>성능:</strong> 블록당 1 GO, 0.06초 수명</p>
+                    <span class="priority high">높음</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>P-01: 특수블록 충전 효과</h4>
+                    <p>발동 전 0.1초 동안 블록이 안쪽으로 수축했다가 팽창하는 "숨" 효과</p>
+                    <p><strong>적용:</strong> Drill, Bomb, Laser, Donut, XBlock</p>
+                    <p><strong>스케일:</strong> 1.0 → 0.85 → 1.12</p>
+                    <span class="priority high">높음</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>P-02: 매칭 하이라이트 펄스</h4>
+                    <p>매칭 확인 직후 블록이 1.08배로 팽창했다가 수축하는 효과</p>
+                    <p><strong>효과:</strong> 매칭 인지도 200% 증가</p>
+                    <p><strong>추가:</strong> 흰색 반투명 오버레이 + 스태거</p>
+                    <span class="priority high">높음</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>M-01: 이중 이징 파괴</h4>
+                    <p>파괴 애니메이션을 20% 팽창 → 80% squeeze+shrink로 분리</p>
+                    <p><strong>패턴:</strong> Anticipation + Action (디즈니 12원칙)</p>
+                    <p><strong>기간:</strong> 0.14초 (기존 유지)</p>
+                    <span class="priority high">높음</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>S-02: 줌 펀치</h4>
+                    <p>특수 블록 폭발 시 보드가 1.02x로 줌인했다가 원래 크기로 복귀</p>
+                    <p><strong>지속시간:</strong> 0.03s 줌인 + 0.08s 아웃</p>
+                    <p><strong>효과:</strong> 화면이 튀어나오는 느낌</p>
+                    <span class="priority high">높음</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>C-01: 블룸 시뮬레이션</h4>
+                    <p>밝은 이펙트 뒤에 큰 글로우 레이어를 깔아 "빛이 번지는" 효과</p>
+                    <p><strong>방식:</strong> 플래시의 1.8배 크기, 0.25배 알파</p>
+                    <p><strong>성능:</strong> 이펙트당 +1 GO</p>
+                    <span class="priority high">높음</span>
+                </div>
+            </div>
+
+            <h3>Phase 2: 폴리시 (3~4일)</h3>
+            <div class="improvement-grid">
+                <div class="improvement-card">
+                    <h4>F-01: 고스트 이미지 잔상</h4>
+                    <p>블록 파괴 후 0.15초 동안 해당 위치에 색상 잔상이 남았다가 사라짐</p>
+                    <p><strong>스케일:</strong> 0.8 → 1.2 (확산하며 사라짐)</p>
+                    <p><strong>알파:</strong> 0.35 → 0</p>
+                    <span class="priority medium">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>F-02: 낙하 착지 더스트</h4>
+                    <p>블록이 낙하하여 도착할 때 하단에서 먼지가 퍼지는 효과</p>
+                    <p><strong>개수:</strong> 좌우 1개씩 (2개)</p>
+                    <p><strong>방향:</strong> 위쪽 30px/s + 좌우 확산</p>
+                    <span class="priority medium">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>A-01: 특수블록 호흡 애니메이션</h4>
+                    <p>보드 위의 특수 블록이 천천히 스케일 오르락내리락하고 빛남</p>
+                    <p><strong>속도:</strong> 2.5Hz 호흡 + 3.0Hz 글로우</p>
+                    <p><strong>스케일:</strong> 0.97 ↔ 1.03</p>
+                    <span class="priority medium">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>S-01: 방향성 셰이크</h4>
+                    <p>특수 블록별로 셰이크 방향을 다양화</p>
+                    <p><strong>Drill:</strong> 수직 흔들림</p>
+                    <p><strong>Laser:</strong> 3축 교대 흔들림</p>
+                    <span class="priority medium">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>M-02: 스파크 꼬리 (Elongation)</h4>
+                    <p>스파크가 이동 방향으로 길쭉해지며 "꼬리를 끌며" 날아가는 효과</p>
+                    <p><strong>비율:</strong> 길이 2x + 폭 0.6x</p>
+                    <p><strong>비용:</strong> 연산만 (GO 추가 없음)</p>
+                    <span class="priority medium">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>M-03: 스프링 이징</h4>
+                    <p>EaseOutElastic보다 짧은 진동으로 빠르게 안정되는 이징</p>
+                    <p><strong>주기:</strong> p=0.15 (0.3의 절반)</p>
+                    <p><strong>용도:</strong> 충격파 복귀, 블록 바운스</p>
+                    <span class="priority medium">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>C-03: HSV 색상 다양성</h4>
+                    <p>파편/스파크 색상을 HSV 공간에서 더 다양하게 변환</p>
+                    <p><strong>Hue:</strong> ±15° | <strong>Saturation:</strong> ±0.15 | <strong>Brightness:</strong> ±0.2</p>
+                    <p><strong>효과:</strong> 색감 풍부도 대폭 증가</p>
+                    <span class="priority medium">중간</span>
+                </div>
+            </div>
+
+            <h3>Phase 3: 프리미엄 터치 (2~3일)</h3>
+            <div class="improvement-grid">
+                <div class="improvement-card">
+                    <h4>P-03: 콤보 빌드업 에스컬레이션</h4>
+                    <p>캐스케이드 깊이에 따라 보드 경계 테두리와 보드 줌이 증가</p>
+                    <p><strong>Depth 2:</strong> 테두리 alpha 0.1 | <strong>Depth 3:</strong> + 줌 1.015 | <strong>Depth 4+:</strong> alpha 0.3 + 줌 1.03</p>
+                    <span class="priority low">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>I-03: 디스토션 링 (블록 밀기)</h4>
+                    <p>폭탄/레이저 폭발 시 주변 블록이 바깥으로 밀렸다 돌아오는 물리적 반응</p>
+                    <p><strong>반경:</strong> 200px | <strong>밀이:</strong> 최대 5px</p>
+                    <p><strong>복귀:</strong> EaseOutSpring, 0.15s</p>
+                    <span class="priority low">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>I-04: 드릴 트레일 잔상</h4>
+                    <p>드릴 투사체 이동 경로에 0.2초 동안 남는 반투명 라인</p>
+                    <p><strong>너비:</strong> 4px | <strong>알파:</strong> 0.5</p>
+                    <p><strong>성능:</strong> 타겟당 1 GO</p>
+                    <span class="priority low">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>F-03: 여진 웨이브</h4>
+                    <p>폭탄/레이저 폭발 완료 후 0.3초 뒤에 작은 충격파 1회 추가</p>
+                    <p><strong>크기:</strong> 기존의 60% | <strong>알파:</strong> 기존의 50%</p>
+                    <p><strong>효과:</strong> 마무리감 및 "끝났다" 신호</p>
+                    <span class="priority low">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>C-02: 색온도 시프트</h4>
+                    <p>특수 블록 발동 시 보드 전체 색감이 해당 시스템 테마로 틴팅</p>
+                    <p><strong>Bomb:</strong> 따뜻한 톤 | <strong>Laser:</strong> 차가운 톤 | <strong>Rainbow:</strong> 무지개 순환</p>
+                    <span class="priority low">중간</span>
+                </div>
+
+                <div class="improvement-card">
+                    <h4>S-03: 보드 미세 바운스</h4>
+                    <p>매칭 확인 시 보드 전체가 1.5px 아래로 내려갔다 올라오는 미세 반동</p>
+                    <p><strong>다운:</strong> 0.03s | <strong>업:</strong> EaseOutElastic, 0.08s</p>
+                    <p><strong>효과:</strong> 모든 매칭에 무게감 부여</p>
+                    <span class="priority low">중간</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: 타임라인 -->
+        <div class="section" id="section-timeline" style="display: none;">
+            <h2>3. 개발 타임라인 & 우선순위</h2>
+
+            <div class="info-box">
+                <strong>총 개발 기간:</strong> 약 8~10일 (Phase 1 ~ Phase 3)<br>
+                <strong>성능 예산:</strong> 최악의 케이스 217 GO (대부분 0.06~0.2초 이내 소멸)
+            </div>
+
+            <h3>Phase 1: 핵심 Juice (3~4일)</h3>
+            <p style="color: #aaa; margin: 15px 0;">가장 큰 품질 향상을 가져오는 핵심 개선사항</p>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">I-01</span>
+                <div class="timeline-fill" style="width: 15%;">
+                    <span class="timeline-text">Hit Stop</span>
+                </div>
+                <span style="color: #4a9eff;">0.5일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">I-02</span>
+                <div class="timeline-fill" style="width: 20%;">
+                    <span class="timeline-text">Flash</span>
+                </div>
+                <span style="color: #4a9eff;">0.75일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">P-01</span>
+                <div class="timeline-fill" style="width: 35%;">
+                    <span class="timeline-text">Pre-Fire</span>
+                </div>
+                <span style="color: #4a9eff;">1.25일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">P-02</span>
+                <div class="timeline-fill" style="width: 30%;">
+                    <span class="timeline-text">Match Pulse</span>
+                </div>
+                <span style="color: #4a9eff;">1일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">M-01</span>
+                <div class="timeline-fill" style="width: 15%;">
+                    <span class="timeline-text">Dual Easing</span>
+                </div>
+                <span style="color: #4a9eff;">0.5일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">S-02</span>
+                <div class="timeline-fill" style="width: 15%;">
+                    <span class="timeline-text">Zoom Punch</span>
+                </div>
+                <span style="color: #4a9eff;">0.5일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">C-01</span>
+                <div class="timeline-fill" style="width: 25%;">
+                    <span class="timeline-text">Bloom</span>
+                </div>
+                <span style="color: #4a9eff;">0.75일</span>
+            </div>
+
+            <h3>Phase 2: 폴리시 (3~4일)</h3>
+            <p style="color: #aaa; margin: 15px 0;">품질을 한 단계 더 업그레이드하는 상세 개선사항</p>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">F-01</span>
+                <div class="timeline-fill" style="width: 20%;">
+                    <span class="timeline-text">Ghost Image</span>
+                </div>
+                <span style="color: #ffa500;">0.75일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">F-02</span>
+                <div class="timeline-fill" style="width: 25%;">
+                    <span class="timeline-text">Dust</span>
+                </div>
+                <span style="color: #ffa500;">1일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">A-01</span>
+                <div class="timeline-fill" style="width: 30%;">
+                    <span class="timeline-text">Breathing</span>
+                </div>
+                <span style="color: #ffa500;">1.25일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">S-01+M-02+M-03+C-03</span>
+                <div class="timeline-fill" style="width: 35%;">
+                    <span class="timeline-text">Shake+Spark+Easing+HSV</span>
+                </div>
+                <span style="color: #ffa500;">1.5일</span>
+            </div>
+
+            <h3>Phase 3: 프리미엄 터치 (2~3일)</h3>
+            <p style="color: #aaa; margin: 15px 0;">차별화된 고급 비주얼</p>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">P-03+I-03+I-04+F-03</span>
+                <div class="timeline-fill" style="width: 60%;">
+                    <span class="timeline-text">Combo+Distortion+Trail+Aftershock</span>
+                </div>
+                <span style="color: #4ade80;">2일</span>
+            </div>
+
+            <div class="timeline-bar">
+                <span class="timeline-label">C-02+S-03+B-01+B-03</span>
+                <div class="timeline-fill" style="width: 50%;">
+                    <span class="timeline-text">ColorGrade+Bounce+SonicBoom+Curve</span>
+                </div>
+                <span style="color: #4ade80;">1.5일</span>
+            </div>
+
+            <h3>성능 부하 분석</h3>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-value">157</div>
+                    <div class="stat-label">현재 Peak GO</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">+60</div>
+                    <div class="stat-label">Phase 1~3 추가</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">217</div>
+                    <div class="stat-label">최악 Peak</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">0.06~0.2s</div>
+                    <div class="stat-label">대부분 수명</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 4: 분석 -->
+        <div class="section" id="section-analysis" style="display: none;">
+            <h2>4. 기술 분석 & 세부 구현</h2>
+
+            <h3>색상 정의 (RGB)</h3>
+            <div class="hierarchy-tree">
+                <div class="tree-line"><span class="tree-item">Color Palette</span></div>
+                <div class="tree-line tree-sub">Red: RGB(255, 107, 107) #FF6B6B</div>
+                <div class="tree-line tree-sub">Blue: RGB(78, 205, 196) #4ECDC4</div>
+                <div class="tree-line tree-sub">Green: RGB(149, 231, 125) #95E77D</div>
+                <div class="tree-line tree-sub">Yellow: RGB(255, 230, 109) #FFE66D</div>
+                <div class="tree-line tree-sub">Purple: RGB(179, 102, 255) #B366FF</div>
+                <div class="tree-line tree-sub">Orange: RGB(255, 179, 102) #FFB366</div>
+            </div>
+
+            <h3>계층 구조: 블록 렌더링 순서</h3>
+            <div class="hierarchy-tree">
+                <div class="tree-line"><span class="tree-item">Canvas</span></div>
+                <div class="tree-line tree-sub">├─ Board Background (파동 애니메이션)</div>
+                <div class="tree-line tree-sub">├─ Hex Block
+                    <div class="tree-line tree-sub">│  ├─ Base Image (색상)</div>
+                    <div class="tree-line tree-sub">│  ├─ Idle Glow Overlay (A-01)</div>
+                    <div class="tree-line tree-sub">│  ├─ Match Highlight (P-02)</div>
+                    <div class="tree-line tree-sub">│  └─ Indicator (특수 블록 아이콘)</div>
+                <div class="tree-line tree-sub">├─ Effects Parent
+                    <div class="tree-line tree-sub">│  ├─ Flash (I-02)</div>
+                    <div class="tree-line tree-sub">│  ├─ Bloom Layer (C-01)</div>
+                    <div class="tree-line tree-sub">│  ├─ Pre-Fire Compression (P-01)</div>
+                    <div class="tree-line tree-sub">│  ├─ Shockwave Rings</div>
+                    <div class="tree-line tree-sub">│  ├─ Debris / Sparks</div>
+                    <div class="tree-line tree-sub">│  ├─ Ghost Image (F-01)</div>
+                    <div class="tree-line tree-sub">│  └─ Landing Dust (F-02)</div>
+                <div class="tree-line tree-sub">├─ Board Transform
+                    <div class="tree-line tree-sub">│  ├─ Scale (S-02: Zoom Punch)</div>
+                    <div class="tree-line tree-sub">│  ├─ Position (S-03: Bounce)</div>
+                    <div class="tree-line tree-sub">│  └─ Shake (S-01: Directional)</div>
+                <div class="tree-line tree-sub">├─ Color Grade Overlay (C-02)</div>
+                <div class="tree-line tree-sub">└─ Cascade Border (P-03)</div>
+            </div>
+
+            <h3>특수 블록별 시스템 발동 순서</h3>
+            <div class="hierarchy-tree">
+                <div class="tree-line"><span class="tree-item">Block Removal System</span></div>
+                <div class="tree-line tree-sub">1. Process Matches
+                    <div class="tree-line tree-sub">└─ P-02 Match Highlight Pulse</div>
+                </div>
+                <div class="tree-line tree-sub">2. Identify Special Blocks
+                    <div class="tree-line tree-sub">├─ P-01 Pre-Fire Compression (0.1s)</div>
+                    <div class="tree-line tree-sub">└─ I-01 Hit Stop (0.03~0.04s)</div>
+                </div>
+                <div class="tree-line tree-sub">3. Trigger System
+                    <div class="tree-line tree-sub">├─ I-02 White Flash (0.06s)</div>
+                    <div class="tree-line tree-sub">├─ C-01 Bloom Layer (0.06s+)</div>
+                    <div class="tree-line tree-sub">├─ S-02 Zoom Punch (0.11s)</div>
+                    <div class="tree-line tree-sub">├─ S-01 Directional Shake</div>
+                    <div class="tree-line tree-sub">└─ Debris / Sparks (C-03 HSV)</div>
+                </div>
+                <div class="tree-line tree-sub">4. Block Destruction
+                    <div class="tree-line tree-sub">├─ M-01 Dual Easing (0.14s)</div>
+                    <div class="tree-line tree-sub">├─ F-01 Ghost Image (0.15s)</div>
+                    <div class="tree-line tree-sub">└─ I-03 Shockwave (0.15s)</div>
+                </div>
+                <div class="tree-line tree-sub">5. Fall Physics
+                    <div class="tree-line tree-sub">├─ F-02 Landing Dust (0.2s)</div>
+                    <div class="tree-line tree-sub">└─ S-03 Board Bounce</div>
+                </div>
+                <div class="tree-line tree-sub">6. Post-Effects
+                    <div class="tree-line tree-sub">├─ F-03 Aftershock (0.3s delay)</div>
+                    <div class="tree-line tree-sub">└─ C-02 Color Grade Fade (0.3s)</div>
+                </div>
+            </div>
+
+            <h3>VisualConstants 추가 파라미터 (Phase 1만)</h3>
+            <div style="background: rgba(50, 50, 80, 0.8); padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.9em; overflow-x: auto;">
+                <div style="color: #4a9eff; margin-bottom: 10px;">// Hit Stop</div>
+                <div>HitStopDuration_Large = <span style="color: #ffa500;">0.04f</span></div>
+                <div>HitStopDuration_Medium = <span style="color: #ffa500;">0.03f</span></div>
+                <div>HitStopSlowMoScale = <span style="color: #ffa500;">0.4f</span></div>
+                <div style="color: #4a9eff; margin: 10px 0 10px 0;">// Destroy Flash</div>
+                <div>DestroyFlashDuration = <span style="color: #ffa500;">0.06f</span></div>
+                <div>DestroyFlashAlpha = <span style="color: #ffa500;">0.7f</span></div>
+                <div style="color: #4a9eff; margin: 10px 0 10px 0;">// Pre-Fire Compression</div>
+                <div>PreFireCompressionDuration = <span style="color: #ffa500;">0.1f</span></div>
+                <div>PreFireScaleMin = <span style="color: #ffa500;">0.85f</span></div>
+                <div>PreFireScaleMax = <span style="color: #ffa500;">1.12f</span></div>
+                <div style="color: #4a9eff; margin: 10px 0 10px 0;">// 더 많은 파라미터는 사양서 참고</div>
+            </div>
+
+            <h3>최적화 팁</h3>
+            <div style="display: grid; gap: 15px; margin: 20px 0;">
+                <div style="background: rgba(74, 158, 255, 0.1); border-left: 4px solid #4a9eff; padding: 15px; border-radius: 8px;">
+                    <strong style="color: #4a9eff;">GO 생성 최소화:</strong>
+                    <p>각 이펙트는 필요한 최소 개수만 생성하고, lifetime을 명확히 설정하여 자동 소멸 처리</p>
+                </div>
+                <div style="background: rgba(74, 158, 255, 0.1); border-left: 4px solid #4a9eff; padding: 15px; border-radius: 8px;">
+                    <strong style="color: #4a9eff;">TimeScale 관리:</strong>
+                    <p>Hit Stop 적용 시 cooldown 0.3s를 두어 연속 호출 방지. 항상 WaitForSecondsRealtime 사용</p>
+                </div>
+                <div style="background: rgba(74, 158, 255, 0.1); border-left: 4px solid #4a9eff; padding: 15px; border-radius: 8px;">
+                    <strong style="color: #4a9eff;">Easing 함수:</strong>
+                    <p>새 EaseOutSpring(p=0.15)을 짧은 복귀 애니메이션에 활용. EaseOutElastic은 장시간 애니메이션에만</p>
+                </div>
+                <div style="background: rgba(74, 158, 255, 0.1); border-left: 4px solid #4a9eff; padding: 15px; border-radius: 8px;">
+                    <strong style="color: #4a9eff;">Transform Hierarchy:</strong>
+                    <p>효과는 effectParent의 자식으로 생성. hexGrid.transform은 shake/bounce/zoom만 조작</p>
+                </div>
+            </div>
+
+            <h3>3가지만 구현해도 되는 최소 필수 조합</h3>
+            <div class="button-group">
+                <div style="flex: 1; padding: 15px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ff6b6b; border-radius: 8px;">
+                    <div style="color: #ff6b6b; font-weight: 600; margin-bottom: 10px;">1️⃣ I-01: Hit Stop</div>
+                    <p style="color: #ccc; font-size: 0.9em;">TimeScale 조작 한 줄로 임팩트 체감 200% 증가</p>
+                </div>
+                <div style="flex: 1; padding: 15px; background: rgba(251, 146, 60, 0.15); border: 1px solid #ffa500; border-radius: 8px;">
+                    <div style="color: #ffa500; font-weight: 600; margin-bottom: 10px;">2️⃣ I-02: 화이트 플래시</div>
+                    <p style="color: #ccc; font-size: 0.9em;">블록당 Image 1개, 0.06s로 "시원한 파괴감"</p>
+                </div>
+                <div style="flex: 1; padding: 15px; background: rgba(34, 197, 94, 0.15); border: 1px solid #4ade80; border-radius: 8px;">
+                    <div style="color: #4ade80; font-weight: 600; margin-bottom: 10px;">3️⃣ M-01: 이중 이징</div>
+                    <p style="color: #ccc; font-size: 0.9em;">기존 코드 수정만으로 "팽창+붕괴" 느낌</p>
+                </div>
+            </div>
+        </div>
+
+        <footer style="text-align: center; margin-top: 60px; padding: 20px; border-top: 1px solid #3a3a6d; color: #888;">
+            <p>HexaPuzzle VFX 업그레이드 시각화 | Art Director 제안서 v1.0</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">UI.Image 기반 프로시저럴 생성 | ParticleSystem 없음 | 외부 에셋 불필요</p>
+        </footer>
+    </div>
+
+    <script>
+        // 색상 팔레트
+        const colorPalette = {
+            red: { r: 255, g: 107, b: 107, name: 'Red' },
+            blue: { r: 78, g: 205, b: 196, name: 'Blue' },
+            green: { r: 149, g: 231, b: 125, name: 'Green' },
+            yellow: { r: 255, g: 230, b: 109, name: 'Yellow' },
+            purple: { r: 179, g: 102, b: 255, name: 'Purple' },
+            orange: { r: 255, g: 179, b: 102, name: 'Orange' }
+        };
+
+        let currentColor = 'red';
+
+        function selectColor(color) {
+            currentColor = color;
+            document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            drawCanvases();
+        }
+
+        function switchSection(section) {
+            document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
+            document.getElementById(`section-${section}`).style.display = 'block';
+
+            document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // 육각형 그리기 (flat-top)
+        function drawHexagon(ctx, x, y, size, color, options = {}) {
+            const angles = [0, 60, 120, 180, 240, 300].map(a => a * Math.PI / 180);
+
+            ctx.save();
+            ctx.translate(x, y);
+
+            // 그래디언트
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 1.2);
+            gradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 1)`);
+            gradient.addColorStop(0.7, `rgba(${Math.max(0, color.r - 40)}, ${Math.max(0, color.g - 40)}, ${Math.max(0, color.b - 40)}, 0.9)`);
+            gradient.addColorStop(1, `rgba(${Math.max(0, color.r - 80)}, ${Math.max(0, color.g - 80)}, ${Math.max(0, color.b - 80)}, 0.7)`);
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            angles.forEach((angle, i) => {
+                const px = size * Math.cos(angle);
+                const py = size * Math.sin(angle);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+            ctx.fill();
+
+            // 테두리
+            ctx.strokeStyle = `rgba(255, 255, 255, ${options.highlight ? 0.8 : 0.3})`;
+            ctx.lineWidth = options.highlight ? 2 : 1;
+            ctx.stroke();
+
+            // 좌상단 하이라이트
+            if (options.highlight) {
+                const highlightGradient = ctx.createLinearGradient(-size, -size, 0, 0);
+                highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+                highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = highlightGradient;
+                ctx.beginPath();
+                ctx.arc(-size * 0.3, -size * 0.3, size * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        function drawCanvases() {
+            const canvas1 = document.getElementById('canvasBefore');
+            const canvas2 = document.getElementById('canvasAfter');
+            const ctx1 = canvas1.getContext('2d');
+            const ctx2 = canvas2.getContext('2d');
+            const color = colorPalette[currentColor];
+
+            // Before: 기본 블록
+            ctx1.clearRect(0, 0, canvas1.width, canvas1.height);
+            ctx1.fillStyle = 'rgba(15, 15, 35, 0.8)';
+            ctx1.fillRect(0, 0, canvas1.width, canvas1.height);
+
+            // 그리드
+            ctx1.strokeStyle = 'rgba(74, 158, 255, 0.1)';
+            ctx1.lineWidth = 1;
+            for (let i = 0; i < 5; i++) {
+                ctx1.beginPath();
+                ctx1.moveTo(i * 60, 0);
+                ctx1.lineTo(i * 60, canvas1.height);
+                ctx1.stroke();
+                ctx1.beginPath();
+                ctx1.moveTo(0, i * 60);
+                ctx1.lineTo(canvas1.width, i * 60);
+                ctx1.stroke();
+            }
+
+            // 블록 3개 (삼각형 패턴)
+            drawHexagon(ctx1, 150, 100, 40, color, { highlight: false });
+            drawHexagon(ctx1, 100, 180, 40, color, { highlight: false });
+            drawHexagon(ctx1, 200, 180, 40, color, { highlight: false });
+
+            // After: 개선된 블록
+            ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
+            ctx2.fillStyle = 'rgba(15, 15, 35, 0.8)';
+            ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
+
+            // 그리드
+            ctx2.strokeStyle = 'rgba(74, 158, 255, 0.1)';
+            ctx2.lineWidth = 1;
+            for (let i = 0; i < 5; i++) {
+                ctx2.beginPath();
+                ctx2.moveTo(i * 60, 0);
+                ctx2.lineTo(i * 60, canvas2.height);
+                ctx2.stroke();
+                ctx2.beginPath();
+                ctx2.moveTo(0, i * 60);
+                ctx2.lineTo(canvas2.width, i * 60);
+                ctx2.stroke();
+            }
+
+            // 블룸 글로우 (C-01)
+            const glowGradient = ctx2.createRadialGradient(150, 100, 0, 150, 100, 80);
+            glowGradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0.15)`);
+            glowGradient.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
+            ctx2.fillStyle = glowGradient;
+            ctx2.beginPath();
+            ctx2.arc(150, 100, 75, 0, Math.PI * 2);
+            ctx2.fill();
+
+            // 개선된 블록 (P-01: Pre-Fire 팽창, I-02: 플래시, C-01: 블룸)
+            drawHexagon(ctx2, 150, 100, 45, color, { highlight: true });
+            drawHexagon(ctx2, 100, 180, 40, color, { highlight: true });
+            drawHexagon(ctx2, 200, 180, 40, color, { highlight: true });
+
+            // 화이트 플래시 오버레이 (I-02)
+            ctx2.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx2.beginPath();
+            ctx2.arc(150, 100, 45, 0, Math.PI * 2);
+            ctx2.fill();
+
+            // 텍스트 설명
+            ctx1.fillStyle = '#aaa';
+            ctx1.font = '12px Arial';
+            ctx1.textAlign = 'center';
+            ctx1.fillText('기본 음영과 테두리', 150, 280);
+
+            ctx2.fillStyle = '#4a9eff';
+            ctx2.font = 'bold 12px Arial';
+            ctx2.textAlign = 'center';
+            ctx2.fillText('Pre-Fire + Bloom + Flash + Highlight', 150, 280);
+        }
+
+        // 초기 그리기
+        drawCanvases();
+
+        // 마우스 호버 이벤트
+        document.querySelectorAll('.improvement-card').forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.background = 'rgba(70, 70, 100, 0.95)';
+            });
+            card.addEventListener('mouseleave', function() {
+                this.style.background = 'rgba(50, 50, 80, 0.9)';
+            });
+        });
+    </script>
+</body>
+</html>

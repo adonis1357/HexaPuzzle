@@ -292,6 +292,22 @@ namespace JewelsHexaPuzzle.Core
                 else
                 {
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+
+                    // 적군 점수 (도넛 = SpecialAdvanced)
+                    var sm = GameManager.Instance?.GetComponent<ScoreManager>();
+                    if (sm != null)
+                    {
+                        if (target.Data.hasThorn)
+                            sm.AddEnemyScore(EnemyType.ThornParasite, RemovalMethod.SpecialAdvanced,
+                                RemovalCondition.Normal, target.transform.position);
+                        if (target.Data.hasChain)
+                            sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.SpecialAdvanced,
+                                RemovalCondition.Normal, target.transform.position);
+                        if (target.Data.gemType == GemType.Gray)
+                            sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.SpecialAdvanced,
+                                RemovalCondition.Normal, target.transform.position);
+                    }
+
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithRainbow(target, blockColor, donutWorldPos)));
                 }

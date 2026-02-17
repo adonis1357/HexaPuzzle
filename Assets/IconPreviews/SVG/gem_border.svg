@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- Top-lit bevel gradient for the border ring -->
+    <linearGradient id="bevelGrad" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#E8E8E8"/>
+      <stop offset="70%" stop-color="#D0D0D0"/>
+      <stop offset="100%" stop-color="#B8B8B8"/>
+    </linearGradient>
+    <!-- Inner highlight line -->
+    <linearGradient id="innerHighlight" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="white" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <!-- Border ring: outer hex minus inner hex (even-odd fill) -->
+  <path d="M95,10 L126,64 L95,118 L33,118 L2,64 L33,10 Z
+           M91,17 L35,17 L7,64 L35,111 L91,111 L121,64 Z"
+    fill="url(#bevelGrad)" fill-rule="evenodd" stroke-linejoin="round"/>
+  <!-- Inner edge highlight (thin bright line on inner border) -->
+  <polygon points="91,17 121,64 91,111 35,111 7,64 35,17"
+    fill="none" stroke="url(#innerHighlight)" stroke-width="1" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <radialGradient id="tCore" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#D01020"/>
+      <stop offset="60%" stop-color="#A00818"/>
+      <stop offset="100%" stop-color="#700830"/>
+    </radialGradient>
+    <radialGradient id="tSpike" cx="0.5" cy="0" r="1">
+      <stop offset="0%" stop-color="#C81020"/>
+      <stop offset="50%" stop-color="#901030"/>
+      <stop offset="100%" stop-color="#581040"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 8 thorny spikes radiating outward -->
+  <!-- Spike 0: up (0°) -->
+  <polygon points="64,8 58,38 64,32 70,38" fill="url(#tSpike)" opacity="0.90"/>
+  <line x1="64" y1="10" x2="64" y2="34" stroke="#FF3040" stroke-width="0.8" opacity="0.40"/>
+
+  <!-- Spike 1: up-right (45°) -->
+  <polygon points="104,24 76,42 78,36 84,34" fill="url(#tSpike)" opacity="0.88"/>
+  <line x1="101" y1="27" x2="78" y2="38" stroke="#FF3040" stroke-width="0.8" opacity="0.35"/>
+
+  <!-- Spike 2: right (90°) -->
+  <polygon points="120,64 90,58 96,64 90,70" fill="url(#tSpike)" opacity="0.90"/>
+  <line x1="118" y1="64" x2="94" y2="64" stroke="#FF3040" stroke-width="0.8" opacity="0.40"/>
+
+  <!-- Spike 3: down-right (135°) -->
+  <polygon points="104,104 84,94 78,92 76,86" fill="url(#tSpike)" opacity="0.88"/>
+  <line x1="101" y1="101" x2="78" y2="90" stroke="#FF3040" stroke-width="0.8" opacity="0.35"/>
+
+  <!-- Spike 4: down (180°) -->
+  <polygon points="64,120 70,90 64,96 58,90" fill="url(#tSpike)" opacity="0.90"/>
+  <line x1="64" y1="118" x2="64" y2="94" stroke="#FF3040" stroke-width="0.8" opacity="0.40"/>
+
+  <!-- Spike 5: down-left (225°) -->
+  <polygon points="24,104 52,86 50,92 44,94" fill="url(#tSpike)" opacity="0.88"/>
+  <line x1="27" y1="101" x2="50" y2="90" stroke="#FF3040" stroke-width="0.8" opacity="0.35"/>
+
+  <!-- Spike 6: left (270°) -->
+  <polygon points="8,64 38,70 32,64 38,58" fill="url(#tSpike)" opacity="0.90"/>
+  <line x1="10" y1="64" x2="34" y2="64" stroke="#FF3040" stroke-width="0.8" opacity="0.40"/>
+
+  <!-- Spike 7: up-left (315°) -->
+  <polygon points="24,24 44,34 50,36 52,42" fill="url(#tSpike)" opacity="0.88"/>
+  <line x1="27" y1="27" x2="50" y2="38" stroke="#FF3040" stroke-width="0.8" opacity="0.35"/>
+
+  <!-- Small secondary thorns between main spikes -->
+  <polygon points="84,16 74,36 78,34" fill="#A01028" opacity="0.55"/>
+  <polygon points="116,44 92,54 94,58" fill="#A01028" opacity="0.55"/>
+  <polygon points="116,84 92,74 94,70" fill="#A01028" opacity="0.55"/>
+  <polygon points="84,112 74,92 78,94" fill="#A01028" opacity="0.55"/>
+  <polygon points="44,112 54,92 50,94" fill="#A01028" opacity="0.55"/>
+  <polygon points="12,84 36,74 34,70" fill="#A01028" opacity="0.55"/>
+  <polygon points="12,44 36,54 34,58" fill="#A01028" opacity="0.55"/>
+  <polygon points="44,16 54,36 50,34" fill="#A01028" opacity="0.55"/>
+
+  <!-- Outer danger ring -->
+  <circle cx="64" cy="64" r="42" fill="none" stroke="#A01020" stroke-width="2" opacity="0.50"/>
+  <circle cx="64" cy="64" r="42" fill="none" stroke="#FF2030" stroke-width="0.8" opacity="0.25"/>
+
+  <!-- Central core -->
+  <circle cx="64" cy="64" r="14" fill="url(#tCore)" stroke="#600818" stroke-width="1.5"/>
+  <!-- Core inner pattern (parasite eye) -->
+  <ellipse cx="64" cy="64" rx="6" ry="8" fill="#200410" opacity="0.70"/>
+  <ellipse cx="64" cy="64" rx="2.5" ry="5" fill="#E01020" opacity="0.60"/>
+  <circle cx="64" cy="62" r="1.5" fill="white" opacity="0.50"/>
+  <!-- Core rim glow -->
+  <circle cx="64" cy="64" r="14" fill="none" stroke="#FF4050" stroke-width="0.8" opacity="0.35"/>
+</svg>

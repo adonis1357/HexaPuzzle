@@ -44,6 +44,9 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private AudioClip blockDestroySound;
         [SerializeField] private AudioClip blockLandSound;
 
+        [Header("Enemy SFX")]
+        [SerializeField] private AudioClip chromophageRemovalSound;
+
         [Header("Settings")]
         [SerializeField] private float bgmVolume = 0.7f;
         [SerializeField] private float sfxVolume = 1f;
@@ -74,6 +77,8 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralWarningBeep;
         private AudioClip proceduralSpecialGem;
         private AudioClip proceduralSpecialImpact;
+        private AudioClip proceduralEnemySpawn;
+        private AudioClip proceduralChromophageRemoval;
 
         // 캐스케이드 펜타토닉 음계 (C5, D5, E5, G5, A5, C6)
         private AudioClip[] proceduralCascadeNotes;
@@ -182,6 +187,7 @@ namespace JewelsHexaPuzzle.Managers
 
             // 특수 블록 임팩트: 노이즈 + 서브베이스 펀치
             proceduralSpecialImpact = ProceduralAudio.CreateImpact(0.1f);
+            proceduralEnemySpawn = ProceduralAudio.CreateEnemySpawnSound(0.25f);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
@@ -405,6 +411,11 @@ namespace JewelsHexaPuzzle.Managers
 
         // 특수 블록 임팩트
         public void PlaySpecialImpactSound() => PlaySFX(proceduralSpecialImpact, 0.7f);
+
+        public void PlayEnemySpawnSound() => PlaySFX(proceduralEnemySpawn, 0.7f);
+
+        // 색상도둑 제거 사운드 (슬라임 분해음 느낌)
+        public void PlayChromophageRemovalSound() => PlaySFX(Resolve(chromophageRemovalSound, proceduralChromophageRemoval), 0.75f);
 
         // 매칭 감지 톤
         public void PlayMatchDetectTone() => PlaySFX(Resolve(matchSound, proceduralMatch), 0.4f);

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="cLink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#D0D4D8"/>
+      <stop offset="30%" stop-color="#A0A4A8"/>
+      <stop offset="70%" stop-color="#707478"/>
+      <stop offset="100%" stop-color="#505458"/>
+    </linearGradient>
+    <linearGradient id="cLink2" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#C8CCD0"/>
+      <stop offset="30%" stop-color="#989CA0"/>
+      <stop offset="70%" stop-color="#686C70"/>
+      <stop offset="100%" stop-color="#484C50"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Diagonal chain line 1: top-left to bottom-right (\) -->
+  <g transform="rotate(45, 64, 64)">
+    <!-- Link 1 (horizontal orientation) -->
+    <ellipse cx="64" cy="22" rx="13" ry="7" fill="none" stroke="url(#cLink)" stroke-width="4"/>
+    <ellipse cx="64" cy="22" rx="13" ry="7" fill="none" stroke="white" stroke-width="1" opacity="0.25"/>
+    <!-- Link 2 (vertical orientation, interlocked) -->
+    <ellipse cx="64" cy="38" rx="7" ry="13" fill="none" stroke="url(#cLink)" stroke-width="4"/>
+    <ellipse cx="64" cy="38" rx="7" ry="13" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+    <!-- Link 3 (horizontal) -->
+    <ellipse cx="64" cy="54" rx="13" ry="7" fill="none" stroke="url(#cLink)" stroke-width="4"/>
+    <ellipse cx="64" cy="54" rx="13" ry="7" fill="none" stroke="white" stroke-width="1" opacity="0.25"/>
+    <!-- Link 4 (vertical, center) -->
+    <ellipse cx="64" cy="70" rx="7" ry="13" fill="none" stroke="url(#cLink)" stroke-width="4"/>
+    <ellipse cx="64" cy="70" rx="7" ry="13" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+    <!-- Link 5 (horizontal) -->
+    <ellipse cx="64" cy="86" rx="13" ry="7" fill="none" stroke="url(#cLink)" stroke-width="4"/>
+    <ellipse cx="64" cy="86" rx="13" ry="7" fill="none" stroke="white" stroke-width="1" opacity="0.25"/>
+    <!-- Link 6 (vertical) -->
+    <ellipse cx="64" cy="102" rx="7" ry="13" fill="none" stroke="url(#cLink)" stroke-width="4"/>
+    <ellipse cx="64" cy="102" rx="7" ry="13" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+  </g>
+
+  <!-- Diagonal chain line 2: top-right to bottom-left (/) -->
+  <g transform="rotate(-45, 64, 64)">
+    <ellipse cx="64" cy="22" rx="13" ry="7" fill="none" stroke="url(#cLink2)" stroke-width="4"/>
+    <ellipse cx="64" cy="22" rx="13" ry="7" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+    <ellipse cx="64" cy="38" rx="7" ry="13" fill="none" stroke="url(#cLink2)" stroke-width="4"/>
+    <ellipse cx="64" cy="38" rx="7" ry="13" fill="none" stroke="white" stroke-width="1" opacity="0.15"/>
+    <ellipse cx="64" cy="54" rx="13" ry="7" fill="none" stroke="url(#cLink2)" stroke-width="4"/>
+    <ellipse cx="64" cy="54" rx="13" ry="7" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+    <ellipse cx="64" cy="70" rx="7" ry="13" fill="none" stroke="url(#cLink2)" stroke-width="4"/>
+    <ellipse cx="64" cy="70" rx="7" ry="13" fill="none" stroke="white" stroke-width="1" opacity="0.15"/>
+    <ellipse cx="64" cy="86" rx="13" ry="7" fill="none" stroke="url(#cLink2)" stroke-width="4"/>
+    <ellipse cx="64" cy="86" rx="13" ry="7" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+    <ellipse cx="64" cy="102" rx="7" ry="13" fill="none" stroke="url(#cLink2)" stroke-width="4"/>
+    <ellipse cx="64" cy="102" rx="7" ry="13" fill="none" stroke="white" stroke-width="1" opacity="0.15"/>
+  </g>
+
+  <!-- Center lock/keystone circle -->
+  <circle cx="64" cy="64" r="8" fill="#585C60" stroke="#808488" stroke-width="2.5"/>
+  <circle cx="64" cy="64" r="8" fill="none" stroke="white" stroke-width="1" opacity="0.20"/>
+  <!-- Keyhole shape -->
+  <circle cx="64" cy="62" r="2.5" fill="#303438"/>
+  <rect x="62.5" y="62" width="3" height="5" rx="0.5" fill="#303438"/>
+  <!-- Lock highlight -->
+  <ellipse cx="62" cy="60" rx="2" ry="1.5" fill="white" opacity="0.30"/>
+</svg>

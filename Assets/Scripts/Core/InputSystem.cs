@@ -29,6 +29,15 @@ namespace JewelsHexaPuzzle.Core
         private HexBlock[] currentCluster = new HexBlock[3];
         private bool hasValidCluster = false;
 
+        // 회전 방향 (RotationSystem 연동)
+        public bool IsClockwise => rotationSystem != null && rotationSystem.IsClockwise;
+
+        public void ToggleRotationDirection()
+        {
+            if (rotationSystem != null)
+                rotationSystem.ToggleRotationDirection();
+        }
+
         private void Awake()
         {
             if (mainCamera == null)

@@ -26,7 +26,7 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private DonutBlockSystem donutSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
         [SerializeField] private LaserBlockSystem laserSystem;
-
+        [SerializeField] private EnemySystem enemySystem;
 
 
 
@@ -35,6 +35,7 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private ScoreManager scoreManager;
         [SerializeField] private StageManager stageManager;
         [SerializeField] private ItemManager itemManager;
+        [SerializeField] private MissionSystem missionSystem;
 
         [Header("Game Settings")]
         [SerializeField] private int initialTurns = 30;
@@ -87,6 +88,8 @@ namespace JewelsHexaPuzzle.Managers
                 return;
             }
 
+            QualitySettings.antiAliasing = 4;
+
             AutoFindReferences();
             InitializeSystems();
         }
@@ -108,8 +111,8 @@ namespace JewelsHexaPuzzle.Managers
                 // 로비 복귀 버튼 생성 (사운드 버튼 아래)
                 CreateLobbyExitButton(canvas);
 
-                // 모드 토글 버튼 생성 (좌하단)
-                CreateModeToggleButton(canvas);
+                // 회전 방향 토글 버튼 생성 (좌하단)
+                CreateRotationToggleButton(canvas);
 
                 // 게임오버 팝업 생성
                 CreateGameOverPopup(canvas);
@@ -141,6 +144,10 @@ namespace JewelsHexaPuzzle.Managers
         /// <summary>
         /// HUD 요소 동적 생성 (이동횟수: 우상단, 누적 점수: 상단 중앙)
         /// </summary>
+        // HUD 직접 참조 (UIManager 연동 보장)
+        private Text hudScoreText;
+        private Text hudTurnText;
+
         private void CreateHUDElements(Canvas canvas)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -160,7 +167,13 @@ namespace JewelsHexaPuzzle.Managers
             turnLabel.alignment = TextAnchor.MiddleRight;
             turnLabel.color = Color.white;
             turnLabel.raycastTarget = false;
+            turnLabel.resizeTextForBestFit = true;
+            turnLabel.resizeTextMinSize = 14;
+            turnLabel.resizeTextMaxSize = 32;
+            turnLabel.verticalOverflow = VerticalWrapMode.Overflow;
+            turnLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             turnLabel.text = currentGameMode == GameMode.Infinite ? "0" : initialTurns.ToString();
+            hudTurnText = turnLabel;
 
             // 이동횟수 라벨
             GameObject turnLabelObj = new GameObject("HUD_TurnLabel");
@@ -194,7 +207,13 @@ namespace JewelsHexaPuzzle.Managers
             scoreLabel.alignment = TextAnchor.MiddleCenter;
             scoreLabel.color = Color.white;
             scoreLabel.raycastTarget = false;
+            scoreLabel.resizeTextForBestFit = true;
+            scoreLabel.resizeTextMinSize = 14;
+            scoreLabel.resizeTextMaxSize = 36;
+            scoreLabel.verticalOverflow = VerticalWrapMode.Overflow;
+            scoreLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             scoreLabel.text = "0";
+            hudScoreText = scoreLabel;
 
             // 점수 라벨
             GameObject scoreLabelObj = new GameObject("HUD_ScoreLabel");
@@ -435,64 +454,77 @@ namespace JewelsHexaPuzzle.Managers
         /// <summary>
         /// 모드 토글 버튼 생성 (좌하단 — 사운드 버튼과 대칭)
         /// </summary>
-        private void CreateModeToggleButton(Canvas canvas)
-        {
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        private GameObject rotationToggleBtnObj;
+        private RectTransform rotationArrowContainer;
 
+        private void CreateRotationToggleButton(Canvas canvas)
+        {
             float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
             float leftmostX = -hSize * 1.5f * 5f;
             float lowestY = hSize * Mathf.Sqrt(3f) * (-5f);
 
             // 버튼 컨테이너
-            GameObject btnObj = new GameObject("ModeToggleButton");
-            btnObj.transform.SetParent(canvas.transform, false);
-            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            rotationToggleBtnObj = new GameObject("RotationToggleButton");
+            rotationToggleBtnObj.transform.SetParent(canvas.transform, false);
+            RectTransform btnRt = rotationToggleBtnObj.AddComponent<RectTransform>();
             btnRt.anchorMin = new Vector2(0.5f, 0.5f);
             btnRt.anchorMax = new Vector2(0.5f, 0.5f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
             btnRt.anchoredPosition = new Vector2(leftmostX, lowestY);
             btnRt.sizeDelta = new Vector2(80f, 70f);
 
-            Image btnBg = btnObj.AddComponent<Image>();
+            Image btnBg = rotationToggleBtnObj.AddComponent<Image>();
             btnBg.color = new Color(0.2f, 0.2f, 0.3f, 0.85f);
 
-            Button btn = btnObj.AddComponent<Button>();
+            Button btn = rotationToggleBtnObj.AddComponent<Button>();
             var btnColors = btn.colors;
             btnColors.highlightedColor = new Color(0.35f, 0.35f, 0.5f, 0.9f);
             btnColors.pressedColor = new Color(0.15f, 0.15f, 0.25f, 0.9f);
             btn.colors = btnColors;
 
-            // 라벨
-            GameObject textObj = new GameObject("ModeLabel");
-            textObj.transform.SetParent(btnObj.transform, false);
-            Text label = textObj.AddComponent<Text>();
-            label.font = font;
-            label.fontSize = 18;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.color = Color.white;
-            label.raycastTarget = false;
-            label.text = currentGameMode == GameMode.Infinite ? "INF" : "STG";
-            RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
+            // 화살표 아이콘 컨테이너 (회전용)
+            GameObject arrowObj = new GameObject("ArrowIcon");
+            arrowObj.transform.SetParent(rotationToggleBtnObj.transform, false);
+            rotationArrowContainer = arrowObj.AddComponent<RectTransform>();
+            rotationArrowContainer.anchorMin = new Vector2(0.5f, 0.5f);
+            rotationArrowContainer.anchorMax = new Vector2(0.5f, 0.5f);
+            rotationArrowContainer.sizeDelta = new Vector2(40f, 40f);
+            rotationArrowContainer.anchoredPosition = Vector2.zero;
+
+            // 화살표 이미지 (▶ 유사 삼각형)
+            Image arrowImg = arrowObj.AddComponent<Image>();
+            arrowImg.color = Color.white;
+            arrowImg.raycastTarget = false;
+
+            // 초기 방향 표시 (시계 방향 = 0°, 반시계 = 180° Y 반전)
+            UpdateRotationIcon();
 
             // 클릭 이벤트
             btn.onClick.AddListener(() =>
             {
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
-                currentGameMode = currentGameMode == GameMode.Infinite ? GameMode.Stage : GameMode.Infinite;
-                label.text = currentGameMode == GameMode.Infinite ? "INF" : "STG";
-                Debug.Log($"[GameManager] 모드 전환: {currentGameMode}");
 
-                // 점수 리셋 후 재시작
-                if (scoreManager != null) scoreManager.ResetScore();
-                StartGame();
+                // 회전 방향 토글
+                if (inputSystem != null)
+                {
+                    inputSystem.ToggleRotationDirection();
+                    UpdateRotationIcon();
+                    Debug.Log($"[GameManager] 회전 방향 변경: {(inputSystem.IsClockwise ? "시계" : "반시계")}");
+                }
             });
 
-            btnObj.transform.SetAsLastSibling();
-            Debug.Log("[GameManager] 모드 토글 버튼 생성 완료 (좌하단)");
+            rotationToggleBtnObj.transform.SetAsLastSibling();
+            Debug.Log("[GameManager] 회전 방향 토글 버튼 생성 완료 (좌하단)");
+        }
+
+        private void UpdateRotationIcon()
+        {
+            if (rotationArrowContainer == null) return;
+            bool clockwise = inputSystem != null && inputSystem.IsClockwise;
+            // 시계: 기본 회전, 반시계: Y축 반전
+            rotationArrowContainer.localScale = clockwise
+                ? new Vector3(1f, 1f, 1f)
+                : new Vector3(-1f, 1f, 1f);
         }
 
         // 게임오버 팝업 참조 (동적 생성)
@@ -986,7 +1018,21 @@ private IEnumerator PostRecoveryCleanup()
                     Debug.Log("[GameManager] LaserBlockSystem auto-found");
             }
 
-
+            if (enemySystem == null)
+            {
+                enemySystem = FindObjectOfType<EnemySystem>();
+                if (enemySystem == null)
+                {
+                    // 씬에 없으면 자동 생성
+                    GameObject esObj = new GameObject("EnemySystem");
+                    enemySystem = esObj.AddComponent<EnemySystem>();
+                    Debug.Log("[GameManager] EnemySystem auto-created");
+                }
+                else
+                {
+                    Debug.Log("[GameManager] EnemySystem auto-found");
+                }
+            }
 
             
 if (inputSystem == null)
@@ -1007,6 +1053,21 @@ if (inputSystem == null)
 
             if (itemManager == null)
                 itemManager = FindObjectOfType<ItemManager>();
+
+            if (missionSystem == null)
+            {
+                missionSystem = FindObjectOfType<MissionSystem>();
+                if (missionSystem == null)
+                {
+                    GameObject msObj = new GameObject("MissionSystem");
+                    missionSystem = msObj.AddComponent<MissionSystem>();
+                    Debug.Log("[GameManager] MissionSystem auto-created");
+                }
+                else
+                {
+                    Debug.Log("[GameManager] MissionSystem auto-found");
+                }
+            }
         }
 
         /// <summary>
@@ -1047,6 +1108,45 @@ private void InitializeSystems()
 
             if (laserSystem != null)
                 laserSystem.OnLaserComplete += OnSpecialBlockCompleted;
+
+            // 스테이지 관리자 이벤트 연결 (Mission 1 미션 진행도)
+            if (stageManager != null && uiManager != null)
+            {
+                stageManager.OnMissionProgressUpdated += (missionProgress) =>
+                {
+                    for (int i = 0; i < missionProgress.Length; i++)
+                    {
+                        var progress = missionProgress[i];
+                        uiManager.UpdateMissionProgress(i, progress.currentCount, progress.mission.targetCount);
+                    }
+                };
+                stageManager.OnMissionComplete += (missionIndex) =>
+                {
+                    Debug.Log($"[GameManager] Mission {missionIndex} completed!");
+                };
+            }
+
+            // 미션 시스템 이벤트 연결
+            if (missionSystem != null)
+            {
+                if (blockRemovalSystem != null)
+                {
+                    blockRemovalSystem.OnGemsRemovedDetailed += missionSystem.OnGemsRemoved;
+                    blockRemovalSystem.OnSpecialBlockCreated += missionSystem.OnSpecialBlockCreated;
+                    blockRemovalSystem.OnSpecialBlockUsed += missionSystem.OnSpecialBlockUsed;
+                    // 보석 날아가기 연출 → UIManager
+                    if (uiManager != null)
+                        blockRemovalSystem.OnGemCollectedVisual += uiManager.SpawnGemFlyEffect;
+                }
+                if (scoreManager != null)
+                {
+                    scoreManager.OnScoreChanged += missionSystem.OnScoreChanged;
+                    scoreManager.OnComboChanged += missionSystem.OnComboReached;
+                }
+                missionSystem.OnMissionCompleted += OnSurvivalMissionCompleted;
+                missionSystem.OnMissionAssigned += OnSurvivalMissionAssigned;
+                missionSystem.OnMissionProgressChanged += OnSurvivalMissionProgressChanged;
+            }
 
             // UI 시스템 자동 초기화 (ScorePopupManager, ComboDisplay)
             EnsureUIComponents();
@@ -1193,13 +1293,16 @@ private void InitializeSystems()
         {
             SetGameState(GameState.Loading);
 
-            // 무한모드: 회전 카운트 리셋, 턴 0부터 시작
+            // 무한모드: 생존 미션 시스템으로 시작, 초기 이동 횟수 15
             if (currentGameMode == GameMode.Infinite)
             {
                 rotationCount = 0;
-                currentTurns = 0;
+                currentTurns = 15;
                 if (uiManager != null)
-                    uiManager.SetInfiniteMode(true);
+                {
+                    uiManager.SetInfiniteMode(false);
+                    uiManager.SetMaxTurns(15);
+                }
             }
             else
             {
@@ -1233,11 +1336,31 @@ private void InitializeSystems()
                 }
             }
 
+            // 점수 리셋
+            if (scoreManager != null)
+                scoreManager.ResetScore();
+
             UpdateUI();
+
+            // 직접 참조 강제 동기화
+            if (hudScoreText != null) hudScoreText.text = "0";
+            if (hudTurnText != null) hudTurnText.text = currentTurns.ToString();
 
             // 게임 BGM 시작
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayGameBGM();
+
+            // 무한모드: 미션 UI 생성 + 생존 모드 시작
+            if (currentGameMode == GameMode.Infinite && missionSystem != null)
+            {
+                if (uiManager != null)
+                {
+                    Canvas canvas = FindObjectOfType<Canvas>();
+                    if (canvas != null)
+                        uiManager.CreateSurvivalMissionUI(canvas);
+                }
+                missionSystem.StartSurvival();
+            }
 
             SetGameState(GameState.Playing);
             Debug.Log("Game Started! State: Playing");
@@ -1328,17 +1451,22 @@ private void OnRotationComplete(bool matchFound)
 
             if (matchFound)
             {
-                // 무한모드: 회전 카운트 증가, 스테이지모드: 턴 소모
+                // 적군 턴 시작
+                if (enemySystem != null)
+                    enemySystem.OnTurnStart();
+
+                // TimeFreezer 비용 반영
+                int turnCost = rotationSystem != null ? rotationSystem.LastRotationCost : 1;
+
+                // 무한모드: 턴 소모 (생존 모드), 스테이지모드: 턴 소모
                 if (currentGameMode == GameMode.Infinite)
                 {
                     rotationCount++;
-                    currentTurns = rotationCount;
-                    OnTurnChanged?.Invoke(rotationCount);
-                    UpdateUI();
+                    for (int tc = 0; tc < turnCost; tc++) UseTurn();
                 }
                 else
                 {
-                    UseTurn();
+                    for (int tc = 0; tc < turnCost; tc++) UseTurn();
                 }
 
                 // 매칭 처리
@@ -1430,21 +1558,35 @@ private void OnCascadeComplete()
                 return;
             }
 
+            // 턴 종료 보너스 (복수 생성 + 멀티킬)
+            if (scoreManager != null)
+            {
+                int turnBonus = scoreManager.ApplyTurnEndBonuses();
+                if (turnBonus > 0 && uiManager != null)
+                    uiManager.UpdateScoreDisplay(scoreManager.CurrentScore);
+            }
+
             // 시한폭탄 체크
             CheckTimeBombs();
 
-            // 무한모드: 스테이지별 적군 생성 후 매칭 가능 여부 체크
+            // 적군 턴 종료 처리 (쌍둥이 재생, 포자 확산, 카오스 리롤)
+            if (enemySystem != null)
+                enemySystem.OnTurnEnd();
+
+            // 무한모드: 미션 턴 종료 → 게임오버 체크 → 적군 스폰
             if (currentGameMode == GameMode.Infinite)
             {
+                if (missionSystem != null)
+                    missionSystem.OnTurnEnd();
+
+                if (currentTurns <= 0)
+                {
+                    GameOver();
+                    return;
+                }
+
                 int enemyCount = 3 + (rotationCount / 10);
-                if (selectedStage == 2)
-                {
-                    StartCoroutine(SpawnStage2EnemiesAndCheckMoves(enemyCount));
-                }
-                else
-                {
-                    StartCoroutine(SpawnEnemiesAndCheckMoves(enemyCount));
-                }
+                StartCoroutine(SpawnEnemiesViaSystemAndCheckMoves(enemyCount));
                 return;
             }
 
@@ -1462,8 +1604,8 @@ private void OnCascadeComplete()
                 return;
             }
 
-            // 적군(회색 블록) 생성 후 Playing 전환
-            StartCoroutine(SpawnEnemiesAndPlay());
+            // 스테이지모드: EnemySystem으로 적군 스폰
+            StartCoroutine(SpawnEnemiesViaSystemAndPlay());
         }
 
         /// <summary>
@@ -1502,14 +1644,7 @@ private void OnSpecialBlockCompleted(int score)
             // 이미 내부적으로 연쇄 처리 중이므로 GameManager가 개입하면 데드락 발생
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
 
-            // 유저 직접 클릭으로 발동된 경우: 이동횟수 증가 + 낙하 + pending 연쇄 처리 트리거
-            if (currentGameMode == GameMode.Infinite)
-            {
-                rotationCount++;
-                currentTurns = rotationCount;
-                OnTurnChanged?.Invoke(rotationCount);
-                UpdateUI();
-            }
+            // 유저 직접 클릭으로 발동된 경우 (무한모드에서는 턴 증가 없음)
 
             SetGameState(GameState.Processing);
             StartCoroutine(ProcessSpecialBlockAftermath());
@@ -1732,18 +1867,24 @@ private IEnumerator ProcessSpecialBlockAftermath()
 
             CheckTimeBombs();
 
-            // 무한모드: 스테이지별 적군 생성 후 매칭 가능 여부 체크
+            // 적군 턴 종료 처리
+            if (enemySystem != null)
+                enemySystem.OnTurnEnd();
+
+            // 무한모드: 미션 턴 종료 → 게임오버 체크 → 적군 스폰
             if (currentGameMode == GameMode.Infinite)
             {
+                if (missionSystem != null)
+                    missionSystem.OnTurnEnd();
+
+                if (currentTurns <= 0)
+                {
+                    GameOver();
+                    yield break;
+                }
+
                 int enemyCount = 3 + (rotationCount / 10);
-                if (selectedStage == 2)
-                {
-                    yield return StartCoroutine(SpawnStage2EnemiesAndCheckMoves(enemyCount));
-                }
-                else
-                {
-                    yield return StartCoroutine(SpawnEnemiesAndCheckMoves(enemyCount));
-                }
+                yield return StartCoroutine(SpawnEnemiesViaSystemAndCheckMoves(enemyCount));
                 Debug.Log("[GameManager] ProcessSpecialBlockAftermath completed (Infinite) -> Playing");
                 yield break;
             }
@@ -1914,6 +2055,22 @@ private void OnBigBang()
                     uiManager.UpdateScoreDisplay(scoreManager.CurrentScore);
                 }
             }
+
+            // 직접 참조 동기화 (UIManager 연동 실패 안전망)
+            RefreshScoreDisplay();
+            RefreshTurnDisplay();
+        }
+
+        private void RefreshScoreDisplay()
+        {
+            if (hudScoreText != null && scoreManager != null)
+                hudScoreText.text = string.Format("{0:N0}", scoreManager.CurrentScore);
+        }
+
+        private void RefreshTurnDisplay()
+        {
+            if (hudTurnText != null)
+                hudTurnText.text = currentTurns.ToString();
         }
 
         /// <summary>
@@ -1945,6 +2102,39 @@ private void OnBigBang()
                     uiManager.ShowStageClearPopup();
                 }
             }
+        }
+
+        // ============================================================
+        // 생존 미션 콜백
+        // ============================================================
+
+        private void OnSurvivalMissionCompleted(SurvivalMission mission, int reward)
+        {
+            AddTurns(reward);
+            if (uiManager != null)
+                uiManager.AnimateMissionComplete(reward);
+
+            // 1.2초 후 다음 미션 배정
+            StartCoroutine(AssignNextMissionDelayed());
+        }
+
+        private IEnumerator AssignNextMissionDelayed()
+        {
+            yield return new WaitForSeconds(1.2f);
+            if (missionSystem != null)
+                missionSystem.AssignNextMission();
+        }
+
+        private void OnSurvivalMissionAssigned(SurvivalMission mission)
+        {
+            if (uiManager != null)
+                uiManager.ShowNewMission(mission);
+        }
+
+        private void OnSurvivalMissionProgressChanged(SurvivalMission mission)
+        {
+            if (uiManager != null)
+                uiManager.UpdateSurvivalMissionProgress(mission);
         }
 
         /// <summary>
@@ -2078,9 +2268,10 @@ private void OnBigBang()
         private void CreateLobbyUI(Canvas canvas)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            float buttonGap = 40f; // 버튼 간 간격
-            float buttonSize = 250f;
-            float offsetX = (buttonSize + buttonGap) * 0.5f; // 중앙에서 좌/우 오프셋
+            float buttonGap = 25f;
+            float buttonSize = 200f;
+            // 3버튼: 왼쪽(-1), 중앙(0), 오른쪽(+1)
+            float spacing = buttonSize + buttonGap;
 
             // === 루트 컨테이너 (전체 화면) ===
             lobbyContainer = new GameObject("LobbyContainer");
@@ -2113,30 +2304,38 @@ private void OnBigBang()
             titleText.raycastTarget = false;
             titleText.text = "HEXA PUZZLE";
 
-            // === 스테이지 1 버튼 (중앙 왼쪽) ===
-            CreateStageButton(lobbyContainer, font, new Vector2(-offsetX, 30f),
+            // === 스테이지 1 버튼 (왼쪽) ===
+            CreateStageButton(lobbyContainer, font, new Vector2(-spacing, 30f),
                 "STAGE 1", "INFINITE MODE",
                 new Color(0.15f, 0.35f, 0.7f, 0.95f),
                 new Color(0.4f, 0.7f, 1f, 0.6f),
-                1);
+                1, buttonSize);
 
-            // === 스테이지 2 버튼 (중앙 오른쪽) ===
-            CreateStageButton(lobbyContainer, font, new Vector2(offsetX, 30f),
+            // === 스테이지 2 버튼 (중앙) ===
+            CreateStageButton(lobbyContainer, font, new Vector2(0f, 30f),
                 "STAGE 2", "GRAY & CHAIN",
                 new Color(0.45f, 0.15f, 0.7f, 0.95f),
                 new Color(0.7f, 0.4f, 1f, 0.6f),
-                2);
+                2, buttonSize);
+
+            // === 스테이지 3 버튼 (오른쪽) ===
+            CreateStageButton(lobbyContainer, font, new Vector2(spacing, 30f),
+                "STAGE 3", "THORN & ENEMY",
+                new Color(0.7f, 0.15f, 0.25f, 0.95f),
+                new Color(1f, 0.4f, 0.5f, 0.6f),
+                3, buttonSize);
 
             lobbyContainer.SetActive(false);
             lobbyContainer.transform.SetAsLastSibling();
-            Debug.Log("[GameManager] 로비 UI 생성 완료");
+            Debug.Log("[GameManager] 로비 UI 생성 완료 (스테이지 1~3)");
         }
 
         /// <summary>
         /// 스테이지 버튼 생성 헬퍼
         /// </summary>
         private void CreateStageButton(GameObject parent, Font font, Vector2 position,
-            string stageLabel, string subtitle, Color bgColor, Color borderColor, int stageNum)
+            string stageLabel, string subtitle, Color bgColor, Color borderColor, int stageNum,
+            float btnSize = 250f)
         {
             GameObject stageBtn = new GameObject($"Stage{stageNum}Button");
             stageBtn.transform.SetParent(parent.transform, false);
@@ -2145,7 +2344,7 @@ private void OnBigBang()
             stageBtnRt.anchorMax = new Vector2(0.5f, 0.5f);
             stageBtnRt.pivot = new Vector2(0.5f, 0.5f);
             stageBtnRt.anchoredPosition = position;
-            stageBtnRt.sizeDelta = new Vector2(250f, 250f);
+            stageBtnRt.sizeDelta = new Vector2(btnSize, btnSize);
 
             // 육각형 배경
             Image hexBg = stageBtn.AddComponent<Image>();
@@ -2399,7 +2598,53 @@ private void OnBigBang()
         }
 
 // ============================================================
-        // 적군(회색 블록) 생성 시스템
+        // EnemySystem 통합 적군 스폰
+        // ============================================================
+
+        /// <summary>
+        /// EnemySystem을 통한 적군 스폰 후 Playing 전환
+        /// </summary>
+        private IEnumerator SpawnEnemiesViaSystemAndPlay()
+        {
+            if (enemySystem != null)
+            {
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayEnemySpawnSound();
+                yield return StartCoroutine(enemySystem.SpawnEnemiesForStage(selectedStage, 3, rotationCount));
+            }
+            SetGameState(GameState.Playing);
+        }
+
+        /// <summary>
+        /// EnemySystem을 통한 적군 스폰 후 매칭 가능 여부 체크
+        /// </summary>
+        private IEnumerator SpawnEnemiesViaSystemAndCheckMoves(int count)
+        {
+            if (enemySystem != null)
+            {
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayEnemySpawnSound();
+                yield return StartCoroutine(enemySystem.SpawnEnemiesForStage(selectedStage, count, rotationCount));
+            }
+
+            if (matchingSystem != null && !matchingSystem.HasPossibleMoves())
+            {
+                if (HasActivatableSpecialBlocks())
+                {
+                    Debug.Log("[GameManager] EnemySystem 스폰 후: 매칭 불가 but 특수 블록 있음 → Playing");
+                    SetGameState(GameState.Playing);
+                    yield break;
+                }
+                Debug.Log("[GameManager] EnemySystem 스폰 후: 매칭 불가 → 게임오버");
+                GameOver();
+                yield break;
+            }
+
+            SetGameState(GameState.Playing);
+        }
+
+        // ============================================================
+        // 적군(회색 블록) 생성 시스템 (레거시 — 하위호환)
         // ============================================================
 
         /// <summary>
@@ -2498,6 +2743,10 @@ private void OnBigBang()
                 selected.Add(candidates[idx]);
                 candidates.RemoveAt(idx);
             }
+
+            // 적군 스폰 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayEnemySpawnSound();
 
             // 시차를 두고 전환 애니메이션 시작
             List<Coroutine> animations = new List<Coroutine>();

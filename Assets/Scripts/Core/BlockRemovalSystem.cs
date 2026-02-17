@@ -1878,10 +1878,15 @@ public void TriggerBigBang()
                 {
                     if (block == null || block.Data == null) continue;
 
-                    // 색상도둑 제거 이벤트 발동
+                    // 색상도둑 제거 이벤트 발동 + 파괴 이펙트 + 오디오
                     if (block.CurrentEnemyType == EnemyType.Chromophage)
                     {
                         OnEnemyRemoved?.Invoke(block, EnemyType.Chromophage);
+                        // 색상도둑 파괴 애니메이션 시작 (회색 폭발 이펙트)
+                        StartCoroutine(AnimateGrayCrumble(block));
+                        // 색상도둑 제거 SFX 재생
+                        if (AudioManager.Instance != null)
+                            AudioManager.Instance.PlayChromophageRemovalSound();
                         Debug.Log($"[BRS] 색상도둑 제거: ({block.Coord})");
                     }
 

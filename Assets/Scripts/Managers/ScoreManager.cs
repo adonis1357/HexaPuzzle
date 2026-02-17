@@ -1,6 +1,7 @@
 using UnityEngine;
 using System;
 using System.Collections.Generic;
+using JewelsHexaPuzzle.Data;
 
 namespace JewelsHexaPuzzle.Managers
 {
@@ -27,6 +28,10 @@ namespace JewelsHexaPuzzle.Managers
         // 스테이지 요약 추적
         private int stageBaseScore = 0;
         private int maxComboReached = 0;
+
+        // 턴 내 추적 (생성 가산 + 적군 멀티킬)
+        private int turnCreationCount = 0;
+        private int turnEnemyKillCount = 0;
 
         // 이벤트
         public event Action<int> OnScoreChanged;
@@ -249,6 +254,8 @@ namespace JewelsHexaPuzzle.Managers
             currentCombo = 0;
             stageBaseScore = 0;
             maxComboReached = 0;
+            turnCreationCount = 0;
+            turnEnemyKillCount = 0;
             OnScoreChanged?.Invoke(currentScore);
             OnComboChanged?.Invoke(currentCombo);
         }
@@ -346,6 +353,99 @@ namespace JewelsHexaPuzzle.Managers
                     return i + 1;
             }
             return top.Length + 1;
+        }
+
+        // ============================================================
+        // 특수 블록 생성 가산점
+        // ============================================================
+
+        /// <summary>
+        /// 특수 블록 생성 가산점 추가
+        /// </summary>
+        public void AddCreationBonus(SpecialBlockType type, int cascadeDepth, Vector3 position)
+        {
+            int bonus = ScoreCalculator.GetSpecialBlockCreationBonus(type);
+            if (bonus <= 0) return;
+
+            float cascadeMultiplier = ScoreCalculator.GetCascadeScoreMultiplier(cascadeDepth);
+            int finalScore = Mathf.RoundToInt(bonus * cascadeMultiplier);
+
+            currentScore += finalScore;
+            totalGoldEarned += finalScore;
+            turnCreationCount++;
+
+            if (currentScore > highScore) { highScore = currentScore; SaveData(); }
+
+            OnScoreChanged?.Invoke(currentScore);
+            OnScorePopup?.Invoke(finalScore, position);
+
+            Debug.Log($"Creation Bonus +{finalScore} ({type}, cascade x{cascadeMultiplier:F1})");
+        }
+
+        // ============================================================
+        // 적군 파괴 점수
+        // ============================================================
+
+        /// <summary>
+        /// 적군 파괴 점수 추가
+        /// </summary>
+        public void AddEnemyScore(EnemyType type, RemovalMethod method, RemovalCondition condition, Vector3 position)
+        {
+            int score = ScoreCalculator.CalculateEnemyScore(type, method, condition);
+            if (score <= 0) return;  // 가시+매칭 → 0점
+
+            currentScore += score;
+            totalGoldEarned += score;
+            turnEnemyKillCount++;
+
+            if (currentScore > highScore) { highScore = currentScore; SaveData(); }
+
+            OnScoreChanged?.Invoke(currentScore);
+            OnScorePopup?.Invoke(score, position);
+
+            Debug.Log($"Enemy Score +{score} ({type}, {method}, {condition})");
+        }
+
+        // ============================================================
+        // 턴 종료 보너스
+        // ============================================================
+
+        /// <summary>
+        /// 턴 종료 시 복수 생성 + 멀티킬 보너스 적용
+        /// </summary>
+        public int ApplyTurnEndBonuses()
+        {
+            int bonus = 0;
+
+            // 복수 생성 보너스
+            if (turnCreationCount >= 2)
+            {
+                int creationBonus = ScoreCalculator.GetMultiCreationBonus(turnCreationCount);
+                bonus += creationBonus;
+                Debug.Log($"Multi-creation bonus: +{creationBonus} ({turnCreationCount}개)");
+            }
+
+            // 멀티킬 보너스
+            if (turnEnemyKillCount >= 2)
+            {
+                int killBonus = ScoreCalculator.GetMultiKillBonus(turnEnemyKillCount);
+                bonus += killBonus;
+                Debug.Log($"Multi-kill bonus: +{killBonus} ({turnEnemyKillCount}마리)");
+            }
+
+            if (bonus > 0)
+            {
+                currentScore += bonus;
+                totalGoldEarned += bonus;
+                if (currentScore > highScore) { highScore = currentScore; SaveData(); }
+                OnScoreChanged?.Invoke(currentScore);
+            }
+
+            // 리셋
+            turnCreationCount = 0;
+            turnEnemyKillCount = 0;
+
+            return bonus;
         }
     }
 
