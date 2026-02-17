@@ -113,7 +113,12 @@ private void Update()
             if (Input.GetMouseButtonDown(0) && Time.time - lastBlockedLogTime > 1f)
             {
                 if (!isEnabled)
-                { Debug.LogWarning("[InputSystem] BLOCKED: isEnabled=false"); lastBlockedLogTime = Time.time; }
+                {
+                    Debug.LogWarning("[InputSystem] BLOCKED: isEnabled=false");
+                    if (GameManager.Instance != null)
+                        Debug.LogWarning($"[InputSystem] Current GameState: {GameManager.Instance.CurrentState}");
+                    lastBlockedLogTime = Time.time;
+                }
                 else if (hexGrid == null || hexGrid.BlockCount == 0)
                 { Debug.LogWarning($"[InputSystem] BLOCKED: hexGrid null={hexGrid == null}, count={hexGrid?.BlockCount}"); lastBlockedLogTime = Time.time; }
                 else if (rotationSystem != null && rotationSystem.IsRotating)
