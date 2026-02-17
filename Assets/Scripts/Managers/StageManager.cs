@@ -12,7 +12,10 @@ namespace JewelsHexaPuzzle.Managers
     {
         [Header("Stage Data")]
         [SerializeField] private StageDatabase stageDatabase;
-        
+
+        [Header("Systems")]
+        [SerializeField] private BlockRemovalSystem blockRemovalSystem;
+
         private StageData currentStageData;
         private List<MissionProgress> missionProgress = new List<MissionProgress>();
         
@@ -64,9 +67,13 @@ namespace JewelsHexaPuzzle.Managers
             InitializeMissions();
 
             // 적군 제거 이벤트 연동
-            if (BlockRemovalSystem.Instance != null)
+            if (blockRemovalSystem == null)
             {
-                BlockRemovalSystem.Instance.OnEnemyRemoved += OnEnemyRemoved;
+                blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+            }
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnEnemyRemoved += OnEnemyRemoved;
             }
 
             Debug.Log($"Stage {stageNumber} loaded. Missions: {currentStageData.missions.Length}");
@@ -423,9 +430,9 @@ namespace JewelsHexaPuzzle.Managers
         private void OnDestroy()
         {
             // 이벤트 정리
-            if (BlockRemovalSystem.Instance != null)
+            if (blockRemovalSystem != null)
             {
-                BlockRemovalSystem.Instance.OnEnemyRemoved -= OnEnemyRemoved;
+                blockRemovalSystem.OnEnemyRemoved -= OnEnemyRemoved;
             }
         }
         
