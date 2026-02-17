@@ -106,11 +106,13 @@ namespace JewelsHexaPuzzle.Managers
         }
         
         /// <summary>
-        /// 게임 레벨 데이터 가져오기 (레벨 1~10)
+        /// 게임 레벨 데이터 가져오기 (레벨 4~10만 지원)
+        /// 레벨 1~3은 기본 생성 로직 사용
         /// </summary>
         private StageData GetMission1StageData(int levelNumber)
         {
-            if (levelNumber < 1 || levelNumber > 10)
+            // 레벨 1~3은 기본 생성으로 처리
+            if (levelNumber < 4 || levelNumber > 10)
                 return null;
 
             StageData stage = new StageData();
@@ -118,52 +120,32 @@ namespace JewelsHexaPuzzle.Managers
             stage.chapterNumber = 1;
             stage.chapterName = "크리스탈 숲";
             stage.difficulty = Mathf.Min(1 + levelNumber / 3, 3);
+            stage.turnLimit = 25 + (levelNumber * 2);
 
-            // 레벨별 설정
-            if (levelNumber == 1)
+            // 4~10레벨: 색상도둑 제거 미션
+            stage.missions = new[]
             {
-                // 1레벨: 아무 색 보석 100개 수집, 15회 제한
-                stage.turnLimit = 15;
-                stage.missions = new[]
+                new MissionData
                 {
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.None,  // 아무 색 상관없음
-                        targetCount = 100,
-                        description = "아무 색 보석이나 100개 모으기"
-                    }
-                };
-                stage.enemyPlacements = new EnemyPlacement[0];  // 적군 없음
-            }
-            else
-            {
-                // 2~10레벨: 색상도둑 제거 미션 (기존)
-                stage.turnLimit = 25 + (levelNumber * 2);
-                stage.missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = Mathf.Min(1 + levelNumber / 5, 3),
-                        description = $"색상도둑(회색) {Mathf.Min(1 + levelNumber / 5, 3)}마리 제거"
-                    }
-                };
-
-                // 색상도둑 배치
-                int enemyCount = Mathf.Min(1 + levelNumber / 5, 3);
-                stage.enemyPlacements = new EnemyPlacement[enemyCount];
-                for (int i = 0; i < enemyCount; i++)
-                {
-                    int q = Random.Range(-2, 3);
-                    int r = Random.Range(-2, 3);
-                    stage.enemyPlacements[i] = new EnemyPlacement
-                    {
-                        coord = new HexCoord(q, r),
-                        enemyType = EnemyType.Chromophage
-                    };
+                    type = MissionType.RemoveEnemy,
+                    targetEnemyType = EnemyType.Chromophage,
+                    targetCount = Mathf.Min(1 + levelNumber / 5, 3),
+                    description = $"색상도둑(회색) {Mathf.Min(1 + levelNumber / 5, 3)}마리 제거"
                 }
+            };
+
+            // 색상도둑 배치
+            int enemyCount = Mathf.Min(1 + levelNumber / 5, 3);
+            stage.enemyPlacements = new EnemyPlacement[enemyCount];
+            for (int i = 0; i < enemyCount; i++)
+            {
+                int q = Random.Range(-2, 3);
+                int r = Random.Range(-2, 3);
+                stage.enemyPlacements[i] = new EnemyPlacement
+                {
+                    coord = new HexCoord(q, r),
+                    enemyType = EnemyType.Chromophage
+                };
             }
 
             return stage;
