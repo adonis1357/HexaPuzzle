@@ -1150,17 +1150,7 @@ private void InitializeSystems()
                 missionSystem.OnMissionProgressChanged += OnSurvivalMissionProgressChanged;
             }
 
-            // Stage 모드 미션 시스템 연결 (Level 1 등 스테이지 모드용)
-            Debug.Log($"[GameManager] InitializeSystems: currentGameMode={currentGameMode}, stageManager={stageManager != null}, blockRemovalSystem={blockRemovalSystem != null}");
-            if (stageManager != null && blockRemovalSystem != null && currentGameMode == GameMode.Stage)
-            {
-                blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
-                Debug.Log($"[GameManager] Stage mode event subscription successful!");
-            }
-            else
-            {
-                Debug.LogWarning($"[GameManager] Stage mode event subscription SKIPPED! currentGameMode={currentGameMode}, isStage={currentGameMode == GameMode.Stage}");
-            }
+            // Stage 모드 이벤트 구독은 StartGameCoroutine에서 처리 (currentGameMode가 설정된 후)
 
             // UI 시스템 자동 초기화 (ScorePopupManager, ComboDisplay)
             EnsureUIComponents();
@@ -1366,6 +1356,14 @@ private void InitializeSystems()
             // 직접 참조 강제 동기화
             if (hudScoreText != null) hudScoreText.text = "0";
             if (hudTurnText != null) hudTurnText.text = currentTurns.ToString();
+
+            // Stage 모드 미션 시스템 이벤트 구독 (currentGameMode가 이미 설정된 후)
+            Debug.Log($"[GameManager] StartGameCoroutine: currentGameMode={currentGameMode}");
+            if (currentGameMode == GameMode.Stage && stageManager != null && blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
+                Debug.Log($"[GameManager] Stage mode: OnGemsRemovedDetailed subscription SUCCESS!");
+            }
 
             // 게임 중 미션 UI 표시
             if (uiManager != null && stageManager != null && stageManager.CurrentStageData != null)
