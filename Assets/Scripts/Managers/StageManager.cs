@@ -393,6 +393,15 @@ namespace JewelsHexaPuzzle.Managers
         public int turnLimit;
         public MissionData[] missions;
         public SpecialBlockPlacement[] specialBlocks;
+
+        // Mission 1 확장 필드
+        public int chapterNumber;
+        public string chapterName;
+        public int difficulty;
+        public EnemyPlacement[] enemyPlacements;
+        public EnemyPlacement[] fixedBlockPlacements;
+        public StoryData storyData;
+        public TutorialFlag[] tutorialFlags;
     }
     
     /// <summary>
