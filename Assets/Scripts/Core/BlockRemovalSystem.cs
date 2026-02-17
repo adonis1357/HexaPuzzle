@@ -2023,6 +2023,8 @@ public void TriggerBigBang()
             foreach (var match in matches)
             {
                 int removedInGroup = 0;
+                int totalBlocksInMatch = match.blocks.Count;
+                int specialBlockCount = 0;
 
                 // match.blocks의 모든 기본 블록을 카운트 (이미 특수 블록인 경우 제외)
                 foreach (var b in match.blocks)
@@ -2034,11 +2036,16 @@ public void TriggerBigBang()
                     {
                         removedInGroup++;
                     }
+                    else
+                    {
+                        specialBlockCount++;
+                    }
                 }
 
                 if (removedInGroup > 0)
                 {
-                    Debug.Log($"[BlockRemovalSystem] OnGemsRemovedDetailed fired: count={removedInGroup}, gemType={match.gemType}, cascadeDepth={currentCascadeDepth}");
+                    Debug.Log($"[BlockRemovalSystem] 🎯 미션 카운팅: basicCount={removedInGroup}, specialCount={specialBlockCount}, " +
+                        $"totalInMatch={totalBlocksInMatch}, gemType={match.gemType}, cascadeDepth={currentCascadeDepth}");
                     OnGemsRemovedDetailed?.Invoke(removedInGroup, match.gemType, currentCascadeDepth);
                 }
             }
