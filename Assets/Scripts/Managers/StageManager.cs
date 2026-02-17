@@ -413,9 +413,11 @@ namespace JewelsHexaPuzzle.Managers
         public MissionType type;
         public GemType targetGemType;
         public GemType secondaryGemType;
+        public EnemyType targetEnemyType; // 적군 제거 미션용
         public int targetCount;
         public int currentCount;
         public Sprite icon;
+        public string description; // 미션 설명
     }
     
     /// <summary>
@@ -465,13 +467,75 @@ namespace JewelsHexaPuzzle.Managers
     public class StageDatabase : ScriptableObject
     {
         public List<StageData> stages = new List<StageData>();
-        
+
         public StageData GetStage(int stageNumber)
         {
             if (stageNumber <= 0 || stageNumber > stages.Count)
                 return null;
-            
+
             return stages[stageNumber - 1];
         }
+    }
+
+    /// <summary>
+    /// 적군/고정 블록 배치
+    /// </summary>
+    [System.Serializable]
+    public class EnemyPlacement
+    {
+        public HexCoord coord;
+        public EnemyType enemyType;
+    }
+
+    /// <summary>
+    /// 스토리 데이터
+    /// </summary>
+    [System.Serializable]
+    public class StoryData
+    {
+        public string chapterIntroduction = "";
+        public string beforeStageCutscene = "";
+        public string[] stageIntroDialogues = new string[0];
+        public DialogueCutscene[] midStageCutscenes = new DialogueCutscene[0];
+        public string stageClearCutscene = "";
+        public string[] stageClearDialogues = new string[0];
+    }
+
+    /// <summary>
+    /// 게임 중 대사 컷씬
+    /// </summary>
+    [System.Serializable]
+    public class DialogueCutscene
+    {
+        public CutsceneTrigger triggerType;
+        public int triggerCount; // 예: AfterEnemyRemoval 이면 1,2,3...
+        public string[] dialogues;
+    }
+
+    /// <summary>
+    /// 컷씬 트리거 타입
+    /// </summary>
+    public enum CutsceneTrigger
+    {
+        AfterEnemyRemoval,      // N번째 적군 제거 후
+        AfterMissionComplete,   // N번째 미션 완료 후
+        AfterCombo,             // N콤보 달성 시
+        AfterTurnCount          // N턴 경과 시
+    }
+
+    /// <summary>
+    /// 튜토리얼 플래그
+    /// </summary>
+    public enum TutorialFlag
+    {
+        ShowEnemyType_Chromophage,
+        ShowEnemyType_ChainAnchor,
+        ShowSpecialBlock_Drill,
+        ShowSpecialBlock_Bomb,
+        ShowSpecialBlock_Laser,
+        ShowSpecialBlock_Rainbow,
+        ExplainMatchingRestriction,
+        ExplainCascadeChaining,
+        ExplainTierSystem
     }
 }
