@@ -312,9 +312,27 @@ namespace JewelsHexaPuzzle.Managers
 
                 if (progress.mission.type == MissionType.CollectGem)
                 {
-                    if (progress.mission.targetGemType == GemType.None ||
-                        progress.mission.targetGemType == gemType)
+                    // targetGemType이 None인 경우: 기본 블록만 카운트
+                    // 기본 블록 = Red(1), Blue(2), Green(3), Yellow(4), Purple(5)
+                    bool isBasicGem = (int)gemType >= 1 && (int)gemType <= 5;
+
+                    if (progress.mission.targetGemType == GemType.None)
                     {
+                        // 기본 블록만 카운트
+                        if (isBasicGem)
+                        {
+                            progress.currentCount += count;
+                            Debug.Log($"[StageManager] Mission {i} updated: {progress.currentCount}/{progress.mission.targetCount} (기본 블록 {gemType})");
+                            CheckMissionCompletion(i);
+                        }
+                        else
+                        {
+                            Debug.Log($"[StageManager] Mission {i} skipped: {gemType}은 특수 보석 (기본 블록 미션에 불포함)");
+                        }
+                    }
+                    else if (progress.mission.targetGemType == gemType)
+                    {
+                        // 특정 보석 타입 미션
                         progress.currentCount += count;
                         Debug.Log($"[StageManager] Mission {i} updated: {progress.currentCount}/{progress.mission.targetCount}");
                         CheckMissionCompletion(i);
