@@ -290,11 +290,15 @@ namespace JewelsHexaPuzzle.Data
         public static int ActiveGemTypeCount = 5;
 
         /// <summary>
-        /// 랜덤 보석 타입 반환 (활성 타입 범위 내에서)
+        /// 랜덤 보석 타입 반환 (활성 타입 범위 내에서, 회색 제외)
         /// </summary>
         public static GemType GetRandom()
         {
-            return (GemType)UnityEngine.Random.Range(1, ActiveGemTypeCount + 1);
+            GemType gem = (GemType)UnityEngine.Random.Range(1, ActiveGemTypeCount + 1);
+            // 회색 블록 생성 방지 (ActiveGemTypeCount 변경으로 인한 버그 대비)
+            while (gem == GemType.Gray)
+                gem = (GemType)UnityEngine.Random.Range(1, ActiveGemTypeCount + 1);
+            return gem;
         }
     }
 
