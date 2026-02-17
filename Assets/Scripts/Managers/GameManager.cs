@@ -1107,16 +1107,21 @@ private void InitializeSystems()
                 laserSystem.OnLaserComplete += OnSpecialBlockCompleted;
 
             // 스테이지 관리자 이벤트 연결 (Mission 1 미션 진행도)
-            if (stageManager != null && uiManager != null)
+            if (stageManager != null)
             {
-                stageManager.OnMissionProgressUpdated += (missionProgress) =>
+                // Stage 모드는 나중에 StartGameCoroutine에서 별도로 등록
+                // Infinite 모드만 여기서 등록
+                if (currentGameMode != GameMode.Stage && uiManager != null)
                 {
-                    for (int i = 0; i < missionProgress.Length; i++)
+                    stageManager.OnMissionProgressUpdated += (missionProgress) =>
                     {
-                        var progress = missionProgress[i];
-                        uiManager.UpdateMissionProgress(i, progress.currentCount, progress.mission.targetCount);
-                    }
-                };
+                        for (int i = 0; i < missionProgress.Length; i++)
+                        {
+                            var progress = missionProgress[i];
+                            uiManager.UpdateMissionProgress(i, progress.currentCount, progress.mission.targetCount);
+                        }
+                    };
+                }
                 stageManager.OnMissionComplete += (missionIndex) =>
                 {
                     Debug.Log($"[GameManager] Mission {missionIndex} completed!");
@@ -1365,6 +1370,7 @@ private void InitializeSystems()
                     uiManager.CreateGameMissionUI(canvas, stageManager.CurrentStageData.missions[0]);
 
                     // 미션 진행도 업데이트 콜백
+                    int lastDisplayedCount = stageManager.CurrentStageData.missions[0].targetCount;
                     stageManager.OnMissionProgressUpdated += (progressArray) =>
                     {
                         if (progressArray.Length > 0)
@@ -1373,9 +1379,11 @@ private void InitializeSystems()
                             int remaining = progress.mission.targetCount - progress.currentCount;
 
                             // 카운트다운 애니메이션
-                            if (UIManager.gameMissionCountText != null)
+                            if (UIManager.gameMissionCountText != null && remaining != lastDisplayedCount)
                             {
-                                StartCoroutine(CountDownCoroutine(UIManager.gameMissionCountText, remaining, remaining + 1));
+                                Debug.Log($"[GameManager] Mission count update: {lastDisplayedCount} → {remaining}");
+                                StartCoroutine(CountDownCoroutine(UIManager.gameMissionCountText, remaining, lastDisplayedCount));
+                                lastDisplayedCount = remaining;
                             }
 
                             // 블록 수집 이펙트
@@ -1578,9 +1586,15 @@ private void OnRotationComplete(bool matchFound)
         /// </summary>
         private void HandleStageGemsRemoved(int count, GemType gemType, int cascadeDepth)
         {
+            Debug.Log($"[GameManager] HandleStageGemsRemoved: count={count}, gemType={gemType}, cascadeDepth={cascadeDepth}");
             if (stageManager != null)
             {
                 stageManager.OnGemCollected(gemType, count);
+                Debug.Log($"[GameManager] Called stageManager.OnGemCollected({gemType}, {count})");
+            }
+            else
+            {
+                Debug.LogWarning("[GameManager] stageManager is null!");
             }
         }
 

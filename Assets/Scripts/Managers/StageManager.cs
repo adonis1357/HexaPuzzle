@@ -158,17 +158,34 @@ namespace JewelsHexaPuzzle.Managers
         {
             StageData stage = new StageData();
             stage.stageNumber = stageNumber;
-            stage.turnLimit = 30 + (stageNumber / 10) * 5;
-            
-            // 스테이지 번호에 따른 미션 생성
-            int missionCount = Mathf.Min(1 + stageNumber / 20, 3);
-            stage.missions = new MissionData[missionCount];
-            
-            for (int i = 0; i < missionCount; i++)
+
+            // 레벨1: 무브 15회, 기본 블록 제거 100개 미션
+            if (stageNumber == 1)
             {
-                stage.missions[i] = GenerateRandomMission(stageNumber, i);
+                stage.turnLimit = 15;
+                stage.missions = new MissionData[1];
+                stage.missions[0] = new MissionData
+                {
+                    type = MissionType.CollectGem,
+                    targetGemType = GemType.None,  // 모든 색상
+                    targetCount = 100,
+                    description = "기본 블록 제거 100개"
+                };
             }
-            
+            else
+            {
+                stage.turnLimit = 30 + (stageNumber / 10) * 5;
+
+                // 스테이지 번호에 따른 미션 생성
+                int missionCount = Mathf.Min(1 + stageNumber / 20, 3);
+                stage.missions = new MissionData[missionCount];
+
+                for (int i = 0; i < missionCount; i++)
+                {
+                    stage.missions[i] = GenerateRandomMission(stageNumber, i);
+                }
+            }
+
             return stage;
         }
         
@@ -247,11 +264,18 @@ namespace JewelsHexaPuzzle.Managers
         private void InitializeMissions()
         {
             missionProgress.Clear();
-            
-            if (currentStageData?.missions == null) return;
-            
+
+            if (currentStageData?.missions == null)
+            {
+                Debug.LogWarning("[StageManager] InitializeMissions: currentStageData or missions is null");
+                return;
+            }
+
+            Debug.Log($"[StageManager] InitializeMissions: {currentStageData.missions.Length} missions");
+
             foreach (var mission in currentStageData.missions)
             {
+                Debug.Log($"[StageManager] Mission: type={mission.type}, targetCount={mission.targetCount}, targetGemType={mission.targetGemType}");
                 missionProgress.Add(new MissionProgress
                 {
                     mission = mission,
@@ -275,22 +299,30 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void OnGemCollected(GemType gemType, int count)
         {
+            Debug.Log($"[StageManager] OnGemCollected: gemType={gemType}, count={count}, totalMissions={missionProgress.Count}");
+
             for (int i = 0; i < missionProgress.Count; i++)
             {
                 var progress = missionProgress[i];
-                if (progress.isComplete) continue;
-                
+                if (progress.isComplete)
+                {
+                    Debug.Log($"[StageManager] Mission {i} already complete, skipping");
+                    continue;
+                }
+
                 if (progress.mission.type == MissionType.CollectGem)
                 {
-                    if (progress.mission.targetGemType == GemType.None || 
+                    if (progress.mission.targetGemType == GemType.None ||
                         progress.mission.targetGemType == gemType)
                     {
                         progress.currentCount += count;
+                        Debug.Log($"[StageManager] Mission {i} updated: {progress.currentCount}/{progress.mission.targetCount}");
                         CheckMissionCompletion(i);
                     }
                 }
             }
-            
+
+            Debug.Log($"[StageManager] OnMissionProgressUpdated?.Invoke with {missionProgress.Count} missions");
             OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
         }
         
