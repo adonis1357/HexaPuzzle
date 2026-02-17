@@ -2028,7 +2028,10 @@ public void TriggerBigBang()
                         removedInGroup++;
                 }
                 if (removedInGroup > 0)
+                {
+                    Debug.Log($"[BlockRemovalSystem] OnGemsRemovedDetailed fired: count={removedInGroup}, gemType={match.gemType}, cascadeDepth={currentCascadeDepth}");
                     OnGemsRemovedDetailed?.Invoke(removedInGroup, match.gemType, currentCascadeDepth);
+                }
             }
 
             // 7b. Divider 분열 처리 (매칭 제거 시)

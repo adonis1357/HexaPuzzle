@@ -1151,9 +1151,15 @@ private void InitializeSystems()
             }
 
             // Stage 모드 미션 시스템 연결 (Level 1 등 스테이지 모드용)
+            Debug.Log($"[GameManager] InitializeSystems: currentGameMode={currentGameMode}, stageManager={stageManager != null}, blockRemovalSystem={blockRemovalSystem != null}");
             if (stageManager != null && blockRemovalSystem != null && currentGameMode == GameMode.Stage)
             {
                 blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
+                Debug.Log($"[GameManager] Stage mode event subscription successful!");
+            }
+            else
+            {
+                Debug.LogWarning($"[GameManager] Stage mode event subscription SKIPPED! currentGameMode={currentGameMode}, isStage={currentGameMode == GameMode.Stage}");
             }
 
             // UI 시스템 자동 초기화 (ScorePopupManager, ComboDisplay)
