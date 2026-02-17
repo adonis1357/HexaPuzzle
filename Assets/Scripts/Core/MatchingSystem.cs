@@ -66,6 +66,10 @@ public List<MatchGroup> FindMatches()
                 if (block.Data == null) { nullDataBlocks++; continue; }
                 if (block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) { noneGemBlocks++; continue; }
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) { fixedBlocks++; continue; }
+                // 색상도둑이 있는 블록은 매칭에서 제외
+                if (block.CurrentEnemyType == EnemyType.Chromophage) { noneGemBlocks++; continue; }
+                // ChaosOverlord Chromophage 효과: 매칭에서 제외
+                if (EnemySystem.Instance != null && EnemySystem.Instance.IsMatchExcluded(block)) { noneGemBlocks++; continue; }
                 validBlocks++;
 
                 if (ringUsedBlocks.Contains(block)) continue;
@@ -127,6 +131,8 @@ private List<MatchGroup> FindRingMatches()
 
                 if (block.Data == null || block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) continue;
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+                // 색상도둑이 있는 블록은 링 매칭에서 제외
+                if (block.CurrentEnemyType == EnemyType.Chromophage) continue;
 
                 GemType ringColor = GemType.None;
                 bool validRing = true;
@@ -137,6 +143,9 @@ private List<MatchGroup> FindRingMatches()
                     if (neighbor.Data == null || neighbor.Data.gemType == GemType.None ||
                         neighbor.Data.gemType == GemType.Gray ||
                         neighbor.Data.specialType == SpecialBlockType.FixedBlock)
+                    { validRing = false; break; }
+                    // 색상도둑이 있는 블록은 링 매칭에서 제외
+                    if (neighbor.CurrentEnemyType == EnemyType.Chromophage)
                     { validRing = false; break; }
 
                     if (ringColor == GemType.None)

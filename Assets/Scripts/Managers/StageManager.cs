@@ -32,13 +32,61 @@ namespace JewelsHexaPuzzle.Managers
             }
             else
             {
-                // 기본 스테이지 생성
-                currentStageData = GenerateDefaultStage(stageNumber);
+                // 미션 1 (Stage 1-10) 데이터 확인
+                if (stageNumber >= 1 && stageNumber <= 10)
+                {
+                    var mission1Stages = Mission1StageData.GetAllMission1Stages();
+                    if (mission1Stages.TryGetValue(stageNumber, out var mission1Data))
+                    {
+                        currentStageData = mission1Data;
+                    }
+                    else
+                    {
+                        currentStageData = GenerateDefaultStage(stageNumber);
+                    }
+                }
+                else
+                {
+                    // 기본 스테이지 생성
+                    currentStageData = GenerateDefaultStage(stageNumber);
+                }
             }
-            
+
             InitializeMissions();
-            
+
+            // 적군 제거 이벤트 연동
+            if (BlockRemovalSystem.Instance != null)
+            {
+                BlockRemovalSystem.Instance.OnEnemyRemoved += OnEnemyRemoved;
+            }
+
             Debug.Log($"Stage {stageNumber} loaded. Missions: {currentStageData.missions.Length}");
+        }
+
+        /// <summary>
+        /// 적군 제거 시 호출 (미션 진행도 업데이트)
+        /// </summary>
+        private void OnEnemyRemoved(HexBlock block, EnemyType enemyType)
+        {
+            if (block == null) return;
+
+            // 적군 제거 미션 진행도 업데이트
+            for (int i = 0; i < missionProgress.Count; i++)
+            {
+                var mission = missionProgress[i];
+                if (mission.isComplete) continue;
+
+                // RemoveEnemy 타입 미션 처리
+                if (mission.mission.type == MissionType.RemoveEnemy &&
+                    mission.mission.targetEnemyType == enemyType)
+                {
+                    mission.currentCount++;
+                    CheckMissionCompletion(i);
+                }
+            }
+
+            OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
+            Debug.Log($"[StageManager] 적군 제거: {EnemyTypeHelper.GetName(enemyType)}");
         }
         
         /// <summary>
@@ -314,6 +362,15 @@ namespace JewelsHexaPuzzle.Managers
                 if (!progress.isComplete) return false;
             }
             return missionProgress.Count > 0;
+        }
+
+        private void OnDestroy()
+        {
+            // 이벤트 정리
+            if (BlockRemovalSystem.Instance != null)
+            {
+                BlockRemovalSystem.Instance.OnEnemyRemoved -= OnEnemyRemoved;
+            }
         }
         
         /// <summary>

@@ -22,6 +22,7 @@ namespace JewelsHexaPuzzle.Core
         private HexCoord coord;
         private HexGrid parentGrid;
         private BlockData blockData;
+        private EnemyType enemyType = EnemyType.None;
 
         private bool isSelected;
         private bool isHighlighted;
@@ -39,8 +40,16 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite xBlockIconSprite;
         private static Sprite laserIconSprite;
         private static Sprite chainOverlaySprite;
+        private static Sprite thornOverlaySprite;
 
-
+        // 적군 오버레이 스프라이트
+        private static Sprite dividerOverlaySprite;
+        private static Sprite gravityWarperOverlaySprite;
+        private static Sprite reflectionShieldOverlaySprite;
+        private static Sprite timeFreezerOverlaySprite;
+        private static Sprite resonanceTwinOverlaySprite;
+        private static Sprite shadowSporeOverlaySprite;
+        private static Sprite chaosOverlordOverlaySprite;
 
         private const float BORDER_WIDTH = 10f;
         private const float INNER_BORDER_WIDTH = 7f;  // ���� �׵θ� 30% ��� (10 * 0.7)
@@ -77,6 +86,108 @@ namespace JewelsHexaPuzzle.Core
         public BlockData Data => blockData;
         public bool IsSelected => isSelected;
         public bool CanInteract => blockData != null && blockData.gemType != GemType.None && blockData.CanMove();
+        public EnemyType CurrentEnemyType => enemyType;
+
+        /// <summary>
+        /// 블록에 적군 설정 (색상도둑 등)
+        /// </summary>
+        public void SetEnemyType(EnemyType type)
+        {
+            enemyType = type;
+
+            if (blockData != null)
+            {
+                blockData.enemyType = type;
+            }
+
+            // 색상도둑인 경우 시각 처리
+            if (type == EnemyType.Chromophage)
+            {
+                ApplyChromophageVisuals();
+            }
+            else
+            {
+                UpdateOverlay();
+            }
+        }
+
+        /// <summary>
+        /// 블록이 적군을 가지고 있는지 확인
+        /// </summary>
+        public bool HasEnemy()
+        {
+            return enemyType != EnemyType.None;
+        }
+
+        /// <summary>
+        /// 특정 적군 타입 여부 확인
+        /// </summary>
+        public bool HasEnemyOfType(EnemyType type)
+        {
+            return enemyType == type;
+        }
+
+        /// <summary>
+        /// 색상도둑 시각 처리: 회색 블록 + 펄스 애니메이션
+        /// </summary>
+        private void ApplyChromophageVisuals()
+        {
+            if (blockData == null) return;
+
+            // 블록 색상을 회색으로 변경
+            SetGemColor(new Color(0.5f, 0.5f, 0.5f, 1f));
+
+            // 색상도둑 오버레이 표시
+            if (overlayImage != null)
+            {
+                overlayImage.color = new Color(0.6f, 0.6f, 0.6f, 0.4f); // 회색 슬라임
+                overlayImage.enabled = true;
+            }
+
+            // 테두리를 회색으로
+            if (borderImage != null)
+            {
+                borderImage.color = new Color(0.4f, 0.4f, 0.4f, 0.7f);
+            }
+
+            // 펄스 애니메이션 시작
+            StartCoroutine(ChromophagePulseAnimation());
+        }
+
+        /// <summary>
+        /// 색상도둑 펄스 애니메이션 (0.5초 주기)
+        /// </summary>
+        private IEnumerator ChromophagePulseAnimation()
+        {
+            while (HasEnemyOfType(EnemyType.Chromophage))
+            {
+                // 밝아짐 (0.25초)
+                float elapsed = 0f;
+                while (elapsed < 0.25f && HasEnemyOfType(EnemyType.Chromophage))
+                {
+                    elapsed += Time.deltaTime;
+                    float alpha = Mathf.Lerp(0.3f, 0.5f, elapsed / 0.25f);
+                    if (overlayImage != null)
+                    {
+                        overlayImage.color = new Color(0.6f, 0.6f, 0.6f, alpha);
+                    }
+                    yield return null;
+                }
+
+                // 어두워짐 (0.25초)
+                elapsed = 0f;
+                while (elapsed < 0.25f && HasEnemyOfType(EnemyType.Chromophage))
+                {
+                    elapsed += Time.deltaTime;
+                    float alpha = Mathf.Lerp(0.5f, 0.3f, elapsed / 0.25f);
+                    if (overlayImage != null)
+                    {
+                        overlayImage.color = new Color(0.6f, 0.6f, 0.6f, alpha);
+                    }
+                    yield return null;
+                }
+            }
+        }
 
         private void Awake()
         {
@@ -911,14 +1022,35 @@ public void ShowBombIndicator()
         private void UpdateOverlay()
         {
             if (overlayImage == null || blockData == null) return;
+
             if (blockData.hasChain)
             {
-                // 사슬 오버레이 스프라이트 사용
                 if (chainOverlaySprite == null)
                     chainOverlaySprite = CreateChainOverlaySprite(256);
                 overlayImage.sprite = chainOverlaySprite;
                 overlayImage.color = Color.white;
                 overlayImage.enabled = true;
+            }
+            else if (blockData.hasThorn)
+            {
+                EnsureEnemyOverlaySprites();
+                overlayImage.sprite = thornOverlaySprite;
+                overlayImage.color = new Color(0.8f, 0.2f, 0.3f, 0.85f);
+                overlayImage.enabled = true;
+            }
+            else if (blockData.enemyType != JewelsHexaPuzzle.Data.EnemyType.None &&
+                     blockData.enemyType != JewelsHexaPuzzle.Data.EnemyType.Chromophage &&
+                     blockData.enemyType != JewelsHexaPuzzle.Data.EnemyType.ChainAnchor &&
+                     blockData.enemyType != JewelsHexaPuzzle.Data.EnemyType.ThornParasite)
+            {
+                EnsureEnemyOverlaySprites();
+                Sprite enemySprite = GetEnemyOverlaySprite(blockData.enemyType);
+                if (enemySprite != null)
+                {
+                    overlayImage.sprite = enemySprite;
+                    overlayImage.color = GetEnemyOverlayColor(blockData.enemyType);
+                    overlayImage.enabled = true;
+                }
             }
             else if (blockData.vinylLayer > 0)
             {
@@ -931,6 +1063,239 @@ public void ShowBombIndicator()
             {
                 overlayImage.sprite = null;
                 overlayImage.enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// 적군 오버레이 스프라이트 초기화 (한 번만)
+        /// </summary>
+        private static void EnsureEnemyOverlaySprites()
+        {
+            if (dividerOverlaySprite != null) return;
+
+            const int size = 256;
+            thornOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Thorn);
+            dividerOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Divider);
+            gravityWarperOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.GravityWarper);
+            reflectionShieldOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Shield);
+            timeFreezerOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Clock);
+            resonanceTwinOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Twin);
+            shadowSporeOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Spore);
+            chaosOverlordOverlaySprite = CreateEnemySymbolSprite(size, EnemySymbol.Crown);
+        }
+
+        private enum EnemySymbol { Thorn, Divider, GravityWarper, Shield, Clock, Twin, Spore, Crown }
+
+        /// <summary>
+        /// 프로시저럴 적군 심볼 스프라이트 생성
+        /// </summary>
+        private static Sprite CreateEnemySymbolSprite(int size, EnemySymbol symbol)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float radius = size * 0.35f;
+
+            switch (symbol)
+            {
+                case EnemySymbol.Thorn:
+                    // X자 가시 패턴
+                    DrawCross(pixels, size, center, radius * 0.7f, size * 0.08f, new Color(1f, 1f, 1f, 0.9f));
+                    break;
+                case EnemySymbol.Divider:
+                    // 세포분열 패턴 (두 원)
+                    DrawCircleRing(pixels, size, center + new Vector2(-radius * 0.25f, 0), radius * 0.4f, size * 0.04f, new Color(1f, 1f, 1f, 0.9f));
+                    DrawCircleRing(pixels, size, center + new Vector2(radius * 0.25f, 0), radius * 0.4f, size * 0.04f, new Color(1f, 1f, 1f, 0.9f));
+                    break;
+                case EnemySymbol.GravityWarper:
+                    // 소용돌이
+                    DrawSpiral(pixels, size, center, radius * 0.6f, new Color(1f, 1f, 1f, 0.85f));
+                    break;
+                case EnemySymbol.Shield:
+                    // 방패
+                    DrawShield(pixels, size, center, radius * 0.55f, new Color(1f, 1f, 1f, 0.9f));
+                    break;
+                case EnemySymbol.Clock:
+                    // 시계
+                    DrawCircleRing(pixels, size, center, radius * 0.5f, size * 0.04f, new Color(1f, 1f, 1f, 0.9f));
+                    DrawLine(pixels, size, center, center + new Vector2(0, radius * 0.35f), size * 0.04f, new Color(1f, 1f, 1f, 0.9f));
+                    DrawLine(pixels, size, center, center + new Vector2(radius * 0.25f, 0), size * 0.04f, new Color(1f, 1f, 1f, 0.9f));
+                    break;
+                case EnemySymbol.Twin:
+                    // 쌍둥이 링크
+                    DrawCircleFill(pixels, size, center + new Vector2(-radius * 0.3f, 0), radius * 0.22f, new Color(1f, 1f, 1f, 0.9f));
+                    DrawCircleFill(pixels, size, center + new Vector2(radius * 0.3f, 0), radius * 0.22f, new Color(1f, 1f, 1f, 0.9f));
+                    DrawLine(pixels, size, center + new Vector2(-radius * 0.1f, 0), center + new Vector2(radius * 0.1f, 0), size * 0.05f, new Color(1f, 1f, 1f, 0.8f));
+                    break;
+                case EnemySymbol.Spore:
+                    // 포자 점들
+                    DrawCircleFill(pixels, size, center, radius * 0.15f, new Color(1f, 1f, 1f, 0.9f));
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float angle = i * 60f * Mathf.Deg2Rad;
+                        Vector2 p = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius * 0.4f;
+                        DrawCircleFill(pixels, size, p, radius * 0.1f, new Color(1f, 1f, 1f, 0.7f));
+                    }
+                    break;
+                case EnemySymbol.Crown:
+                    // 왕관
+                    DrawCrown(pixels, size, center, radius * 0.5f, new Color(1f, 1f, 1f, 0.9f));
+                    break;
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        // 적군 심볼 그리기 헬퍼
+        private static void DrawLine(Color[] pixels, int size, Vector2 a, Vector2 b, float width, Color color)
+        {
+            float halfW = width * 0.5f;
+            int minX = Mathf.Max(0, (int)(Mathf.Min(a.x, b.x) - halfW - 1));
+            int maxX = Mathf.Min(size - 1, (int)(Mathf.Max(a.x, b.x) + halfW + 1));
+            int minY = Mathf.Max(0, (int)(Mathf.Min(a.y, b.y) - halfW - 1));
+            int maxY = Mathf.Min(size - 1, (int)(Mathf.Max(a.y, b.y) + halfW + 1));
+            Vector2 dir = (b - a);
+            float len = dir.magnitude;
+            if (len < 0.001f) return;
+            dir /= len;
+            Vector2 perp = new Vector2(-dir.y, dir.x);
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
+                {
+                    Vector2 p = new Vector2(x + 0.5f, y + 0.5f) - a;
+                    float along = Vector2.Dot(p, dir);
+                    if (along < -1f || along > len + 1f) continue;
+                    float dist = Mathf.Abs(Vector2.Dot(p, perp));
+                    float alpha = Mathf.Clamp01(1f - (dist - halfW) / 1.5f);
+                    if (alpha > 0f)
+                    {
+                        Color c = color; c.a *= alpha;
+                        int idx = y * size + x;
+                        if (c.a > pixels[idx].a) pixels[idx] = c;
+                    }
+                }
+        }
+
+        private static void DrawCross(Color[] pixels, int size, Vector2 center, float armLen, float width, Color color)
+        {
+            DrawLine(pixels, size, center + new Vector2(-armLen, -armLen), center + new Vector2(armLen, armLen), width, color);
+            DrawLine(pixels, size, center + new Vector2(-armLen, armLen), center + new Vector2(armLen, -armLen), width, color);
+        }
+
+        private static void DrawCircleRing(Color[] pixels, int size, Vector2 center, float radius, float thickness, Color color)
+        {
+            float halfT = thickness * 0.5f;
+            int minX = Mathf.Max(0, (int)(center.x - radius - halfT - 2));
+            int maxX = Mathf.Min(size - 1, (int)(center.x + radius + halfT + 2));
+            int minY = Mathf.Max(0, (int)(center.y - radius - halfT - 2));
+            int maxY = Mathf.Min(size - 1, (int)(center.y + radius + halfT + 2));
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
+                {
+                    float dist = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center);
+                    float ringDist = Mathf.Abs(dist - radius);
+                    float alpha = Mathf.Clamp01(1f - (ringDist - halfT) / 1.5f);
+                    if (alpha > 0f)
+                    {
+                        Color c = color; c.a *= alpha;
+                        int idx = y * size + x;
+                        if (c.a > pixels[idx].a) pixels[idx] = c;
+                    }
+                }
+        }
+
+        private static void DrawCircleFill(Color[] pixels, int size, Vector2 center, float radius, Color color)
+        {
+            int minX = Mathf.Max(0, (int)(center.x - radius - 2));
+            int maxX = Mathf.Min(size - 1, (int)(center.x + radius + 2));
+            int minY = Mathf.Max(0, (int)(center.y - radius - 2));
+            int maxY = Mathf.Min(size - 1, (int)(center.y + radius + 2));
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
+                {
+                    float dist = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center);
+                    float alpha = Mathf.Clamp01(1f - (dist - radius) / 1.5f);
+                    if (alpha > 0f)
+                    {
+                        Color c = color; c.a *= alpha;
+                        int idx = y * size + x;
+                        if (c.a > pixels[idx].a) pixels[idx] = c;
+                    }
+                }
+        }
+
+        private static void DrawSpiral(Color[] pixels, int size, Vector2 center, float maxRadius, Color color)
+        {
+            float thickness = size * 0.035f;
+            for (float t = 0; t < Mathf.PI * 4f; t += 0.05f)
+            {
+                float r = maxRadius * (t / (Mathf.PI * 4f));
+                Vector2 p = center + new Vector2(Mathf.Cos(t), Mathf.Sin(t)) * r;
+                DrawCircleFill(pixels, size, p, thickness, color);
+            }
+        }
+
+        private static void DrawShield(Color[] pixels, int size, Vector2 center, float radius, Color color)
+        {
+            // 방패: 상단 반원 + 하단 삼각형
+            float thickness = size * 0.04f;
+            DrawCircleRing(pixels, size, center + new Vector2(0, radius * 0.15f), radius * 0.6f, thickness, color);
+            DrawLine(pixels, size, center + new Vector2(-radius * 0.52f, center.y * 0.02f),
+                     center + new Vector2(0, -radius * 0.7f), thickness, color);
+            DrawLine(pixels, size, center + new Vector2(radius * 0.52f, center.y * 0.02f),
+                     center + new Vector2(0, -radius * 0.7f), thickness, color);
+        }
+
+        private static void DrawCrown(Color[] pixels, int size, Vector2 center, float radius, Color color)
+        {
+            float thickness = size * 0.04f;
+            float baseY = center.y - radius * 0.3f;
+            float topY = center.y + radius * 0.5f;
+            // 바닥선
+            DrawLine(pixels, size, new Vector2(center.x - radius, baseY), new Vector2(center.x + radius, baseY), thickness, color);
+            // 5개 봉우리
+            for (int i = 0; i < 5; i++)
+            {
+                float x = center.x - radius + radius * 2f * i / 4f;
+                float peakY = (i % 2 == 0) ? topY : topY - radius * 0.3f;
+                DrawLine(pixels, size, new Vector2(x, baseY), new Vector2(x, peakY), thickness, color);
+            }
+            // 상단 연결
+            DrawLine(pixels, size, new Vector2(center.x - radius, topY), new Vector2(center.x + radius, topY), thickness * 0.7f, color);
+        }
+
+        private static Sprite GetEnemyOverlaySprite(JewelsHexaPuzzle.Data.EnemyType type)
+        {
+            switch (type)
+            {
+                case JewelsHexaPuzzle.Data.EnemyType.Divider: return dividerOverlaySprite;
+                case JewelsHexaPuzzle.Data.EnemyType.GravityWarper: return gravityWarperOverlaySprite;
+                case JewelsHexaPuzzle.Data.EnemyType.ReflectionShield: return reflectionShieldOverlaySprite;
+                case JewelsHexaPuzzle.Data.EnemyType.TimeFreezer: return timeFreezerOverlaySprite;
+                case JewelsHexaPuzzle.Data.EnemyType.ResonanceTwin: return resonanceTwinOverlaySprite;
+                case JewelsHexaPuzzle.Data.EnemyType.ShadowSpore: return shadowSporeOverlaySprite;
+                case JewelsHexaPuzzle.Data.EnemyType.ChaosOverlord: return chaosOverlordOverlaySprite;
+                default: return null;
+            }
+        }
+
+        private static Color GetEnemyOverlayColor(JewelsHexaPuzzle.Data.EnemyType type)
+        {
+            switch (type)
+            {
+                case JewelsHexaPuzzle.Data.EnemyType.Divider: return new Color(0.1f, 0.85f, 0.85f, 0.8f);       // 청록
+                case JewelsHexaPuzzle.Data.EnemyType.GravityWarper: return new Color(0.6f, 0.2f, 0.9f, 0.8f);    // 보라
+                case JewelsHexaPuzzle.Data.EnemyType.ReflectionShield: return new Color(0.8f, 0.85f, 0.9f, 0.85f); // 은색
+                case JewelsHexaPuzzle.Data.EnemyType.TimeFreezer: return new Color(0.3f, 0.6f, 1f, 0.8f);        // 파란
+                case JewelsHexaPuzzle.Data.EnemyType.ResonanceTwin: return new Color(1f, 0.9f, 0.2f, 0.8f);      // 노란
+                case JewelsHexaPuzzle.Data.EnemyType.ShadowSpore: return new Color(0.35f, 0.1f, 0.45f, 0.85f);   // 검보라
+                case JewelsHexaPuzzle.Data.EnemyType.ChaosOverlord: return new Color(1f, 0.5f, 0.8f, 0.9f);      // 무지개(핑크)
+                default: return Color.white;
             }
         }
 

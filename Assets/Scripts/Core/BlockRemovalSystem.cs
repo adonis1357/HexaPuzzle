@@ -45,6 +45,13 @@ namespace JewelsHexaPuzzle.Core
         public event System.Action OnCascadeComplete;
         public event System.Action OnBigBang;
 
+        // 미션 시스템용 상세 이벤트
+        public event System.Action<int, GemType, int> OnGemsRemovedDetailed; // (count, gemType, cascadeDepth)
+        public event System.Action<SpecialBlockType> OnSpecialBlockCreated;  // 특수 블록 생성 알림
+        public event System.Action<HexBlock, EnemyType> OnEnemyRemoved; // (block, enemyType) - 적군 제거 알림
+        public event System.Action OnSpecialBlockUsed;                       // 특수 블록 발동 알림
+        public event System.Action<Vector3, GemType> OnGemCollectedVisual;   // 보석 날아가기 연출용 (worldPos, gemType)
+
         public bool IsProcessing => isProcessing;
 
         /// <summary>
@@ -306,6 +313,9 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
                 Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: block data invalidated before activation (cachedType={cachedType})");
                 yield break;
             }
+
+            // 미션 시스템에 특수 블록 사용 알림
+            OnSpecialBlockUsed?.Invoke();
 
             switch (cachedType)
             {
@@ -1204,17 +1214,28 @@ private IEnumerator ProcessFalling()
                 List<BlockData> dataList = new List<BlockData>();
                 List<int> sourceSlots = new List<int>();
 
+                // GravityWarper: 고정 슬롯 수집
+                HashSet<int> anchoredSlots = new HashSet<int>();
+                for (int i = 0; i < column.Count; i++)
+                {
+                    HexBlock block = column[i];
+                    if (block != null && block.Data != null && block.Data.IsGravityAnchored())
+                        anchoredSlots.Add(i);
+                }
+
                 for (int i = 0; i < column.Count; i++)
                 {
                     HexBlock block = column[i];
                     if (block != null && block.Data != null && block.Data.gemType != GemType.None)
                     {
+                        if (anchoredSlots.Contains(i))
+                            continue; // GravityWarper 고정 — 낙하에서 제외
                         dataList.Add(block.Data.Clone());
                         sourceSlots.Add(i);
                     }
                 }
 
-                int emptyCount = column.Count - dataList.Count;
+                int emptyCount = column.Count - dataList.Count - anchoredSlots.Count;
                 if (emptyCount == 0) continue;
 
                 for (int i = 0; i < column.Count; i++)
@@ -1833,6 +1854,17 @@ public void TriggerBigBang()
                         match.blocks, match.specialSpawnBlock, match.createdSpecialType,
                         match.drillDirection, match.gemType));
                     newlyCreatedSpecials.Add(match.specialSpawnBlock);
+
+                    // 미션 시스템에 특수 블록 생성 알림
+                    OnSpecialBlockCreated?.Invoke(match.createdSpecialType);
+
+                    // 생성 가산점
+                    var sm = GameManager.Instance?.GetComponent<ScoreManager>();
+                    if (sm != null)
+                        sm.AddCreationBonus(
+                            match.createdSpecialType,
+                            currentCascadeDepth,
+                            match.specialSpawnBlock.transform.position);
                 }
             }
 
@@ -1845,6 +1877,13 @@ public void TriggerBigBang()
                 foreach (var block in match.blocks)
                 {
                     if (block == null || block.Data == null) continue;
+
+                    // 색상도둑 제거 이벤트 발동
+                    if (block.CurrentEnemyType == EnemyType.Chromophage)
+                    {
+                        OnEnemyRemoved?.Invoke(block, EnemyType.Chromophage);
+                        Debug.Log($"[BRS] 색상도둑 제거: ({block.Coord})");
+                    }
 
                     if (block.Data.specialType != SpecialBlockType.None)
                     {
@@ -1890,7 +1929,55 @@ public void TriggerBigBang()
                     if (neighbor.Data.hasChain)
                     {
                         neighbor.RemoveChain();
+                        neighbor.Data.enemyType = EnemyType.None;
                         Debug.Log($"[BRS] 체인 해제: ({neighbor.Coord}) - 인접 블록 매칭으로 해제");
+                        if (EnemySystem.Instance != null)
+                            EnemySystem.Instance.RegisterKill(new EnemyKillData {
+                                enemyType = EnemyType.ChainAnchor, method = RemovalMethod.Match, condition = RemovalCondition.ChainBroken });
+                        var sm = GameManager.Instance?.GetComponent<ScoreManager>();
+                        if (sm != null)
+                            sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.Match,
+                                RemovalCondition.ChainBroken, neighbor.transform.position);
+                    }
+                    if (neighbor.Data.hasThorn && !allAffected.Contains(neighbor))
+                    {
+                        // 가시 기생충: 인접 매칭 시 제거 (점수 0점)
+                        neighbor.Data.hasThorn = false;
+                        neighbor.Data.enemyType = EnemyType.None;
+                        neighbor.UpdateVisuals();
+                        Debug.Log($"[BRS] 가시 기생충 제거: ({neighbor.Coord})");
+                        if (EnemySystem.Instance != null)
+                            EnemySystem.Instance.RegisterKill(new EnemyKillData {
+                                enemyType = EnemyType.ThornParasite, method = RemovalMethod.Match, condition = RemovalCondition.Normal });
+                    }
+                }
+            }
+
+            // 5b. ChaosOverlord 생존 체크 (3회 공격 필요)
+            if (EnemySystem.Instance != null)
+            {
+                List<HexBlock> survived = new List<HexBlock>();
+                foreach (var block in blocksToRemove)
+                {
+                    if (block != null && block.Data != null && block.Data.enemyType == EnemyType.ChaosOverlord)
+                    {
+                        if (EnemySystem.Instance.ProcessChaosHit(block, RemovalMethod.Match))
+                            survived.Add(block); // 아직 살아있음
+                    }
+                }
+                foreach (var s in survived)
+                    blocksToRemove.Remove(s);
+            }
+
+            // 5c. 보석 날아가기 연출 (데이터 클리어 전에 발생)
+            foreach (var match in matches)
+            {
+                foreach (var block in match.blocks)
+                {
+                    if (block != null && blocksToRemove.Contains(block) &&
+                        match.gemType != GemType.None && match.gemType != GemType.Gray)
+                    {
+                        OnGemCollectedVisual?.Invoke(block.transform.position, match.gemType);
                     }
                 }
             }
@@ -1917,6 +2004,32 @@ public void TriggerBigBang()
 
             OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
 
+            // 미션 시스템용: 매칭 그룹별 GemType 상세 이벤트
+            foreach (var match in matches)
+            {
+                int removedInGroup = 0;
+                foreach (var b in match.blocks)
+                {
+                    if (b != null && blocksToRemove.Contains(b))
+                        removedInGroup++;
+                }
+                if (removedInGroup > 0)
+                    OnGemsRemovedDetailed?.Invoke(removedInGroup, match.gemType, currentCascadeDepth);
+            }
+
+            // 7b. Divider 분열 처리 (매칭 제거 시)
+            if (EnemySystem.Instance != null)
+            {
+                List<HexBlock> removedDividers = new List<HexBlock>();
+                foreach (var block in blocksToRemove)
+                {
+                    if (block != null && block.Data != null && block.Data.enemyType == EnemyType.Divider)
+                        removedDividers.Add(block);
+                }
+                if (removedDividers.Count > 0)
+                    EnemySystem.Instance.ProcessDividerSplits(removedDividers, RemovalMethod.Match);
+            }
+
             // 8. 인접 회색 블록 딜레이 제거 (0.3초 후 균열 이펙트)
             if (grayToRemove.Count > 0)
             {
@@ -1926,7 +2039,14 @@ public void TriggerBigBang()
                     AudioManager.Instance.PlayBlockDestroySound();
 
                 foreach (var gray in grayToRemove)
+                {
                     StartCoroutine(AnimateGrayCrumble(gray));
+                    // 회색 블록(색상도둑) 매칭 제거 점수
+                    var sm = GameManager.Instance?.GetComponent<ScoreManager>();
+                    if (sm != null)
+                        sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.Match,
+                            RemovalCondition.Normal, gray.transform.position);
+                }
 
                 yield return new WaitForSeconds(VisualConstants.DestroyDuration + 0.05f);
 
