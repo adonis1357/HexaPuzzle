@@ -2019,14 +2019,23 @@ public void TriggerBigBang()
             OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
 
             // 미션 시스템용: 매칭 그룹별 GemType 상세 이벤트
+            // ✅ 특수 블록 생성 시에도 매칭된 모든 기본 블록을 카운트해야 함
             foreach (var match in matches)
             {
                 int removedInGroup = 0;
+
+                // match.blocks의 모든 기본 블록을 카운트 (이미 특수 블록인 경우 제외)
                 foreach (var b in match.blocks)
                 {
-                    if (b != null && blocksToRemove.Contains(b))
+                    if (b == null || b.Data == null) continue;
+
+                    // 기본 블록만 카운트 (특수 블록 제외)
+                    if (b.Data.specialType == SpecialBlockType.None)
+                    {
                         removedInGroup++;
+                    }
                 }
+
                 if (removedInGroup > 0)
                 {
                     Debug.Log($"[BlockRemovalSystem] OnGemsRemovedDetailed fired: count={removedInGroup}, gemType={match.gemType}, cascadeDepth={currentCascadeDepth}");
