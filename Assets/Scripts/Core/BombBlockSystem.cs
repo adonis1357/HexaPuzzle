@@ -377,13 +377,6 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            // 폭탄이 파괴한 기본 블록 미션 카운팅
-            if (basicBlockCount > 0 && GameManager.Instance != null)
-            {
-                Debug.Log($"[BombBlockSystem] 📊 폭탄 미션: 기본블록 {basicBlockCount}개 제거");
-                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "Bomb");
-            }
-
             int totalScore = 200 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
             OnBombComplete?.Invoke(totalScore);

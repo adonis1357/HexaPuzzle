@@ -324,13 +324,6 @@ namespace JewelsHexaPuzzle.Core
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            // 도넛이 파괴한 기본 블록 미션 카운팅
-            if (basicBlockCount > 0 && GameManager.Instance != null)
-            {
-                Debug.Log($"[DonutBlockSystem] 📊 도넛 미션: 기본블록 {basicBlockCount}개 제거");
-                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "Donut");
-            }
-
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
             OnDonutComplete?.Invoke(totalScore);

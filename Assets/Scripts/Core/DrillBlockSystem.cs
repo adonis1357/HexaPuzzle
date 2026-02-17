@@ -206,13 +206,6 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             yield return drill1;
             yield return drill2;
 
-            // 드릴이 파괴한 기본 블록 미션 카운팅
-            if (basicBlockCount > 0 && GameManager.Instance != null)
-            {
-                Debug.Log($"[DrillBlockSystem] 📊 드릴 미션: 기본블록 {basicBlockCount}개 제거");
-                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "Drill");
-            }
-
             int totalScore = 100 + blockScoreSum;
             Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:100 + blockTierSum:{blockScoreSum})");
             OnDrillComplete?.Invoke(totalScore);

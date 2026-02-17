@@ -340,13 +340,6 @@ namespace JewelsHexaPuzzle.Core
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            // X블록이 파괴한 기본 블록 미션 카운팅
-            if (basicBlockCount > 0 && GameManager.Instance != null)
-            {
-                Debug.Log($"[XBlockSystem] 📊 X블록 미션: 기본블록 {basicBlockCount}개 제거");
-                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "XBlock");
-            }
-
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
             OnXBlockComplete?.Invoke(totalScore);

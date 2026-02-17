@@ -305,13 +305,6 @@ namespace JewelsHexaPuzzle.Core
             foreach (var co in lineCoroutines)
                 yield return co;
 
-            // 레이저가 파괴한 기본 블록 미션 카운팅
-            if (basicBlockCount > 0 && GameManager.Instance != null)
-            {
-                Debug.Log($"[LaserBlockSystem] 📊 레이저 미션: 기본블록 {basicBlockCount}개 제거");
-                GameManager.Instance.OnSpecialBlockDestroyedBasicBlocks(basicBlockCount, "Laser");
-            }
-
             int totalScore = 300 + blockScoreSum;
             Debug.Log($"[LaserBlockSystem] === LASER COMPLETE === Score={totalScore} (base:300 + blockTierSum:{blockScoreSum})");
             OnLaserComplete?.Invoke(totalScore);
