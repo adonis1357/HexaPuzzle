@@ -1359,10 +1359,17 @@ private void InitializeSystems()
 
             // Stage 모드 미션 시스템 이벤트 구독 (currentGameMode가 이미 설정된 후)
             Debug.Log($"[GameManager] StartGameCoroutine: currentGameMode={currentGameMode}");
+            Debug.Log($"[GameManager] stageManager != null: {stageManager != null}");
+            Debug.Log($"[GameManager] blockRemovalSystem != null: {blockRemovalSystem != null}");
             if (currentGameMode == GameMode.Stage && stageManager != null && blockRemovalSystem != null)
             {
+                Debug.Log($"[GameManager] Stage mode conditions met, subscribing...");
                 blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
                 Debug.Log($"[GameManager] Stage mode: OnGemsRemovedDetailed subscription SUCCESS!");
+            }
+            else
+            {
+                Debug.LogError($"[GameManager] Stage mode subscription FAILED! Mode check: {currentGameMode == GameMode.Stage}");
             }
 
             // 게임 중 미션 UI 표시
