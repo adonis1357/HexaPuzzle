@@ -74,7 +74,7 @@ namespace JewelsHexaPuzzle.Core
             switch (stage)
             {
                 case 1:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 1f, minRotation = 0, maxOnBoard = 20 });
+                    // 레벨1은 적군 없음 (기본 게임만)
                     break;
                 case 2:
                     configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 0.5f, minRotation = 0, maxOnBoard = 15 });
@@ -183,8 +183,8 @@ namespace JewelsHexaPuzzle.Core
                 EnemyType selectedType = SelectEnemyType(configs, boardCounts, rotationCount);
                 if (selectedType == EnemyType.None)
                 {
-                    // fallback: Chromophage
-                    selectedType = EnemyType.Chromophage;
+                    // 적군 없음 - 스킵
+                    continue;
                 }
 
                 // 쌍둥이는 2개씩 스폰
@@ -427,6 +427,9 @@ namespace JewelsHexaPuzzle.Core
                     // 랜덤 빈칸 하나에 분열체 생성
                     HexBlock target = emptyNeighbors[Random.Range(0, emptyNeighbors.Count)];
                     GemType randomGem = GemTypeHelper.GetRandom();
+                    // Gray 블록 생성 방지
+                    while (randomGem == GemType.Gray)
+                        randomGem = GemTypeHelper.GetRandom();
                     target.SetBlockData(new BlockData(randomGem));
                     ApplyEnemyToBlock(target, EnemyType.Divider);
                     Debug.Log($"[EnemySystem] Divider 분열: ({block.Coord}) → ({target.Coord})");

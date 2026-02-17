@@ -1455,6 +1455,9 @@ private void InitializeSystems()
                         if (block != null && block.Data != null)
                         {
                             GemType newGem = GemTypeHelper.GetRandom();
+                            // Gray 블록 생성 방지
+                            while (newGem == GemType.Gray)
+                                newGem = GemTypeHelper.GetRandom();
                             block.SetBlockData(new BlockData(newGem));
                         }
                     }

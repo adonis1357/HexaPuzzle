@@ -163,6 +163,10 @@ namespace JewelsHexaPuzzle.Core
             foreach (var block in blocks.Values)
             {
                 GemType randomGem = GemTypeHelper.GetRandom();
+                // Gray 블록 생성 방지
+                while (randomGem == GemType.Gray)
+                    randomGem = GemTypeHelper.GetRandom();
+
                 BlockData data = new BlockData(randomGem);
                 block.SetBlockData(data);
             }
@@ -208,18 +212,22 @@ namespace JewelsHexaPuzzle.Core
                     }
                 }
 
-                // 허용된 색 목록
+                // 허용된 색 목록 (Gray 제외)
                 List<GemType> allowed = new List<GemType>();
                 for (int g = 1; g <= GemTypeHelper.ActiveGemTypeCount; g++)
                 {
                     GemType gt = (GemType)g;
-                    if (!forbidden.Contains(gt)) allowed.Add(gt);
+                    if (!forbidden.Contains(gt) && gt != GemType.Gray) allowed.Add(gt);
                 }
 
                 GemType chosen;
                 if (allowed.Count > 0)
                     chosen = allowed[Random.Range(0, allowed.Count)];
                 else
+                    chosen = GemTypeHelper.GetRandom();
+
+                // Gray 방지 (최종 확인)
+                while (chosen == GemType.Gray)
                     chosen = GemTypeHelper.GetRandom();
 
                 block.SetBlockData(new BlockData(chosen));
