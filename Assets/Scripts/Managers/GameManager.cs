@@ -1151,7 +1151,7 @@ private void InitializeSystems()
             }
 
             // Stage 모드 미션 시스템 연결 (Level 1 등 스테이지 모드용)
-            if (stageManager != null && blockRemovalSystem != null && gameMode == GameMode.Stage)
+            if (stageManager != null && blockRemovalSystem != null && currentGameMode == GameMode.Stage)
             {
                 blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
             }
