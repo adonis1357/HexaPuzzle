@@ -942,5 +942,39 @@ namespace JewelsHexaPuzzle.Utils
             clip.SetData(data, 0);
             return clip;
         }
+
+        // ============================================================
+        // BGM 메서드
+        // ============================================================
+
+        public static AudioClip CreateLobbySereneBGM(float duration = 120f)
+        {
+            return AudioClip.Create("LobbySereneBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+        }
+
+        public static AudioClip CreateLobbyBrightBGM(float duration = 120f)
+        {
+            return AudioClip.Create("LobbyBrightBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+        }
+
+        public static AudioClip CreateLobbyDreamyBGM(float duration = 120f)
+        {
+            return AudioClip.Create("LobbyDreamyBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+        }
+
+        public static AudioClip CreateGameplayTenseBGM(float duration = 90f)
+        {
+            return AudioClip.Create("GameplayTenseBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+        }
+
+        public static AudioClip CreateGameplayEnergeticBGM(float duration = 90f)
+        {
+            return AudioClip.Create("GameplayEnergeticBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+        }
+
+        public static AudioClip CreateGameplayEpicBGM(float duration = 120f)
+        {
+            return AudioClip.Create("GameplayEpicBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+        }
     }
 }
