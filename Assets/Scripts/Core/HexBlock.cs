@@ -362,25 +362,25 @@ namespace JewelsHexaPuzzle.Core
 
                     if (isBorderOnly)
                     {
-                        // === 베벨 테두리 ===
+                        // === 강화된 베벨 테두리 ===
                         float innerDist = HexSignedDistance(point, center, innerRadius);
                         float outerAlpha = Mathf.Clamp01(1f - outerDist / aa);
                         float innerAlpha = Mathf.Clamp01(innerDist / aa);
                         float ringAlpha = outerAlpha * innerAlpha;
 
-                        // 방향성 베벨 (매트: 완만한 명암)
+                        // 강화된 방향성 베벨 (명도 범위 확대: 0.70 ~ 0.95)
                         Vector2 dir = (point - center);
                         float dirLen = dir.magnitude;
                         if (dirLen > 0.001f) dir /= dirLen;
                         float lightDot = Vector2.Dot(dir, lightDir);
-                        float bevel = 0.78f + lightDot * 0.10f; // 0.68 ~ 0.88 (축소된 베벨)
+                        float bevel = 0.825f + lightDot * 0.125f; // 0.70 ~ 0.95 (2배 강화)
 
-                        // 링 중심부 밝기 부스트 (매트: 미세)
+                        // 링 중심부 밝기 부스트 (강화)
                         float ringCenter = Mathf.Min(outerAlpha, innerAlpha);
                         bevel += ringCenter * 0.08f;
 
-                        // 소프트 외곽 글로우 (매트: 거의 없음)
-                        float glowAlpha = Mathf.Clamp01(1f - outerDist / (aa * 2f)) * 0.08f;
+                        // 소프트 외곽 글로우 (강화: 더 큼)
+                        float glowAlpha = Mathf.Clamp01(1f - outerDist / (aa * 2f)) * 0.15f;
                         float finalAlpha = Mathf.Clamp01(ringAlpha + glowAlpha);
 
                         float b = Mathf.Clamp01(bevel);
@@ -388,15 +388,15 @@ namespace JewelsHexaPuzzle.Core
                     }
                     else
                     {
-                        // === 부드러운 볼록 쿠션 배경 ===
+                        // === 부드러운 볼록 쿠션 배경 (강화된 음영) ===
                         float alpha = Mathf.Clamp01(1f - outerDist / aa);
 
                         Vector2 offset = point - center;
                         float pixelDist = offset.magnitude;
                         float normDist = Mathf.Clamp01(pixelDist / maxPixelDist);
 
-                        // 중심부 밝고 가장자리 약간 어둡게 (볼록 쿠션 느낌)
-                        float cushion = 0.90f + (1f - normDist) * 0.08f;
+                        // 중심부 어두움, 가장자리 밝음 (움푹 들어간 슬롯 느낌, 명도 범위 확대: 0.65~0.95)
+                        float cushion = 0.85f - normDist * 0.15f;  // 중심: 0.85, 가장자리: 0.70
 
                         // 방향성 조명 (좌상단 약간 밝게)
                         float dirLen = offset.magnitude;
@@ -683,7 +683,7 @@ namespace JewelsHexaPuzzle.Core
             }
 
             borderImage.sprite = GemSpriteProvider.GetBorderSprite() ?? hexBorderSprite;
-            borderImage.color = new Color(0.92f, 0.88f, 0.85f, 0.30f);
+            borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 테두리 색상 및 불투명도
             borderImage.raycastTarget = false;
             borderImage.type = Image.Type.Simple;
         }
@@ -830,14 +830,14 @@ public void UpdateVisuals()
             Color gemColor = GemColors.GetColor(blockData.gemType);
             SetGemColor(gemColor);
 
-            // 테두리 색상 결정
+            // 테두리 색상 결정 (강화된 값으로 업데이트)
             if (borderImage != null)
             {
                 borderImage.enabled = true;
                 if (blockData.pendingActivation)
                     borderImage.color = new Color(0.95f, 0.72f, 0.68f, 0.8f);
                 else
-                    borderImage.color = isMatched ? Color.white : new Color(0.92f, 0.88f, 0.85f, 0.30f);
+                    borderImage.color = isMatched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
             }
 
             // 특수 블록 아이콘/추가 시각 처리 (통합)
@@ -1349,9 +1349,9 @@ public void ShowBombIndicator()
             isHighlighted = highlighted;
             if (borderImage != null)
             {
-                // ���̶���Ʈ ������ ���� ������� ���� (����� ���)
+                // 하이라이트 시작 시 흰색 강조 (매칭)
                 if (highlighted) borderImage.color = new Color(1f, 1f, 1f, 1f);
-                else if (!isMatched) borderImage.color = new Color(0.92f, 0.88f, 0.85f, 0.30f);
+                else if (!isMatched) borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
             }
         }
 
@@ -1359,7 +1359,7 @@ public void ShowBombIndicator()
         {
             isMatched = matched;
             if (borderImage != null)
-                borderImage.color = matched ? Color.white : new Color(0.92f, 0.88f, 0.85f, 0.30f);
+                borderImage.color = matched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
         }
 
 // === 빨간색 테두리 점멸 (특수 블록 연쇄 발동 예고) ===
@@ -1397,7 +1397,7 @@ public void StopWarningBlink()
             isPendingActivation = false;
             if (borderImage != null)
             {
-                borderImage.color = isMatched ? Color.white : new Color(0.92f, 0.88f, 0.85f, 0.30f);
+                borderImage.color = isMatched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
             }
         }
 
