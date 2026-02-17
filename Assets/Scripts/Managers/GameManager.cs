@@ -533,9 +533,6 @@ namespace JewelsHexaPuzzle.Managers
 
         // 로비 UI 참조
         private GameObject lobbyContainer;
-        private Text lobbyBestScoreText;
-        private Text lobbyRankText;
-        private Text lobbyMaxMovesText;
 
         // 스테이지 선택
         private int selectedStage = 1;
@@ -1148,6 +1145,12 @@ private void InitializeSystems()
                 missionSystem.OnMissionProgressChanged += OnSurvivalMissionProgressChanged;
             }
 
+            // Stage 모드 미션 시스템 연결 (Level 1 등 스테이지 모드용)
+            if (stageManager != null && blockRemovalSystem != null && gameMode == GameMode.Stage)
+            {
+                blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
+            }
+
             // UI 시스템 자동 초기화 (ScorePopupManager, ComboDisplay)
             EnsureUIComponents();
         }
@@ -1306,6 +1309,13 @@ private void InitializeSystems()
             }
             else
             {
+                // Stage 모드: StageManager에서 턴 제한 로드
+                if (stageManager != null)
+                {
+                    stageManager.LoadStage(selectedStage);
+                    initialTurns = stageManager.CurrentStageData?.turnLimit ?? 30;
+                }
+
                 // 턴 수를 먼저 초기화 (TriggerStartDrop → OnCascadeComplete 콜백에서
                 // currentTurns <= 0 체크 시 GameOver 호출되는 타이밍 버그 방지)
                 currentTurns = initialTurns;
@@ -1345,6 +1355,38 @@ private void InitializeSystems()
             // 직접 참조 강제 동기화
             if (hudScoreText != null) hudScoreText.text = "0";
             if (hudTurnText != null) hudTurnText.text = currentTurns.ToString();
+
+            // 게임 중 미션 UI 표시
+            if (uiManager != null && stageManager != null && stageManager.CurrentStageData != null)
+            {
+                Canvas canvas = FindObjectOfType<Canvas>();
+                if (canvas != null && stageManager.CurrentStageData.missions.Length > 0)
+                {
+                    uiManager.CreateGameMissionUI(canvas, stageManager.CurrentStageData.missions[0]);
+
+                    // 미션 진행도 업데이트 콜백
+                    stageManager.OnMissionProgressUpdated += (progressArray) =>
+                    {
+                        if (progressArray.Length > 0)
+                        {
+                            var progress = progressArray[0];
+                            int remaining = progress.mission.targetCount - progress.currentCount;
+
+                            // 카운트다운 애니메이션
+                            if (UIManager.gameMissionCountText != null)
+                            {
+                                StartCoroutine(CountDownCoroutine(UIManager.gameMissionCountText, remaining, remaining + 1));
+                            }
+
+                            // 블록 수집 이펙트
+                            if (UIManager.gameMissionIconRect != null && canvas != null)
+                            {
+                                StartCoroutine(BlockFlyEffectCoroutine(UIManager.gameMissionIconRect.anchoredPosition, canvas));
+                            }
+                        }
+                    };
+                }
+            }
 
             // 게임 BGM 시작
             if (AudioManager.Instance != null)
@@ -1528,6 +1570,17 @@ private void OnRotationComplete(bool matchFound)
             if (stageManager != null)
             {
                 stageManager.CheckMissionProgress();
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 보석 수집 추적
+        /// </summary>
+        private void HandleStageGemsRemoved(int count, GemType gemType, int cascadeDepth)
+        {
+            if (stageManager != null)
+            {
+                stageManager.OnGemCollected(gemType, count);
             }
         }
 
@@ -2304,26 +2357,18 @@ private void OnBigBang()
             titleText.raycastTarget = false;
             titleText.text = "HEXA PUZZLE";
 
-            // === 스테이지 1 버튼 (왼쪽) ===
-            CreateStageButton(lobbyContainer, font, new Vector2(-spacing, 30f),
-                "STAGE 1", "INFINITE MODE",
-                new Color(0.15f, 0.35f, 0.7f, 0.95f),
-                new Color(0.4f, 0.7f, 1f, 0.6f),
-                1, buttonSize);
-
-            // === 스테이지 2 버튼 (중앙) ===
-            CreateStageButton(lobbyContainer, font, new Vector2(0f, 30f),
-                "STAGE 2", "GRAY & CHAIN",
-                new Color(0.45f, 0.15f, 0.7f, 0.95f),
-                new Color(0.7f, 0.4f, 1f, 0.6f),
-                2, buttonSize);
-
-            // === 스테이지 3 버튼 (오른쪽) ===
-            CreateStageButton(lobbyContainer, font, new Vector2(spacing, 30f),
-                "STAGE 3", "THORN & ENEMY",
-                new Color(0.7f, 0.15f, 0.25f, 0.95f),
-                new Color(1f, 0.4f, 0.5f, 0.6f),
-                3, buttonSize);
+            // === 레벨 1 버튼 (화면 중앙, 크게) ===
+            CreateStageButton(
+                lobbyContainer,
+                font,
+                Vector2.zero,                          // 화면 중앙
+                "LEVEL 1",
+                "COLLECT GEMS",
+                new Color(0.2f, 0.6f, 0.8f),          // 파란색
+                new Color(0.4f, 0.8f, 1f),            // 밝은 파란색 테두리
+                1,                                     // stageNum
+                350f                                   // btnSize - 크게
+            );
 
             lobbyContainer.SetActive(false);
             lobbyContainer.transform.SetAsLastSibling();
@@ -2409,57 +2454,6 @@ private void OnBigBang()
             playText.raycastTarget = false;
             playText.text = "\u25B6";
 
-            // 스테이지1 전용: 최고 스코어 / 랭킹 / 최대 이동횟수
-            if (stageNum == 1)
-            {
-                GameObject bestObj = new GameObject("BestScore");
-                bestObj.transform.SetParent(stageBtn.transform, false);
-                RectTransform bestRt = bestObj.AddComponent<RectTransform>();
-                bestRt.anchorMin = new Vector2(0.5f, 0.5f);
-                bestRt.anchorMax = new Vector2(0.5f, 0.5f);
-                bestRt.pivot = new Vector2(0.5f, 0.5f);
-                bestRt.anchoredPosition = new Vector2(0f, -35f);
-                bestRt.sizeDelta = new Vector2(200f, 26f);
-                lobbyBestScoreText = bestObj.AddComponent<Text>();
-                lobbyBestScoreText.font = font;
-                lobbyBestScoreText.fontSize = 18;
-                lobbyBestScoreText.alignment = TextAnchor.MiddleCenter;
-                lobbyBestScoreText.color = new Color(1f, 0.84f, 0f);
-                lobbyBestScoreText.raycastTarget = false;
-                lobbyBestScoreText.text = "NO RECORD";
-
-                GameObject rankObj = new GameObject("RankText");
-                rankObj.transform.SetParent(stageBtn.transform, false);
-                RectTransform rankRt = rankObj.AddComponent<RectTransform>();
-                rankRt.anchorMin = new Vector2(0.5f, 0.5f);
-                rankRt.anchorMax = new Vector2(0.5f, 0.5f);
-                rankRt.pivot = new Vector2(0.5f, 0.5f);
-                rankRt.anchoredPosition = new Vector2(0f, -60f);
-                rankRt.sizeDelta = new Vector2(200f, 22f);
-                lobbyRankText = rankObj.AddComponent<Text>();
-                lobbyRankText.font = font;
-                lobbyRankText.fontSize = 16;
-                lobbyRankText.alignment = TextAnchor.MiddleCenter;
-                lobbyRankText.color = new Color(0.7f, 0.8f, 1f);
-                lobbyRankText.raycastTarget = false;
-                lobbyRankText.text = "";
-
-                GameObject movesObj = new GameObject("MaxMoves");
-                movesObj.transform.SetParent(stageBtn.transform, false);
-                RectTransform movesRt = movesObj.AddComponent<RectTransform>();
-                movesRt.anchorMin = new Vector2(0.5f, 0.5f);
-                movesRt.anchorMax = new Vector2(0.5f, 0.5f);
-                movesRt.pivot = new Vector2(0.5f, 0.5f);
-                movesRt.anchoredPosition = new Vector2(0f, -82f);
-                movesRt.sizeDelta = new Vector2(200f, 22f);
-                lobbyMaxMovesText = movesObj.AddComponent<Text>();
-                lobbyMaxMovesText.font = font;
-                lobbyMaxMovesText.fontSize = 15;
-                lobbyMaxMovesText.alignment = TextAnchor.MiddleCenter;
-                lobbyMaxMovesText.color = new Color(0.6f, 0.75f, 0.65f);
-                lobbyMaxMovesText.raycastTarget = false;
-                lobbyMaxMovesText.text = "";
-            }
 
             // 부제 텍스트
             GameObject subtitleObj = new GameObject("Subtitle");
@@ -2483,7 +2477,8 @@ private void OnBigBang()
             {
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
                 selectedStage = stageNum;
-                currentGameMode = GameMode.Infinite;
+                // 레벨1은 Stage 모드, 나머지는 Infinite
+                currentGameMode = (stageNum == 1) ? GameMode.Stage : GameMode.Infinite;
                 HideLobby();
                 StartGame();
             });
@@ -2512,35 +2507,6 @@ private void OnBigBang()
                 if (hud != null) hud.SetActive(false);
             }
 
-            // 최고 스코어 / 랭킹 갱신
-            if (scoreManager != null)
-            {
-                int best = scoreManager.HighScore;
-                if (best > 0)
-                {
-                    if (lobbyBestScoreText != null)
-                        lobbyBestScoreText.text = string.Format("BEST: {0:N0}", best);
-                    if (lobbyRankText != null)
-                    {
-                        int rank = scoreManager.GetRankForScore(best);
-                        lobbyRankText.text = rank > 0 ? $"RANK #{rank}" : "";
-                    }
-                }
-                else
-                {
-                    if (lobbyBestScoreText != null)
-                        lobbyBestScoreText.text = "NO RECORD";
-                    if (lobbyRankText != null)
-                        lobbyRankText.text = "";
-                }
-
-                // 최대 이동횟수 표시
-                if (lobbyMaxMovesText != null)
-                {
-                    int moves = scoreManager.MaxMoves;
-                    lobbyMaxMovesText.text = moves > 0 ? $"MAX MOVES: {moves}" : "";
-                }
-            }
 
             if (lobbyContainer != null)
             {
@@ -2935,6 +2901,85 @@ private void OnBigBang()
             Debug.Log($"[GameManager] 속박의 사슬: ({block.Coord}) 체인 부착");
         }
 
+        /// <summary>
+        /// 미션 카운트다운 애니메이션
+        /// </summary>
+        private IEnumerator CountDownCoroutine(Text countText, int to, int from)
+        {
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = elapsed / duration;
+                int current = Mathf.RoundToInt(Mathf.Lerp(from, to, progress));
+                countText.text = current.ToString();
+                yield return null;
+            }
+
+            countText.text = to.ToString();
+        }
+
+        /// <summary>
+        /// 블록이 미션 아이콘으로 날아드는 이펙트
+        /// </summary>
+        private IEnumerator BlockFlyEffectCoroutine(Vector2 targetPos, Canvas canvas)
+        {
+            // 랜덤 블록 색상
+            Color[] blockColors = new Color[]
+            {
+                GemColors.GetColor(GemType.Red),
+                GemColors.GetColor(GemType.Green),
+                GemColors.GetColor(GemType.Blue),
+                GemColors.GetColor(GemType.Yellow),
+                GemColors.GetColor(GemType.Purple),
+                GemColors.GetColor(GemType.Orange)
+            };
+            Color blockColor = blockColors[Random.Range(0, blockColors.Length)];
+
+            // 블록 시작 위치 (화면 중앙 근처)
+            Vector2 startPos = new Vector2(Random.Range(-100f, 100f), Random.Range(-100f, 100f));
+
+            // 블록 시각 오브젝트 생성
+            GameObject blockVisual = new GameObject("BlockFly");
+            blockVisual.transform.SetParent(canvas.transform, false);
+
+            RectTransform blockRt = blockVisual.AddComponent<RectTransform>();
+            blockRt.anchoredPosition = startPos;
+            blockRt.sizeDelta = new Vector2(40, 40);
+
+            Image blockImage = blockVisual.AddComponent<Image>();
+            blockImage.color = blockColor;
+            blockImage.sprite = HexBlock.GetHexFlashSprite();
+
+            float duration = 0.5f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / duration;
+
+                // 위치 이동
+                Vector2 newPos = Vector2.Lerp(startPos, targetPos, VisualConstants.EaseInQuad(t));
+                blockRt.anchoredPosition = newPos;
+
+                // 스케일 감소
+                blockRt.localScale = Vector3.one * (1f - t * 0.7f);
+
+                // 회전
+                blockRt.rotation = Quaternion.AngleAxis(t * 720f, Vector3.forward);
+
+                // 투명도
+                blockImage.color = new Color(blockColor.r, blockColor.g, blockColor.b, 1f - t);
+
+                yield return null;
+            }
+
+            Destroy(blockVisual);
+        }
+
 private void OnDestroy()
         {
             if (rotationSystem != null)
@@ -2951,6 +2996,7 @@ private void OnDestroy()
                 blockRemovalSystem.OnBlocksRemoved -= OnBlocksRemoved;
                 blockRemovalSystem.OnCascadeComplete -= OnCascadeComplete;
                 blockRemovalSystem.OnBigBang -= OnBigBang;
+                blockRemovalSystem.OnGemsRemovedDetailed -= HandleStageGemsRemoved;
             }
 
             if (drillSystem != null)

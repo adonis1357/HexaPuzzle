@@ -1299,6 +1299,9 @@ private IEnumerator ProcessFalling()
                     Vector2 targetPos = slotPositions.ContainsKey(targetBlock) ? slotPositions[targetBlock] : Vector2.zero;
 
                     GemType randomGem = GemTypeHelper.GetRandom();
+                    // 회색 블록 생성 방지
+                    while (randomGem == GemType.Gray)
+                        randomGem = GemTypeHelper.GetRandom();
                     BlockData newData = new BlockData(randomGem);
 
                     float startY = topY + spawnOffset + (i * 80f);
@@ -1486,6 +1489,9 @@ private void FillEmptyBlocksWithAnimation()
                     RestoreBlockToSlot(block);
 
                     GemType randomGem = GemTypeHelper.GetRandom();
+                    // 회색 블록 생성 방지
+                    while (randomGem == GemType.Gray)
+                        randomGem = GemTypeHelper.GetRandom();
                     block.SetBlockData(new BlockData(randomGem));
                     block.transform.localScale = Vector3.one;
 
@@ -1674,6 +1680,9 @@ public void TriggerBigBang()
                     Vector2 targetPos = slotPositions[block];
 
                     GemType randomGem = GemTypeHelper.GetRandom();
+                    // 회색 블록 생성 방지
+                    while (randomGem == GemType.Gray)
+                        randomGem = GemTypeHelper.GetRandom();
                     block.SetBlockData(new BlockData(randomGem));
                     block.transform.localScale = Vector3.one;
 
