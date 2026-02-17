@@ -189,6 +189,9 @@ namespace JewelsHexaPuzzle.Managers
             proceduralSpecialImpact = ProceduralAudio.CreateImpact(0.1f);
             proceduralEnemySpawn = ProceduralAudio.CreateEnemySpawnSound(0.25f);
 
+            // 색상도둑 제거: 슬라임 분해음 (저음 노이즈 버스트 0.15s)
+            proceduralChromophageRemoval = ProceduralAudio.CreateNoiseBurst(0.15f);
+
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
             proceduralCascadeNotes = new AudioClip[cascadeFreqs.Length];

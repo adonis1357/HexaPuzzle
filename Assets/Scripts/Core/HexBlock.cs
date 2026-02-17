@@ -202,7 +202,7 @@ namespace JewelsHexaPuzzle.Core
                     float alpha = Mathf.Lerp(0.3f, 0.5f, elapsed / 0.25f);
                     if (overlayImage != null)
                     {
-                        overlayImage.color = new Color(0.6f, 0.6f, 0.6f, alpha);
+                        overlayImage.color = new Color(0.5f, 0.55f, 0.5f, alpha); // 슬라임 색상과 일치
                     }
                     yield return null;
                 }
@@ -215,7 +215,7 @@ namespace JewelsHexaPuzzle.Core
                     float alpha = Mathf.Lerp(0.5f, 0.3f, elapsed / 0.25f);
                     if (overlayImage != null)
                     {
-                        overlayImage.color = new Color(0.6f, 0.6f, 0.6f, alpha);
+                        overlayImage.color = new Color(0.5f, 0.55f, 0.5f, alpha); // 슬라임 색상과 일치
                     }
                     yield return null;
                 }
