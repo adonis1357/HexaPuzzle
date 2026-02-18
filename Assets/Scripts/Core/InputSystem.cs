@@ -114,9 +114,12 @@ private void Update()
             {
                 if (!isEnabled)
                 {
-                    Debug.LogWarning("[InputSystem] BLOCKED: isEnabled=false");
-                    if (GameManager.Instance != null)
+                    // StageClear 상태는 정상적인 상태이므로 경고하지 않음
+                    if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.StageClear)
+                    {
+                        Debug.LogWarning("[InputSystem] BLOCKED: isEnabled=false");
                         Debug.LogWarning($"[InputSystem] Current GameState: {GameManager.Instance.CurrentState}");
+                    }
                     lastBlockedLogTime = Time.time;
                 }
                 else if (hexGrid == null || hexGrid.BlockCount == 0)
