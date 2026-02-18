@@ -191,11 +191,12 @@ namespace JewelsHexaPuzzle.Data
 
         public BlockData(GemType type)
         {
-            // 회색 블록 방지: 혹시 모를 경우에 대비한 최후의 안전장치
+            // 회색 블록 방지: 무작위 기본 색상으로 변환
             if (type == GemType.Gray)
             {
-                Debug.LogWarning("[BlockData] 회색 블록 생성 감지! Red로 자동 변환");
-                gemType = GemType.Red;
+                Debug.LogWarning("[BlockData] 회색 블록 생성 감지! 무작위 색상으로 변환");
+                // Red(1)~Purple(5) 중 무작위 선택
+                gemType = (GemType)UnityEngine.Random.Range(1, 6);
             }
             else
             {

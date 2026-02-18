@@ -756,8 +756,8 @@ public void SetBlockData(BlockData data)
             // 최종 안전장치: 혹시 모를 회색 블록 검증
             if (blockData.gemType == GemType.Gray)
             {
-                Debug.LogError($"[HexBlock] 🚨 회색 블록이 {Coord}에 설정됨! Red로 강제 변환");
-                blockData.gemType = GemType.Red;
+                Debug.LogError($"[HexBlock] 🚨 회색 블록이 {Coord}에 설정됨! 무작위 색상으로 변환");
+                blockData.gemType = (GemType)UnityEngine.Random.Range(1, 6);
             }
 
             isMatched = false;
