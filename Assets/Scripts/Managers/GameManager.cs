@@ -1393,15 +1393,20 @@ private void InitializeSystems()
                 }
             }
 
-            // 점수 리셋
+            // 점수 및 골드 리셋 (게임 시작 시마다)
             if (scoreManager != null)
                 scoreManager.ResetScore();
+            currentGold = 0;
 
             UpdateUI();
 
             // 직접 참조 강제 동기화
             if (hudScoreText != null) hudScoreText.text = "0";
             if (hudTurnText != null) hudTurnText.text = currentTurns.ToString();
+
+            // 골드 UI 동기화
+            if (uiManager != null)
+                uiManager.UpdateGoldDisplay(currentGold);
 
             // Stage 모드 미션 시스템 이벤트 구독 (currentGameMode가 이미 설정된 후)
             Debug.Log($"[GameManager] StartGameCoroutine: currentGameMode={currentGameMode}");
@@ -2193,6 +2198,7 @@ private void OnBigBang()
             {
                 uiManager.UpdateTurnDisplay(currentTurns);
                 uiManager.UpdateStageDisplay(currentStage);
+                uiManager.UpdateGoldDisplay(currentGold);
 
                 if (scoreManager != null)
                 {
