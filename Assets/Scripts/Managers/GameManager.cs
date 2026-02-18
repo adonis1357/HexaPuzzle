@@ -2309,6 +2309,26 @@ private void OnBigBang()
 
             yield return new WaitForSeconds(0.3f);
 
+            // 필드의 모든 특수 블록 수집 및 동시 발동
+            yield return StartCoroutine(ActivateAllSpecialBlocks());
+
+            // OnCascadeComplete 이벤트 대기 (낙하 및 매칭 완료)
+            bool cascadeCompleted = false;
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnCascadeComplete += () => cascadeCompleted = true;
+                // 이벤트 발동 대기 (최대 10초 타임아웃)
+                float waitTime = 0f;
+                while (!cascadeCompleted && waitTime < 10f)
+                {
+                    waitTime += Time.deltaTime;
+                    yield return null;
+                }
+                blockRemovalSystem.OnCascadeComplete -= () => cascadeCompleted = true;
+            }
+
+            yield return new WaitForSeconds(1f);
+
             // 골드 계산: 1턴당 50골드
             int goldReward = remainingTurns * 50;
 
@@ -2329,8 +2349,6 @@ private void OnBigBang()
             // 골드 저장
             AddGold(goldReward);
 
-            yield return new WaitForSeconds(0.8f);
-
             // 클리어 팝업 표시 (골드 정보 포함)
             if (uiManager != null)
             {
@@ -2343,6 +2361,143 @@ private void OnBigBang()
                 {
                     uiManager.ShowStageClearPopup(goldReward);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 필드의 모든 특수 블록을 동시에 발동
+        /// </summary>
+        private IEnumerator ActivateAllSpecialBlocks()
+        {
+            if (hexGrid == null) yield break;
+
+            List<HexBlock> drillBlocks = new List<HexBlock>();
+            List<HexBlock> bombBlocks = new List<HexBlock>();
+            List<HexBlock> donutBlocks = new List<HexBlock>();
+            List<HexBlock> xBlocks = new List<HexBlock>();
+            List<HexBlock> laserBlocks = new List<HexBlock>();
+
+            // 필드의 모든 특수 블록 수집
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+
+                if (block.Data.IsDrill())
+                    drillBlocks.Add(block);
+                else if (block.Data.IsBomb())
+                    bombBlocks.Add(block);
+                else if (block.Data.IsDonut())
+                    donutBlocks.Add(block);
+                else if (block.Data.IsXBlock())
+                    xBlocks.Add(block);
+                else if (block.Data.IsLaser())
+                    laserBlocks.Add(block);
+            }
+
+            // 모든 특수 블록을 동시에 발동 (병렬 코루틴)
+            List<Coroutine> activationCoroutines = new List<Coroutine>();
+
+            // 드릴 발동
+            foreach (var block in drillBlocks)
+            {
+                if (drillSystem != null)
+                    activationCoroutines.Add(StartCoroutine(ActivateDrillBlock(block)));
+            }
+
+            // 폭탄 발동
+            foreach (var block in bombBlocks)
+            {
+                if (bombSystem != null)
+                    activationCoroutines.Add(StartCoroutine(ActivateBombBlock(block)));
+            }
+
+            // 무지개 발동
+            foreach (var block in donutBlocks)
+            {
+                if (donutSystem != null)
+                    activationCoroutines.Add(StartCoroutine(ActivateDonutBlock(block)));
+            }
+
+            // X블록 발동
+            foreach (var block in xBlocks)
+            {
+                if (xBlockSystem != null)
+                    activationCoroutines.Add(StartCoroutine(ActivateXBlock(block)));
+            }
+
+            // 레이저 발동
+            foreach (var block in laserBlocks)
+            {
+                if (laserSystem != null)
+                    activationCoroutines.Add(StartCoroutine(ActivateLaserBlock(block)));
+            }
+
+            // 모든 발동 완료 대기
+            foreach (var coroutine in activationCoroutines)
+            {
+                yield return coroutine;
+            }
+
+            Debug.Log($"[GameManager] 특수 블록 발동 완료: 드릴({drillBlocks.Count}), 폭탄({bombBlocks.Count}), 무지개({donutBlocks.Count}), X({xBlocks.Count}), 레이저({laserBlocks.Count})");
+        }
+
+        /// <summary>
+        /// 드릴 블록 발동
+        /// </summary>
+        private IEnumerator ActivateDrillBlock(HexBlock block)
+        {
+            if (drillSystem != null)
+            {
+                drillSystem.ActivateDrill(block);
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// 폭탄 블록 발동
+        /// </summary>
+        private IEnumerator ActivateBombBlock(HexBlock block)
+        {
+            if (bombSystem != null)
+            {
+                bombSystem.ActivateBomb(block);
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// 무지개(도넛) 블록 발동
+        /// </summary>
+        private IEnumerator ActivateDonutBlock(HexBlock block)
+        {
+            if (donutSystem != null)
+            {
+                donutSystem.ActivateDonut(block);
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// X블록 발동
+        /// </summary>
+        private IEnumerator ActivateXBlock(HexBlock block)
+        {
+            if (xBlockSystem != null)
+            {
+                xBlockSystem.ActivateXBlock(block);
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// 레이저 블록 발동
+        /// </summary>
+        private IEnumerator ActivateLaserBlock(HexBlock block)
+        {
+            if (laserSystem != null)
+            {
+                laserSystem.ActivateLaser(block);
+                yield return null;
             }
         }
 
