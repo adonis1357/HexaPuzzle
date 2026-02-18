@@ -2300,6 +2300,11 @@ private void OnBigBang()
 
                 // 스케일 펀치 애니메이션 (0 -> 1.3 -> 1.0, 0.2초)
                 StartCoroutine(ScalePunchAnimation(block.transform, 0.2f, 1.3f));
+
+                // 무브수 감소 및 UI 업데이트
+                currentTurns--;
+                if (uiManager != null)
+                    uiManager.UpdateTurnDisplay(currentTurns);
             }
 
             yield return new WaitForSeconds(0.3f);

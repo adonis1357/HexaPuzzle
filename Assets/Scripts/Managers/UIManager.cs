@@ -596,6 +596,7 @@ namespace JewelsHexaPuzzle.Managers
         public void ShowStageClearPopup(int goldReward)
         {
             ShowPopup(stageClearPopup);
+            StartCoroutine(AnimateSimpleStageClearWithGold(goldReward));
         }
 
         /// <summary>
@@ -761,6 +762,30 @@ namespace JewelsHexaPuzzle.Managers
             }
 
             rt.localScale = Vector3.one;
+        }
+
+        /// <summary>
+        /// 간단한 스테이지 클리어 애니메이션 (골드 정보만)
+        /// </summary>
+        private IEnumerator AnimateSimpleStageClearWithGold(int goldReward)
+        {
+            // 팝업 등장 대기
+            yield return new WaitForSeconds(popupAnimationDuration + 0.2f);
+
+            // 타이틀 표시
+            if (clearTitleText != null)
+            {
+                int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
+                clearTitleText.text = $"STAGE {stage} CLEAR!";
+                clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
+            }
+
+            // 골드 획득 표시
+            if (goldReward > 0)
+            {
+                yield return new WaitForSeconds(0.3f);
+                DisplayGoldReward(goldReward);
+            }
         }
 
         /// <summary>
