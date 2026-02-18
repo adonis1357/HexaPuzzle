@@ -44,6 +44,7 @@ namespace JewelsHexaPuzzle.Managers
         private GameState currentState = GameState.Loading;
         private int currentTurns;
         private int currentStage = 1;
+        private int currentGold = 0;
 
         // 무한 모드
         private GameMode currentGameMode = GameMode.Infinite;
@@ -69,12 +70,14 @@ namespace JewelsHexaPuzzle.Managers
         public int CurrentStage => currentStage;
         public int InitialTurns => initialTurns;
         public bool IsPaused => isPaused;
+        public int CurrentGold => currentGold;
 
         // 이벤트
         public event System.Action<GameState> OnGameStateChanged;
         public event System.Action<int> OnTurnChanged;
         public event System.Action OnGameOver;
         public event System.Action OnStageClear;
+        public event System.Action<int> OnGoldChanged;
 
         private void Awake()
         {
@@ -92,6 +95,7 @@ namespace JewelsHexaPuzzle.Managers
 
             AutoFindReferences();
             InitializeSystems();
+            LoadGold();
         }
 
         private void Start()
@@ -232,11 +236,51 @@ namespace JewelsHexaPuzzle.Managers
             scoreLabelText.raycastTarget = false;
             scoreLabelText.text = "SCORE";
 
+            // === 골드 (우측 상단, 이동횟수 아래) ===
+            GameObject goldObj = new GameObject("HUD_GoldText");
+            goldObj.transform.SetParent(canvas.transform, false);
+            RectTransform goldRt = goldObj.AddComponent<RectTransform>();
+            goldRt.anchorMin = new Vector2(1f, 1f);
+            goldRt.anchorMax = new Vector2(1f, 1f);
+            goldRt.pivot = new Vector2(1f, 1f);
+            goldRt.anchoredPosition = new Vector2(-30f, -130f);
+            goldRt.sizeDelta = new Vector2(160f, 50f);
+            Text goldLabel = goldObj.AddComponent<Text>();
+            goldLabel.font = font;
+            goldLabel.fontSize = 32;
+            goldLabel.alignment = TextAnchor.MiddleRight;
+            goldLabel.color = new Color(1f, 0.84f, 0f); // 노란색
+            goldLabel.raycastTarget = false;
+            goldLabel.resizeTextForBestFit = true;
+            goldLabel.resizeTextMinSize = 14;
+            goldLabel.resizeTextMaxSize = 32;
+            goldLabel.verticalOverflow = VerticalWrapMode.Overflow;
+            goldLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            goldLabel.text = currentGold.ToString();
+
+            // 골드 라벨
+            GameObject goldLabelObj = new GameObject("HUD_GoldLabel");
+            goldLabelObj.transform.SetParent(canvas.transform, false);
+            RectTransform goldLabelRt = goldLabelObj.AddComponent<RectTransform>();
+            goldLabelRt.anchorMin = new Vector2(1f, 1f);
+            goldLabelRt.anchorMax = new Vector2(1f, 1f);
+            goldLabelRt.pivot = new Vector2(1f, 1f);
+            goldLabelRt.anchoredPosition = new Vector2(-30f, -175f);
+            goldLabelRt.sizeDelta = new Vector2(160f, 24f);
+            Text goldLabelText = goldLabelObj.AddComponent<Text>();
+            goldLabelText.font = font;
+            goldLabelText.fontSize = 16;
+            goldLabelText.alignment = TextAnchor.MiddleRight;
+            goldLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
+            goldLabelText.raycastTarget = false;
+            goldLabelText.text = "GOLD";
+
             // UIManager에 연결
             if (uiManager != null)
             {
                 uiManager.SetTurnText(turnLabel);
                 uiManager.SetScoreText(scoreLabel);
+                uiManager.SetGoldText(goldLabel);
             }
 
             // HUD 요소 추적 (로비에서 숨기기 용)
@@ -244,8 +288,10 @@ namespace JewelsHexaPuzzle.Managers
             hudElements.Add(turnLabelObj);
             hudElements.Add(scoreObj);
             hudElements.Add(scoreLabelObj);
+            hudElements.Add(goldObj);
+            hudElements.Add(goldLabelObj);
 
-            Debug.Log("[GameManager] HUD 요소 생성 완료 (이동횟수 + 누적 점수)");
+            Debug.Log("[GameManager] HUD 요소 생성 완료 (이동횟수 + 누적 점수 + 골드)");
         }
 
         /// <summary>
@@ -2179,6 +2225,17 @@ private void OnBigBang()
             SetGameState(GameState.StageClear);
             OnStageClear?.Invoke();
 
+            if (inputSystem != null)
+                inputSystem.SetEnabled(false);
+
+            StartCoroutine(StageClearSequence());
+        }
+
+        /// <summary>
+        /// 스테이지 클리어 시퀀스: 드릴 생성 -> 골드 보상 -> 클리어 팝업
+        /// </summary>
+        private IEnumerator StageClearSequence()
+        {
             // BGM 정지 + 스테이지 클리어 사운드
             if (AudioManager.Instance != null)
             {
@@ -2186,20 +2243,175 @@ private void OnBigBang()
                 AudioManager.Instance.PlayStageClear();
             }
 
-            Debug.Log($"Stage {currentStage} Clear!");
+            Debug.Log($"Stage {currentStage} Clear! Starting drill generation sequence...");
 
+            // 남은 이동횟수 스냅샷
+            int remainingTurns = currentTurns;
+
+            // 기본 블록 (특수 타입 없음, GemType 1-5) 수집
+            List<HexBlock> basicBlocks = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block != null && block.Data != null &&
+                    block.Data.specialType == SpecialBlockType.None &&
+                    (int)block.Data.gemType >= 1 && (int)block.Data.gemType <= 5)
+                {
+                    basicBlocks.Add(block);
+                }
+            }
+
+            // 셔플
+            for (int i = basicBlocks.Count - 1; i > 0; i--)
+            {
+                int randomIndex = Random.Range(0, i + 1);
+                var temp = basicBlocks[i];
+                basicBlocks[i] = basicBlocks[randomIndex];
+                basicBlocks[randomIndex] = temp;
+            }
+
+            // 드릴 생성 루프
+            int drillsCreated = 0;
+            List<HexBlock> createdDrillBlocks = new List<HexBlock>();
+
+            for (int i = 0; i < remainingTurns && i < basicBlocks.Count; i++)
+            {
+                yield return new WaitForSeconds(0.15f);
+
+                HexBlock block = basicBlocks[i];
+                if (block == null) break;
+
+                // 랜덤 방향으로 드릴 생성
+                DrillDirection[] directions = { DrillDirection.Vertical, DrillDirection.Slash, DrillDirection.BackSlash };
+                DrillDirection randomDir = directions[Random.Range(0, directions.Length)];
+
+                drillSystem.CreateDrillBlock(block, randomDir, block.Data.gemType);
+                createdDrillBlocks.Add(block);
+                drillsCreated++;
+
+                // 드릴 생성 사운드
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayDrillSound();
+
+                // 스케일 펀치 애니메이션 (0 -> 1.3 -> 1.0, 0.2초)
+                StartCoroutine(ScalePunchAnimation(block.transform, 0.2f, 1.3f));
+            }
+
+            yield return new WaitForSeconds(0.3f);
+
+            // 골드 계산: 1턴당 50골드
+            int goldReward = remainingTurns * 50;
+
+            // 골드 팝업 연출 (각 드릴 블록 위치에서)
+            for (int i = 0; i < createdDrillBlocks.Count; i++)
+            {
+                if (createdDrillBlocks[i] != null)
+                {
+                    Vector3 blockPos = createdDrillBlocks[i].transform.position;
+                    uiManager.ShowGoldPopup(50, blockPos);
+                }
+                yield return new WaitForSeconds(0.05f);
+            }
+
+            // HUD 골드 카운팅 애니메이션
+            yield return StartCoroutine(CountGoldAnimation(goldReward));
+
+            // 골드 저장
+            AddGold(goldReward);
+
+            yield return new WaitForSeconds(0.8f);
+
+            // 클리어 팝업 표시 (골드 정보 포함)
             if (uiManager != null)
             {
                 if (scoreManager != null)
                 {
                     var summary = scoreManager.CalculateStageClearBonus(currentTurns, initialTurns);
-                    uiManager.ShowStageClearPopup(summary);
+                    uiManager.ShowStageClearPopup(summary, goldReward);
                 }
                 else
                 {
-                    uiManager.ShowStageClearPopup();
+                    uiManager.ShowStageClearPopup(goldReward);
                 }
             }
+        }
+
+        /// <summary>
+        /// 스케일 펀치 애니메이션
+        /// </summary>
+        private IEnumerator ScalePunchAnimation(Transform target, float duration, float punchScale)
+        {
+            Vector3 originalScale = target.localScale;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / duration;
+
+                // 0 -> punchScale -> 1.0
+                float scale;
+                if (t < 0.5f)
+                {
+                    scale = Mathf.Lerp(1f, punchScale, t * 2f);
+                }
+                else
+                {
+                    scale = Mathf.Lerp(punchScale, 1f, (t - 0.5f) * 2f);
+                }
+
+                target.localScale = originalScale * scale;
+                yield return null;
+            }
+
+            target.localScale = originalScale;
+        }
+
+        /// <summary>
+        /// 골드 카운팅 애니메이션: 0 -> goldAmount
+        /// </summary>
+        private IEnumerator CountGoldAnimation(int goldAmount)
+        {
+            float duration = 0.6f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / duration;
+                int displayGold = Mathf.RoundToInt(t * goldAmount);
+                uiManager.UpdateGoldDisplay(displayGold);
+                yield return null;
+            }
+
+            uiManager.UpdateGoldDisplay(goldAmount);
+        }
+
+        /// <summary>
+        /// 골드 추가 및 저장
+        /// </summary>
+        public void AddGold(int amount)
+        {
+            currentGold += amount;
+            OnGoldChanged?.Invoke(currentGold);
+            uiManager.UpdateGoldDisplay(currentGold);
+            SaveGold();
+        }
+
+        /// <summary>
+        /// 골드 저장 (PlayerPrefs)
+        /// </summary>
+        private void SaveGold()
+        {
+            PlayerPrefs.SetInt("TotalGold", currentGold);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// 저장된 골드 로드 (PlayerPrefs)
+        /// </summary>
+        private void LoadGold()
+        {
+            currentGold = PlayerPrefs.GetInt("TotalGold", 0);
         }
 
         // ============================================================
