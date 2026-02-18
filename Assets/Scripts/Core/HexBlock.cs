@@ -752,6 +752,14 @@ public void SetBlockData(BlockData data)
             isPendingActivation = false;
 
             blockData = data != null ? data.Clone() : new BlockData();
+
+            // 최종 안전장치: 혹시 모를 회색 블록 검증
+            if (blockData.gemType == GemType.Gray)
+            {
+                Debug.LogError($"[HexBlock] 🚨 회색 블록이 {Coord}에 설정됨! Red로 강제 변환");
+                blockData.gemType = GemType.Red;
+            }
+
             isMatched = false;
             UpdateVisuals();
 

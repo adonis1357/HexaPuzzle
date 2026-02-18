@@ -219,24 +219,23 @@ namespace JewelsHexaPuzzle.Data
 
         public BlockData Clone()
         {
-            return new BlockData
-            {
-                gemType = this.gemType,
-                specialType = this.specialType,
-                timeBombCount = this.timeBombCount,
-                vinylLayer = this.vinylLayer,
-                hasChain = this.hasChain,
-                hasThorn = this.hasThorn,
-                drillDirection = this.drillDirection,
-                tier = this.tier,
-                pendingActivation = this.pendingActivation,
-                enemyType = this.enemyType,
-                enemyShieldCount = this.enemyShieldCount,
-                enemySpreadTimer = this.enemySpreadTimer,
-                enemyTwinId = this.enemyTwinId,
-                chaosEffectMask = this.chaosEffectMask,
-                chaosHitCount = this.chaosHitCount
-            };
+            // 생성자를 통해 회색 블록 필터링 적용
+            BlockData cloned = new BlockData(this.gemType);
+            cloned.specialType = this.specialType;
+            cloned.timeBombCount = this.timeBombCount;
+            cloned.vinylLayer = this.vinylLayer;
+            cloned.hasChain = this.hasChain;
+            cloned.hasThorn = this.hasThorn;
+            cloned.drillDirection = this.drillDirection;
+            cloned.tier = this.tier;
+            cloned.pendingActivation = this.pendingActivation;
+            cloned.enemyType = this.enemyType;
+            cloned.enemyShieldCount = this.enemyShieldCount;
+            cloned.enemySpreadTimer = this.enemySpreadTimer;
+            cloned.enemyTwinId = this.enemyTwinId;
+            cloned.chaosEffectMask = this.chaosEffectMask;
+            cloned.chaosHitCount = this.chaosHitCount;
+            return cloned;
         }
 
         public bool HasEnemy()
