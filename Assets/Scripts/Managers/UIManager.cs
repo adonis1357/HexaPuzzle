@@ -797,9 +797,12 @@ namespace JewelsHexaPuzzle.Managers
             Canvas canvas = FindObjectOfType<Canvas>();
             if (canvas == null) return;
 
-            // 임시 골드 표시 텍스트 생성 (stageClearPopup 내부에 있다고 가정)
+            // 임시 골드 표시 텍스트 생성
             GameObject goldDisplayObj = new GameObject("GoldRewardDisplay");
-            goldDisplayObj.transform.SetParent(stageClearPopup.transform, false);
+
+            // stageClearPopup이 있으면 그 안에, 없으면 Canvas에 직접 생성
+            Transform parent = (stageClearPopup != null) ? stageClearPopup.transform : canvas.transform;
+            goldDisplayObj.transform.SetParent(parent, false);
 
             RectTransform goldDisplayRt = goldDisplayObj.AddComponent<RectTransform>();
             goldDisplayRt.anchoredPosition = new Vector2(0f, -150f); // 타이틀 아래
