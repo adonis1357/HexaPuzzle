@@ -1,3 +1,33 @@
+// =====================================================================================
+// BlockRemovalSystem.cs — 블록 제거 시스템 (게임의 "엔진" 역할)
+// =====================================================================================
+//
+// [한줄 요약]
+// 매칭된 블록을 삭제하고, 빈 자리를 중력처럼 떨어뜨려 채우고, 새 블록을 생성하는
+// "연쇄 반응(캐스케이드)"의 핵심 시스템입니다.
+//
+// [비유로 이해하기]
+// 이 시스템은 마치 "자판기"와 같습니다:
+// 1. 음료(블록)를 꺼내면(매칭 삭제)
+// 2. 위의 음료들이 아래로 떨어지고(낙하 물리)
+// 3. 맨 위에 새 음료가 채워지며(리필)
+// 4. 우연히 또 같은 색이 맞으면 다시 제거됩니다(연쇄 반응)
+// 이 과정을 더 이상 매칭이 없을 때까지 반복합니다.
+//
+// [처리 흐름]
+// 매칭 감지 -> 하이라이트 연출 -> 특수 블록 생성(합체 연출) -> 일반 블록 삭제
+// -> 기존 특수 블록 발동 -> 낙하 물리 -> 빈 칸 리필 -> 새 매칭 확인 -> (반복, 최대 20회)
+//
+// [주요 책임]
+// - 매칭된 블록의 삭제 애니메이션 (축소, 플래시 등)
+// - 특수 블록 합체 애니메이션 (번개 + 소용돌이로 모이는 연출)
+// - 중력 기반 낙하 물리 (가속도, 바운스 포함)
+// - 새 블록 생성 및 위에서 떨어지는 연출
+// - 연쇄 반응(캐스케이드) 루프 관리
+// - 특수 블록(드릴, 폭탄, 레이저 등) 발동 조율
+// - 빅뱅(전체 리셋), 게임 시작 낙하 연출
+// - 미션 시스템에 제거/생성 이벤트 알림
+// =====================================================================================
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
@@ -7,55 +37,98 @@ using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
+    /// <summary>
+    /// 블록 제거 시스템: 매칭된 블록을 삭제하고, 빈 자리를 낙하+리필로 채우며,
+    /// 연쇄 반응(캐스케이드)을 관리하는 게임의 핵심 엔진.
+    /// </summary>
     public class BlockRemovalSystem : MonoBehaviour
     {
+        // ============================================================
+        // 참조 (Inspector에서 연결하는 다른 시스템들)
+        // - 이 시스템이 일을 처리할 때 필요한 "도구"들입니다.
+        // ============================================================
         [Header("References")]
-        [SerializeField] private HexGrid hexGrid;
-        [SerializeField] private MatchingSystem matchingSystem;
-        [SerializeField] private DrillBlockSystem drillSystem;
-        [SerializeField] private BombBlockSystem bombSystem;
-        [SerializeField] private DonutBlockSystem donutSystem;
-        [SerializeField] private XBlockSystem xBlockSystem;
-        [SerializeField] private LaserBlockSystem laserSystem;
+        [SerializeField] private HexGrid hexGrid;                    // 육각형 격자판 (블록들이 배치되는 판)
+        [SerializeField] private MatchingSystem matchingSystem;      // 매칭 감지기 (같은 색 블록 찾기)
+        [SerializeField] private DrillBlockSystem drillSystem;       // 드릴 특수 블록 시스템 (한 줄 파괴)
+        [SerializeField] private BombBlockSystem bombSystem;         // 폭탄 특수 블록 시스템 (주변 폭발)
+        [SerializeField] private DonutBlockSystem donutSystem;       // 무지개(도넛) 특수 블록 시스템 (같은 색 전체 파괴)
+        [SerializeField] private XBlockSystem xBlockSystem;          // X블록 특수 블록 시스템 (링 색상 파괴)
+        [SerializeField] private LaserBlockSystem laserSystem;       // 레이저 특수 블록 시스템 (3축 빔 파괴)
 
+        // ============================================================
+        // 애니메이션 설정값 (시간 관련)
+        // - 블록이 사라지거나 떨어지는 속도를 조절하는 "타이밍 설정"
+        // ============================================================
         [Header("Animation Settings")]
-        [SerializeField] private float matchHighlightDuration = 0.15f;
-        [SerializeField] private float removeAnimationDuration = 0.14f;
-        [SerializeField] private float cascadeDelay = 0.1f;
+        [SerializeField] private float matchHighlightDuration = 0.15f;  // 매칭 블록이 반짝이는 시간 (초)
+        [SerializeField] private float removeAnimationDuration = 0.14f; // 블록 삭제 애니메이션 시간 (초)
+        [SerializeField] private float cascadeDelay = 0.1f;             // 연쇄 반응 사이의 대기 시간 (초)
 
+        // ============================================================
+        // 낙하 물리 설정 (블록이 떨어질 때의 물리 법칙)
+        // - 실제 물건이 떨어지는 것처럼 자연스러운 움직임을 만드는 설정
+        // ============================================================
         [Header("Fall Physics")]
-        [SerializeField] private float gravity = 2500f;
-        [SerializeField] private float maxFallSpeed = 1500f;
-        [SerializeField] private float bounceRatio = 0.3f;
-        [SerializeField] private float bounceThreshold = 50f;
+        [SerializeField] private float gravity = 2500f;        // 중력 가속도 (클수록 빨리 떨어짐)
+        [SerializeField] private float maxFallSpeed = 1500f;   // 최대 낙하 속도 (너무 빨라지지 않게 제한)
+        [SerializeField] private float bounceRatio = 0.3f;     // 바운스 비율 (착지 시 튕기는 정도, 0.3 = 30%)
+        [SerializeField] private float bounceThreshold = 50f;  // 바운스 최소 속도 (이 이하면 안 튕김)
 
-        private bool isProcessing = false;
-        private bool isFalling = false;  // 낙하 재진입 방지
+        // ============================================================
+        // 내부 상태 플래그
+        // ============================================================
+        private bool isProcessing = false;   // 현재 블록 제거/연쇄 처리 중인지 여부 (중복 실행 방지)
+        private bool isFalling = false;      // 현재 낙하 애니메이션 진행 중인지 여부 (재진입 방지)
 
-        // Cascade depth tracking (Phase 6B)
+        // 연쇄 깊이 추적: 현재 몇 번째 연쇄인지 기록 (콤보 계산용)
+        // 예: 0=첫 매칭, 1=연쇄 1회, 2=연쇄 2회...
         private int currentCascadeDepth = 0;
+        /// <summary>현재 연쇄(캐스케이드) 깊이를 외부에서 읽을 수 있는 속성</summary>
         public int CurrentCascadeDepth => currentCascadeDepth;
 
-        // �� ����� ���� ���� ��ġ (���� ���� �� �ѹ� ĳ��)
+        // 각 블록의 "원래 자리(슬롯 위치)"를 캐싱 (매번 계산하지 않고 한 번 저장해두고 재사용)
+        // - 블록이 낙하 후 정확한 위치로 돌아가야 하므로 원래 좌표를 기억해두는 것
         private Dictionary<HexBlock, Vector2> slotPositions = new Dictionary<HexBlock, Vector2>();
+        // 같은 X좌표(열)에 있는 블록들을 묶어서 저장 (낙하 처리 시 열 단위로 처리하기 위함)
         private Dictionary<int, List<HexBlock>> columnCache = null;
+        // 슬롯 캐시가 이미 생성되었는지 여부
         private bool slotsCached = false;
 
-        public event System.Action<int, int, Vector3> OnBlocksRemoved; // (blockCount, cascadeDepth, avgPosition)
+        // ============================================================
+        // 이벤트 (다른 시스템에 "이런 일이 일어났다"고 알리는 신호)
+        // - 라디오 방송처럼, 관심 있는 시스템이 이 신호를 받아서 반응합니다
+        // ============================================================
+
+        /// <summary>블록이 제거되었을 때 발생 (제거 개수, 연쇄 깊이, 평균 위치) - 점수 팝업용</summary>
+        public event System.Action<int, int, Vector3> OnBlocksRemoved;
+        /// <summary>모든 연쇄 반응이 끝났을 때 발생 - GameManager가 다음 턴을 진행하는 신호</summary>
         public event System.Action OnCascadeComplete;
+        /// <summary>빅뱅(전체 블록 리셋)이 시작될 때 발생</summary>
         public event System.Action OnBigBang;
 
-        // 미션 시스템용 상세 이벤트
+        /// <summary>미션 시스템용: 특정 색상의 보석이 몇 개 제거되었는지 상세 알림</summary>
         public event System.Action<int, GemType, int> OnGemsRemovedDetailed; // (count, gemType, cascadeDepth)
-        public event System.Action<SpecialBlockType> OnSpecialBlockCreated;  // 특수 블록 생성 알림
-        public event System.Action<HexBlock, EnemyType> OnEnemyRemoved; // (block, enemyType) - 적군 제거 알림
-        public event System.Action OnSpecialBlockUsed;                       // 특수 블록 발동 알림
-        public event System.Action<Vector3, GemType> OnGemCollectedVisual;   // 보석 날아가기 연출용 (worldPos, gemType)
+        /// <summary>미션 시스템용: 특수 블록이 새로 생성되었을 때 알림</summary>
+        public event System.Action<SpecialBlockType> OnSpecialBlockCreated;
 
+        // 블록 착지 시 "찌그러짐(squash)" 이펙트가 동시에 여러 번 실행되지 않도록 추적하는 딕셔너리
+        private Dictionary<HexBlock, Coroutine> squashEffectCoroutines = new Dictionary<HexBlock, Coroutine>();
+        /// <summary>적군 블록이 제거되었을 때 알림 (어떤 블록, 어떤 적 타입)</summary>
+        public event System.Action<HexBlock, EnemyType> OnEnemyRemoved;
+        /// <summary>특수 블록이 발동(사용)되었을 때 알림 - 미션 추적용</summary>
+        public event System.Action OnSpecialBlockUsed;
+        /// <summary>보석이 수집될 때 시각 연출용 이벤트 (화면 위치, 보석 색상)</summary>
+        public event System.Action<Vector3, GemType> OnGemCollectedVisual;
+
+        /// <summary>현재 블록 제거/연쇄 처리 중인지 외부에서 확인하는 속성</summary>
         public bool IsProcessing => isProcessing;
 
         /// <summary>
-        /// Stuck 상태 복구용 - 모든 플래그 리셋
+        /// [비상 리셋] 게임이 멈춘(Stuck) 상태일 때 호출하는 긴급 복구 메서드.
+        /// 비유하자면, 자판기가 고장났을 때 "리셋 버튼"을 누르는 것과 같습니다.
+        /// 진행 중인 모든 애니메이션을 중단하고, 상태 플래그를 초기화하고,
+        /// 남아있는 이펙트를 정리하고, 블록들을 원래 위치/크기로 복원합니다.
         /// </summary>
         public void ForceReset()
         {
@@ -64,6 +137,9 @@ namespace JewelsHexaPuzzle.Core
             isFalling = false;
             currentCascadeDepth = 0;
 
+            // SquashEffect 코루틴 추적 정리
+            squashEffectCoroutines.Clear();
+
             // 코루틴 중단으로 남은 이펙트 오브젝트 정리
             CleanupOrphanedEffects();
 
@@ -71,12 +147,14 @@ namespace JewelsHexaPuzzle.Core
             RestoreAllBlockStates();
 
             slotsCached = false;
-            Debug.LogWarning("[BlockRemovalSystem] ForceReset called");
+            Debug.Log("[BlockRemovalSystem] ForceReset called");
         }
 
         /// <summary>
-        /// 코루틴 중단으로 남은 임시 이펙트 오브젝트 정리
-        /// (Spark, LightningArc → this.transform 자식 / ElectricArc, SpecialImpact → block.transform 자식)
+        /// [이펙트 청소부] 강제 중단 등으로 화면에 남아버린 임시 이펙트(불꽃, 번개선 등)를 찾아서 제거.
+        /// 비유하자면, 파티가 끝난 뒤 바닥에 떨어진 색종이를 쓸어담는 것과 같습니다.
+        /// - this.transform의 자식: Spark(불꽃), LightningArc(번개선), DestroyFlash(파괴 플래시) 등
+        /// - 각 블록 transform의 자식: ElectricArc(전기 아크), SpecialImpact(특수 충격파) 등
         /// </summary>
         private void CleanupOrphanedEffects()
         {
@@ -115,7 +193,9 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 모든 블록의 시각 상태 복원 (낙하/삭제 애니메이션 중단 시)
+        /// [블록 원상 복구] 모든 블록의 시각 상태(크기, 회전, 위치)를 원래대로 되돌림.
+        /// 낙하나 삭제 애니메이션 도중 강제 중단되면 블록이 이상한 크기/위치에 남을 수 있는데,
+        /// 이 메서드가 모든 블록을 "정상 상태"로 돌려놓습니다.
         /// </summary>
         private void RestoreAllBlockStates()
         {
@@ -131,7 +211,9 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 슬롯 캐시 무효화 (스테이지 전환 시 호출)
+        /// [캐시 비우기] 슬롯(블록 자리) 위치 캐시를 무효화합니다.
+        /// 스테이지가 바뀌면 그리드 구조가 달라지므로, 이전에 저장해둔 위치 정보를 버리고
+        /// 다음에 다시 계산하도록 합니다. 스테이지 전환 시 반드시 호출해야 합니다.
         /// </summary>
         public void InvalidateSlotCache()
         {
@@ -141,8 +223,14 @@ namespace JewelsHexaPuzzle.Core
         }
 
 
+        /// <summary>
+        /// [초기화] Unity가 게임 시작 시 자동 호출하는 메서드.
+        /// Inspector에서 연결되지 않은 시스템 참조를 자동으로 찾아서 연결합니다.
+        /// 마치 "부품이 빠졌으면 창고에서 찾아서 끼워넣는" 과정입니다.
+        /// </summary>
         private void Start()
         {
+            // hexGrid가 Inspector에서 연결되지 않았으면 씬에서 자동 탐색
             if (hexGrid == null)
             {
                 hexGrid = FindObjectOfType<HexGrid>();
@@ -168,8 +256,10 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// ���� ��ġ�� �� ĳ�ø� �ѹ��� ���� (�Ǵ� ����)
-        /// ����� ���� ��ġ�� �����ϹǷ� ���� �ִϸ��̼� �߿��� ���� ��ġ�� �� �� ����
+        /// [슬롯 위치 캐시 생성] 모든 블록의 "원래 자리(슬롯)" 좌표를 한 번만 계산해서 저장합니다.
+        /// 비유하자면, 극장 좌석표를 한 번 만들어두면 누가 자리를 비워도 어디로 돌아가야 하는지 알 수 있는 것처럼,
+        /// 블록이 낙하/삭제 애니메이션 중에도 원래 자리를 정확히 알 수 있게 합니다.
+        /// 또한 블록들을 X좌표(열) 기준으로 묶어서 열 단위 낙하 처리를 가능하게 합니다.
         /// </summary>
         private void EnsureSlotsCached()
         {
@@ -190,7 +280,8 @@ namespace JewelsHexaPuzzle.Core
                 columnCache[colKey].Add(block);
             }
 
-            // Y��ǥ �������� ���� (�Ʒ�����)
+            // Y좌표 오름차순으로 정렬 (아래쪽부터 = 작은 Y값부터)
+            // 이렇게 하면 column[0]이 가장 아래 블록, column[끝]이 가장 위 블록이 됩니다
             foreach (var key in columnCache.Keys.ToList())
             {
                 columnCache[key] = columnCache[key]
@@ -202,6 +293,10 @@ namespace JewelsHexaPuzzle.Core
             Debug.Log($"[BlockRemovalSystem] Cached {slotPositions.Count} slot positions, {columnCache.Count} columns");
         }
 
+        /// <summary>
+        /// [블록 위치 설정] 블록을 지정한 2D 좌표로 이동시킵니다.
+        /// UI(RectTransform)를 사용하는 경우와 일반 Transform을 사용하는 경우 모두 처리합니다.
+        /// </summary>
         private void SetBlockAnchoredPosition(HexBlock block, Vector2 pos)
         {
             RectTransform rt = block.GetComponent<RectTransform>();
@@ -209,6 +304,10 @@ namespace JewelsHexaPuzzle.Core
             else block.transform.localPosition = new Vector3(pos.x, pos.y, 0);
         }
 
+        /// <summary>
+        /// [블록을 원래 자리로 복원] 블록을 캐시에 저장된 슬롯 위치로 되돌리고 크기를 정상(1배)으로 리셋합니다.
+        /// 애니메이션이 끝나거나 강제 중단된 후 블록을 정위치로 돌려놓을 때 사용합니다.
+        /// </summary>
         private void RestoreBlockToSlot(HexBlock block)
         {
             if (block == null) return;
@@ -218,18 +317,25 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // ��Ī ó��
+        // 매칭 처리 (Matching Processing)
+        // - 매칭된 블록 그룹을 받아서 삭제 + 연쇄 반응을 시작하는 진입점
         // ============================================================
 
+        /// <summary>
+        /// [매칭 처리 시작] 매칭된 블록 그룹 리스트를 받아서 삭제 + 연쇄 처리를 시작합니다.
+        /// 이미 처리 중이거나 매칭이 없으면 무시합니다.
+        /// InputSystem -> RotationSystem -> MatchingSystem -> 여기로 전달됩니다.
+        /// </summary>
         public void ProcessMatches(List<MatchingSystem.MatchGroup> matches)
         {
             if (isProcessing || matches == null || matches.Count == 0) return;
             StartCoroutine(ProcessMatchesCoroutine(matches));
         }
 
-/// <summary>
-        /// 매칭 처리 + pending 특수블록 동시 발동 (연쇄 처리용)
-        /// 낙하 후 매칭이 발견되었을 때, pending 특수블록과 함께 동시 실행
+        /// <summary>
+        /// [매칭 + 대기 중 특수블록 동시 처리] 매칭된 블록과 "대기 중(pending)"인 특수 블록을 동시에 처리합니다.
+        /// 연쇄 반응 중 낙하 후 새 매칭이 발견되었을 때, 이전 턴에서 생성되어 아직 발동하지 않은
+        /// 특수 블록(pending)과 함께 동시에 처리하기 위한 메서드입니다.
         /// </summary>
         public void ProcessMatchesWithPendingSpecials(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
         {
@@ -240,15 +346,20 @@ namespace JewelsHexaPuzzle.Core
             StartCoroutine(ProcessMatchesWithPendingCoroutine(matches, pendingSpecials));
         }
 
-private IEnumerator ProcessMatchesWithPendingCoroutine(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
+        /// <summary>
+        /// [매칭+대기특수블록 동시 처리 코루틴] 매칭과 pending 특수블록을 함께 처리하고,
+        /// 이후 연쇄 반응 루프(CascadeWithPendingLoop)를 실행합니다.
+        /// 코루틴 = 한 프레임에 다 처리하지 않고, 여러 프레임에 걸쳐 애니메이션을 보여주는 방식.
+        /// </summary>
+        private IEnumerator ProcessMatchesWithPendingCoroutine(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
         {
             isProcessing = true;
-            EnsureSlotsCached();
+            EnsureSlotsCached();  // 블록 원래 위치 캐시 확인
 
-            // Safety: matches 유효성 검증
+            // 안전 검사: 매칭 데이터가 유효한지 확인
             if (matches == null || matches.Count == 0)
             {
-                // pending만 있는 경우도 처리
+                // 매칭은 없지만 대기 중 특수블록만 있는 경우도 처리
                 if (pendingSpecials != null && pendingSpecials.Count > 0)
                 {
                     yield return StartCoroutine(ProcessMatchesInline(null, pendingSpecials));
@@ -256,46 +367,53 @@ private IEnumerator ProcessMatchesWithPendingCoroutine(List<MatchingSystem.Match
                 else
                 {
                     isProcessing = false;
-                    yield break;
+                    yield break;  // 아무것도 없으면 즉시 종료
                 }
             }
             else
             {
-                // 인라인 처리 (재귀 없음)
+                // 매칭 + 특수블록을 인라인(한 메서드 안에서) 처리 (재귀 호출 없음)
                 yield return StartCoroutine(ProcessMatchesInline(matches, pendingSpecials));
             }
 
-            // 낙하 + 연쇄 처리 (완전 반복문)
+            // 낙하 + 연쇄 처리를 반복문으로 실행 (더 이상 매칭이 없을 때까지)
             yield return StartCoroutine(CascadeWithPendingLoop());
-            // Note: CascadeWithPendingLoop 내부에서 isProcessing = false 및 OnCascadeComplete 호출
+            // 참고: CascadeWithPendingLoop 내부에서 isProcessing = false 및 OnCascadeComplete 호출
         }
 
 
-private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matches)
+        /// <summary>
+        /// [매칭 처리 코루틴 (기본)] 매칭 그룹만 처리하는 코루틴입니다 (대기 특수블록 없음).
+        /// 처리 흐름: 매칭 인라인 처리 -> 연쇄 반응 루프(낙하 + 재매칭 반복)
+        /// </summary>
+        private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matches)
         {
             isProcessing = true;
             EnsureSlotsCached();
 
-            // Safety: matches 유효성 검증
+            // 안전 검사: 매칭 데이터가 비어있으면 즉시 종료
             if (matches == null || matches.Count == 0)
             {
                 isProcessing = false;
                 yield break;
             }
 
-            // 인라인 처리 (재귀 없음)
+            // 매칭을 인라인(한 메서드 안에서)으로 처리 (재귀 호출 없이)
             yield return StartCoroutine(ProcessMatchesInline(matches, null));
 
-            // 낙하 + 연쇄 처리 (완전 반복문)
+            // 낙하 + 연쇄 처리를 반복문으로 실행 (더 이상 매칭이 없을 때까지)
             yield return StartCoroutine(CascadeWithPendingLoop());
-            // Note: CascadeWithPendingLoop 내부에서 isProcessing = false 및 OnCascadeComplete 호출
+            // 참고: CascadeWithPendingLoop 내부에서 isProcessing = false 및 OnCascadeComplete 호출
         }
 
-/// <summary>
-        /// 특수 블록 발동 + 완료 대기 (통합, BlockRemovalSystem 내부용)
-        /// 새 특수 블록 추가 시 case만 추가
+        /// <summary>
+        /// [특수 블록 발동 + 완료 대기] 특수 블록(드릴, 폭탄, 레이저 등)을 발동시키고 완료될 때까지 기다립니다.
+        /// 비유하자면, "폭죽에 불을 붙이고 터질 때까지 기다리는" 역할입니다.
+        /// 각 특수 블록 타입별로 해당 시스템의 발동 메서드를 호출하고,
+        /// 최대 5초간 완료를 기다립니다 (타임아웃 시 강제 리셋).
+        /// 새 특수 블록 추가 시 switch문에 case만 추가하면 됩니다.
         /// </summary>
-private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
+        private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
         {
             // Safety: 블록이 이미 파괴되었거나 데이터가 없으면 즉시 종료
             if (block == null || block.Data == null || block.gameObject == null) yield break;
@@ -382,12 +500,18 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
         }
 
         /// <summary>
-        /// 폭탄 합체 애니메이션 - 5개 블록이 중앙으로 빨려들어가며 폭탄 생성
-        /// </summary>
-/// <summary>
-        /// 특수 블록 합체 애니메이션 (통합)
-        /// 모든 특수 블록이 동일한 합체 연출을 사용
-        /// 블록 수에 따라 자연스럽게 연출 강도 조절
+        /// [특수 블록 합체 애니메이션] 매칭된 블록들이 중앙으로 "빨려들어가며" 합쳐지는 연출.
+        /// 비유하자면, 여러 개의 작은 구슬이 소용돌이 치며 하나로 합쳐져 큰 보석이 되는 장면입니다.
+        ///
+        /// 연출 구성요소:
+        /// 1. 전기 아크 + 번개선: 블록 사이에 전기가 튀는 효과
+        /// 2. 스파크: 주변에 불꽃이 튀는 효과
+        /// 3. 합체 이동: 곡선 경로 + 소용돌이로 중앙에 모이는 효과
+        /// 4. 축소 + 회전: 모이면서 작아지고 회전하는 효과
+        ///
+        /// 블록 수에 따라 연출 강도가 자동 조절됩니다:
+        /// - 4개(드릴): 짧은 합체, 적은 소용돌이
+        /// - 5개+(폭탄 등): 긴 합체, 큰 소용돌이, 360도 회전
         /// </summary>
         private IEnumerator SpecialBlockMergeAnimation(
             List<HexBlock> blocks, HexBlock spawnBlock,
@@ -502,10 +626,11 @@ private IEnumerator ActivateSpecialAndWaitLocal(HexBlock block)
         }
 
         /// <summary>
-        /// 특수 블록 생성 디스패쳐 (통합)
-        /// 새 특수 블록 추가 시 case만 추가
+        /// [특수 블록 생성 디스패쳐] 합체 애니메이션이 끝난 후, 실제로 특수 블록을 생성하는 메서드.
+        /// "디스패쳐(배분기)"라는 이름처럼, 블록 타입에 따라 적절한 시스템에 생성을 위임합니다.
+        /// 새 특수 블록 종류를 추가할 때는 switch문에 case만 추가하면 됩니다.
         /// </summary>
-private void CreateSpecialBlock(HexBlock block, SpecialBlockType type, DrillDirection direction, GemType gemType)
+        private void CreateSpecialBlock(HexBlock block, SpecialBlockType type, DrillDirection direction, GemType gemType)
         {
             switch (type)
             {
@@ -532,18 +657,15 @@ private void CreateSpecialBlock(HexBlock block, SpecialBlockType type, DrillDire
             }
         }
 
-// ActivateDrillAndWaitLocal/ActivateBombAndWaitLocal → ActivateSpecialAndWaitLocal로 통합됨
+// 참고: ActivateDrillAndWaitLocal/ActivateBombAndWaitLocal은 ActivateSpecialAndWaitLocal로 통합되었습니다.
 
-
-        /// <summary>
-        /// �帱 ���� �ִϸ��̼� - 4�� ����� �߾����� �������� ��� + ���� ����Ʈ
-        /// </summary>
-// DrillMergeAnimation/BombMergeAnimation → SpecialBlockMergeAnimation로 통합됨
+// 참고: DrillMergeAnimation/BombMergeAnimation은 SpecialBlockMergeAnimation로 통합되었습니다.
 
         /// <summary>
-        /// ���� ����Ʈ - ��� �ֺ��� ���� ���� ȿ��
+        /// [전기 이펙트 (레거시)] 블록 주변에 전기 효과를 표시하던 메서드.
+        /// 현재는 합체 애니메이션(SpecialBlockMergeAnimation)에서 직접 처리하므로 빈 메서드로 유지.
         /// </summary>
-private IEnumerator ElectricEffect(HexBlock block, float duration)
+        private IEnumerator ElectricEffect(HexBlock block, float duration)
         {
             if (block == null) yield break;
             // 이제 DrillMergeAnimation에서 직접 처리하므로 빈 메서드로 유지
@@ -551,9 +673,10 @@ private IEnumerator ElectricEffect(HexBlock block, float duration)
         }
 
         /// <summary>
-        /// �帱 ���� ���� �÷��� ����Ʈ
+        /// [드릴 생성 플래시 (레거시)] 드릴 생성 시 플래시 효과를 표시하던 메서드.
+        /// 현재는 SpecialSpawnImpact(특수 블록 공통 임팩트)로 대체되어 빈 메서드로 유지.
         /// </summary>
-private IEnumerator DrillSpawnFlash(HexBlock block)
+        private IEnumerator DrillSpawnFlash(HexBlock block)
         {
             // DrillSpawnImpact로 대체
             if (block == null) yield break;
@@ -825,11 +948,18 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
         }
 
 
+        /// <summary>
+        /// [블록 삭제 애니메이션] 블록이 사라지는 2단계 연출입니다.
+        /// 비유하자면, 풍선이 "빵!" 하고 터지는 것처럼:
+        /// Phase 1 (0~20%): 약간 확대 (터지기 직전 부풀어 오르는 느낌)
+        /// Phase 2 (20~100%): 좌우로 찌그러지면서 세로로 쪼그라들며 사라짐
+        /// 동시에 백색 플래시 오버레이도 표시됩니다.
+        /// </summary>
         private IEnumerator AnimateRemove(HexBlock block)
         {
             if (block == null) yield break;
 
-            // 화이트 플래시 오버레이
+            // 파괴 순간 백색 플래시를 겹쳐서 표시
             StartCoroutine(DestroyFlashOverlay(block));
 
             float elapsed = 0f;
@@ -861,6 +991,35 @@ private IEnumerator DrillSpawnFlash(HexBlock block)
             }
 
             block.transform.localScale = Vector3.zero;
+        }
+
+        /// <summary>
+        /// 삼각형 매칭 블록 축소 제거 애니메이션
+        /// 블록이 중심을 향해 작아지면서 자연스럽게 사라짐
+        /// </summary>
+        private IEnumerator AnimateShrinkRemove(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            float duration = removeAnimationDuration; // 0.14초
+
+            while (elapsed < duration)
+            {
+                if (block == null) yield break;
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // EaseInBack: 살짝 커졌다가 빠르게 축소 (탄력감)
+                float easeT = t * t * (2.7f * t - 1.7f);
+                float scale = Mathf.Max(0f, 1f - easeT);
+
+                block.transform.localScale = Vector3.one * scale;
+                yield return null;
+            }
+
+            if (block != null)
+                block.transform.localScale = Vector3.zero;
         }
 
         /// <summary>
@@ -1299,10 +1458,9 @@ private IEnumerator ProcessFalling()
                     Vector2 targetPos = slotPositions.ContainsKey(targetBlock) ? slotPositions[targetBlock] : Vector2.zero;
 
                     GemType randomGem = GemTypeHelper.GetRandom();
-                    // 회색 블록 생성 방지
-                    while (randomGem == GemType.Gray)
-                        randomGem = GemTypeHelper.GetRandom();
+                    // GemTypeHelper.GetRandom()은 이미 Gray를 필터링함
                     BlockData newData = new BlockData(randomGem);
+                    Debug.Log($"[BRS ProcessFalling] 새 블록 생성: slot={targetSlot}, gemType={randomGem}({(int)randomGem})");
 
                     float startY = topY + spawnOffset + (i * 80f);
                     SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
@@ -1376,6 +1534,10 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
             if (!slotPositions.ContainsKey(block)) { onComplete?.Invoke(); yield break; }
             Vector2 slotPos = slotPositions[block];
 
+            // 블록 스케일 초기화 (이전 애니메이션 영향 제거)
+            if (block != null)
+                block.transform.localScale = Vector3.one;
+
             float currentY = anim.startY;
             float velocity = 0f;
             float targetY = anim.targetY;
@@ -1411,7 +1573,24 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                         bounceCount++;
                         if (block != null)
                         {
-                            StartCoroutine(SquashEffect(block));
+                            // 바운스 전 스케일 안전장치: 1.0을 초과하면 리셋
+                            if (block.transform.localScale.x > 1.01f || block.transform.localScale.y > 1.01f)
+                            {
+                                block.transform.localScale = Vector3.one;
+                                Debug.LogWarning($"[BRS] 블록 스케일 강제 리셋 (안전장치): {block.Coord}");
+                            }
+
+                            // 기존 SquashEffect 코루틴이 실행 중이면 중단 후 새로 시작
+                            if (squashEffectCoroutines.ContainsKey(block))
+                            {
+                                StopCoroutine(squashEffectCoroutines[block]);
+                                squashEffectCoroutines.Remove(block);
+                                Debug.LogWarning($"[BRS] 기존 SquashEffect 중단: {block.Coord}");
+                            }
+
+                            Coroutine squashCo = StartCoroutine(SquashEffect(block));
+                            squashEffectCoroutines[block] = squashCo;
+
                             // 블록 착지 사운드
                             if (AudioManager.Instance != null)
                                 AudioManager.Instance.PlayBlockLandSound();
@@ -1450,18 +1629,54 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
         private IEnumerator SquashEffect(HexBlock block)
         {
             if (block == null) yield break;
+
+            // 안전장치: 시작 전 스케일 확인 및 정규화
+            if (block.transform.localScale.x > 1.01f || block.transform.localScale.y > 1.01f)
+            {
+                block.transform.localScale = Vector3.one;
+                Debug.LogWarning($"[BRS SquashEffect] 블록 스케일 정규화: {block.Coord}");
+            }
+
             float duration = 0.08f;
             float elapsed = 0f;
             while (elapsed < duration)
             {
+                if (block == null)
+                {
+                    squashEffectCoroutines.Remove(block);
+                    yield break;
+                }
+
                 elapsed += Time.deltaTime;
                 float t = elapsed / duration;
+
+                // 스케일 계산 (최대 1.15배, 최소 0.9배)
                 float scaleX = 1f + 0.15f * Mathf.Sin(t * Mathf.PI);
                 float scaleY = 1f - 0.1f * Mathf.Sin(t * Mathf.PI);
+
+                // 안전장치: 스케일을 1.0 이상으로 설정하지 않도록 함
+                // scaleX는 최대 1.15까지 증가할 수 있지만, 이는 의도된 동작
+                // 중요한 것은 애니메이션 종료 후 1.0으로 리셋하는 것
+
                 block.transform.localScale = new Vector3(scaleX, scaleY, 1f);
                 yield return null;
             }
-            block.transform.localScale = Vector3.one;
+
+            // 안전장치: 애니메이션 후 반드시 1.0으로 리셋
+            if (block != null)
+            {
+                block.transform.localScale = Vector3.one;
+                // 추가 검증: 스케일이 1.0이 되었는지 확인
+                if (Mathf.Abs(block.transform.localScale.x - 1f) > 0.01f)
+                {
+                    Debug.LogWarning($"[BRS SquashEffect] 스케일 리셋 실패: {block.Coord}, 스케일={block.transform.localScale}");
+                    block.transform.localScale = Vector3.one;
+                }
+                Debug.Log($"[BRS SquashEffect] 완료: {block.Coord}, 최종 스케일={block.transform.localScale}");
+            }
+
+            // 코루틴 추적에서 제거
+            squashEffectCoroutines.Remove(block);
         }
 
         /// <summary>
@@ -1489,10 +1704,9 @@ private void FillEmptyBlocksWithAnimation()
                     RestoreBlockToSlot(block);
 
                     GemType randomGem = GemTypeHelper.GetRandom();
-                    // 회색 블록 생성 방지
-                    while (randomGem == GemType.Gray)
-                        randomGem = GemTypeHelper.GetRandom();
+                    // GemTypeHelper.GetRandom()은 이미 Gray를 필터링함
                     block.SetBlockData(new BlockData(randomGem));
+                    Debug.Log($"[BRS MoveRowsUp] 새 블록 생성: {block.Coord}, gemType={randomGem}({(int)randomGem})");
                     block.transform.localScale = Vector3.one;
 
                     Vector2 slotPos = slotPositions[block];
@@ -1652,11 +1866,12 @@ public void TriggerBigBang()
 
             if (hexGrid == null) { isProcessing = false; yield break; }
 
-            foreach (var block in hexGrid.GetAllBlocks())
-                if (block.Data != null && block.Data.gemType != GemType.None)
-                    StartCoroutine(AnimateRemove(block));
+            // 매칭 이펙트 비활성화
+            // foreach (var block in hexGrid.GetAllBlocks())
+            //     if (block.Data != null && block.Data.gemType != GemType.None)
+            //         StartCoroutine(AnimateRemove(block));
 
-            yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
+            yield return new WaitForSeconds(0.02f);
 
             foreach (var block in hexGrid.GetAllBlocks())
             {
@@ -1680,10 +1895,9 @@ public void TriggerBigBang()
                     Vector2 targetPos = slotPositions[block];
 
                     GemType randomGem = GemTypeHelper.GetRandom();
-                    // 회색 블록 생성 방지
-                    while (randomGem == GemType.Gray)
-                        randomGem = GemTypeHelper.GetRandom();
+                    // GemTypeHelper.GetRandom()은 이미 Gray를 필터링함
                     block.SetBlockData(new BlockData(randomGem));
+                    Debug.Log($"[BRS FastSpawn] 새 블록 생성: {block.Coord}, gemType={randomGem}({(int)randomGem})");
                     block.transform.localScale = Vector3.one;
 
                     float startY = topY + 150f + (column.Count - i) * 60f;
@@ -1757,17 +1971,25 @@ public void TriggerBigBang()
             RectTransform glowRt = glow.GetComponent<RectTransform>();
             glowRt.sizeDelta = new Vector2(50f, 50f);
 
+            // 시작 스케일 저장
+            Vector3 startScale = Vector3.one * VisualConstants.SpawnStartScale;
+
             float elapsed = 0f;
             while (elapsed < duration)
             {
+                if (block == null)
+                {
+                    if (glow != null) Destroy(glow);
+                    yield break;
+                }
+
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
 
                 // EaseOutBack: 0.5 -> overshoot 1.15 -> settle 1.0
                 float eased = VisualConstants.EaseOutBack(t);
                 float scale = Mathf.Lerp(VisualConstants.SpawnStartScale, 1f, eased);
-                if (block != null)
-                    block.transform.localScale = Vector3.one * scale;
+                block.transform.localScale = Vector3.one * scale;
 
                 // Glow fade out
                 if (glowImg != null)
@@ -1776,6 +1998,7 @@ public void TriggerBigBang()
                 yield return null;
             }
 
+            // 확실히 1.0으로 리셋
             if (block != null)
                 block.transform.localScale = Vector3.one;
             if (glow != null)
@@ -1805,6 +2028,33 @@ public void TriggerBigBang()
                     }
                     foreach (var co in pendingCos) yield return co;
                 }
+                yield break;
+            }
+
+            // 0. 특수 블록 생성 그룹과 일반 매칭 그룹 분리
+            // 특수 블록 생성 매칭(4개 이상)을 먼저 처리하고 0.5초 후 일반 매칭(3개) 처리
+            List<MatchingSystem.MatchGroup> specialMatches = new List<MatchingSystem.MatchGroup>();
+            List<MatchingSystem.MatchGroup> normalMatches = new List<MatchingSystem.MatchGroup>();
+
+            foreach (var match in matches)
+            {
+                if (match.createdSpecialType != SpecialBlockType.None && match.specialSpawnBlock != null)
+                    specialMatches.Add(match);
+                else
+                    normalMatches.Add(match);
+            }
+
+            // 특수 블록 생성 그룹이 있고 일반 그룹도 있으면 → 2단계로 분리 처리
+            if (specialMatches.Count > 0 && normalMatches.Count > 0)
+            {
+                // Phase A: 특수 블록 생성 그룹 먼저 처리
+                yield return StartCoroutine(ProcessMatchesInline(specialMatches, pendingSpecials));
+
+                // 0.5초 시간차
+                yield return new WaitForSeconds(0.5f);
+
+                // Phase B: 일반 매칭 그룹 처리 (pending은 이미 Phase A에서 처리했으므로 null)
+                yield return StartCoroutine(ProcessMatchesInline(normalMatches, null));
                 yield break;
             }
 
@@ -1842,10 +2092,11 @@ public void TriggerBigBang()
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayMatchDetectTone();
 
-            for (int i = 0; i < allMatchedBlocks.Count; i++)
-            {
-                StartCoroutine(MatchPulse(allMatchedBlocks[i], i * VisualConstants.MatchPulseStagger));
-            }
+            // 매칭 펄스 효과 비활성화 (중앙 파티클 표시 안 함)
+            // for (int i = 0; i < allMatchedBlocks.Count; i++)
+            // {
+            //     StartCoroutine(MatchPulse(allMatchedBlocks[i], i * VisualConstants.MatchPulseStagger));
+            // }
 
             yield return new WaitForSeconds(matchHighlightDuration);
 
@@ -1891,8 +2142,8 @@ public void TriggerBigBang()
                     if (block.CurrentEnemyType == EnemyType.Chromophage)
                     {
                         OnEnemyRemoved?.Invoke(block, EnemyType.Chromophage);
-                        // 색상도둑 파괴 애니메이션 시작 (회색 폭발 이펙트)
-                        StartCoroutine(AnimateGrayCrumble(block));
+                        // 색상도둑 파괴 애니메이션 시작 (회색 폭발 이펙트) - 비활성화됨
+                        // StartCoroutine(AnimateGrayCrumble(block));
                         // 색상도둑 제거 SFX 재생
                         if (AudioManager.Instance != null)
                             AudioManager.Instance.PlayChromophageRemovalSound();
@@ -1983,26 +2234,34 @@ public void TriggerBigBang()
                     blocksToRemove.Remove(s);
             }
 
-            // 5c. 보석 날아가기 연출 (데이터 클리어 전에 발생)
-            foreach (var match in matches)
-            {
-                foreach (var block in match.blocks)
-                {
-                    if (block != null && blocksToRemove.Contains(block) &&
-                        match.gemType != GemType.None && match.gemType != GemType.Gray)
-                    {
-                        OnGemCollectedVisual?.Invoke(block.transform.position, match.gemType);
-                    }
-                }
-            }
+            // 5c. 보석 날아가기 연출 (데이터 클리어 전에 발생) - 비활성화됨
+            // foreach (var match in matches)
+            // {
+            //     foreach (var block in match.blocks)
+            //     {
+            //         if (block != null && blocksToRemove.Contains(block) &&
+            //             match.gemType != GemType.None && match.gemType != GemType.Gray)
+            //         {
+            //             OnGemCollectedVisual?.Invoke(block.transform.position, match.gemType);
+            //         }
+            //     }
+            // }
 
-            // 6. 삭제 애니메이션 (일반 블록만) + 파괴 사운드
+            // 6. 삭제 애니메이션 (축소하며 사라짐) + 파괴 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBlockDestroySound();
-            foreach (var block in blocksToRemove)
-                StartCoroutine(AnimateRemove(block));
 
-            yield return new WaitForSeconds(removeAnimationDuration + 0.02f);
+            // 모든 블록의 축소 애니메이션을 병렬 시작
+            List<Coroutine> shrinkCoroutines = new List<Coroutine>();
+            foreach (var block in blocksToRemove)
+            {
+                if (block != null)
+                    shrinkCoroutines.Add(StartCoroutine(AnimateShrinkRemove(block)));
+            }
+
+            // 모든 축소 애니메이션 완료 대기
+            foreach (var co in shrinkCoroutines)
+                yield return co;
 
             // 7. 일반 블록 데이터 클리어
             foreach (var block in blocksToRemove)
@@ -2016,7 +2275,8 @@ public void TriggerBigBang()
                 }
             }
 
-            OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
+            // 점수 팝업 비활성화
+            // OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
 
             // 미션 시스템용: 매칭 그룹별 GemType 상세 이벤트
             // ✅ 특수 블록 생성 시에도 매칭된 모든 기본 블록을 카운트해야 함
@@ -2073,7 +2333,8 @@ public void TriggerBigBang()
 
                 foreach (var gray in grayToRemove)
                 {
-                    StartCoroutine(AnimateGrayCrumble(gray));
+                    // 회색 블록 폭발 이펙트 비활성화
+                    // StartCoroutine(AnimateGrayCrumble(gray));
                     // 회색 블록(색상도둑) 매칭 제거 점수
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
                     if (sm != null)
@@ -2094,7 +2355,8 @@ public void TriggerBigBang()
                     }
                 }
 
-                OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
+                // 점수 팝업 비활성화
+                // OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
             }
 
             // 6. 매칭 특수블록 + pending 특수블록 동시 발동

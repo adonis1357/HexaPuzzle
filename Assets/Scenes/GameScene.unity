@@ -162,6 +162,103 @@ Transform:
   - {fileID: 617666823}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &490184579
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1686764893772602223, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_Name
+      value: HexBlockPrefab
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -386.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: -726.4
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3313757789056632435, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 842ced362d8e4a4478e1f7485bdc66ac, type: 3}
 --- !u!1 &497495060
 GameObject:
   m_ObjectHideFlags: 0
@@ -287,7 +384,6 @@ MonoBehaviour:
   removalSystem: {fileID: 0}
   laserSpeed: 0.04
   beamDuration: 0.3
-  shakeIntensity: 10
 --- !u!4 &617666823
 Transform:
   m_ObjectHideFlags: 0
@@ -471,8 +567,6 @@ MonoBehaviour:
   hexGrid: {fileID: 0}
   removalSystem: {fileID: 0}
   explosionDelay: 0.08
-  debrisCount: 8
-  shakeIntensity: 12
 --- !u!1 &911088953
 GameObject:
   m_ObjectHideFlags: 0
@@ -518,6 +612,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   stageDatabase: {fileID: 0}
+  blockRemovalSystem: {fileID: 0}
 --- !u!1 &966526340
 GameObject:
   m_ObjectHideFlags: 0
@@ -657,10 +752,12 @@ MonoBehaviour:
   donutSystem: {fileID: 0}
   xBlockSystem: {fileID: 0}
   laserSystem: {fileID: 0}
+  enemySystem: {fileID: 0}
   uiManager: {fileID: 1871930507}
   scoreManager: {fileID: 1886473489}
   stageManager: {fileID: 911088955}
   itemManager: {fileID: 1396258915}
+  missionSystem: {fileID: 0}
   initialTurns: 30
 --- !u!1 &1275154191
 GameObject:
@@ -908,6 +1005,14 @@ MonoBehaviour:
   popupOpen: {fileID: 0}
   stageClear: {fileID: 0}
   gameOver: {fileID: 0}
+  drillSound: {fileID: 0}
+  bombSound: {fileID: 0}
+  laserSound: {fileID: 0}
+  donutSound: {fileID: 0}
+  xBlockSound: {fileID: 0}
+  blockDestroySound: {fileID: 0}
+  blockLandSound: {fileID: 0}
+  chromophageRemovalSound: {fileID: 0}
   bgmVolume: 0.7
   sfxVolume: 1
 --- !u!1 &1636104978
@@ -1184,6 +1289,15 @@ MonoBehaviour:
   turnText: {fileID: 0}
   stageText: {fileID: 0}
   goldText: {fileID: 0}
+  hudGoldText: {fileID: 0}
+  moveProgressRing: {fileID: 0}
+  moveMaxText: {fileID: 0}
+  clearTitleText: {fileID: 0}
+  clearBaseScoreText: {fileID: 0}
+  clearTurnBonusText: {fileID: 0}
+  clearEfficiencyBonusText: {fileID: 0}
+  clearTotalScoreText: {fileID: 0}
+  starImages: []
   missionContainer: {fileID: 0}
   missionItemPrefab: {fileID: 0}
   missionSlots: []
@@ -1252,6 +1366,7 @@ MonoBehaviour:
   comboMultiplierBase: 1
   comboMultiplierIncrement: 0.5
   comboResetTime: 2
+  maxCombo: 4
 --- !u!1 &1913138321
 GameObject:
   m_ObjectHideFlags: 0
@@ -1405,8 +1520,6 @@ MonoBehaviour:
   removalSystem: {fileID: 0}
   drillSpeed: 0.08
   projectileSpeed: 1200
-  debrisCount: 6
-  shakeIntensity: 8
 --- !u!1 &1978134499
 GameObject:
   m_ObjectHideFlags: 0
@@ -1465,3 +1578,4 @@ SceneRoots:
   - {fileID: 305613554}
   - {fileID: 1913138325}
   - {fileID: 810647109}
+  - {fileID: 490184579}

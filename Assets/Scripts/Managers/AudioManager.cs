@@ -80,6 +80,14 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralEnemySpawn;
         private AudioClip proceduralChromophageRemoval;
 
+        // 배경음악 캐시
+        private AudioClip proceduralLobbySereneBGM;
+        private AudioClip proceduralLobbyBrightBGM;
+        private AudioClip proceduralLobbyDreamyBGM;
+        private AudioClip proceduralGameplayTenseBGM;
+        private AudioClip proceduralGameplayEnergeticBGM;
+        private AudioClip proceduralGameplayEpicBGM;
+
         // 캐스케이드 펜타토닉 음계 (C5, D5, E5, G5, A5, C6)
         private AudioClip[] proceduralCascadeNotes;
 
@@ -197,6 +205,14 @@ namespace JewelsHexaPuzzle.Managers
             proceduralCascadeNotes = new AudioClip[cascadeFreqs.Length];
             for (int i = 0; i < cascadeFreqs.Length; i++)
                 proceduralCascadeNotes[i] = ProceduralAudio.CreateCascadeNote(cascadeFreqs[i], 0.15f);
+
+            // 배경음악 생성 (로비 3개 + 인게임 3개)
+            proceduralLobbySereneBGM = ProceduralAudio.CreateLobbySereneBGM(120f);
+            proceduralLobbyBrightBGM = ProceduralAudio.CreateLobbyBrightBGM(120f);
+            proceduralLobbyDreamyBGM = ProceduralAudio.CreateLobbyDreamyBGM(120f);
+            proceduralGameplayTenseBGM = ProceduralAudio.CreateGameplayTenseBGM(90f);
+            proceduralGameplayEnergeticBGM = ProceduralAudio.CreateGameplayEnergeticBGM(90f);
+            proceduralGameplayEpicBGM = ProceduralAudio.CreateGameplayEpicBGM(120f);
         }
 
         // ============================================================
@@ -215,6 +231,16 @@ namespace JewelsHexaPuzzle.Managers
         public void PlayMainBGM() => PlayBGM(mainBGM);
         public void PlayGameBGM() => PlayBGM(gameBGM);
         public void StopBGM() { if (bgmSource != null) bgmSource.Stop(); }
+
+        // 로비 배경음악
+        public void PlayLobbySereneBGM() => PlayBGM(proceduralLobbySereneBGM);
+        public void PlayLobbyBrightBGM() => PlayBGM(proceduralLobbyBrightBGM);
+        public void PlayLobbyDreamyBGM() => PlayBGM(proceduralLobbyDreamyBGM);
+
+        // 인게임 배경음악
+        public void PlayGameplayTenseBGM() => PlayBGM(proceduralGameplayTenseBGM);
+        public void PlayGameplayEnergeticBGM() => PlayBGM(proceduralGameplayEnergeticBGM);
+        public void PlayGameplayEpicBGM() => PlayBGM(proceduralGameplayEpicBGM);
 
         // ============================================================
         // SFX 재생 (기본)

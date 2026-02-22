@@ -50,22 +50,19 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 1,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 25,
+                turnLimit = 15,
                 difficulty = 1,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 1,
-                        description = "색상도둑(회색) 1마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None, // 모든 색상
+                        targetCount = 100,
+                        description = "기본 블록 100개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(0, 0), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
@@ -73,78 +70,12 @@ namespace JewelsHexaPuzzle.Managers
                     beforeStageCutscene = "루나가 크리스탈 숲의 보석 블록들을 관찰한다.\n오라클리온: \"자, 이게 보석의 격자야. 같은 색 3개가 모이면 정화된단다.\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"저 회색 블록이 색상 도둑이야. 일반 매칭으로는 안 되지.\"",
-                        "루나: \"어떻게 해야 하는데요?\"",
-                        "오라클리온: \"특수 보석을 써보거라. 드릴 같은 특수 기술이면...\""
-                    },
-                    midStageCutscenes = new[]
-                    {
-                        new DialogueCutscene
-                        {
-                            triggerType = CutsceneTrigger.AfterEnemyRemoval,
-                            triggerCount = 1,
-                            dialogues = new[]
-                            {
-                                "오라클리온: \"좋아! 색상도둑이 정화되었구나!\"",
-                                "루나: \"와, 정말 효과가 있네요!\""
-                            }
-                        }
+                        "오라클리온: \"먼저 기본을 익혀보자. 블록을 회전시켜 같은 색끼리 모아봐.\"",
+                        "루나: \"알겠어요! 해볼게요!\""
                     },
                     stageClearDialogues = new[]
                     {
-                        "오라클리온: \"축하한다. 이제 넌 색상도둑의 정체를 알게 되었네.\""
-                    },
-                    stageClearCutscene = "색상도둑이 밝은 에너지로 정화되며 사라진다.\n크리스탈이 다시 생기를 되찾는다."
-                },
-                tutorialFlags = new[]
-                {
-                    TutorialFlag.ShowEnemyType_Chromophage,
-                    TutorialFlag.ShowSpecialBlock_Drill,
-                    TutorialFlag.ExplainMatchingRestriction
-                }
-            };
-
-            return stage;
-        }
-
-        // ============================================================
-        // Stage 2: 복습 - 색상도둑 1개 + 새로운 배치
-        // ============================================================
-        private static StageData GetStage2()
-        {
-            StageData stage = new StageData
-            {
-                stageNumber = 2,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 28,
-                difficulty = 1,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 1,
-                        description = "색상도둑(회색) 1마리 제거"
-                    }
-                },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(2, -2), enemyType = EnemyType.Chromophage }
-                },
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    chapterIntroduction = "루나가 숲을 더 깊이 들어간다.",
-                    beforeStageCutscene = "프리즘: \"루나, 이번엔 어디에 색상도둑이 있을까?\"\n루나: \"조심히 찾아봐야겠네.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"이번엔 색상도둑의 위치가 다르군. 같은 원리지만 자리가 달라.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"루나, 또 해냈어!\""
+                        "오라클리온: \"훌륭하군! 기본을 잘 익혔구나.\""
                     }
                 },
                 tutorialFlags = new TutorialFlag[0]
@@ -154,7 +85,45 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 3: 난이도 상승 - 색상도둑 2개
+        // Stage 2: 빨간색 30개 + 초록색 30개 제거
+        // ============================================================
+        private static StageData GetStage2()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 2,
+                chapterNumber = 1,
+                chapterName = "크리스탈 숲",
+                turnLimit = 20,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Red,
+                        targetCount = 30,
+                        description = "빨간색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Green,
+                        targetCount = 30,
+                        description = "초록색 블록 30개 제거"
+                    }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 3: 기본 블록 200개 제거
         // ============================================================
         private static StageData GetStage3()
         {
@@ -163,36 +132,21 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 3,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 30,
-                difficulty = 2,
+                turnLimit = 25,
+                difficulty = 1,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 2,
-                        description = "색상도둑(회색) 2마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 200,
+                        description = "기본 블록 200개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-2, 1), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(1, -2), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나가 진행하던 중 색상도둑이 2마리 나타난다.\n프리즘: \"어? 2개나? 너무 많은데!\"\n루나: \"하나씩 해결하면 되겠지!\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"이번엔 색상도둑이 2개로군. 하나씩 차근차근히 처리해봐.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"완벽하군! 두 색상도둑 모두 정화했어!\""
-                    }
-                },
+                storyData = null,
                 tutorialFlags = new TutorialFlag[0]
             };
 
@@ -215,17 +169,13 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 2,
-                        description = "색상도둑(회색) 2마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 150,
+                        description = "기본 블록 150개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-3, 0), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(3, -1), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-1, 1), enemyType = EnemyType.None },
@@ -266,17 +216,13 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 2,
-                        description = "색상도둑(회색) 2마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 180,
+                        description = "기본 블록 180개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, -2), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(2, 2), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-3, 1), enemyType = EnemyType.None },
@@ -319,18 +265,13 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 3,
-                        description = "색상도둑(회색) 3마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 200,
+                        description = "기본 블록 200개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-2, 0), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(2, 0), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(0, 2), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-1, 1), enemyType = EnemyType.None },
@@ -373,18 +314,13 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 3,
-                        description = "색상도둑(회색) 3마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 220,
+                        description = "기본 블록 220개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-2, -1), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(2, -1), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(0, 2), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-1, 0), enemyType = EnemyType.None },
@@ -427,18 +363,13 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 3,
-                        description = "색상도둑(회색) 3마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 250,
+                        description = "기본 블록 250개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-3, 1), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(1, -3), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(2, 1), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-1, -1), enemyType = EnemyType.None },
@@ -481,18 +412,13 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 3,
-                        description = "색상도둑(회색) 3마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 280,
+                        description = "기본 블록 280개 제거"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-2, -1), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(0, 0), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(3, -2), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-1, 0), enemyType = EnemyType.None },
@@ -537,10 +463,10 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Chromophage,
-                        targetCount = 3,
-                        description = "색상도둑(회색) 3마리 제거"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.None,
+                        targetCount = 300,
+                        description = "기본 블록 300개 제거"
                     },
                     new MissionData
                     {
@@ -549,12 +475,7 @@ namespace JewelsHexaPuzzle.Managers
                         description = "20 콤보 달성"
                     }
                 },
-                enemyPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-3, 0), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(0, 0), enemyType = EnemyType.Chromophage },
-                    new EnemyPlacement { coord = new HexCoord(3, -2), enemyType = EnemyType.Chromophage }
-                },
+                enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new[]
                 {
                     new EnemyPlacement { coord = new HexCoord(-1, 1), enemyType = EnemyType.None },
@@ -591,136 +512,5 @@ namespace JewelsHexaPuzzle.Managers
 
             return stage;
         }
-    }
-
-    // ============================================================
-    // 지원 데이터 클래스
-    // ============================================================
-
-    /// <summary>
-    /// 스테이지 데이터 확장 (적군 관련)
-    /// </summary>
-    [System.Serializable]
-    public class StageData
-    {
-        public int stageNumber;
-        public int chapterNumber = 1;
-        public string chapterName = "크리스탈 숲";
-        public int turnLimit = 30;
-        public int difficulty = 1; // 1~3 (쉬움, 중간, 어려움)
-        public bool isBossStage = false;
-
-        public MissionData[] missions;
-        public EnemyPlacement[] enemyPlacements = new EnemyPlacement[0];
-        public EnemyPlacement[] fixedBlockPlacements = new EnemyPlacement[0];
-
-        public StoryData storyData;
-        public RewardData rewards;
-    }
-
-    /// <summary>
-    /// 미션 데이터 확장 (적군 관련)
-    /// </summary>
-    [System.Serializable]
-    public class MissionData
-    {
-        public MissionType type;
-        public GemType targetGemType;
-        public EnemyType targetEnemyType = EnemyType.None;
-        public int targetCount;
-        public string description;
-    }
-
-    /// <summary>
-    /// 적군/고정 블록 배치
-    /// </summary>
-    [System.Serializable]
-    public class EnemyPlacement
-    {
-        public HexCoord coord;
-        public EnemyType enemyType;
-    }
-
-    /// <summary>
-    /// 스토리 데이터
-    /// </summary>
-    [System.Serializable]
-    public class StoryData
-    {
-        public string chapterIntroduction = "";
-        public string beforeStageCutscene = "";
-        public string[] stageIntroDialogues = new string[0];
-        public DialogueCutscene[] midStageCutscenes = new DialogueCutscene[0];
-        public string stageClearCutscene = "";
-        public string[] stageClearDialogues = new string[0];
-    }
-
-    /// <summary>
-    /// 게임 중 대사 컷씬
-    /// </summary>
-    [System.Serializable]
-    public class DialogueCutscene
-    {
-        public CutsceneTrigger triggerType;
-        public int triggerCount; // 예: AfterEnemyRemoval 이면 1,2,3...
-        public string[] dialogues;
-    }
-
-    /// <summary>
-    /// 컷씬 트리거 타입
-    /// </summary>
-    public enum CutsceneTrigger
-    {
-        AfterEnemyRemoval,  // N번째 적군 제거 후
-        AfterMissionComplete, // N번째 미션 완료 후
-        AfterCombo,         // N콤보 달성 시
-        AfterTurnCount      // N턴 경과 시
-    }
-
-    /// <summary>
-    /// 미션 타입 확장
-    /// </summary>
-    public enum MissionType
-    {
-        CollectGem = 1,
-        CollectMultiGem = 2,
-        ProcessGem = 3,
-        CreateSpecialGem = 4,
-        CreatePerfectGem = 5,
-        TriggerBigBang = 6,
-        RemoveVinyl = 7,
-        RemoveDoubleVinyl = 8,
-        MoveItem = 9,
-        ReachScore = 10,
-        RemoveEnemy = 11,      // 적군 제거 (신규)
-        AchieveCombo = 12      // 콤보 달성 (신규)
-    }
-
-    /// <summary>
-    /// 튜토리얼 플래그
-    /// </summary>
-    public enum TutorialFlag
-    {
-        ShowEnemyType_Chromophage,
-        ShowEnemyType_ChainAnchor,
-        ShowSpecialBlock_Drill,
-        ShowSpecialBlock_Bomb,
-        ShowSpecialBlock_Laser,
-        ShowSpecialBlock_Rainbow,
-        ExplainMatchingRestriction,
-        ExplainCascadeChaining,
-        ExplainTierSystem
-    }
-
-    /// <summary>
-    /// 보상 데이터
-    /// </summary>
-    [System.Serializable]
-    public class RewardData
-    {
-        public int baseExperience = 100;
-        public int comboReward = 0;
-        public int perfectClearReward = 0;
-        public string badgeReward = "";
     }
 }

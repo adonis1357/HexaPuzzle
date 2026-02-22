@@ -29,6 +29,11 @@ namespace JewelsHexaPuzzle.Core
         private HexBlock[] currentCluster = new HexBlock[3];
         private bool hasValidCluster = false;
 
+        // 드래그 취소 감지
+        private bool isPointerDown = false;
+        private Vector2 pointerDownPosition;
+        private const float DRAG_CANCEL_THRESHOLD = 10f; // 10px 이상 이동 시 회전 취소
+
         // 회전 방향 (RotationSystem 연동)
         public bool IsClockwise => rotationSystem != null && rotationSystem.IsClockwise;
 
@@ -105,39 +110,8 @@ namespace JewelsHexaPuzzle.Core
             }
         }
 
-private float lastBlockedLogTime = -10f;
-
 private void Update()
         {
-            // 클릭 시 입력 차단 원인 로그 (1초에 최대 1회)
-            if (Input.GetMouseButtonDown(0) && Time.time - lastBlockedLogTime > 1f)
-            {
-                if (!isEnabled)
-                {
-                    // StageClear 상태는 정상적인 상태이므로 경고하지 않음
-                    if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.StageClear)
-                    {
-                        Debug.LogWarning("[InputSystem] BLOCKED: isEnabled=false");
-                        Debug.LogWarning($"[InputSystem] Current GameState: {GameManager.Instance.CurrentState}");
-                    }
-                    lastBlockedLogTime = Time.time;
-                }
-                else if (hexGrid == null || hexGrid.BlockCount == 0)
-                { Debug.LogWarning($"[InputSystem] BLOCKED: hexGrid null={hexGrid == null}, count={hexGrid?.BlockCount}"); lastBlockedLogTime = Time.time; }
-                else if (rotationSystem != null && rotationSystem.IsRotating)
-                { Debug.LogWarning("[InputSystem] BLOCKED: IsRotating=true"); lastBlockedLogTime = Time.time; }
-                else if (drillSystem != null && drillSystem.IsDrilling)
-                { Debug.LogWarning("[InputSystem] BLOCKED: IsDrilling=true"); lastBlockedLogTime = Time.time; }
-                else if (bombSystem != null && bombSystem.IsBombing)
-                { Debug.LogWarning("[InputSystem] BLOCKED: IsBombing=true"); lastBlockedLogTime = Time.time; }
-                else if (xBlockSystem != null && xBlockSystem.IsActivating)
-                { Debug.LogWarning("[InputSystem] BLOCKED: XBlock.IsActivating=true"); lastBlockedLogTime = Time.time; }
-                else if (laserSystem != null && laserSystem.IsActivating)
-                { Debug.LogWarning("[InputSystem] BLOCKED: Laser.IsActivating=true"); lastBlockedLogTime = Time.time; }
-                else if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing)
-                { Debug.LogWarning("[InputSystem] BLOCKED: BRS.IsProcessing=true"); lastBlockedLogTime = Time.time; }
-            }
-
             if (!isEnabled) return;
             if (hexGrid == null || hexGrid.BlockCount == 0) return;
             if (rotationSystem != null && rotationSystem.IsRotating) return;
@@ -146,6 +120,11 @@ private void Update()
             if (xBlockSystem != null && xBlockSystem.IsActivating) return;
             if (laserSystem != null && laserSystem.IsActivating) return;
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
+
+            // 에디터 모드 활성화 시 일반 입력 차단
+            EditorTestSystem editorTestSystem = GetComponent<EditorTestSystem>();
+            if (editorTestSystem != null && editorTestSystem.IsEditorModeActive)
+                return;
 
             HandleInput();
         }
@@ -166,6 +145,23 @@ private void Update()
 
             if (Input.GetMouseButtonDown(0))
             {
+                isPointerDown = true;
+                pointerDownPosition = mousePos;
+            }
+
+            if (Input.GetMouseButtonUp(0) && isPointerDown)
+            {
+                isPointerDown = false;
+                float dragDistance = Vector2.Distance(pointerDownPosition, mousePos);
+
+                if (dragDistance >= DRAG_CANCEL_THRESHOLD)
+                {
+                    // 드래그 거리 초과 → 회전 취소
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return;
+                }
+
                 if (TryActivateSpecialBlock(mousePos))
                     return;
 
@@ -179,17 +175,41 @@ private void Update()
             {
                 Touch touch = Input.GetTouch(0);
 
+                if (touch.phase == TouchPhase.Began)
+                {
+                    isPointerDown = true;
+                    pointerDownPosition = touch.position;
+                }
+
                 if (touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary)
                 {
                     UpdateClusterPreview(touch.position);
                 }
 
-                if (touch.phase == TouchPhase.Ended)
+                if (touch.phase == TouchPhase.Ended && isPointerDown)
                 {
+                    isPointerDown = false;
+                    float dragDistance = Vector2.Distance(pointerDownPosition, touch.position);
+
+                    if (dragDistance >= DRAG_CANCEL_THRESHOLD)
+                    {
+                        // 드래그 거리 초과 → 회전 취소
+                        ClearHighlight();
+                        hasValidCluster = false;
+                        return;
+                    }
+
                     if (TryActivateSpecialBlock(touch.position))
                         return;
 
                     ExecuteRotation();
+                }
+
+                if (touch.phase == TouchPhase.Canceled)
+                {
+                    isPointerDown = false;
+                    ClearHighlight();
+                    hasValidCluster = false;
                 }
             }
         }
@@ -211,6 +231,8 @@ private void Update()
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
                 Debug.Log($"[InputSystem] Drill block clicked at {clickedBlock.Coord}");
+                // 발동 시작 시점에 이동횟수 1 차감
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
                 drillSystem.ActivateDrill(clickedBlock);
                 ClearHighlight();
@@ -225,6 +247,8 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] Bomb block clicked at {clickedBlock.Coord}");
+                    // 발동 시작 시점에 이동횟수 1 차감
+                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
                     bombSystem.ActivateBomb(clickedBlock);
                     ClearHighlight();
@@ -241,6 +265,8 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] X-block clicked at {clickedBlock.Coord}");
+                    // 발동 시작 시점에 이동횟수 1 차감
+                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
                     xBlockSystem.ActivateXBlock(clickedBlock);
                     ClearHighlight();
@@ -257,6 +283,8 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] Laser block clicked at {clickedBlock.Coord}");
+                    // 발동 시작 시점에 이동횟수 1 차감
+                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
                     laserSystem.ActivateLaser(clickedBlock);
                     ClearHighlight();
@@ -355,7 +383,6 @@ private void Update()
         {
             if (!hasValidCluster)
             {
-                Debug.LogWarning("[InputSystem] ExecuteRotation: no valid cluster");
                 return;
             }
             if (rotationSystem == null) return;
@@ -412,6 +439,7 @@ private void Update()
             {
                 ClearHighlight();
                 hasValidCluster = false;
+                isPointerDown = false;
             }
         }
 

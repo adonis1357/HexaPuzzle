@@ -1,8 +1,10 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using System.Collections.Generic;
 using JewelsHexaPuzzle.Core;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Utils;
 
 namespace JewelsHexaPuzzle.Managers
 {
@@ -78,9 +80,13 @@ namespace JewelsHexaPuzzle.Managers
         private Coroutine turnBounceCoroutine;
         private Coroutine turnPulseCoroutine;
 
-        // 미션 진행도
+        // 미션 진행도 (단일 미션 하위호환)
         public static Text gameMissionCountText;
         public static RectTransform gameMissionIconRect;
+
+        // 복수 미션 진행도
+        public static List<Text> gameMissionCountTexts = new List<Text>();
+        public static RectTransform gameMissionContainerRect;
 
         public void SetTurnText(Text text) { turnText = text; }
         public void SetScoreText(Text text)
@@ -578,6 +584,8 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void ShowStageClearPopup()
         {
+            if (stageClearPopup == null)
+                CreateClearPopup();
             ShowPopup(stageClearPopup);
         }
 
@@ -586,6 +594,8 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void ShowStageClearPopup(StageSummaryData summary, int goldReward = 0)
         {
+            if (stageClearPopup == null)
+                CreateClearPopup();
             ShowPopup(stageClearPopup);
             StartCoroutine(AnimateStageClearBreakdown(summary, goldReward));
         }
@@ -595,6 +605,12 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void ShowStageClearPopup(int goldReward)
         {
+            // 팝업이 없으면 동적으로 생성
+            if (stageClearPopup == null)
+            {
+                CreateClearPopup();
+            }
+
             ShowPopup(stageClearPopup);
             StartCoroutine(AnimateSimpleStageClearWithGold(goldReward));
         }
@@ -622,53 +638,24 @@ namespace JewelsHexaPuzzle.Managers
             {
                 int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
                 clearTitleText.text = $"STAGE {stage} CLEAR!";
-
-                // 축하 메시지 표시 (타이틀 바로 아래)
                 clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
             }
 
-            // 골드 획득 표시 (0.3초 후)
-            if (goldReward > 0)
+            // 획득 점수 표시 (카운팅 애니메이션)
+            if (clearBaseScoreText != null)
             {
-                yield return new WaitForSeconds(0.3f);
-                DisplayGoldReward(goldReward);
-            }
-
-            // 순차 등장: 각 줄 0.2초 간격으로 카운팅
-            yield return StartCoroutine(AnimateScoreLine(clearBaseScoreText, summary.baseScore, 0.4f));
-            yield return new WaitForSeconds(0.15f);
-
-            if (summary.remainingTurnsBonus > 0)
-            {
-                yield return StartCoroutine(AnimateScoreLine(clearTurnBonusText,
-                    summary.remainingTurnsBonus, 0.4f, $"+{{0}} (x{summary.remainingTurns})"));
+                yield return StartCoroutine(AnimateScoreLine(clearBaseScoreText, summary.totalScore, 0.5f, "획득 점수: {0}"));
                 yield return new WaitForSeconds(0.15f);
             }
-            else if (clearTurnBonusText != null)
-            {
-                clearTurnBonusText.text = "+0";
-            }
 
-            if (summary.efficiencyBonus > 0)
+            // 획득 골드 표시 (카운팅 애니메이션)
+            if (clearTurnBonusText != null)
             {
-                yield return StartCoroutine(AnimateScoreLine(clearEfficiencyBonusText,
-                    summary.efficiencyBonus, 0.3f, "+{0}"));
-                yield return new WaitForSeconds(0.15f);
-            }
-            else if (clearEfficiencyBonusText != null)
-            {
-                clearEfficiencyBonusText.text = "+0";
-            }
+                yield return StartCoroutine(AnimateScoreLine(clearTurnBonusText, goldReward, 0.4f, "+{0} 골드"));
 
-            // 총점: 강조 표시
-            if (clearTotalScoreText != null)
-            {
-                yield return StartCoroutine(AnimateScoreLine(clearTotalScoreText,
-                    summary.totalScore, 0.6f));
-
-                // 스케일 펀치
-                RectTransform totalRt = clearTotalScoreText.GetComponent<RectTransform>();
-                if (totalRt != null)
+                // 골드 스케일 펀치
+                RectTransform goldRt = clearTurnBonusText.GetComponent<RectTransform>();
+                if (goldRt != null)
                 {
                     float punchDuration = 0.2f;
                     float punchElapsed = 0f;
@@ -681,36 +668,10 @@ namespace JewelsHexaPuzzle.Managers
                             scale = Mathf.Lerp(1f, 1.2f, t / 0.4f);
                         else
                             scale = Mathf.Lerp(1.2f, 1f, (t - 0.4f) / 0.6f);
-                        totalRt.localScale = Vector3.one * scale;
+                        goldRt.localScale = Vector3.one * scale;
                         yield return null;
                     }
-                    totalRt.localScale = Vector3.one;
-                }
-            }
-
-            // 별 등급 표시
-            yield return new WaitForSeconds(0.2f);
-            if (starImages != null)
-            {
-                for (int i = 0; i < starImages.Length && i < summary.starRating; i++)
-                {
-                    if (starImages[i] != null)
-                    {
-                        starImages[i].enabled = true;
-                        starImages[i].color = new Color(1f, 0.84f, 0f); // Gold
-                        // EaseOutBack 스케일
-                        yield return StartCoroutine(StarPopAnimation(starImages[i]));
-                        yield return new WaitForSeconds(0.15f);
-                    }
-                }
-                // 나머지 별 비활성화
-                for (int i = summary.starRating; i < starImages.Length; i++)
-                {
-                    if (starImages[i] != null)
-                    {
-                        starImages[i].enabled = true;
-                        starImages[i].color = new Color(0.3f, 0.3f, 0.3f, 0.5f); // 어둡게
-                    }
+                    goldRt.localScale = Vector3.one;
                 }
             }
         }
@@ -780,11 +741,19 @@ namespace JewelsHexaPuzzle.Managers
                 clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
             }
 
-            // 골드 획득 표시
-            if (goldReward > 0)
+            // 점수 표시
+            if (clearBaseScoreText != null)
             {
-                yield return new WaitForSeconds(0.3f);
-                DisplayGoldReward(goldReward);
+                ScoreManager sm = FindObjectOfType<ScoreManager>();
+                int score = sm != null ? sm.CurrentScore : 0;
+                yield return StartCoroutine(AnimateScoreLine(clearBaseScoreText, score, 0.4f, "획득 점수: {0}"));
+                yield return new WaitForSeconds(0.15f);
+            }
+
+            // 골드 표시
+            if (clearTurnBonusText != null)
+            {
+                yield return StartCoroutine(AnimateScoreLine(clearTurnBonusText, goldReward, 0.4f, "+{0} 골드"));
             }
         }
 
@@ -880,6 +849,150 @@ namespace JewelsHexaPuzzle.Managers
             if (gameOverPopup != null) gameOverPopup.SetActive(false);
             if (stageClearPopup != null) stageClearPopup.SetActive(false);
             if (helpPopup != null) helpPopup.SetActive(false);
+        }
+
+        /// <summary>
+        /// 클리어 팝업 동적 생성
+        /// </summary>
+        private void CreateClearPopup()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            // 팝업 루트 (반투명 배경)
+            GameObject popupRoot = new GameObject("StageClearPopup");
+            popupRoot.transform.SetParent(canvas.transform, false);
+            RectTransform popupRootRect = popupRoot.AddComponent<RectTransform>();
+            popupRootRect.anchorMin = Vector2.zero;
+            popupRootRect.anchorMax = Vector2.one;
+            popupRootRect.sizeDelta = Vector2.zero;
+            popupRootRect.anchoredPosition = Vector2.zero;
+
+            // 배경 (반투명 검정)
+            GameObject background = new GameObject("Background");
+            background.transform.SetParent(popupRoot.transform, false);
+            RectTransform bgRect = background.AddComponent<RectTransform>();
+            bgRect.anchorMin = Vector2.zero;
+            bgRect.anchorMax = Vector2.one;
+            bgRect.sizeDelta = Vector2.zero;
+            Image bgImage = background.AddComponent<Image>();
+            bgImage.color = new Color(0, 0, 0, 0.7f);
+            bgImage.raycastTarget = true;
+
+            // 팝업 패널 (중앙)
+            GameObject panel = new GameObject("Panel");
+            panel.transform.SetParent(popupRoot.transform, false);
+            RectTransform panelRect = panel.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(650, 550);
+            panelRect.anchoredPosition = Vector2.zero;
+
+            // 패널 배경 (어두운 보라/남색)
+            Image panelBg = panel.AddComponent<Image>();
+            panelBg.color = new Color(0.2f, 0.15f, 0.35f, 0.95f);
+
+            // 패널 테두리 (금색)
+            Outline outline = panel.AddComponent<Outline>();
+            outline.effectColor = new Color(0.84f, 0.68f, 0.1f, 1f);
+            outline.effectDistance = new Vector2(3, 3);
+
+            // 패널 코너 라운드 처리 (직사각형은 가능하지만 정확한 라운드는 어려우므로 스케일로 표현)
+
+            // 타이틀 텍스트
+            GameObject titleObj = new GameObject("Title");
+            titleObj.transform.SetParent(panel.transform, false);
+            RectTransform titleRect = titleObj.AddComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0.5f, 0.5f);
+            titleRect.anchorMax = new Vector2(0.5f, 0.5f);
+            titleRect.sizeDelta = new Vector2(550, 140);
+            titleRect.anchoredPosition = new Vector2(0, 150);
+
+            Text titleText = titleObj.AddComponent<Text>();
+            titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            titleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
+            titleText.fontSize = 36;
+            titleText.fontStyle = FontStyle.Bold;
+            titleText.alignment = TextAnchor.UpperCenter;
+            titleText.color = new Color(1f, 0.84f, 0f, 1f); // 노란색
+            titleText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            clearTitleText = titleText;
+
+            // 획득 점수 텍스트
+            GameObject scoreObj = new GameObject("Score");
+            scoreObj.transform.SetParent(panel.transform, false);
+            RectTransform scoreRect = scoreObj.AddComponent<RectTransform>();
+            scoreRect.anchorMin = new Vector2(0.5f, 0.5f);
+            scoreRect.anchorMax = new Vector2(0.5f, 0.5f);
+            scoreRect.sizeDelta = new Vector2(500, 100);
+            scoreRect.anchoredPosition = new Vector2(0, 30);
+
+            Text scoreText = scoreObj.AddComponent<Text>();
+            scoreText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            scoreText.text = "획득 점수: 0";
+            scoreText.fontSize = 32;
+            scoreText.alignment = TextAnchor.MiddleCenter;
+            scoreText.color = Color.white;
+            clearBaseScoreText = scoreText;
+
+            // 획득 골드 텍스트
+            GameObject goldObj = new GameObject("Gold");
+            goldObj.transform.SetParent(panel.transform, false);
+            RectTransform goldRect = goldObj.AddComponent<RectTransform>();
+            goldRect.anchorMin = new Vector2(0.5f, 0.5f);
+            goldRect.anchorMax = new Vector2(0.5f, 0.5f);
+            goldRect.sizeDelta = new Vector2(500, 80);
+            goldRect.anchoredPosition = new Vector2(0, -30);
+
+            Text goldTextComp = goldObj.AddComponent<Text>();
+            goldTextComp.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            goldTextComp.text = "💰 +0 골드";
+            goldTextComp.fontSize = 32;
+            goldTextComp.alignment = TextAnchor.MiddleCenter;
+            goldTextComp.color = new Color(1f, 0.84f, 0f, 1f); // 노란색
+            clearTurnBonusText = goldTextComp; // 골드 표시용으로 재사용
+
+            // 확인 버튼
+            GameObject buttonObj = new GameObject("ConfirmButton");
+            buttonObj.transform.SetParent(panel.transform, false);
+            RectTransform buttonRect = buttonObj.AddComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+            buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(220, 65);
+            buttonRect.anchoredPosition = new Vector2(0, -130);
+
+            Image buttonImage = buttonObj.AddComponent<Image>();
+            buttonImage.color = new Color(0.5f, 0.2f, 0.7f, 1f); // 보라색
+
+            Button buttonComponent = buttonObj.AddComponent<Button>();
+            buttonComponent.targetGraphic = buttonImage;
+
+            // 버튼 텍스트
+            GameObject buttonTextObj = new GameObject("Text");
+            buttonTextObj.transform.SetParent(buttonObj.transform, false);
+            RectTransform buttonTextRect = buttonTextObj.AddComponent<RectTransform>();
+            buttonTextRect.anchorMin = Vector2.zero;
+            buttonTextRect.anchorMax = Vector2.one;
+            buttonTextRect.sizeDelta = Vector2.zero;
+
+            Text buttonText = buttonTextObj.AddComponent<Text>();
+            buttonText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            buttonText.text = "확인";
+            buttonText.fontSize = 24;
+            buttonText.fontStyle = FontStyle.Bold;
+            buttonText.alignment = TextAnchor.MiddleCenter;
+            buttonText.color = Color.white;
+
+            // 버튼 클릭 이벤트
+            buttonComponent.onClick.AddListener(() =>
+            {
+                HidePopup(popupRoot);
+                GameManager.Instance?.ReturnToLobby();
+            });
+
+            stageClearPopup = popupRoot;
+            Debug.Log("[UIManager] 클리어 팝업 동적 생성 완료");
         }
 
         /// <summary>
@@ -1595,6 +1708,9 @@ namespace JewelsHexaPuzzle.Managers
             }
             iconImage.type = Image.Type.Simple;
             iconImage.raycastTarget = false;
+            Outline iconOutline = iconObj.AddComponent<Outline>();
+            iconOutline.effectColor = Color.white;
+            iconOutline.effectDistance = new Vector2(2, 2);
 
             // 미션 진행도 숫자 (아이콘 옆)
             GameObject countObj = new GameObject("Count");
@@ -1614,6 +1730,9 @@ namespace JewelsHexaPuzzle.Managers
             countText.color = new Color(0.3f, 0.9f, 0.4f);
             countText.raycastTarget = false;
             countText.text = mission.targetCount.ToString();
+            Outline countOutline = countObj.AddComponent<Outline>();
+            countOutline.effectColor = Color.white;
+            countOutline.effectDistance = new Vector2(2, 2);
 
             // 미션 UI 컨테이너 저장 (나중에 애니메이션에서 사용)
             missionObj.name = "GameMissionUI_Level1";
@@ -1621,6 +1740,213 @@ namespace JewelsHexaPuzzle.Managers
             // static 필드에 참조 저장 (GameManager에서 접근)
             gameMissionCountText = countText;
             gameMissionIconRect = missionRt;
+        }
+
+        /// <summary>
+        /// 게임 중 왼쪽 상단에 복수 미션 UI 생성 (미션 배열 오버로드)
+        /// 각 미션별 색상 아이콘 + 카운트를 세로로 나열
+        /// </summary>
+        public void CreateGameMissionUI(Canvas canvas, MissionData[] missions)
+        {
+            if (missions == null || missions.Length == 0) return;
+
+            // 미션이 1개면 기존 단일 미션 UI 사용
+            if (missions.Length == 1)
+            {
+                CreateGameMissionUI(canvas, missions[0]);
+                return;
+            }
+
+            // 복수 미션 리스트 초기화
+            gameMissionCountTexts.Clear();
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // 미션 컨테이너 (배경 패널)
+            float rowHeight = 90f;
+            float containerHeight = missions.Length * rowHeight + 20f; // 패딩 포함
+
+            GameObject containerObj = new GameObject("GameMissionUI_Multi");
+            containerObj.transform.SetParent(canvas.transform, false);
+            RectTransform containerRt = containerObj.AddComponent<RectTransform>();
+            containerRt.anchorMin = new Vector2(0, 1);
+            containerRt.anchorMax = new Vector2(0, 1);
+            containerRt.pivot = new Vector2(0, 1);
+            containerRt.anchoredPosition = new Vector2(20, -20);
+            containerRt.sizeDelta = new Vector2(280, containerHeight);
+
+            Image containerBg = containerObj.AddComponent<Image>();
+            containerBg.color = new Color(0.08f, 0.06f, 0.15f, 0.9f);
+            containerBg.raycastTarget = false;
+
+            gameMissionContainerRect = containerRt;
+
+            // 각 미션 행 생성
+            for (int i = 0; i < missions.Length; i++)
+            {
+                MissionData mission = missions[i];
+                float yOffset = -10f - (i * rowHeight); // 상단부터 아래로
+
+                // === 미션 행 컨테이너 ===
+                GameObject rowObj = new GameObject($"MissionRow_{i}");
+                rowObj.transform.SetParent(containerObj.transform, false);
+                RectTransform rowRt = rowObj.AddComponent<RectTransform>();
+                rowRt.anchorMin = new Vector2(0, 1);
+                rowRt.anchorMax = new Vector2(1, 1);
+                rowRt.pivot = new Vector2(0, 1);
+                rowRt.anchoredPosition = new Vector2(0, yOffset);
+                rowRt.sizeDelta = new Vector2(0, rowHeight);
+
+                // === 미션 아이콘 (단색 육각형 블록) ===
+                GameObject iconObj = new GameObject($"MissionIcon_{i}");
+                iconObj.transform.SetParent(rowObj.transform, false);
+                RectTransform iconRt = iconObj.AddComponent<RectTransform>();
+                iconRt.anchorMin = new Vector2(0, 0.5f);
+                iconRt.anchorMax = new Vector2(0, 0.5f);
+                iconRt.pivot = new Vector2(0, 0.5f);
+                iconRt.anchoredPosition = new Vector2(15, 0);
+                iconRt.sizeDelta = new Vector2(70, 70);
+
+                Image iconImage = iconObj.AddComponent<Image>();
+                iconImage.raycastTarget = false;
+
+                // GemSpriteProvider에서 스프라이트 시도 → 없으면 프로시저럴 육각형 사용
+                GemType gemType = mission.targetGemType;
+                Sprite gemSprite = GemSpriteProvider.GetGemSprite(gemType);
+                if (gemSprite != null)
+                {
+                    iconImage.sprite = gemSprite;
+                    // 개별 텍스처면 원색, 공용이면 틴팅
+                    if (GemSpriteProvider.NeedsTinting(gemType))
+                        iconImage.color = GemColors.GetColor(gemType);
+                    else
+                        iconImage.color = Color.white;
+                }
+                else
+                {
+                    // 프로시저럴 단색 육각형 생성
+                    iconImage.sprite = CreateSingleColorHexIcon(GemColors.GetColor(gemType));
+                }
+                Outline iconOutline = iconObj.AddComponent<Outline>();
+                iconOutline.effectColor = Color.white;
+                iconOutline.effectDistance = new Vector2(2, 2);
+
+                // === 카운트 텍스트 ===
+                GameObject countObj = new GameObject($"MissionCount_{i}");
+                countObj.transform.SetParent(rowObj.transform, false);
+                RectTransform countRt = countObj.AddComponent<RectTransform>();
+                countRt.anchorMin = new Vector2(0, 0.5f);
+                countRt.anchorMax = new Vector2(0, 0.5f);
+                countRt.pivot = new Vector2(0, 0.5f);
+                countRt.anchoredPosition = new Vector2(95, 0);
+                countRt.sizeDelta = new Vector2(160, 70);
+
+                Text countText = countObj.AddComponent<Text>();
+                countText.font = font;
+                countText.fontSize = 48;
+                countText.fontStyle = FontStyle.Bold;
+                countText.alignment = TextAnchor.MiddleLeft;
+                countText.color = GemColors.GetColor(gemType);
+                countText.raycastTarget = false;
+                countText.text = mission.targetCount.ToString();
+                Outline countOutline = countObj.AddComponent<Outline>();
+                countOutline.effectColor = Color.white;
+                countOutline.effectDistance = new Vector2(2, 2);
+
+                // 리스트에 추가
+                gameMissionCountTexts.Add(countText);
+            }
+
+            // 하위호환: 첫 번째 미션 참조를 기존 static 필드에도 저장
+            if (gameMissionCountTexts.Count > 0)
+                gameMissionCountText = gameMissionCountTexts[0];
+            gameMissionIconRect = containerRt;
+        }
+
+        /// <summary>
+        /// 게임 미션 UI 정리 (로비 전환 시 호출)
+        /// </summary>
+        public void CleanupGameMissionUI()
+        {
+            // 단일 미션 UI 제거
+            GameObject singleMissionUI = GameObject.Find("GameMissionUI_Level1");
+            if (singleMissionUI != null)
+                Destroy(singleMissionUI);
+
+            // 복수 미션 UI 제거
+            GameObject multiMissionUI = GameObject.Find("GameMissionUI_Multi");
+            if (multiMissionUI != null)
+                Destroy(multiMissionUI);
+
+            // static 필드 초기화
+            gameMissionCountText = null;
+            gameMissionIconRect = null;
+            gameMissionCountTexts.Clear();
+            gameMissionContainerRect = null;
+        }
+
+        /// <summary>
+        /// 단색 육각형 아이콘 프로시저럴 생성
+        /// </summary>
+        private Sprite CreateSingleColorHexIcon(Color gemColor)
+        {
+            int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerRadius = size * 0.42f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float distance = pos.magnitude;
+
+                    // 육각형 판정 (flat-top)
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2f;
+
+                    // 육각형 내접 거리 계산
+                    float hexAngle = Mathf.PI / 3f; // 60도
+                    float sectorAngle = angle % hexAngle;
+                    float cosAngle = Mathf.Cos(sectorAngle - hexAngle / 2f);
+                    float hexDist = outerRadius * cosAngle;
+
+                    if (distance < hexDist)
+                    {
+                        // 내부: 메인 색상 + 약간의 그라데이션
+                        float gradient = 1f - (distance / hexDist) * 0.2f;
+                        Color c = gemColor * gradient;
+                        c.a = 1f;
+
+                        // 테두리 (외곽 10%) — 흰색 통일
+                        if (distance > hexDist * 0.88f)
+                        {
+                            c = Color.white;
+                        }
+
+                        // 중앙 하이라이트
+                        if (distance < hexDist * 0.3f)
+                        {
+                            float highlight = 1f - (distance / (hexDist * 0.3f));
+                            c = Color.Lerp(c, Color.white, highlight * 0.25f);
+                        }
+
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f);
         }
 
         /// <summary>
@@ -1838,6 +2164,8 @@ namespace JewelsHexaPuzzle.Managers
         public void UpdateProgress(int current, int target)
         {
             int remaining = target - current;
+            // 0 이하가 되지 않도록 제한
+            remaining = Mathf.Max(0, remaining);
 
             if (countText != null)
             {
@@ -1860,6 +2188,8 @@ namespace JewelsHexaPuzzle.Managers
                 elapsed += Time.deltaTime;
                 float progress = Mathf.Clamp01(elapsed / duration);
                 int current = Mathf.RoundToInt(Mathf.Lerp(from, to, progress));
+                // 0 이하가 되지 않도록 제한
+                current = Mathf.Max(0, current);
 
                 if (countText != null)
                 {
@@ -1869,10 +2199,10 @@ namespace JewelsHexaPuzzle.Managers
                 yield return null;
             }
 
-            displayCount = to;
+            displayCount = Mathf.Max(0, to);
             if (countText != null)
             {
-                countText.text = $"x {to}";
+                countText.text = $"x {displayCount}";
             }
         }
 

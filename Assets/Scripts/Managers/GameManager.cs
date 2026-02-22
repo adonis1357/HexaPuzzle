@@ -63,6 +63,9 @@ namespace JewelsHexaPuzzle.Managers
         private float processingStartTime = 0f;
         private const float STUCK_TIMEOUT = 8f; // 8초 이상 Processing 상태면 복구태면 복구
 
+        // 미션 진행도 UI 추적 (이벤트 핸들러용)
+        private int[] lastDisplayedCounts;
+
 
         // 프로퍼티
         public GameState CurrentState => currentState;
@@ -115,8 +118,7 @@ namespace JewelsHexaPuzzle.Managers
                 // 로비 복귀 버튼 생성 (사운드 버튼 아래)
                 CreateLobbyExitButton(canvas);
 
-                // 회전 방향 토글 버튼 생성 (좌하단)
-                CreateRotationToggleButton(canvas);
+                // 회전 방향 토글 버튼 제거됨
 
                 // 게임오버 팝업 생성
                 CreateGameOverPopup(canvas);
@@ -124,6 +126,10 @@ namespace JewelsHexaPuzzle.Managers
                 // 망치 UI 생성
                 if (FindObjectOfType<HammerItem>() == null)
                     CreateHammerUI(canvas);
+
+                // 스왑 UI 생성
+                if (FindObjectOfType<SwapItem>() == null)
+                    CreateSwapUI(canvas);
 
                 // 로비 UI 생성
                 CreateLobbyUI(canvas);
@@ -151,6 +157,7 @@ namespace JewelsHexaPuzzle.Managers
         // HUD 직접 참조 (UIManager 연동 보장)
         private Text hudScoreText;
         private Text hudTurnText;
+        private Text lobbyGoldText;
 
         private void CreateHUDElements(Canvas canvas)
         {
@@ -405,6 +412,7 @@ namespace JewelsHexaPuzzle.Managers
                 coneImg.color = muted ? new Color(0.5f, 0.5f, 0.5f) : Color.white;
             });
 
+            hudElements.Add(btnObj);
             Debug.Log("[GameManager] 사운드 토글 버튼 생성 완료 (우하단)");
         }
 
@@ -582,6 +590,7 @@ namespace JewelsHexaPuzzle.Managers
 
         // 스테이지 선택
         private int selectedStage = 1;
+        private LevelData selectedLevelData = null; // LevelRegistry에서 로드된 레벨 데이터
 
         // HUD 요소 참조 (로비에서 숨기기 용)
         private List<GameObject> hudElements = new List<GameObject>();
@@ -857,10 +866,51 @@ private void Update()
                 {
                     if (elapsed > STUCK_TIMEOUT)
                     {
-                        Debug.LogWarning($"[GameManager] STUCK DETECTED! Processing for {elapsed:F1}s. Force recovering...");
-                        Debug.LogWarning($"[GameManager] Flags: isProcessingChainDrill={isProcessingChainDrill}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}");
-                        ForceRecoverFromStuck();
+                        // BRS 또는 특수 블록 시스템이 활발히 처리 중이면 stuck이 아님 — 타이머 리셋
+                        bool systemsActive = (blockRemovalSystem != null && blockRemovalSystem.IsProcessing)
+                            || (drillSystem != null && drillSystem.IsDrilling)
+                            || (bombSystem != null && bombSystem.IsBombing)
+                            || (donutSystem != null && donutSystem.IsActivating)
+                            || (xBlockSystem != null && xBlockSystem.IsActivating)
+                            || (laserSystem != null && laserSystem.IsActivating);
+
+                        if (systemsActive)
+                        {
+                            Debug.Log($"[GameManager] Processing {elapsed:F1}s but systems still active. Resetting stuck timer.");
+                            processingStartTime = Time.time;
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[GameManager] STUCK DETECTED! Processing for {elapsed:F1}s. Force recovering...");
+                            Debug.LogWarning($"[GameManager] Flags: isProcessingChainDrill={isProcessingChainDrill}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}");
+                            ForceRecoverFromStuck();
+                        }
                     }
+                }
+            }
+
+            // StageClear 상태 워치독: 클리어 시퀀스가 60초 이상 정지하면 강제 팝업 표시
+            if (currentState == GameState.StageClear && !isPaused)
+            {
+                float elapsed = Time.time - processingStartTime;
+                if (elapsed > 60f)
+                {
+                    Debug.LogWarning($"[GameManager] StageClear sequence timeout after {elapsed:F1}s! Force showing popup.");
+                    StopAllCoroutines();
+                    isProcessingChainDrill = false;
+                    if (blockRemovalSystem != null) blockRemovalSystem.ForceReset();
+                    if (drillSystem != null) drillSystem.ForceReset();
+                    if (bombSystem != null) bombSystem.ForceReset();
+                    if (donutSystem != null) donutSystem.ForceReset();
+                    if (xBlockSystem != null) xBlockSystem.ForceReset();
+                    if (laserSystem != null) laserSystem.ForceReset();
+
+                    // 재진입 방지 (매 프레임 반복 호출 차단)
+                    processingStartTime = float.MaxValue;
+
+                    // 강제 클리어 팝업 표시
+                    if (uiManager != null)
+                        uiManager.ShowStageClearPopup(0);
                 }
             }
         }
@@ -1159,19 +1209,9 @@ private void InitializeSystems()
                 // Infinite 모드만 여기서 등록
                 if (currentGameMode != GameMode.Stage && uiManager != null)
                 {
-                    stageManager.OnMissionProgressUpdated += (missionProgress) =>
-                    {
-                        for (int i = 0; i < missionProgress.Length; i++)
-                        {
-                            var progress = missionProgress[i];
-                            uiManager.UpdateMissionProgress(i, progress.currentCount, progress.mission.targetCount);
-                        }
-                    };
+                    stageManager.OnMissionProgressUpdated += HandleInfiniteMissionProgressUpdated;
                 }
-                stageManager.OnMissionComplete += (missionIndex) =>
-                {
-                    Debug.Log($"[GameManager] Mission {missionIndex} completed!");
-                };
+                stageManager.OnMissionComplete += HandleMissionComplete;
             }
 
             // 미션 시스템 이벤트 연결
@@ -1328,7 +1368,133 @@ private void InitializeSystems()
             type.GetField("hammerButton", flags)?.SetValue(hammer, btn);
             type.GetField("backgroundOverlay", flags)?.SetValue(hammer, overlay);
 
+            hudElements.Add(btnObj);
+            // overlayObj는 hudElements에 추가하지 않음 (HideLobby에서 SetActive(true) 방지)
             Debug.Log("[GameManager] HammerItem UI 직접 생성 완료");
+        }
+
+        /// <summary>
+        /// 스왑 아이템 UI 생성 (우측 하단, 망치 버튼 위)
+        /// </summary>
+        private void CreateSwapUI(Canvas canvas)
+        {
+            // 배경 오버레이 (활성화 시 표시)
+            GameObject overlayObj = new GameObject("SwapOverlay");
+            overlayObj.transform.SetParent(canvas.transform, false);
+            var overlay = overlayObj.AddComponent<Image>();
+            overlay.color = new Color(0.4f, 0.7f, 1f, 0.15f);
+            overlay.raycastTarget = false;
+            RectTransform overlayRt = overlayObj.GetComponent<RectTransform>();
+            overlayRt.anchorMin = Vector2.zero;
+            overlayRt.anchorMax = Vector2.one;
+            overlayRt.offsetMin = Vector2.zero;
+            overlayRt.offsetMax = Vector2.zero;
+            overlayObj.SetActive(false);
+
+            // 스왑 버튼 — 망치 버튼 위에 배치
+            float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
+            float rightmostX = hSize * 1.5f * 5f;
+            float lowestY = hSize * Mathf.Sqrt(3f) * (-5f);
+
+            GameObject btnObj = new GameObject("SwapButton");
+            btnObj.transform.SetParent(canvas.transform, false);
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY + 90f);
+            btnRt.sizeDelta = new Vector2(80f, 80f);
+            var btnImage = btnObj.AddComponent<Image>();
+            btnImage.color = new Color(0.25f, 0.25f, 0.35f, 0.9f);
+            var btn = btnObj.AddComponent<Button>();
+            var btnColors = btn.colors;
+            btnColors.highlightedColor = new Color(0.4f, 0.7f, 1f, 1f);
+            btnColors.pressedColor = new Color(0.3f, 0.5f, 0.8f, 1f);
+            btn.colors = btnColors;
+
+            // 양방향 화살표 아이콘 (↔) 프로시저럴 생성
+            // 수평 바
+            GameObject barObj = new GameObject("SwapBar");
+            barObj.transform.SetParent(btnObj.transform, false);
+            var barImg = barObj.AddComponent<Image>();
+            barImg.color = Color.white;
+            barImg.raycastTarget = false;
+            RectTransform barRt = barObj.GetComponent<RectTransform>();
+            barRt.anchoredPosition = new Vector2(0f, 2f);
+            barRt.sizeDelta = new Vector2(30f, 4f);
+
+            // 왼쪽 화살표 머리 (< 형태)
+            GameObject leftArrow1 = new GameObject("LeftArrow1");
+            leftArrow1.transform.SetParent(btnObj.transform, false);
+            var la1Img = leftArrow1.AddComponent<Image>();
+            la1Img.color = Color.white;
+            la1Img.raycastTarget = false;
+            RectTransform la1Rt = leftArrow1.GetComponent<RectTransform>();
+            la1Rt.anchoredPosition = new Vector2(-14f, 7f);
+            la1Rt.sizeDelta = new Vector2(12f, 4f);
+            la1Rt.localRotation = Quaternion.Euler(0, 0, 40f);
+
+            GameObject leftArrow2 = new GameObject("LeftArrow2");
+            leftArrow2.transform.SetParent(btnObj.transform, false);
+            var la2Img = leftArrow2.AddComponent<Image>();
+            la2Img.color = Color.white;
+            la2Img.raycastTarget = false;
+            RectTransform la2Rt = leftArrow2.GetComponent<RectTransform>();
+            la2Rt.anchoredPosition = new Vector2(-14f, -3f);
+            la2Rt.sizeDelta = new Vector2(12f, 4f);
+            la2Rt.localRotation = Quaternion.Euler(0, 0, -40f);
+
+            // 오른쪽 화살표 머리 (> 형태)
+            GameObject rightArrow1 = new GameObject("RightArrow1");
+            rightArrow1.transform.SetParent(btnObj.transform, false);
+            var ra1Img = rightArrow1.AddComponent<Image>();
+            ra1Img.color = Color.white;
+            ra1Img.raycastTarget = false;
+            RectTransform ra1Rt = rightArrow1.GetComponent<RectTransform>();
+            ra1Rt.anchoredPosition = new Vector2(14f, 7f);
+            ra1Rt.sizeDelta = new Vector2(12f, 4f);
+            ra1Rt.localRotation = Quaternion.Euler(0, 0, -40f);
+
+            GameObject rightArrow2 = new GameObject("RightArrow2");
+            rightArrow2.transform.SetParent(btnObj.transform, false);
+            var ra2Img = rightArrow2.AddComponent<Image>();
+            ra2Img.color = Color.white;
+            ra2Img.raycastTarget = false;
+            RectTransform ra2Rt = rightArrow2.GetComponent<RectTransform>();
+            ra2Rt.anchoredPosition = new Vector2(14f, -3f);
+            ra2Rt.sizeDelta = new Vector2(12f, 4f);
+            ra2Rt.localRotation = Quaternion.Euler(0, 0, 40f);
+
+            // 라벨
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject textObj = new GameObject("SwapLabel");
+            textObj.transform.SetParent(btnObj.transform, false);
+            var label = textObj.AddComponent<Text>();
+            label.text = "스왑";
+            label.font = font;
+            label.fontSize = 12;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = Color.white;
+            label.raycastTarget = false;
+            RectTransform textRt = textObj.GetComponent<RectTransform>();
+            textRt.anchorMin = new Vector2(0f, 0f);
+            textRt.anchorMax = new Vector2(1f, 0f);
+            textRt.anchoredPosition = new Vector2(0f, 8f);
+            textRt.sizeDelta = new Vector2(0f, 16f);
+
+            // 최상위 렌더링
+            btnObj.transform.SetAsLastSibling();
+
+            // SwapItem 컴포넌트 추가 + 필드 직접 설정
+            var swap = btnObj.AddComponent<JewelsHexaPuzzle.Items.SwapItem>();
+            var type = typeof(JewelsHexaPuzzle.Items.SwapItem);
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            type.GetField("swapButton", flags)?.SetValue(swap, btn);
+            type.GetField("backgroundOverlay", flags)?.SetValue(swap, overlay);
+
+            hudElements.Add(btnObj);
+            // overlayObj는 hudElements에 추가하지 않음 (HideLobby에서 SetActive(true) 방지)
+            Debug.Log("[GameManager] SwapItem UI 직접 생성 완료");
         }
 
         /// <summary>
@@ -1343,23 +1509,40 @@ private void InitializeSystems()
         {
             SetGameState(GameState.Loading);
 
-            // 무한모드: 생존 미션 시스템으로 시작, 초기 이동 횟수 15
+            // 이전 게임 이벤트 정리 (중복 구독 방지)
+            CleanupGameEvents();
+
+            // 무한모드: 생존 미션 시스템으로 시작
             if (currentGameMode == GameMode.Infinite)
             {
                 rotationCount = 0;
-                currentTurns = 15;
+                // InfiniteConfig에서 초기 이동 횟수 가져오기 (없으면 기본 15)
+                int infiniteMoves = 15;
+                if (selectedLevelData?.infiniteConfig != null)
+                    infiniteMoves = selectedLevelData.infiniteConfig.initialMoves;
+                currentTurns = infiniteMoves;
                 if (uiManager != null)
                 {
                     uiManager.SetInfiniteMode(false);
-                    uiManager.SetMaxTurns(15);
+                    uiManager.SetMaxTurns(infiniteMoves);
                 }
             }
             else
             {
-                // Stage 모드: StageManager에서 턴 제한 로드
+                // Stage 모드: Mission1StageData에서 직접 StageData 로드
                 if (stageManager != null)
                 {
-                    stageManager.LoadStage(selectedStage);
+                    // Mission1StageData에서 StageData 시도
+                    var allStages = Mission1StageData.GetAllMission1Stages();
+                    if (allStages.TryGetValue(selectedStage, out StageData missionStageData))
+                    {
+                        stageManager.LoadStageData(missionStageData);
+                    }
+                    else
+                    {
+                        // 폴백: 기본 생성
+                        stageManager.LoadStage(selectedStage);
+                    }
                     initialTurns = stageManager.CurrentStageData?.turnLimit ?? 30;
                 }
 
@@ -1429,32 +1612,18 @@ private void InitializeSystems()
                 Canvas canvas = FindObjectOfType<Canvas>();
                 if (canvas != null && stageManager.CurrentStageData.missions.Length > 0)
                 {
-                    uiManager.CreateGameMissionUI(canvas, stageManager.CurrentStageData.missions[0]);
+                    var missions = stageManager.CurrentStageData.missions;
 
-                    // 미션 진행도 업데이트 콜백
-                    int lastDisplayedCount = stageManager.CurrentStageData.missions[0].targetCount;
-                    stageManager.OnMissionProgressUpdated += (progressArray) =>
-                    {
-                        if (progressArray.Length > 0)
-                        {
-                            var progress = progressArray[0];
-                            int remaining = progress.mission.targetCount - progress.currentCount;
+                    // 복수 미션이면 배열 오버로드 사용, 단일이면 기존 방식
+                    uiManager.CreateGameMissionUI(canvas, missions);
 
-                            // 카운트다운 애니메이션
-                            if (UIManager.gameMissionCountText != null && remaining != lastDisplayedCount)
-                            {
-                                Debug.Log($"[GameManager] Mission count update: {lastDisplayedCount} → {remaining}");
-                                StartCoroutine(CountDownCoroutine(UIManager.gameMissionCountText, remaining, lastDisplayedCount));
-                                lastDisplayedCount = remaining;
-                            }
+                    // 각 미션별 마지막 표시 카운트 추적 (인스턴스 필드에 저장)
+                    lastDisplayedCounts = new int[missions.Length];
+                    for (int i = 0; i < missions.Length; i++)
+                        lastDisplayedCounts[i] = missions[i].targetCount;
 
-                            // 블록 수집 이펙트
-                            if (UIManager.gameMissionIconRect != null && canvas != null)
-                            {
-                                StartCoroutine(BlockFlyEffectCoroutine(UIManager.gameMissionIconRect.anchoredPosition, canvas));
-                            }
-                        }
-                    };
+                    // 미션 진행도 업데이트 콜백 (명명 메서드로 구독 — 해제 가능)
+                    stageManager.OnMissionProgressUpdated += HandleMissionProgressUpdated;
                 }
             }
 
@@ -1471,7 +1640,12 @@ private void InitializeSystems()
                     if (canvas != null)
                         uiManager.CreateSurvivalMissionUI(canvas);
                 }
-                missionSystem.StartSurvival();
+
+                // InfiniteConfig가 있으면 커스텀 설정으로 시작
+                if (selectedLevelData?.infiniteConfig != null)
+                    missionSystem.StartSurvival(selectedLevelData.infiniteConfig);
+                else
+                    missionSystem.StartSurvival();
             }
 
             SetGameState(GameState.Playing);
@@ -1664,7 +1838,87 @@ private void OnRotationComplete(bool matchFound)
         }
 
         /// <summary>
-        /// 특수 블록(드릴, 폭탄 등)이 파괴한 기본 블록 미션 카운팅
+        /// Stage 모드 미션 진행도 UI 업데이트 핸들러
+        /// </summary>
+        private void HandleMissionProgressUpdated(MissionProgress[] progressArray)
+        {
+            for (int idx = 0; idx < progressArray.Length; idx++)
+            {
+                var progress = progressArray[idx];
+                int remaining = Mathf.Max(0, progress.mission.targetCount - progress.currentCount);
+
+                // 복수 미션 UI 카운트 업데이트
+                if (UIManager.gameMissionCountTexts.Count > idx)
+                {
+                    Text countText = UIManager.gameMissionCountTexts[idx];
+                    if (countText != null && lastDisplayedCounts != null && idx < lastDisplayedCounts.Length && remaining != lastDisplayedCounts[idx])
+                    {
+                        Debug.Log($"[GameManager] Mission[{idx}] count update: {lastDisplayedCounts[idx]} → {remaining}");
+                        StartCoroutine(CountDownCoroutine(countText, remaining, lastDisplayedCounts[idx]));
+                        lastDisplayedCounts[idx] = remaining;
+                    }
+                }
+                else if (idx == 0 && UIManager.gameMissionCountText != null)
+                {
+                    // 단일 미션 하위호환
+                    if (lastDisplayedCounts != null && remaining != lastDisplayedCounts[0])
+                    {
+                        Debug.Log($"[GameManager] Mission count update: {lastDisplayedCounts[0]} → {remaining}");
+                        StartCoroutine(CountDownCoroutine(UIManager.gameMissionCountText, remaining, lastDisplayedCounts[0]));
+                        lastDisplayedCounts[0] = remaining;
+                    }
+                }
+            }
+
+            // 블록 수집 이펙트 (컨테이너 위치로)
+            RectTransform flyTarget = UIManager.gameMissionContainerRect ?? UIManager.gameMissionIconRect;
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (flyTarget != null && canvas != null)
+            {
+                StartCoroutine(BlockFlyEffectCoroutine(flyTarget.anchoredPosition, canvas));
+            }
+        }
+
+        /// <summary>
+        /// Infinite 모드 미션 진행도 UI 업데이트 핸들러
+        /// </summary>
+        private void HandleInfiniteMissionProgressUpdated(MissionProgress[] missionProgress)
+        {
+            if (uiManager == null) return;
+            for (int i = 0; i < missionProgress.Length; i++)
+            {
+                var progress = missionProgress[i];
+                uiManager.UpdateMissionProgress(i, progress.currentCount, progress.mission.targetCount);
+            }
+        }
+
+        /// <summary>
+        /// 미션 완료 핸들러
+        /// </summary>
+        private void HandleMissionComplete(int missionIndex)
+        {
+            Debug.Log($"[GameManager] Mission {missionIndex} completed!");
+        }
+
+        /// <summary>
+        /// 이전 게임 이벤트 정리 (중복 구독 방지)
+        /// </summary>
+        private void CleanupGameEvents()
+        {
+            if (stageManager != null)
+            {
+                stageManager.OnMissionProgressUpdated -= HandleMissionProgressUpdated;
+                stageManager.OnMissionProgressUpdated -= HandleInfiniteMissionProgressUpdated;
+                stageManager.OnMissionComplete -= HandleMissionComplete;
+            }
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnGemsRemovedDetailed -= HandleStageGemsRemoved;
+            }
+        }
+
+        /// <summary>
+        /// 특수 블록(드릴, 폭탄 등)이 파괴한 기본 블록 미션 카운팅 (하위호환)
         /// </summary>
         public void OnSpecialBlockDestroyedBasicBlocks(int basicBlockCount, string specialBlockType)
         {
@@ -1675,8 +1929,35 @@ private void OnRotationComplete(bool matchFound)
 
             if (stageManager != null)
             {
-                // 특수 블록으로 제거된 블록들은 모두 기본 블록이므로 gemType=None으로 전달
                 stageManager.OnGemCollected(GemType.None, basicBlockCount);
+            }
+        }
+
+        /// <summary>
+        /// 특수 블록이 파괴한 블록들을 색상별로 미션에 카운팅
+        /// 각 특수 블록 시스템에서 파괴 대상의 gemType별 개수를 Dictionary로 전달
+        /// </summary>
+        public void OnSpecialBlockDestroyedBlocksByColor(Dictionary<GemType, int> gemCounts, string specialBlockType)
+        {
+            if (currentGameMode != GameMode.Stage) return;
+            if (gemCounts == null || gemCounts.Count == 0) return;
+
+            int total = 0;
+            foreach (var kvp in gemCounts)
+                total += kvp.Value;
+
+            Debug.Log($"[GameManager] 💣 특수블록 파괴(색상별): {specialBlockType}로 총 {total}개 제거");
+
+            if (stageManager != null)
+            {
+                foreach (var kvp in gemCounts)
+                {
+                    if (kvp.Value > 0)
+                    {
+                        Debug.Log($"  → {kvp.Key}: {kvp.Value}개");
+                        stageManager.OnGemCollected(kvp.Key, kvp.Value);
+                    }
+                }
             }
         }
 
@@ -1686,7 +1967,7 @@ private void OnRotationComplete(bool matchFound)
 private void OnCascadeComplete()
         {
             // Loading/Lobby 상태에서 호출된 경우 무시
-            if (currentState == GameState.Loading || currentState == GameState.Lobby)
+            if (currentState == GameState.Loading || currentState == GameState.Lobby || currentState == GameState.StageClear)
             {
                 Debug.Log($"[GameManager] OnCascadeComplete skipped - in {currentState} state");
                 return;
@@ -1703,6 +1984,8 @@ private void OnCascadeComplete()
             if (isItemAction)
             {
                 isItemAction = false;
+                if (currentState == GameState.Processing)
+                    processingStartTime = Time.time; // STUCK 방지
                 SetGameState(GameState.Playing);
                 return;
             }
@@ -1769,6 +2052,10 @@ private void OnCascadeComplete()
         /// </summary>
 private void OnSpecialBlockCompleted(int score)
         {
+            // StageClear/GameOver 상태에서는 후처리 불필요 (클리어 시퀀스가 관리)
+            if (currentState == GameState.StageClear || currentState == GameState.GameOver)
+                return;
+
             // 진행 중이므로 stuck 타이머 리셋
             if (currentState == GameState.Processing)
                 processingStartTime = Time.time;
@@ -1793,8 +2080,7 @@ private void OnSpecialBlockCompleted(int score)
             // 이미 내부적으로 연쇄 처리 중이므로 GameManager가 개입하면 데드락 발생
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
 
-            // 유저 직접 클릭으로 발동된 경우 (무한모드에서는 턴 증가 없음)
-
+            // 유저 직접 클릭으로 발동된 경우 (턴 차감은 InputSystem에서 발동 시작 시 처리)
             SetGameState(GameState.Processing);
             StartCoroutine(ProcessSpecialBlockAftermath());
         }
@@ -1820,6 +2106,7 @@ private void OnSpecialBlockCompleted(int score)
             while (blockRemovalSystem.IsProcessing && waited < 10f)
             {
                 waited += Time.deltaTime;
+                processingStartTime = Time.time; // stuck 오판 방지
                 int curDepth = blockRemovalSystem.CurrentCascadeDepth;
                 if (curDepth != lastDepth)
                 {
@@ -1859,6 +2146,7 @@ private void OnSpecialBlockCompleted(int score)
             while (blockRemovalSystem.IsProcessing && elapsed < 10f)
             {
                 elapsed += Time.deltaTime;
+                processingStartTime = Time.time; // stuck 오판 방지
                 // 연쇄 깊이가 변하면 진행 중이므로 타이머 리셋
                 int curDepth = blockRemovalSystem.CurrentCascadeDepth;
                 if (curDepth != lastCascadeDepth)
@@ -1916,6 +2204,7 @@ private IEnumerator ProcessSpecialBlockAftermath()
                     while (blockRemovalSystem.IsProcessing && waited < 10f)
                     {
                         waited += Time.deltaTime;
+                        processingStartTime = Time.time; // stuck 오판 방지
                         int curDepth = blockRemovalSystem.CurrentCascadeDepth;
                         if (curDepth != lastDepth)
                         {
@@ -2050,8 +2339,8 @@ private IEnumerator ProcessSpecialBlockAftermath()
                 yield break;
             }
 
-            // 적군(회색 블록) 생성 후 Playing 전환
-            yield return StartCoroutine(SpawnEnemiesAndPlay());
+            // EnemySystem을 통한 적군 스폰 후 Playing 전환
+            yield return StartCoroutine(SpawnEnemiesViaSystemAndPlay());
             Debug.Log("[GameManager] ProcessSpecialBlockAftermath completed -> Playing");
         }
 
@@ -2083,6 +2372,10 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
         {
             if (block == null || block.Data == null) yield break;
             isProcessingChainDrill = true;
+
+            // stuck 타이머 리셋 (특수 블록 발동 진행 중이므로 stuck 아님)
+            processingStartTime = Time.time;
+
             float timeout = 5f;
             float waited = 0f;
 
@@ -2094,7 +2387,7 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         drillSystem.ActivateDrill(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (drillSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        while (drillSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
                         if (drillSystem.IsBlockActive(block)) { Debug.LogError("[GM] Drill timeout!"); drillSystem.ForceReset(); }
                     }
                     break;
@@ -2105,7 +2398,7 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         bombSystem.ActivateBomb(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (bombSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        while (bombSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
                         if (bombSystem.IsBlockActive(block)) { Debug.LogError("[GM] Bomb timeout!"); bombSystem.ForceReset(); }
                     }
                     break;
@@ -2116,7 +2409,7 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         donutSystem.ActivateDonut(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (donutSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        while (donutSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
                         if (donutSystem.IsBlockActive(block)) { Debug.LogError("[GM] Donut timeout!"); donutSystem.ForceReset(); }
                     }
                     break;
@@ -2127,7 +2420,7 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         xBlockSystem.ActivateXBlock(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (xBlockSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        while (xBlockSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
                         if (xBlockSystem.IsBlockActive(block)) { Debug.LogError("[GM] XBlock timeout!"); xBlockSystem.ForceReset(); }
                     }
                     break;
@@ -2138,7 +2431,7 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         laserSystem.ActivateLaser(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (laserSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        while (laserSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
                         if (laserSystem.IsBlockActive(block)) { Debug.LogError("[GM] Laser timeout!"); laserSystem.ForceReset(); }
                     }
                     break;
@@ -2150,6 +2443,15 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
 private void OnBigBang()
         {
             Debug.Log("BIG BANG triggered!");
+        }
+
+        /// <summary>
+        /// 외부에서 턴 1회 차감 (특수 블록 직접 클릭 시 InputSystem에서 호출)
+        /// </summary>
+        public void UseOneTurn()
+        {
+            UseTurn();
+            Debug.Log($"[GameManager] UseOneTurn() called, remaining={currentTurns}");
         }
 
         /// <summary>
@@ -2228,8 +2530,27 @@ private void OnBigBang()
         /// </summary>
         private void StageClear()
         {
+            // 기존 Processing 코루틴 모두 중단
+            StopAllCoroutines();
+
+            // Processing 플래그 정리
+            isProcessingChainDrill = false;
+            isInPostRecovery = false;
+
+            // 특수 블록 시스템 리셋 (진행 중인 이펙트/코루틴 정리)
+            if (blockRemovalSystem != null) blockRemovalSystem.ForceReset();
+            if (drillSystem != null) drillSystem.ForceReset();
+            if (bombSystem != null) bombSystem.ForceReset();
+            if (donutSystem != null) donutSystem.ForceReset();
+            if (xBlockSystem != null) xBlockSystem.ForceReset();
+            if (laserSystem != null) laserSystem.ForceReset();
+
             SetGameState(GameState.StageClear);
+            processingStartTime = Time.time; // StageClear 워치독 타이머 시작
             OnStageClear?.Invoke();
+
+            // 다음 레벨 해금
+            LevelRegistry.UnlockLevel(selectedStage + 1);
 
             if (inputSystem != null)
                 inputSystem.SetEnabled(false);
@@ -2238,130 +2559,328 @@ private void OnBigBang()
         }
 
         /// <summary>
-        /// 스테이지 클리어 시퀀스: 드릴 생성 -> 골드 보상 -> 클리어 팝업
+        /// 스테이지 클리어 시퀀스: 이펙트 없이 즉시 결과 처리 → 클리어 팝업
         /// </summary>
         private IEnumerator StageClearSequence()
         {
-            // BGM 정지 + 스테이지 클리어 사운드
+            // BGM 정지
             if (AudioManager.Instance != null)
-            {
                 AudioManager.Instance.StopBGM();
-                AudioManager.Instance.PlayStageClear();
-            }
 
-            Debug.Log($"Stage {currentStage} Clear! Starting drill generation sequence...");
+            Debug.Log($"Stage {currentStage} Clear!");
 
-            // 남은 이동횟수 스냅샷
-            int remainingTurns = currentTurns;
+            // 남은 이동횟수만큼 랜덤 위치에 보너스 드릴 생성
+            processingStartTime = Time.time;
+            yield return StartCoroutine(SpawnBonusDrills(currentTurns));
 
-            // 기본 블록 (특수 타입 없음, GemType 1-5) 수집
-            List<HexBlock> basicBlocks = new List<HexBlock>();
-            foreach (var block in hexGrid.GetAllBlocks())
-            {
-                if (block != null && block.Data != null &&
-                    block.Data.specialType == SpecialBlockType.None &&
-                    (int)block.Data.gemType >= 1 && (int)block.Data.gemType <= 5)
-                {
-                    basicBlocks.Add(block);
-                }
-            }
-
-            // 셔플
-            for (int i = basicBlocks.Count - 1; i > 0; i--)
-            {
-                int randomIndex = Random.Range(0, i + 1);
-                var temp = basicBlocks[i];
-                basicBlocks[i] = basicBlocks[randomIndex];
-                basicBlocks[randomIndex] = temp;
-            }
-
-            // 드릴 생성 루프
-            int drillsCreated = 0;
-            List<HexBlock> createdDrillBlocks = new List<HexBlock>();
-
-            for (int i = 0; i < remainingTurns && i < basicBlocks.Count; i++)
-            {
-                yield return new WaitForSeconds(0.15f);
-
-                HexBlock block = basicBlocks[i];
-                if (block == null) break;
-
-                // 랜덤 방향으로 드릴 생성
-                DrillDirection[] directions = { DrillDirection.Vertical, DrillDirection.Slash, DrillDirection.BackSlash };
-                DrillDirection randomDir = directions[Random.Range(0, directions.Length)];
-
-                drillSystem.CreateDrillBlock(block, randomDir, block.Data.gemType);
-                createdDrillBlocks.Add(block);
-                drillsCreated++;
-
-                // 드릴 생성 사운드
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayDrillSound();
-
-                // 스케일 펀치 애니메이션 (0 -> 1.3 -> 1.0, 0.2초)
-                StartCoroutine(ScalePunchAnimation(block.transform, 0.2f, 1.3f));
-
-                // 무브수 감소 및 UI 업데이트
-                currentTurns--;
-                if (uiManager != null)
-                    uiManager.UpdateTurnDisplay(currentTurns);
-            }
-
-            yield return new WaitForSeconds(0.3f);
-
-            // 필드의 모든 특수 블록 수집 및 동시 발동
+            // 모든 특수 블록 동시 발동 (기존 + 새로 생성된 드릴 포함)
+            processingStartTime = Time.time;
             yield return StartCoroutine(ActivateAllSpecialBlocks());
 
-            // OnCascadeComplete 이벤트 대기 (낙하 및 매칭 완료)
-            bool cascadeCompleted = false;
-            if (blockRemovalSystem != null)
-            {
-                blockRemovalSystem.OnCascadeComplete += () => cascadeCompleted = true;
-                // 이벤트 발동 대기 (최대 10초 타임아웃)
-                float waitTime = 0f;
-                while (!cascadeCompleted && waitTime < 10f)
-                {
-                    waitTime += Time.deltaTime;
-                    yield return null;
-                }
-                blockRemovalSystem.OnCascadeComplete -= () => cascadeCompleted = true;
-            }
+            // 모든 시스템이 완전히 멈출 때까지 대기
+            processingStartTime = Time.time;
+            yield return StartCoroutine(WaitForAllSystemsIdle());
 
-            yield return new WaitForSeconds(1f);
+            // 낙하 + 연쇄 매칭 처리 (완전 정지될 때까지 반복)
+            processingStartTime = Time.time;
+            yield return StartCoroutine(ProcessStageClearAftermath());
+
+            // 남은 이동횟수 스냅샷 (턴 초기화 전에 저장)
+            int remainingTurns = currentTurns;
 
             // 골드 계산: 1턴당 50골드
             int goldReward = remainingTurns * 50;
 
-            // 골드 팝업 연출 (각 드릴 블록 위치에서)
-            for (int i = 0; i < createdDrillBlocks.Count; i++)
-            {
-                if (createdDrillBlocks[i] != null)
-                {
-                    Vector3 blockPos = createdDrillBlocks[i].transform.position;
-                    uiManager.ShowGoldPopup(50, blockPos);
-                }
-                yield return new WaitForSeconds(0.05f);
-            }
+            // 점수 보너스 계산 (턴 초기화 전에 수행)
+            StageSummaryData? summary = null;
+            if (scoreManager != null)
+                summary = scoreManager.CalculateStageClearBonus(remainingTurns, initialTurns);
 
-            // HUD 골드 카운팅 애니메이션
-            yield return StartCoroutine(CountGoldAnimation(goldReward));
+            // 턴 0으로 표시
+            currentTurns = 0;
+            if (uiManager != null)
+                uiManager.UpdateTurnDisplay(currentTurns);
 
-            // 골드 저장
+            // 골드 즉시 지급
             AddGold(goldReward);
 
-            // 클리어 팝업 표시 (골드 정보 포함)
+            // 특수 블록 연쇄 완료 후 1초 대기 후 클리어 팝업 표시
+            yield return new WaitForSeconds(1f);
+
             if (uiManager != null)
             {
-                if (scoreManager != null)
+                if (summary.HasValue)
                 {
-                    var summary = scoreManager.CalculateStageClearBonus(currentTurns, initialTurns);
-                    uiManager.ShowStageClearPopup(summary, goldReward);
+                    uiManager.ShowStageClearPopup(summary.Value, goldReward);
                 }
                 else
                 {
                     uiManager.ShowStageClearPopup(goldReward);
                 }
             }
+
+            // 팝업 표시 후 워치독 타임아웃 방지 (사용자가 확인 버튼 누를 때까지 대기)
+            processingStartTime = float.MaxValue;
+        }
+
+        /// <summary>
+        /// 보너스 드릴 생성: 남은 이동횟수만큼 랜덤 일반 블록을 드릴로 변환
+        /// </summary>
+        private IEnumerator SpawnBonusDrills(int count)
+        {
+            if (hexGrid == null || count <= 0) yield break;
+
+            // 일반 블록(특수 블록이 아닌) 수집
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.specialType != SpecialBlockType.None) continue;
+                candidates.Add(block);
+            }
+
+            // 셔플 (Fisher-Yates)
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = Random.Range(0, i + 1);
+                var temp = candidates[i];
+                candidates[i] = candidates[j];
+                candidates[j] = temp;
+            }
+
+            int drillCount = Mathf.Min(count, candidates.Count);
+            DrillDirection[] directions = { DrillDirection.Vertical, DrillDirection.Slash, DrillDirection.BackSlash };
+
+            // 순차적으로 드릴 변환 (연출 효과)
+            for (int i = 0; i < drillCount; i++)
+            {
+                HexBlock block = candidates[i];
+
+                // 블록 데이터를 드릴로 변환
+                block.Data.specialType = SpecialBlockType.Drill;
+                block.Data.drillDirection = directions[Random.Range(0, directions.Length)];
+                block.UpdateVisuals();
+
+                // 스케일 팝 애니메이션
+                StartCoroutine(DrillSpawnPopAnimation(block.transform));
+
+                // 사운드 효과
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayButtonClick();
+
+                yield return new WaitForSeconds(0.08f);
+            }
+
+            if (drillCount > 0)
+            {
+                Debug.Log($"[GameManager] 보너스 드릴 {drillCount}개 생성 완료 (남은 턴: {count})");
+                yield return new WaitForSeconds(0.3f);
+            }
+        }
+
+        /// <summary>
+        /// 드릴 생성 시 팝 애니메이션 (0.5 → 1.15 → 1.0 스케일)
+        /// </summary>
+        private IEnumerator DrillSpawnPopAnimation(Transform target)
+        {
+            if (target == null) yield break;
+
+            float duration = 0.2f;
+            float elapsed = 0f;
+            Vector3 originalScale = target.localScale;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float scale;
+                if (t < 0.5f)
+                    scale = Mathf.Lerp(0.5f, 1.15f, t / 0.5f);
+                else
+                    scale = Mathf.Lerp(1.15f, 1f, (t - 0.5f) / 0.5f);
+
+                target.localScale = originalScale * scale;
+                yield return null;
+            }
+
+            target.localScale = originalScale;
+        }
+
+        /// <summary>
+        /// 모든 특수 블록 시스템 + BlockRemovalSystem이 완전히 idle 상태가 될 때까지 대기
+        /// </summary>
+        private IEnumerator WaitForAllSystemsIdle()
+        {
+            float timeout = 10f;
+            float elapsed = 0f;
+
+            while (elapsed < timeout)
+            {
+                bool anyActive = false;
+
+                if (drillSystem != null && drillSystem.IsDrilling) anyActive = true;
+                if (bombSystem != null && bombSystem.IsBombing) anyActive = true;
+                if (donutSystem != null && donutSystem.IsActivating) anyActive = true;
+                if (xBlockSystem != null && xBlockSystem.IsActivating) anyActive = true;
+                if (laserSystem != null && laserSystem.IsActivating) anyActive = true;
+                if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) anyActive = true;
+
+                if (!anyActive) break;
+
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (elapsed >= timeout)
+                Debug.LogWarning("[GameManager] WaitForAllSystemsIdle 타임아웃 (10초)");
+        }
+
+        /// <summary>
+        /// StageClear 전용 후처리: 낙하 + 연쇄 매칭 + 남은 특수 블록 발동을 완전 정지될 때까지 반복
+        /// ProcessSpecialBlockAftermath와 유사하지만 턴 종료/적군 스폰/상태 전환 없음
+        /// 연쇄 매칭으로 새로 생성된 특수 블록(pendingActivation 무관)도 포착하여 발동
+        /// </summary>
+        private IEnumerator ProcessStageClearAftermath()
+        {
+            yield return new WaitForSeconds(0.1f);
+
+            int maxLoops = 20;
+            int loop = 0;
+
+            while (loop < maxLoops)
+            {
+                loop++;
+
+                // 워치독 타이머 리셋 (루프가 진행 중이므로 stuck 아님)
+                processingStartTime = Time.time;
+
+                // 1. BRS가 아직 처리 중이면 완료 대기
+                yield return StartCoroutine(WaitForBRSReady());
+
+                // 2. 낙하 처리
+                if (blockRemovalSystem != null)
+                    yield return StartCoroutine(blockRemovalSystem.ProcessFallingCoroutinePublic());
+                yield return new WaitForSeconds(0.05f);
+
+                // 3. pending 블록 수집 (pendingActivation == true인 블록)
+                List<HexBlock> pendingBlocks = new List<HexBlock>();
+                if (hexGrid != null)
+                {
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block != null && block.Data != null &&
+                            block.Data.pendingActivation &&
+                            block.Data.specialType != SpecialBlockType.None)
+                        {
+                            block.Data.pendingActivation = false;
+                            pendingBlocks.Add(block);
+                        }
+                    }
+                }
+
+                // 4. 매칭 확인
+                List<MatchingSystem.MatchGroup> newMatches = null;
+                if (matchingSystem != null)
+                {
+                    var matches = matchingSystem.FindMatches();
+                    if (matches.Count > 0) newMatches = matches;
+                }
+
+                // 5. 필드에 남아있는 발동 가능한 특수 블록 수집 (pendingActivation 무관)
+                //    연쇄 매칭으로 새로 생성된 특수 블록을 포착하기 위함
+                //    MoveBlock, FixedBlock, TimeBomb은 발동 대상이 아니므로 제외
+                List<HexBlock> remainingSpecials = new List<HexBlock>();
+                if (hexGrid != null)
+                {
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block != null && block.Data != null &&
+                            block.Data.gemType != GemType.None &&
+                            !pendingBlocks.Contains(block) &&
+                            IsActivatableSpecial(block.Data.specialType))
+                        {
+                            remainingSpecials.Add(block);
+                        }
+                    }
+                }
+
+                Debug.Log($"[GameManager] StageClear aftermath loop #{loop}: " +
+                    $"{pendingBlocks.Count} pending, " +
+                    $"{(newMatches != null ? newMatches.Count : 0)} matches, " +
+                    $"{remainingSpecials.Count} remaining specials");
+
+                // 6. 아무것도 없으면 종료
+                if (pendingBlocks.Count == 0 && newMatches == null && remainingSpecials.Count == 0)
+                {
+                    Debug.Log($"[GameManager] StageClear aftermath ended at #{loop}");
+                    break;
+                }
+
+                // 7. 매칭이 있으면 BRS에 위임 (pending도 함께)
+                if (newMatches != null)
+                {
+                    yield return StartCoroutine(WaitForBRSReady());
+
+                    if (pendingBlocks.Count > 0)
+                    {
+                        Debug.Log($"[GameManager] StageClear aftermath: {pendingBlocks.Count} pending + {newMatches.Count} matches -> BRS");
+                        blockRemovalSystem.ProcessMatchesWithPendingSpecials(newMatches, pendingBlocks);
+                    }
+                    else
+                    {
+                        Debug.Log($"[GameManager] StageClear aftermath: {newMatches.Count} matches -> BRS");
+                        blockRemovalSystem.ProcessMatches(newMatches);
+                    }
+
+                    yield return StartCoroutine(WaitForBRSComplete("StageClear-Aftermath"));
+                    yield return StartCoroutine(WaitForAllSystemsIdle());
+                    continue;
+                }
+
+                // 8. pending + 남은 특수 블록을 합쳐서 발동
+                List<HexBlock> allToActivate = new List<HexBlock>();
+                allToActivate.AddRange(pendingBlocks);
+                allToActivate.AddRange(remainingSpecials);
+
+                if (allToActivate.Count > 0)
+                {
+                    Debug.Log($"[GameManager] StageClear aftermath: activating {allToActivate.Count} specials " +
+                        $"({pendingBlocks.Count} pending + {remainingSpecials.Count} remaining)");
+                    List<Coroutine> activations = new List<Coroutine>();
+                    foreach (var block in allToActivate)
+                    {
+                        if (block == null || block.Data == null) continue;
+                        if (block.Data.specialType == SpecialBlockType.None) continue;
+                        activations.Add(StartCoroutine(ActivateSpecialAndWait(block)));
+                    }
+                    foreach (var co in activations)
+                        yield return co;
+                    yield return StartCoroutine(WaitForAllSystemsIdle());
+                    continue;
+                }
+            }
+
+            if (loop >= maxLoops)
+                Debug.LogWarning($"[GameManager] ProcessStageClearAftermath 최대 루프 도달 ({maxLoops})!");
+
+            // 최종 안전 대기
+            yield return StartCoroutine(WaitForAllSystemsIdle());
+            Debug.Log("[GameManager] ProcessStageClearAftermath 완료 - 모든 활동 정지");
+        }
+
+        /// <summary>
+        /// 발동 가능한 특수 블록 타입인지 확인
+        /// MoveBlock, FixedBlock, TimeBomb은 발동 대상이 아님
+        /// </summary>
+        private bool IsActivatableSpecial(SpecialBlockType type)
+        {
+            return type == SpecialBlockType.Drill ||
+                   type == SpecialBlockType.Bomb ||
+                   type == SpecialBlockType.Rainbow ||
+                   type == SpecialBlockType.XBlock ||
+                   type == SpecialBlockType.Laser;
         }
 
         /// <summary>
@@ -2449,7 +2968,18 @@ private void OnBigBang()
             if (drillSystem != null)
             {
                 drillSystem.ActivateDrill(block);
-                yield return null;
+                float waited = 0f;
+                while (drillSystem.IsDrilling && waited < 5f)
+                {
+                    waited += Time.deltaTime;
+                    processingStartTime = Time.time;
+                    yield return null;
+                }
+                if (drillSystem.IsDrilling)
+                {
+                    Debug.LogWarning("[GameManager] ActivateDrillBlock timeout! ForceReset.");
+                    drillSystem.ForceReset();
+                }
             }
         }
 
@@ -2461,7 +2991,18 @@ private void OnBigBang()
             if (bombSystem != null)
             {
                 bombSystem.ActivateBomb(block);
-                yield return null;
+                float waited = 0f;
+                while (bombSystem.IsBombing && waited < 5f)
+                {
+                    waited += Time.deltaTime;
+                    processingStartTime = Time.time;
+                    yield return null;
+                }
+                if (bombSystem.IsBombing)
+                {
+                    Debug.LogWarning("[GameManager] ActivateBombBlock timeout! ForceReset.");
+                    bombSystem.ForceReset();
+                }
             }
         }
 
@@ -2473,7 +3014,18 @@ private void OnBigBang()
             if (donutSystem != null)
             {
                 donutSystem.ActivateDonut(block);
-                yield return null;
+                float waited = 0f;
+                while (donutSystem.IsActivating && waited < 5f)
+                {
+                    waited += Time.deltaTime;
+                    processingStartTime = Time.time;
+                    yield return null;
+                }
+                if (donutSystem.IsActivating)
+                {
+                    Debug.LogWarning("[GameManager] ActivateDonutBlock timeout! ForceReset.");
+                    donutSystem.ForceReset();
+                }
             }
         }
 
@@ -2485,7 +3037,18 @@ private void OnBigBang()
             if (xBlockSystem != null)
             {
                 xBlockSystem.ActivateXBlock(block);
-                yield return null;
+                float waited = 0f;
+                while (xBlockSystem.IsActivating && waited < 5f)
+                {
+                    waited += Time.deltaTime;
+                    processingStartTime = Time.time;
+                    yield return null;
+                }
+                if (xBlockSystem.IsActivating)
+                {
+                    Debug.LogWarning("[GameManager] ActivateXBlock timeout! ForceReset.");
+                    xBlockSystem.ForceReset();
+                }
             }
         }
 
@@ -2497,7 +3060,18 @@ private void OnBigBang()
             if (laserSystem != null)
             {
                 laserSystem.ActivateLaser(block);
-                yield return null;
+                float waited = 0f;
+                while (laserSystem.IsActivating && waited < 5f)
+                {
+                    waited += Time.deltaTime;
+                    processingStartTime = Time.time;
+                    yield return null;
+                }
+                if (laserSystem.IsActivating)
+                {
+                    Debug.LogWarning("[GameManager] ActivateLaserBlock timeout! ForceReset.");
+                    laserSystem.ForceReset();
+                }
             }
         }
 
@@ -2744,10 +3318,10 @@ private void OnBigBang()
         private void CreateLobbyUI(Canvas canvas)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            float buttonGap = 25f;
-            float buttonSize = 200f;
-            // 3버튼: 왼쪽(-1), 중앙(0), 오른쪽(+1)
-            float spacing = buttonSize + buttonGap;
+
+            // LevelRegistry 초기화
+            LevelRegistry.Initialize();
+            var allLevels = LevelRegistry.GetAllLevels();
 
             // === 루트 컨테이너 (전체 화면) ===
             lobbyContainer = new GameObject("LobbyContainer");
@@ -2780,22 +3354,104 @@ private void OnBigBang()
             titleText.raycastTarget = false;
             titleText.text = "HEXA PUZZLE";
 
-            // === 레벨 1 버튼 (화면 중앙, 크게) ===
-            CreateStageButton(
-                lobbyContainer,
-                font,
-                Vector2.zero,                          // 화면 중앙
-                "LEVEL 1",
-                "COLLECT GEMS",
-                new Color(0.2f, 0.6f, 0.8f),          // 파란색
-                new Color(0.4f, 0.8f, 1f),            // 밝은 파란색 테두리
-                1,                                     // stageNum
-                350f                                   // btnSize - 크게
-            );
+            // === 보유 골드 표시 (우측 상단) ===
+            GameObject lobbyGoldObj = new GameObject("LobbyGold");
+            lobbyGoldObj.transform.SetParent(lobbyContainer.transform, false);
+            RectTransform lobbyGoldRt = lobbyGoldObj.AddComponent<RectTransform>();
+            lobbyGoldRt.anchorMin = new Vector2(1f, 1f);
+            lobbyGoldRt.anchorMax = new Vector2(1f, 1f);
+            lobbyGoldRt.pivot = new Vector2(1f, 1f);
+            lobbyGoldRt.anchoredPosition = new Vector2(-30f, -40f);
+            lobbyGoldRt.sizeDelta = new Vector2(250f, 40f);
+
+            lobbyGoldText = lobbyGoldObj.AddComponent<Text>();
+            lobbyGoldText.font = font;
+            lobbyGoldText.fontSize = 28;
+            lobbyGoldText.alignment = TextAnchor.MiddleRight;
+            lobbyGoldText.color = new Color(1f, 0.84f, 0f);
+            lobbyGoldText.raycastTarget = false;
+            lobbyGoldText.text = $"\ud83d\udcb0 {currentGold:N0}";
+
+            Outline lobbyGoldOutline = lobbyGoldObj.AddComponent<Outline>();
+            lobbyGoldOutline.effectColor = new Color(0, 0, 0, 0.8f);
+            lobbyGoldOutline.effectDistance = new Vector2(1, 1);
+
+            // === 스크롤 영역 (레벨 버튼 그리드) ===
+            GameObject scrollObj = new GameObject("LevelScrollView");
+            scrollObj.transform.SetParent(lobbyContainer.transform, false);
+            RectTransform scrollRt = scrollObj.AddComponent<RectTransform>();
+            scrollRt.anchorMin = new Vector2(0f, 0f);
+            scrollRt.anchorMax = new Vector2(1f, 1f);
+            scrollRt.offsetMin = new Vector2(20f, 80f);
+            scrollRt.offsetMax = new Vector2(-20f, -200f);
+
+            ScrollRect scrollRect = scrollObj.AddComponent<ScrollRect>();
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Elastic;
+
+            // 마스크
+            Image scrollBg = scrollObj.AddComponent<Image>();
+            scrollBg.color = new Color(0f, 0f, 0f, 0.01f);
+            Mask mask = scrollObj.AddComponent<Mask>();
+            mask.showMaskGraphic = false;
+
+            // 콘텐츠 영역
+            GameObject contentObj = new GameObject("Content");
+            contentObj.transform.SetParent(scrollObj.transform, false);
+            RectTransform contentRt = contentObj.AddComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0.5f, 1f);
+            contentRt.anchorMax = new Vector2(0.5f, 1f);
+            contentRt.pivot = new Vector2(0.5f, 1f);
+            contentRt.anchoredPosition = Vector2.zero;
+
+            scrollRect.content = contentRt;
+
+            // === 그리드 레이아웃으로 레벨 버튼 배치 (3열) ===
+            int columns = 3;
+            float buttonSize = 200f;
+            float buttonGap = 25f;
+            float spacing = buttonSize + buttonGap;
+            int totalLevels = allLevels.Count;
+            int rows = Mathf.CeilToInt((float)totalLevels / columns);
+            float contentHeight = rows * spacing + buttonGap;
+            contentRt.sizeDelta = new Vector2(columns * spacing + buttonGap, contentHeight);
+
+            for (int i = 0; i < totalLevels; i++)
+            {
+                var level = allLevels[i];
+                int col = i % columns;
+                int row = i / columns;
+
+                // 그리드 중앙 정렬
+                float xOffset = (col - (columns - 1) * 0.5f) * spacing;
+                float yOffset = -buttonGap - row * spacing - buttonSize * 0.5f;
+                Vector2 pos = new Vector2(xOffset, yOffset);
+
+                var display = level.lobbyDisplay ?? new LobbyDisplayConfig
+                {
+                    backgroundColor = new Color(0.3f, 0.3f, 0.5f),
+                    borderColor = new Color(0.5f, 0.5f, 0.7f),
+                    buttonSize = buttonSize
+                };
+
+                CreateStageButton(
+                    contentObj,
+                    font,
+                    pos,
+                    level.levelName,
+                    level.subtitle ?? "",
+                    display.backgroundColor,
+                    display.borderColor,
+                    level.levelId,
+                    display.buttonSize > 0 ? display.buttonSize : buttonSize,
+                    level.isLocked
+                );
+            }
 
             lobbyContainer.SetActive(false);
             lobbyContainer.transform.SetAsLastSibling();
-            Debug.Log("[GameManager] 로비 UI 생성 완료 (스테이지 1~3)");
+            Debug.Log($"[GameManager] 로비 UI 생성 완료 (레벨 {totalLevels}개)");
         }
 
         /// <summary>
@@ -2803,7 +3459,7 @@ private void OnBigBang()
         /// </summary>
         private void CreateStageButton(GameObject parent, Font font, Vector2 position,
             string stageLabel, string subtitle, Color bgColor, Color borderColor, int stageNum,
-            float btnSize = 250f)
+            float btnSize = 250f, bool isLocked = false)
         {
             GameObject stageBtn = new GameObject($"Stage{stageNum}Button");
             stageBtn.transform.SetParent(parent.transform, false);
@@ -2814,19 +3470,29 @@ private void OnBigBang()
             stageBtnRt.anchoredPosition = position;
             stageBtnRt.sizeDelta = new Vector2(btnSize, btnSize);
 
+            // 잠긴 레벨: 색상 어둡게
+            Color displayBg = isLocked ? bgColor * 0.4f : bgColor;
+            Color displayBorder = isLocked ? borderColor * 0.4f : borderColor;
+
             // 육각형 배경
             Image hexBg = stageBtn.AddComponent<Image>();
             hexBg.sprite = HexBlock.GetHexFlashSprite();
-            hexBg.color = bgColor;
+            hexBg.color = displayBg;
             hexBg.type = Image.Type.Simple;
             hexBg.preserveAspect = true;
 
             Button btn = stageBtn.AddComponent<Button>();
             var btnColors = btn.colors;
-            btnColors.highlightedColor = bgColor * 1.3f;
-            btnColors.pressedColor = bgColor * 0.7f;
+            btnColors.highlightedColor = displayBg * 1.3f;
+            btnColors.pressedColor = displayBg * 0.7f;
             btn.colors = btnColors;
             btn.targetGraphic = hexBg;
+
+            // 잠긴 레벨: 버튼 비활성화
+            if (isLocked)
+            {
+                btn.interactable = false;
+            }
 
             // 육각형 테두리
             GameObject borderObj = new GameObject("HexBorder");
@@ -2838,7 +3504,7 @@ private void OnBigBang()
             borderRt.offsetMax = new Vector2(8f, 8f);
             Image borderImg = borderObj.AddComponent<Image>();
             borderImg.sprite = HexBlock.GetHexBorderSprite();
-            borderImg.color = borderColor;
+            borderImg.color = displayBorder;
             borderImg.type = Image.Type.Simple;
             borderImg.preserveAspect = true;
             borderImg.raycastTarget = false;
@@ -2850,33 +3516,35 @@ private void OnBigBang()
             stageTextRt.anchorMin = new Vector2(0.5f, 0.5f);
             stageTextRt.anchorMax = new Vector2(0.5f, 0.5f);
             stageTextRt.pivot = new Vector2(0.5f, 0.5f);
-            stageTextRt.anchoredPosition = new Vector2(0f, 55f);
-            stageTextRt.sizeDelta = new Vector2(200f, 36f);
+            stageTextRt.anchoredPosition = new Vector2(0f, 20f);
+            stageTextRt.sizeDelta = new Vector2(btnSize * 0.9f, 36f);
             Text stageText = stageTextObj.AddComponent<Text>();
             stageText.font = font;
-            stageText.fontSize = 28;
+            stageText.fontSize = isLocked ? 18 : 28;
             stageText.alignment = TextAnchor.MiddleCenter;
-            stageText.color = new Color(0.85f, 0.9f, 1f);
+            stageText.color = isLocked ? new Color(0.5f, 0.5f, 0.6f) : new Color(0.85f, 0.9f, 1f);
             stageText.raycastTarget = false;
-            stageText.text = stageLabel;
+            stageText.text = isLocked ? "🔒" : stageLabel;
 
-            // 재생 아이콘
-            GameObject playObj = new GameObject("PlayIcon");
-            playObj.transform.SetParent(stageBtn.transform, false);
-            RectTransform playRt = playObj.AddComponent<RectTransform>();
-            playRt.anchorMin = new Vector2(0.5f, 0.5f);
-            playRt.anchorMax = new Vector2(0.5f, 0.5f);
-            playRt.pivot = new Vector2(0.5f, 0.5f);
-            playRt.anchoredPosition = new Vector2(0f, 10f);
-            playRt.sizeDelta = new Vector2(60f, 60f);
-            Text playText = playObj.AddComponent<Text>();
-            playText.font = font;
-            playText.fontSize = 42;
-            playText.alignment = TextAnchor.MiddleCenter;
-            playText.color = Color.white;
-            playText.raycastTarget = false;
-            playText.text = "\u25B6";
-
+            if (!isLocked)
+            {
+                // 재생 아이콘 (잠긴 레벨에서는 숨김)
+                GameObject playObj = new GameObject("PlayIcon");
+                playObj.transform.SetParent(stageBtn.transform, false);
+                RectTransform playRt = playObj.AddComponent<RectTransform>();
+                playRt.anchorMin = new Vector2(0.5f, 0.5f);
+                playRt.anchorMax = new Vector2(0.5f, 0.5f);
+                playRt.pivot = new Vector2(0.5f, 0.5f);
+                playRt.anchoredPosition = new Vector2(0f, -15f);
+                playRt.sizeDelta = new Vector2(40f, 40f);
+                Text playText = playObj.AddComponent<Text>();
+                playText.font = font;
+                playText.fontSize = 32;
+                playText.alignment = TextAnchor.MiddleCenter;
+                playText.color = Color.white;
+                playText.raycastTarget = false;
+                playText.text = "\u25B6";
+            }
 
             // 부제 텍스트
             GameObject subtitleObj = new GameObject("Subtitle");
@@ -2885,23 +3553,36 @@ private void OnBigBang()
             subtitleRt.anchorMin = new Vector2(0.5f, 0.5f);
             subtitleRt.anchorMax = new Vector2(0.5f, 0.5f);
             subtitleRt.pivot = new Vector2(0.5f, 0.5f);
-            subtitleRt.anchoredPosition = new Vector2(0f, stageNum == 1 ? -100f : -40f);
-            subtitleRt.sizeDelta = new Vector2(220f, 24f);
+            subtitleRt.anchoredPosition = new Vector2(0f, -40f);
+            subtitleRt.sizeDelta = new Vector2(btnSize * 0.95f, 24f);
             Text subtitleText = subtitleObj.AddComponent<Text>();
             subtitleText.font = font;
-            subtitleText.fontSize = 13;
+            subtitleText.fontSize = 11;
             subtitleText.alignment = TextAnchor.MiddleCenter;
-            subtitleText.color = new Color(0.7f, 0.7f, 0.8f);
+            subtitleText.color = isLocked ? new Color(0.4f, 0.4f, 0.5f) : new Color(0.7f, 0.7f, 0.8f);
             subtitleText.raycastTarget = false;
             subtitleText.text = subtitle;
 
-            // 버튼 클릭
+            // 버튼 클릭 — LevelRegistry에서 게임 모드 결정
             btn.onClick.AddListener(() =>
             {
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
                 selectedStage = stageNum;
-                // 레벨1은 Stage 모드, 나머지는 Infinite
-                currentGameMode = (stageNum == 1) ? GameMode.Stage : GameMode.Infinite;
+
+                // LevelRegistry에서 레벨 데이터 조회하여 게임 모드 결정
+                var levelData = LevelRegistry.GetLevel(stageNum);
+                if (levelData != null)
+                {
+                    currentGameMode = levelData.gameMode;
+                    selectedLevelData = levelData;
+                }
+                else
+                {
+                    // 폴백: 기존 로직
+                    currentGameMode = (stageNum == 1) ? GameMode.Stage : GameMode.Infinite;
+                    selectedLevelData = null;
+                }
+
                 HideLobby();
                 StartGame();
             });
@@ -2920,6 +3601,10 @@ private void OnBigBang()
 
             SetGameState(GameState.Lobby);
 
+            // 미션 UI 제거
+            if (uiManager != null)
+                uiManager.CleanupGameMissionUI();
+
             // 그리드 숨기기 (SetActive 대신 CanvasGroup으로 — 다른 시스템의 FindObjectOfType 유지)
             if (hexGrid != null)
                 SetCanvasGroupVisible(hexGrid.gameObject, false);
@@ -2930,12 +3615,21 @@ private void OnBigBang()
                 if (hud != null) hud.SetActive(false);
             }
 
+            // 아이템 오버레이 강제 비활성화
+            GameObject hammerOverlay = GameObject.Find("HammerOverlay");
+            if (hammerOverlay != null) hammerOverlay.SetActive(false);
+            GameObject swapOverlay = GameObject.Find("SwapOverlay");
+            if (swapOverlay != null) swapOverlay.SetActive(false);
 
             if (lobbyContainer != null)
             {
                 lobbyContainer.SetActive(true);
                 lobbyContainer.transform.SetAsLastSibling();
             }
+
+            // 로비 골드 표시 갱신
+            if (lobbyGoldText != null)
+                lobbyGoldText.text = $"\ud83d\udcb0 {currentGold:N0}";
 
             Debug.Log("[GameManager] 로비 표시");
         }
@@ -2957,6 +3651,12 @@ private void OnBigBang()
             {
                 if (hud != null) hud.SetActive(true);
             }
+
+            // 아이템 오버레이 강제 비활성화 (아이템 미활성 상태에서 오버레이가 보이지 않도록)
+            GameObject hammerOverlay = GameObject.Find("HammerOverlay");
+            if (hammerOverlay != null) hammerOverlay.SetActive(false);
+            GameObject swapOverlay = GameObject.Find("SwapOverlay");
+            if (swapOverlay != null) swapOverlay.SetActive(false);
 
             Debug.Log("[GameManager] 로비 숨기기");
         }
@@ -2986,6 +3686,17 @@ private void OnBigBang()
             ShowLobby();
         }
 
+        /// <summary>
+        /// 클리어 후 로비로 돌아가기 (스코어 리셋 없음)
+        /// </summary>
+        public void ReturnToLobby()
+        {
+            Time.timeScale = 1f;
+            if (scoreManager != null) scoreManager.ResetScore();
+            Debug.Log("[GameManager] ReturnToLobby: 로비로 돌아갑니다");
+            ShowLobby();
+        }
+
 // ============================================================
         // EnemySystem 통합 적군 스폰
         // ============================================================
@@ -2995,10 +3706,12 @@ private void OnBigBang()
         /// </summary>
         private IEnumerator SpawnEnemiesViaSystemAndPlay()
         {
+            processingStartTime = Time.time; // STUCK 방지: 적군 스폰 대기 중 타임아웃 방지
             if (enemySystem != null)
             {
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayEnemySpawnSound();
+                // [몬스터 비활성화] 적군 스폰 사운드 비활성화
+                // if (AudioManager.Instance != null)
+                //     AudioManager.Instance.PlayEnemySpawnSound();
                 yield return StartCoroutine(enemySystem.SpawnEnemiesForStage(selectedStage, 3, rotationCount));
             }
             SetGameState(GameState.Playing);
@@ -3009,10 +3722,12 @@ private void OnBigBang()
         /// </summary>
         private IEnumerator SpawnEnemiesViaSystemAndCheckMoves(int count)
         {
+            processingStartTime = Time.time; // STUCK 방지: 적군 스폰 대기 중 타임아웃 방지
             if (enemySystem != null)
             {
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayEnemySpawnSound();
+                // [몬스터 비활성화] 적군 스폰 사운드 비활성화
+                // if (AudioManager.Instance != null)
+                //     AudioManager.Instance.PlayEnemySpawnSound();
                 yield return StartCoroutine(enemySystem.SpawnEnemiesForStage(selectedStage, count, rotationCount));
             }
 
@@ -3165,8 +3880,12 @@ private void OnBigBang()
             Color originalColor = GemColors.GetColor(block.Data.gemType);
             Color grayColor = GemColors.GetColor(GemType.Gray);
 
-            // 데이터를 Gray로 변경
-            block.SetBlockData(new BlockData(GemType.Gray));
+            // 데이터를 Gray로 변경 (기본 생성자 사용, Gray 필터 우회)
+            // enemyType = Chromophage 설정 → SetBlockData의 Gray 안전장치 통과
+            var grayData = new BlockData();
+            grayData.gemType = GemType.Gray;
+            grayData.enemyType = EnemyType.Chromophage;
+            block.SetBlockData(grayData);
 
             // 색상 전환 애니메이션 (0.3초)
             float duration = 0.3f;
@@ -3436,6 +4155,14 @@ private void OnDestroy()
 
             if (laserSystem != null)
                 laserSystem.OnLaserComplete -= OnSpecialBlockCompleted;
+
+            // 미션 이벤트 정리
+            if (stageManager != null)
+            {
+                stageManager.OnMissionProgressUpdated -= HandleMissionProgressUpdated;
+                stageManager.OnMissionProgressUpdated -= HandleInfiniteMissionProgressUpdated;
+                stageManager.OnMissionComplete -= HandleMissionComplete;
+            }
         }
     }
 

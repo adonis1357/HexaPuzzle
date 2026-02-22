@@ -32,6 +32,12 @@ namespace JewelsHexaPuzzle.Core
         {
             if (gridContainer == null)
                 gridContainer = transform;
+
+            // 에디터 테스트 시스템 자동 추가
+            if (gameObject.GetComponent<EditorTestSystem>() == null)
+            {
+                gameObject.AddComponent<EditorTestSystem>();
+            }
         }
 
         public void InitializeGrid()
@@ -194,7 +200,7 @@ namespace JewelsHexaPuzzle.Core
                         filledNeighbors.Add(nc);
                 }
 
-                // 이웃 쌍 중 서로 인접한 쌍을 찾고, 둘 다 같은 색이면 그 색 금지
+                // [삼각형 매칭 방지] 이웃 쌍 중 서로 인접한 쌍을 찾고, 둘 다 같은 색이면 그 색 금지
                 for (int i = 0; i < filledNeighbors.Count; i++)
                 {
                     for (int j = i + 1; j < filledNeighbors.Count; j++)
@@ -211,6 +217,15 @@ namespace JewelsHexaPuzzle.Core
                         }
                     }
                 }
+
+                // [링(도넛) 매칭 방지] 이 블록을 중심으로 이웃 6칸이 모두 같은 색이면 그 색 금지
+                // (이 블록이 중심이 되어 링 매칭이 완성되는 것을 방지)
+                ForbidRingCenter(coord, forbidden);
+
+                // [링(도넛) 매칭 방지] 이 블록이 링의 일부가 되는 경우도 방지
+                // 각 이웃을 중심으로, 그 중심의 나머지 이웃들이 모두 같은 색이면
+                // 이 블록도 그 색이 되면 링이 완성되므로 금지
+                ForbidRingMember(coord, forbidden);
 
                 // 허용된 색 목록 (Gray 제외)
                 List<GemType> allowed = new List<GemType>();
@@ -233,7 +248,100 @@ namespace JewelsHexaPuzzle.Core
                 block.SetBlockData(new BlockData(chosen));
             }
 
-            Debug.Log("[HexGrid] Populated with no-match gems");
+            Debug.Log("[HexGrid] Populated with no-match gems (삼각형+링 매칭 방지)");
+        }
+
+        /// <summary>
+        /// [링 방지 - 중심] 이 좌표를 중심으로 이웃 6칸이 모두 같은 색이면 그 색 금지.
+        /// 아직 배치되지 않은 이웃이 있으면 링이 완성 불가능하므로 무시.
+        /// </summary>
+        private void ForbidRingCenter(HexCoord center, HashSet<GemType> forbidden)
+        {
+            var neighborCoords = center.GetAllNeighbors();
+            List<GemType> neighborColors = new List<GemType>();
+
+            foreach (var nc in neighborCoords)
+            {
+                if (!blocks.ContainsKey(nc)) return; // 유효 좌표 아님 → 6칸 미만
+                var nb = blocks[nc];
+                if (nb.Data == null || nb.Data.gemType == GemType.None) return; // 미배치 → 링 불가
+                neighborColors.Add(nb.Data.gemType);
+            }
+
+            if (neighborColors.Count < 6) return;
+
+            // 6칸 전부 같은 색인지 확인
+            GemType ringColor = neighborColors[0];
+            for (int i = 1; i < neighborColors.Count; i++)
+            {
+                if (neighborColors[i] != ringColor) return; // 다른 색 → 링 불가
+            }
+
+            // 링 매칭 조건: 중심 색 ≠ 링 색 → 중심이 어떤 색이든 링 성립
+            // 따라서 이 색을 금지하지 않고, 중심을 링 색과 같게 만들면 삼각형으로 처리됨
+            // 하지만 중심이 링 색과 다르면 링 매칭 → 링 색을 제외한 모든 색이 위험
+            // 가장 안전한 방법: 중심을 링 색과 동일하게 강제 (삼각형은 이미 별도 방지)
+            // → forbidden에 링 색 외의 모든 색을 추가하는 대신, 링 색만 허용
+            // 단, 삼각형 forbidden과 충돌할 수 있으므로 링 색을 forbidden에서 제거하지 않고
+            // 간단히: 링 색이 아닌 모든 활성 색상을 금지
+            for (int g = 1; g <= GemTypeHelper.ActiveGemTypeCount; g++)
+            {
+                GemType gt = (GemType)g;
+                if (gt != ringColor && gt != GemType.Gray)
+                    forbidden.Add(gt);
+            }
+        }
+
+        /// <summary>
+        /// [링 방지 - 구성원] 각 이웃 center의 나머지 이웃 5칸이 모두 같은 색이면,
+        /// 이 블록이 그 색이 되면 링이 완성되므로 그 색 금지.
+        /// </summary>
+        private void ForbidRingMember(HexCoord current, HashSet<GemType> forbidden)
+        {
+            // current의 이웃들을 순회 — 각 이웃을 잠재적 "링 중심"으로 취급
+            var myNeighbors = current.GetAllNeighbors();
+            foreach (var potentialCenter in myNeighbors)
+            {
+                if (!blocks.ContainsKey(potentialCenter)) continue;
+
+                // potentialCenter의 이웃 6칸 확인 (current 포함)
+                var centerNeighbors = potentialCenter.GetAllNeighbors();
+                bool hasCurrent = false;
+                GemType commonColor = GemType.None;
+                bool allSame = true;
+                int filledCount = 0;
+
+                foreach (var cn in centerNeighbors)
+                {
+                    if (cn.Equals(current))
+                    {
+                        hasCurrent = true;
+                        continue; // current는 아직 미배치 → 스킵
+                    }
+
+                    if (!blocks.ContainsKey(cn)) { allSame = false; break; }
+                    var nb = blocks[cn];
+                    if (nb.Data == null || nb.Data.gemType == GemType.None) { allSame = false; break; }
+
+                    if (commonColor == GemType.None)
+                        commonColor = nb.Data.gemType;
+                    else if (nb.Data.gemType != commonColor)
+                    { allSame = false; break; }
+
+                    filledCount++;
+                }
+
+                if (!hasCurrent || !allSame || filledCount < 5 || commonColor == GemType.None) continue;
+
+                // potentialCenter의 이웃 5칸이 모두 commonColor
+                // current가 commonColor가 되면 6칸 전부 같은 색 → 링 완성
+                // 단, 중심(potentialCenter)의 색이 commonColor와 같으면 삼각형으로 처리 (링 아님)
+                var centerBlock = blocks[potentialCenter];
+                if (centerBlock.Data != null && centerBlock.Data.gemType == commonColor) continue;
+
+                // 중심 색이 다르거나 미배치 → commonColor 금지
+                forbidden.Add(commonColor);
+            }
         }
 
 

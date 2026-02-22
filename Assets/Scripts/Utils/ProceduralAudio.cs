@@ -106,19 +106,6 @@ namespace JewelsHexaPuzzle.Utils
             }
         }
 
-        private static void ApplyDynamicLowPass(float[] data, float startCutoff, float endCutoff)
-        {
-            float prev = 0f;
-            for (int i = 0; i < data.Length; i++)
-            {
-                float t = (float)i / data.Length;
-                float cutoff = Mathf.Lerp(startCutoff, endCutoff, t);
-                float alpha = 1f - Mathf.Clamp01(cutoff);
-                data[i] = alpha * data[i] + (1f - alpha) * prev;
-                prev = data[i];
-            }
-        }
-
         private static void ApplyReverb(float[] data, float delayMs = 25f, float decay = 0.25f, int taps = 3)
         {
             for (int tap = 1; tap <= taps; tap++)
@@ -829,52 +816,6 @@ namespace JewelsHexaPuzzle.Utils
         // ============================================================
         // 유틸리티 (하위 호환)
         // ============================================================
-
-        public static AudioClip CreateSweep(float startFreq, float endFreq, float duration)
-        {
-            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
-            float[] data = new float[sampleCount];
-            float phase = 0f;
-            for (int i = 0; i < sampleCount; i++)
-            {
-                float t = (float)i / SAMPLE_RATE;
-                float tNorm = (float)i / sampleCount;
-                float envelope = ADSR(tNorm, 0.015f, 0.15f, 0.65f, 0.3f);
-                float freq = Mathf.Lerp(startFreq, endFreq, tNorm);
-                phase += 2f * Mathf.PI * freq / SAMPLE_RATE;
-                data[i] = ToneWithHarmonics(phase, 3, 0.35f) * envelope * 0.5f;
-            }
-            ApplyFades(data);
-            ApplyReverb(data, 22f, 0.2f, 3);
-            AudioClip clip = AudioClip.Create("Sweep", sampleCount, 1, SAMPLE_RATE, false);
-            clip.SetData(data, 0);
-            return clip;
-        }
-
-        public static AudioClip CreateChord(float[] frequencies, float duration)
-        {
-            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
-            float[] data = new float[sampleCount];
-            float amplitude = 0.45f / frequencies.Length;
-            for (int i = 0; i < sampleCount; i++)
-            {
-                float t = (float)i / SAMPLE_RATE;
-                float tNorm = (float)i / sampleCount;
-                float envelope = ADSR(tNorm, 0.01f, 0.15f, 0.7f, 0.3f);
-                float sample = 0f;
-                for (int f = 0; f < frequencies.Length; f++)
-                {
-                    float phase = 2f * Mathf.PI * frequencies[f] * t;
-                    sample += ToneWithHarmonics(phase, 3, 0.35f);
-                }
-                data[i] = sample * amplitude * envelope;
-            }
-            ApplyFades(data);
-            ApplyReverb(data, 30f, 0.25f, 3);
-            AudioClip clip = AudioClip.Create("Chord", sampleCount, 1, SAMPLE_RATE, false);
-            clip.SetData(data, 0);
-            return clip;
-        }
 
         public static AudioClip CreateComboRise(float duration)
         {

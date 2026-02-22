@@ -1,10 +1,11 @@
 fileFormatVersion: 2
-guid: b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7
+guid: e60cf00d395120346aa6b2167d8eed31
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
   defaultReferences: []
   executionOrder: 0
   icon: {instanceID: 0}
-  userData:
-  assetPath: Assets/Scripts/Managers/Mission1StageLoader.cs
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

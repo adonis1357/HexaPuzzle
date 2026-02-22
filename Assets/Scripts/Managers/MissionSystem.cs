@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Core;
 
 namespace JewelsHexaPuzzle.Managers
 {
@@ -190,6 +191,28 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 생존 모드 시작 — InfiniteConfig 기반 오버로드.
+        /// LevelRegistry에서 로드된 InfiniteConfig를 적용하여 시작.
+        /// </summary>
+        public void StartSurvival(InfiniteConfig config)
+        {
+            if (config == null)
+            {
+                StartSurvival();
+                return;
+            }
+
+            // 활성 보석 색상 수 적용
+            if (config.activeGemTypeCount > 0)
+            {
+                GemTypeHelper.ActiveGemTypeCount = config.activeGemTypeCount;
+            }
+
+            // 기본 StartSurvival 호출
+            StartSurvival();
+        }
+
+        /// <summary>
         /// 다음 미션 배정
         /// </summary>
         public void AssignNextMission()
@@ -298,6 +321,78 @@ namespace JewelsHexaPuzzle.Managers
                 NotifyProgress();
                 CheckPendingComplete();
             }
+        }
+
+        /// <summary>
+        /// 특수 블록 실행으로 제거된 블록들 추적 (CollectAny, CollectGem, CollectMulti 미션용)
+        /// </summary>
+        public void OnSpecialBlockDestroyedBlocks(List<HexBlock> destroyedBlocks)
+        {
+            if (currentMission == null || currentMission.IsComplete || destroyedBlocks == null || destroyedBlocks.Count == 0)
+                return;
+
+            // 블록들을 색상별로 그룹화
+            Dictionary<GemType, int> gemTypeCount = new Dictionary<GemType, int>();
+
+            foreach (var block in destroyedBlocks)
+            {
+                if (block != null && block.Data != null)
+                {
+                    GemType gemType = block.Data.gemType;
+
+                    if (gemType != GemType.None && gemType != GemType.Gray)
+                    {
+                        if (!gemTypeCount.ContainsKey(gemType))
+                            gemTypeCount[gemType] = 0;
+                        gemTypeCount[gemType]++;
+                    }
+                }
+            }
+
+            // 미션 타입별로 처리
+            switch (currentMission.type)
+            {
+                case SurvivalMissionType.CollectGem:
+                    if (gemTypeCount.ContainsKey(currentMission.targetGemType))
+                    {
+                        currentMission.currentCount += gemTypeCount[currentMission.targetGemType];
+                        NotifyProgress();
+                    }
+                    break;
+
+                case SurvivalMissionType.CollectAny:
+                    int totalCount = 0;
+                    foreach (var count in gemTypeCount.Values)
+                        totalCount += count;
+                    if (totalCount > 0)
+                    {
+                        currentMission.currentCount += totalCount;
+                        NotifyProgress();
+                    }
+                    break;
+
+                case SurvivalMissionType.CollectMulti:
+                    if (gemTypeCount.ContainsKey(currentMission.targetGemType))
+                    {
+                        currentMission.currentCount += gemTypeCount[currentMission.targetGemType];
+                        NotifyProgress();
+                    }
+                    if (gemTypeCount.ContainsKey(currentMission.targetGemType2))
+                    {
+                        currentMission.currentCount2 += gemTypeCount[currentMission.targetGemType2];
+                        NotifyProgress();
+                    }
+                    break;
+
+                case SurvivalMissionType.SingleTurnRemoval:
+                    int turnTotal = 0;
+                    foreach (var count in gemTypeCount.Values)
+                        turnTotal += count;
+                    turnRemovalCount += turnTotal;
+                    break;
+            }
+
+            CheckPendingComplete();
         }
 
         /// <summary>

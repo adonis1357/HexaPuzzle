@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- SVG로 렌더링된 미션 아이콘 -->
+  <!-- 정확한 육각형 기하학: flat-top, 중심 (256, 256), 반지름 180 -->
+
+  <!-- 정의: 그라디언트와 필터 -->
+  <defs>
+    <!-- 각 색상별 그라디언트 (미세한 음영) -->
+    <radialGradient id="redGradient" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#ff3d3d;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#cc2626;stop-opacity:1" />
+    </radialGradient>
+
+    <radialGradient id="blueGradient" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#26b3f2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a7fb3;stop-opacity:1" />
+    </radialGradient>
+
+    <radialGradient id="greenGradient" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#26f226;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1ab81a;stop-opacity:1" />
+    </radialGradient>
+
+    <radialGradient id="yellowGradient" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#fff226;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ccc11a;stop-opacity:1" />
+    </radialGradient>
+
+    <radialGradient id="purpleGradient" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#cc26f2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#9919b3;stop-opacity:1" />
+    </radialGradient>
+
+    <radialGradient id="orangeGradient" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#ff8c26;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#cc6b1a;stop-opacity:1" />
+    </radialGradient>
+
+    <!-- 외곽 그림자 -->
+    <filter id="shadowFilter">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 배경 (선택사항: 투명) -->
+  <rect width="512" height="512" fill="none"/>
+
+  <!-- 육각형 중심: 256, 256 -->
+  <!-- 반지름: 180 (hexagon vertex distance) -->
+  <!-- Flat-top 육각형의 6개 꼭지점 (시계방향, top-right부터):
+       1: (256 + 180, 256) = (436, 256)           [0°]
+       2: (256 + 90, 256 + 156) = (346, 412)      [60°]
+       3: (256 - 90, 256 + 156) = (166, 412)      [120°]
+       4: (256 - 180, 256) = (76, 256)            [180°]
+       5: (256 - 90, 256 - 156) = (166, 100)      [240°]
+       6: (256 + 90, 256 - 156) = (346, 100)      [300°]
+  -->
+
+  <!-- 중심점 정의 -->
+  <!-- 삼각형 1: 중심 (256,256) - 꼭지점 1 (436,256) - 꼭지점 2 (346,412) -->
+  <polygon points="256,256 436,256 346,412" fill="url(#redGradient)" stroke="#8b1a1a" stroke-width="1" filter="url(#shadowFilter)"/>
+
+  <!-- 삼각형 2: 중심 (256,256) - 꼭지점 2 (346,412) - 꼭지점 3 (166,412) -->
+  <polygon points="256,256 346,412 166,412" fill="url(#blueGradient)" stroke="#0d4066" stroke-width="1" filter="url(#shadowFilter)"/>
+
+  <!-- 삼각형 3: 중심 (256,256) - 꼭지점 3 (166,412) - 꼭지점 4 (76,256) -->
+  <polygon points="256,256 166,412 76,256" fill="url(#greenGradient)" stroke="#0d661a" stroke-width="1" filter="url(#shadowFilter)"/>
+
+  <!-- 삼각형 4: 중심 (256,256) - 꼭지점 4 (76,256) - 꼭지점 5 (166,100) -->
+  <polygon points="256,256 76,256 166,100" fill="url(#yellowGradient)" stroke="#999911" stroke-width="1" filter="url(#shadowFilter)"/>
+
+  <!-- 삼각형 5: 중심 (256,256) - 꼭지점 5 (166,100) - 꼭지점 6 (346,100) -->
+  <polygon points="256,256 166,100 346,100" fill="url(#purpleGradient)" stroke="#661a8b" stroke-width="1" filter="url(#shadowFilter)"/>
+
+  <!-- 삼각형 6: 중심 (256,256) - 꼭지점 6 (346,100) - 꼭지점 1 (436,256) -->
+  <polygon points="256,256 346,100 436,256" fill="url(#orangeGradient)" stroke="#8b4411" stroke-width="1" filter="url(#shadowFilter)"/>
+
+  <!-- 외곽 육각형 테두리 (선택사항) -->
+  <polygon points="436,256 346,412 166,412 76,256 166,100 346,100"
+           fill="none" stroke="#333333" stroke-width="2" opacity="0.4"/>
+
+  <!-- 중앙 텍스트: "미션" (선택사항) -->
+  <circle cx="256" cy="256" r="40" fill="rgba(255,255,255,0.1)" opacity="0.5"/>
+  <text x="256" y="265" font-family="Arial, sans-serif" font-size="28" font-weight="bold"
+        text-anchor="middle" fill="#333333" opacity="0.7">미션</text>
+</svg>

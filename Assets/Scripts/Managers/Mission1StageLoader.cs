@@ -77,10 +77,11 @@ namespace JewelsHexaPuzzle.Managers
             {
                 if (hexGrid.IsValidCoord(placement.coord))
                 {
-                    var block = hexGrid.GetBlockAt(placement.coord);
+                    var block = hexGrid.GetBlock(placement.coord);
                     if (block != null)
                     {
-                        block.SetSpecialBlockType(SpecialBlockType.FixedBlock);
+                        block.Data.specialType = SpecialBlockType.FixedBlock;
+                        block.UpdateVisuals();
                         Debug.Log($"고정 블록 배치: {placement.coord}");
                     }
                 }
@@ -99,7 +100,7 @@ namespace JewelsHexaPuzzle.Managers
             {
                 if (hexGrid.IsValidCoord(placement.coord))
                 {
-                    var block = hexGrid.GetBlockAt(placement.coord);
+                    var block = hexGrid.GetBlock(placement.coord);
                     if (block != null)
                     {
                         block.SetEnemyType(placement.enemyType);
@@ -138,7 +139,7 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         private void ProcessTutorialFlags(StageData stageData)
         {
-            if (stageData.storyData?.storyData == null)
+            if (stageData.tutorialFlags == null || stageData.tutorialFlags.Length == 0)
                 return;
 
             // 튜토리얼 팝업 표시 로직

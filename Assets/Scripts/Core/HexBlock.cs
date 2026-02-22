@@ -753,11 +753,12 @@ public void SetBlockData(BlockData data)
 
             blockData = data != null ? data.Clone() : new BlockData();
 
-            // 최종 안전장치: 혹시 모를 회색 블록 검증
-            if (blockData.gemType == GemType.Gray)
+            // 최종 안전장치: 적군이 아닌데 회색인 경우만 변환
+            // (적군 블록은 Gray가 정상이므로 변환하면 안 됨)
+            if (blockData.gemType == GemType.Gray && blockData.enemyType == EnemyType.None)
             {
-                Debug.LogError($"[HexBlock] 🚨 회색 블록이 {Coord}에 설정됨! 무작위 색상으로 변환");
-                blockData.gemType = (GemType)UnityEngine.Random.Range(1, 6);
+                Debug.LogError($"[HexBlock] 🚨 적군 아닌 회색 블록이 {Coord}에 설정됨! GemTypeHelper.GetRandom()으로 변환");
+                blockData.gemType = GemTypeHelper.GetRandom();
             }
 
             isMatched = false;
@@ -1327,17 +1328,7 @@ public void ShowBombIndicator()
 
         private static Color GetEnemyOverlayColor(JewelsHexaPuzzle.Data.EnemyType type)
         {
-            switch (type)
-            {
-                case JewelsHexaPuzzle.Data.EnemyType.Divider: return new Color(0.1f, 0.85f, 0.85f, 0.8f);       // 청록
-                case JewelsHexaPuzzle.Data.EnemyType.GravityWarper: return new Color(0.6f, 0.2f, 0.9f, 0.8f);    // 보라
-                case JewelsHexaPuzzle.Data.EnemyType.ReflectionShield: return new Color(0.8f, 0.85f, 0.9f, 0.85f); // 은색
-                case JewelsHexaPuzzle.Data.EnemyType.TimeFreezer: return new Color(0.3f, 0.6f, 1f, 0.8f);        // 파란
-                case JewelsHexaPuzzle.Data.EnemyType.ResonanceTwin: return new Color(1f, 0.9f, 0.2f, 0.8f);      // 노란
-                case JewelsHexaPuzzle.Data.EnemyType.ShadowSpore: return new Color(0.35f, 0.1f, 0.45f, 0.85f);   // 검보라
-                case JewelsHexaPuzzle.Data.EnemyType.ChaosOverlord: return new Color(1f, 0.5f, 0.8f, 0.9f);      // 무지개(핑크)
-                default: return Color.white;
-            }
+            return JewelsHexaPuzzle.Data.EnemyRegistry.GetOverlayColor(type);
         }
 
         private void ShowTimerText(int count)

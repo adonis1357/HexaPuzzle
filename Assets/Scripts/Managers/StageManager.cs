@@ -30,38 +30,16 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void LoadStage(int stageNumber)
         {
+            // StageDatabase (ScriptableObject)에서 로드
             if (stageDatabase != null)
             {
                 currentStageData = stageDatabase.GetStage(stageNumber);
             }
-            else
+
+            // 폴백: 기본 생성
+            if (currentStageData == null)
             {
-                // 미션 1 (Stage 1-10) 데이터 확인
-                if (stageNumber >= 1 && stageNumber <= 10)
-                {
-                    // Mission1StageData에서 스테이지 데이터 로드 시도
-                    try
-                    {
-                        var mission1Data = GetMission1StageData(stageNumber);
-                        if (mission1Data != null)
-                        {
-                            currentStageData = mission1Data;
-                        }
-                        else
-                        {
-                            currentStageData = GenerateDefaultStage(stageNumber);
-                        }
-                    }
-                    catch
-                    {
-                        currentStageData = GenerateDefaultStage(stageNumber);
-                    }
-                }
-                else
-                {
-                    // 기본 스테이지 생성
-                    currentStageData = GenerateDefaultStage(stageNumber);
-                }
+                currentStageData = GenerateDefaultStage(stageNumber);
             }
 
             InitializeMissions();
@@ -73,10 +51,34 @@ namespace JewelsHexaPuzzle.Managers
             }
             if (blockRemovalSystem != null)
             {
+                blockRemovalSystem.OnEnemyRemoved -= OnEnemyRemoved;  // 중복 구독 방지
                 blockRemovalSystem.OnEnemyRemoved += OnEnemyRemoved;
             }
 
             Debug.Log($"Stage {stageNumber} loaded. Missions: {currentStageData.missions.Length}");
+        }
+
+        /// <summary>
+        /// 외부에서 StageData를 직접 주입하여 로드 (LevelRegistry 경유 시 사용)
+        /// </summary>
+        public void LoadStageData(StageData data)
+        {
+            currentStageData = data;
+
+            InitializeMissions();
+
+            // 적군 제거 이벤트 연동
+            if (blockRemovalSystem == null)
+            {
+                blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+            }
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnEnemyRemoved -= OnEnemyRemoved;  // 중복 구독 방지
+                blockRemovalSystem.OnEnemyRemoved += OnEnemyRemoved;
+            }
+
+            Debug.Log($"Stage {data.stageNumber} loaded via StageData injection. Missions: {currentStageData.missions.Length}");
         }
 
         /// <summary>
@@ -103,52 +105,6 @@ namespace JewelsHexaPuzzle.Managers
 
             OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
             Debug.Log($"[StageManager] 적군 제거: {EnemyTypeHelper.GetName(enemyType)}");
-        }
-        
-        /// <summary>
-        /// 게임 레벨 데이터 가져오기 (레벨 4~10만 지원)
-        /// 레벨 1~3은 기본 생성 로직 사용
-        /// </summary>
-        private StageData GetMission1StageData(int levelNumber)
-        {
-            // 레벨 1~3은 기본 생성으로 처리
-            if (levelNumber < 4 || levelNumber > 10)
-                return null;
-
-            StageData stage = new StageData();
-            stage.stageNumber = levelNumber;
-            stage.chapterNumber = 1;
-            stage.chapterName = "크리스탈 숲";
-            stage.difficulty = Mathf.Min(1 + levelNumber / 3, 3);
-            stage.turnLimit = 25 + (levelNumber * 2);
-
-            // 4~10레벨: 색상도둑 제거 미션
-            stage.missions = new[]
-            {
-                new MissionData
-                {
-                    type = MissionType.RemoveEnemy,
-                    targetEnemyType = EnemyType.Chromophage,
-                    targetCount = Mathf.Min(1 + levelNumber / 5, 3),
-                    description = $"색상도둑(회색) {Mathf.Min(1 + levelNumber / 5, 3)}마리 제거"
-                }
-            };
-
-            // 색상도둑 배치
-            int enemyCount = Mathf.Min(1 + levelNumber / 5, 3);
-            stage.enemyPlacements = new EnemyPlacement[enemyCount];
-            for (int i = 0; i < enemyCount; i++)
-            {
-                int q = Random.Range(-2, 3);
-                int r = Random.Range(-2, 3);
-                stage.enemyPlacements[i] = new EnemyPlacement
-                {
-                    coord = new HexCoord(q, r),
-                    enemyType = EnemyType.Chromophage
-                };
-            }
-
-            return stage;
         }
 
         /// <summary>
@@ -271,11 +227,8 @@ namespace JewelsHexaPuzzle.Managers
                 return;
             }
 
-            Debug.Log($"[StageManager] InitializeMissions: {currentStageData.missions.Length} missions");
-
             foreach (var mission in currentStageData.missions)
             {
-                Debug.Log($"[StageManager] Mission: type={mission.type}, targetCount={mission.targetCount}, targetGemType={mission.targetGemType}");
                 missionProgress.Add(new MissionProgress
                 {
                     mission = mission,
@@ -300,49 +253,31 @@ namespace JewelsHexaPuzzle.Managers
         public void OnGemCollected(GemType gemType, int count)
         {
             bool isBasicGem = (int)gemType >= 1 && (int)gemType <= 5;
-            Debug.Log($"[StageManager] 📥 OnGemCollected: count={count}, gemType={gemType}, isBasic={isBasicGem}, totalMissions={missionProgress.Count}");
 
             for (int i = 0; i < missionProgress.Count; i++)
             {
                 var progress = missionProgress[i];
-                if (progress.isComplete)
-                {
-                    Debug.Log($"[StageManager]   Mission {i} 이미 완료, 스킵");
-                    continue;
-                }
+                if (progress.isComplete) continue;
 
                 if (progress.mission.type == MissionType.CollectGem)
                 {
-                    // targetGemType이 None인 경우: 기본 블록만 카운트
-                    // 기본 블록 = Red(1), Blue(2), Green(3), Yellow(4), Purple(5)
-
                     if (progress.mission.targetGemType == GemType.None)
                     {
-                        // 기본 블록만 카운트
+                        // 기본 블록만 카운트 (Red, Blue, Green, Yellow, Purple)
                         if (isBasicGem)
                         {
-                            int beforeCount = progress.currentCount;
                             progress.currentCount += count;
-                            Debug.Log($"[StageManager] ✅ Mission {i} 업데이트: {beforeCount} → {progress.currentCount}/{progress.mission.targetCount} (기본 블록 {gemType}, +{count})");
                             CheckMissionCompletion(i);
-                        }
-                        else
-                        {
-                            Debug.Log($"[StageManager] ⏭️ Mission {i} 스킵: {gemType}은 특수 보석 (기본 블록 미션에 불포함)");
                         }
                     }
                     else if (progress.mission.targetGemType == gemType)
                     {
-                        // 특정 보석 타입 미션
-                        int beforeCount = progress.currentCount;
                         progress.currentCount += count;
-                        Debug.Log($"[StageManager] ✅ Mission {i} 업데이트: {beforeCount} → {progress.currentCount}/{progress.mission.targetCount}");
                         CheckMissionCompletion(i);
                     }
                 }
             }
 
-            Debug.Log($"[StageManager] 📊 미션 상태 전파: {missionProgress.Count}개 미션");
             OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
         }
         
@@ -515,6 +450,8 @@ namespace JewelsHexaPuzzle.Managers
         public EnemyPlacement[] fixedBlockPlacements;
         public StoryData storyData;
         public TutorialFlag[] tutorialFlags;
+        public bool isBossStage = false;
+        public RewardData rewards;
     }
     
     /// <summary>
@@ -559,7 +496,8 @@ namespace JewelsHexaPuzzle.Managers
         RemoveDoubleVinyl = 8,  // 2중 비닐 제거
         MoveItem = 9,           // 물건 옮기기
         ReachScore = 10,        // 점수 달성
-        RemoveEnemy = 11        // 적군 제거 (Mission 1)
+        RemoveEnemy = 11,       // 적군 제거 (Mission 1)
+        AchieveCombo = 12       // 콤보 달성
     }
     
     /// <summary>
@@ -651,5 +589,17 @@ namespace JewelsHexaPuzzle.Managers
         ExplainMatchingRestriction,
         ExplainCascadeChaining,
         ExplainTierSystem
+    }
+
+    /// <summary>
+    /// 보상 데이터
+    /// </summary>
+    [System.Serializable]
+    public class RewardData
+    {
+        public int baseExperience = 100;
+        public int comboReward = 0;
+        public int perfectClearReward = 0;
+        public string badgeReward = "";
     }
 }

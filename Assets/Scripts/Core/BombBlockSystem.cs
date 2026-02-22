@@ -35,7 +35,7 @@ namespace JewelsHexaPuzzle.Core
             activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
-            Debug.LogWarning("[BombBlockSystem] ForceReset called");
+            Debug.Log("[BombBlockSystem] ForceReset called");
         }
 
         /// <summary>
@@ -212,20 +212,26 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             activeBombCount++;
             activeBlocks.Add(bombBlock);
 
+            // 동시 발동 시 첫 번째 폭탄만 메인 이펙트 재생
+            bool isFirstBomb = (activeBombCount == 1);
+
             HexCoord bombCoord = bombBlock.Coord;
             Vector3 bombWorldPos = bombBlock.transform.position;
             Color bombColor = GemColors.GetColor(bombBlock.Data.gemType);
 
-            Debug.Log($"[BombBlockSystem] === BOMB ACTIVATED === Coord={bombCoord}");
+            Debug.Log($"[BombBlockSystem] === BOMB ACTIVATED === Coord={bombCoord}, isFirstBomb={isFirstBomb}");
 
-            // Pre-Fire 압축 애니메이션 (통일)
-            yield return StartCoroutine(PreFireCompression(bombBlock));
+            // Pre-Fire 압축 애니메이션 (통일) — 첫 번째만
+            if (isFirstBomb)
+                yield return StartCoroutine(PreFireCompression(bombBlock));
 
-            // Hit Stop (Large tier)
-            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            // Hit Stop (Large tier) — 첫 번째만
+            if (isFirstBomb)
+                StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
 
-            // Zoom Punch (Large tier)
-            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+            // Zoom Punch (Large tier) — 첫 번째만
+            if (isFirstBomb)
+                StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
 
             // 발사 순간 블록 클리어
             bombBlock.ClearData();
@@ -269,13 +275,20 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             Debug.Log($"[BombBlockSystem] Targets: ring1={ring1Targets.Count}, ring2={ring2Targets.Count}");
 
-            // === 1칸 동시 폭발 ===
-            StartCoroutine(BombExplosionEffect(bombWorldPos, bombColor));
-            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+            // === 1칸 동시 폭발 === (이펙트는 첫 번째 폭탄만)
+            if (isFirstBomb)
+            {
+                StartCoroutine(BombExplosionEffect(bombWorldPos, bombColor));
+                StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+                // 1칸 폭발 사운드
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayBombSound();
+            }
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
             int basicBlockCount = 0;  // 기본 블록(GemType 1-5) 카운트
+            var gemCountsByColor = new Dictionary<GemType, int>(); // 색상별 미션 카운팅용
             var sm = GameManager.Instance?.GetComponent<ScoreManager>();
 
             foreach (var target in ring1Targets)
@@ -302,7 +315,13 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
                     // 기본 블록 카운트 (GemType 1-5)
                     if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
+                    {
                         basicBlockCount++;
+                        if (gemCountsByColor.ContainsKey(target.Data.gemType))
+                            gemCountsByColor[target.Data.gemType]++;
+                        else
+                            gemCountsByColor[target.Data.gemType] = 1;
+                    }
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -319,14 +338,16 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     }
 
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
-                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
+                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos, isFirstBomb)));
                 }
             }
 
             // === 0.1초 후 2칸 동시 폭발 ===
             yield return new WaitForSeconds(0.1f);
 
-            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity * 0.6f, VisualConstants.ShakeLargeDuration * 0.7f));
+            // 화면 흔들림은 첫 번째 폭탄만
+            if (isFirstBomb)
+                StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity * 0.6f, VisualConstants.ShakeLargeDuration * 0.7f));
 
             foreach (var target in ring2Targets)
             {
@@ -352,7 +373,13 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
                     // 기본 블록 카운트 (GemType 1-5)
                     if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
+                    {
                         basicBlockCount++;
+                        if (gemCountsByColor.ContainsKey(target.Data.gemType))
+                            gemCountsByColor[target.Data.gemType]++;
+                        else
+                            gemCountsByColor[target.Data.gemType] = 1;
+                    }
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -369,9 +396,12 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     }
 
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
-                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos)));
+                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos, isFirstBomb)));
                 }
             }
+
+            // 색상별 미션 카운팅 — 파괴 애니메이션 시작 직후, 완료 대기 전에 호출
+            GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Bomb");
 
             // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
             foreach (var co in destroyCoroutines)
@@ -379,6 +409,31 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             int totalScore = 200 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
+
+            // 미션 시스템에 파괴된 블록들 알림 (기본 블록만)
+            List<HexBlock> basicBlocksOnly = new List<HexBlock>();
+            List<HexBlock> allBombTargets = new List<HexBlock>(ring1Targets);
+            allBombTargets.AddRange(ring2Targets);
+
+            foreach (var target in allBombTargets)
+            {
+                if (target != null && target.Data != null && target.Data.gemType != GemType.None)
+                {
+                    // 기본 블록만 포함: 특수블록 제외
+                    if (target.Data.specialType == SpecialBlockType.None || target.Data.specialType == SpecialBlockType.FixedBlock)
+                    {
+                        basicBlocksOnly.Add(target);
+                        Debug.Log($"[BombBlockSystem]   BasicBlock: {target.Coord}, gemType={target.Data.gemType}");
+                    }
+                }
+            }
+
+            Debug.Log($"[BombBlockSystem] Passing {basicBlocksOnly.Count} basic blocks to MissionSystem (from {allBombTargets.Count} total targets)");
+
+            MissionSystem ms = Object.FindObjectOfType<MissionSystem>();
+            if (ms != null)
+                ms.OnSpecialBlockDestroyedBlocks(basicBlocksOnly);
+
             OnBombComplete?.Invoke(totalScore);
             activeBlocks.Remove(bombBlock);
             activeBombCount--;
@@ -489,25 +544,33 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
         /// <summary>
         /// 개별 블록 폭발 파괴 - 중앙에서 밀려나는 효과
+        /// showEffects=false일 때 이펙트 생략 (동시 폭탄 중복 방지)
         /// </summary>
-        private IEnumerator DestroyBlockWithExplosion(HexBlock block, Color blockColor, Vector3 bombCenter)
+        private IEnumerator DestroyBlockWithExplosion(HexBlock block, Color blockColor, Vector3 bombCenter, bool showEffects = true)
         {
             if (block == null) yield break;
 
             Vector3 blockPos = block.transform.position;
             Vector3 pushDir = (blockPos - bombCenter).normalized;
 
-            // 화이트 플래시 오버레이
-            StartCoroutine(DestroyFlashOverlay(block));
+            if (showEffects)
+            {
+                // 화이트 플래시 오버레이
+                StartCoroutine(DestroyFlashOverlay(block));
 
-            // 임팩트 웨이브
-            StartCoroutine(ImpactWave(blockPos, blockColor));
+                // 임팩트 웨이브
+                StartCoroutine(ImpactWave(blockPos, blockColor));
 
-            // 파편 (base tier)
-            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
-            int count = Mathf.RoundToInt((VisualConstants.DebrisBaseCount / 2 + Random.Range(0, 3)) * cascadeMult);
-            for (int i = 0; i < count; i++)
-                StartCoroutine(AnimateExplosionDebris(blockPos, blockColor));
+                // 블록 파괴 사운드
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayBlockDestroySound();
+
+                // 파편 (base tier)
+                float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
+                int count = Mathf.RoundToInt((VisualConstants.DebrisBaseCount / 2 + Random.Range(0, 3)) * cascadeMult);
+                for (int i = 0; i < count; i++)
+                    StartCoroutine(AnimateExplosionDebris(blockPos, blockColor));
+            }
 
             // 이중 이징: 확대 → 밀려나기 + 찌그러짐
             float duration = VisualConstants.DestroyDuration;

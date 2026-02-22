@@ -77,46 +77,50 @@ namespace JewelsHexaPuzzle.Core
                     // 레벨1은 적군 없음 (기본 게임만)
                     break;
                 case 2:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 0.5f, minRotation = 0, maxOnBoard = 15 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ChainAnchor, weight = 0.5f, minRotation = 0, maxOnBoard = 10 });
+                    // 레벨2는 적군 없음 (기본 게임만)
                     break;
                 case 3:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ChainAnchor, weight = 0.5f, minRotation = 0, maxOnBoard = 10 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ThornParasite, weight = 0.5f, minRotation = 0, maxOnBoard = 8 });
+                    // 레벨3은 적군 없음 (기본 게임만)
                     break;
                 case 4:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 0.3f, minRotation = 0, maxOnBoard = 10 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ChainAnchor, weight = 0.2f, minRotation = 0, maxOnBoard = 8 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.5f, minRotation = 0, maxOnBoard = 6 });
+                    // [몬스터 비활성화] 테스트용 - 적군 스폰 없음
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 0.3f, minRotation = 0, maxOnBoard = 10 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ChainAnchor, weight = 0.2f, minRotation = 0, maxOnBoard = 8 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.5f, minRotation = 0, maxOnBoard = 6 });
                     break;
                 case 5:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 0.2f, minRotation = 0, maxOnBoard = 8 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.GravityWarper, weight = 0.4f, minRotation = 0, maxOnBoard = 4 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ReflectionShield, weight = 0.4f, minRotation = 0, maxOnBoard = 4 });
+                    // [몬스터 비활성화] 테스트용 - 적군 스폰 없음
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.Chromophage, weight = 0.2f, minRotation = 0, maxOnBoard = 8 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.GravityWarper, weight = 0.4f, minRotation = 0, maxOnBoard = 4 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ReflectionShield, weight = 0.4f, minRotation = 0, maxOnBoard = 4 });
                     break;
                 case 6:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ChainAnchor, weight = 0.2f, minRotation = 0, maxOnBoard = 6 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.TimeFreezer, weight = 0.4f, minRotation = 0, maxOnBoard = 3 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.4f, minRotation = 0, maxOnBoard = 5 });
+                    // [몬스터 비활성화] 테스트용 - 적군 스폰 없음
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ChainAnchor, weight = 0.2f, minRotation = 0, maxOnBoard = 6 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.TimeFreezer, weight = 0.4f, minRotation = 0, maxOnBoard = 3 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.4f, minRotation = 0, maxOnBoard = 5 });
                     break;
                 case 7:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ResonanceTwin, weight = 0.5f, minRotation = 0, maxOnBoard = 4 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ShadowSpore, weight = 0.3f, minRotation = 0, maxOnBoard = 4 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.GravityWarper, weight = 0.2f, minRotation = 0, maxOnBoard = 3 });
+                    // [몬스터 비활성화] 테스트용 - 적군 스폰 없음
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ResonanceTwin, weight = 0.5f, minRotation = 0, maxOnBoard = 4 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ShadowSpore, weight = 0.3f, minRotation = 0, maxOnBoard = 4 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.GravityWarper, weight = 0.2f, minRotation = 0, maxOnBoard = 3 });
                     break;
                 case 8:
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ShadowSpore, weight = 0.3f, minRotation = 0, maxOnBoard = 5 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ReflectionShield, weight = 0.3f, minRotation = 0, maxOnBoard = 4 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.TimeFreezer, weight = 0.2f, minRotation = 0, maxOnBoard = 3 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.2f, minRotation = 0, maxOnBoard = 4 });
+                    // [몬스터 비활성화] 테스트용 - 적군 스폰 없음
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ShadowSpore, weight = 0.3f, minRotation = 0, maxOnBoard = 5 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ReflectionShield, weight = 0.3f, minRotation = 0, maxOnBoard = 4 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.TimeFreezer, weight = 0.2f, minRotation = 0, maxOnBoard = 3 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.2f, minRotation = 0, maxOnBoard = 4 });
                     break;
                 default: // 9+
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ChaosOverlord, weight = 0.15f, minRotation = 0, maxOnBoard = 1 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ShadowSpore, weight = 0.2f, minRotation = 0, maxOnBoard = 5 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ResonanceTwin, weight = 0.2f, minRotation = 0, maxOnBoard = 4 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.ReflectionShield, weight = 0.15f, minRotation = 0, maxOnBoard = 3 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.15f, minRotation = 0, maxOnBoard = 4 });
-                    configs.Add(new EnemySpawnConfig { type = EnemyType.TimeFreezer, weight = 0.15f, minRotation = 0, maxOnBoard = 3 });
+                    // [몬스터 비활성화] 테스트용 - 적군 스폰 없음
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ChaosOverlord, weight = 0.15f, minRotation = 0, maxOnBoard = 1 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ShadowSpore, weight = 0.2f, minRotation = 0, maxOnBoard = 5 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ResonanceTwin, weight = 0.2f, minRotation = 0, maxOnBoard = 4 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.ReflectionShield, weight = 0.15f, minRotation = 0, maxOnBoard = 3 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.Divider, weight = 0.15f, minRotation = 0, maxOnBoard = 4 });
+                    // configs.Add(new EnemySpawnConfig { type = EnemyType.TimeFreezer, weight = 0.15f, minRotation = 0, maxOnBoard = 3 });
                     break;
             }
 
@@ -278,7 +282,11 @@ namespace JewelsHexaPuzzle.Core
             switch (type)
             {
                 case EnemyType.Chromophage:
-                    block.SetBlockData(new BlockData(GemType.Gray) { enemyType = EnemyType.Chromophage });
+                    // 기본 생성자 사용 후 직접 대입 (Gray 필터 우회)
+                    var chromData = new BlockData();
+                    chromData.gemType = GemType.Gray;
+                    chromData.enemyType = EnemyType.Chromophage;
+                    block.SetBlockData(chromData);
                     break;
                 case EnemyType.ChainAnchor:
                     block.Data.hasChain = true;

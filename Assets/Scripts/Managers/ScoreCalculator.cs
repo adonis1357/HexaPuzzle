@@ -37,17 +37,7 @@ namespace JewelsHexaPuzzle.Managers
         private const int MultiCreation2 = 200;
         private const int MultiCreation3Plus = 500;
 
-        // 적군 기본 점수
-        private const int EnemyScoreChromophage = 100;
-        private const int EnemyScoreChainAnchor = 150;
-        private const int EnemyScoreThornParasite = 200;
-        private const int EnemyScoreDivider = 300;
-        private const int EnemyScoreGravityWarper = 400;
-        private const int EnemyScoreReflectionShield = 450;
-        private const int EnemyScoreTimeFreezer = 500;
-        private const int EnemyScoreResonanceTwin = 600;
-        private const int EnemyScoreShadowSpore = 700;
-        private const int EnemyScoreChaosOverlord = 1500;
+        // 적군 기본 점수는 EnemyRegistry에서 중앙 관리
 
         // 제거 방법 배율
         private const float RemovalMultiplierMatch = 1.0f;
@@ -174,20 +164,7 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public static int GetEnemyBaseScore(EnemyType type)
         {
-            switch (type)
-            {
-                case EnemyType.Chromophage: return EnemyScoreChromophage;
-                case EnemyType.ChainAnchor: return EnemyScoreChainAnchor;
-                case EnemyType.ThornParasite: return EnemyScoreThornParasite;
-                case EnemyType.Divider: return EnemyScoreDivider;
-                case EnemyType.GravityWarper: return EnemyScoreGravityWarper;
-                case EnemyType.ReflectionShield: return EnemyScoreReflectionShield;
-                case EnemyType.TimeFreezer: return EnemyScoreTimeFreezer;
-                case EnemyType.ResonanceTwin: return EnemyScoreResonanceTwin;
-                case EnemyType.ShadowSpore: return EnemyScoreShadowSpore;
-                case EnemyType.ChaosOverlord: return EnemyScoreChaosOverlord;
-                default: return 0;
-            }
+            return EnemyRegistry.GetBaseScore(type);
         }
 
         /// <summary>

@@ -121,7 +121,8 @@ namespace JewelsHexaPuzzle.Managers
             IncrementCombo();
 
             OnScoreChanged?.Invoke(currentScore);
-            OnScorePopup?.Invoke(finalScore, position);
+            // 점수 팝업 비활성화
+            // OnScorePopup?.Invoke(finalScore, position);
 
             Debug.Log($"Score +{finalScore} (base: {baseScore}, cascade: x{cascadeMultiplier:F1}, combo: x{ComboMultiplier:F1}) Total: {currentScore}");
         }
@@ -146,7 +147,8 @@ namespace JewelsHexaPuzzle.Managers
             IncrementCombo();
 
             OnScoreChanged?.Invoke(currentScore);
-            OnScorePopup?.Invoke(finalScore, position);
+            // 점수 팝업 비활성화
+            // OnScorePopup?.Invoke(finalScore, position);
 
             Debug.Log($"Special Score +{finalScore} (raw: {rawScore}, cascade: x{cascadeMultiplier:F1}, combo: x{ComboMultiplier:F1}) Total: {currentScore}");
         }
