@@ -248,7 +248,7 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetXBlockIconSprite()
         {
             if (xBlockIconSprite == null)
-                xBlockIconSprite = CreateXSprite(64); // 64x64 픽셀 크기로 생성
+                xBlockIconSprite = CreateXSprite(128); // 128x128 픽셀 크기로 생성 (해상도 개선)
             return xBlockIconSprite;
         }
 

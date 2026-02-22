@@ -109,8 +109,8 @@ namespace JewelsHexaPuzzle.Core
 
         /// <summary>미션 시스템용: 특정 색상의 보석이 몇 개 제거되었는지 상세 알림</summary>
         public event System.Action<int, GemType, int> OnGemsRemovedDetailed; // (count, gemType, cascadeDepth)
-        /// <summary>미션 시스템용: 특수 블록이 새로 생성되었을 때 알림</summary>
-        public event System.Action<SpecialBlockType> OnSpecialBlockCreated;
+        /// <summary>미션 시스템용: 특수 블록이 새로 생성되었을 때 알림 (타입, 드릴방향)</summary>
+        public event System.Action<SpecialBlockType, DrillDirection> OnSpecialBlockCreated;
 
         // 블록 착지 시 "찌그러짐(squash)" 이펙트가 동시에 여러 번 실행되지 않도록 추적하는 딕셔너리
         private Dictionary<HexBlock, Coroutine> squashEffectCoroutines = new Dictionary<HexBlock, Coroutine>();
@@ -609,10 +609,17 @@ namespace JewelsHexaPuzzle.Core
                 {
                     kvp.Key.transform.localRotation = Quaternion.identity;
                     kvp.Key.transform.localScale = Vector3.zero;
+                    // ★ 합체 애니메이션에서 transform.position으로 이동된 블록을
+                    // 정확한 슬롯의 anchoredPosition으로 복원 (위치 어긋남 방지)
+                    if (slotPositions.TryGetValue(kvp.Key, out Vector2 slotPos))
+                        SetBlockAnchoredPosition(kvp.Key, slotPos);
                 }
             }
             spawnBlock.transform.localScale = Vector3.one;
             spawnBlock.transform.localRotation = Quaternion.identity;
+            // ★ 스폰 블록도 슬롯 위치로 복원
+            if (slotPositions.TryGetValue(spawnBlock, out Vector2 spawnSlotPos))
+                SetBlockAnchoredPosition(spawnBlock, spawnSlotPos);
 
             // 특수 블록 생성 (통합 디스패쳐)
             CreateSpecialBlock(spawnBlock, specialType, drillDirection, gemType);
@@ -1268,6 +1275,10 @@ private IEnumerator CascadeWithPendingLoop()
                 if (currentCascadeDepth > 0 && AudioManager.Instance != null)
                     AudioManager.Instance.PlayComboSound(currentCascadeDepth);
 
+                // ★ 낙하 전 안전장치: 데이터가 비어있는 블록을 슬롯으로 강제 복원
+                // (특수 블록 파괴 후 ClearData만 호출되고 위치가 복원되지 않은 블록 대비)
+                SnapClearedBlocksToSlots();
+
                 // 1. 낙하 처리
                 yield return StartCoroutine(ProcessFalling());
                 yield return new WaitForSeconds(cascadeDelay);
@@ -1397,12 +1408,18 @@ private IEnumerator ProcessFalling()
                 int emptyCount = column.Count - dataList.Count - anchoredSlots.Count;
                 if (emptyCount == 0) continue;
 
+                // ★ 먼저 모든 블록을 정확한 슬롯 위치로 강제 복원한 뒤 비주얼 숨김
+                // (합체 애니메이션 등으로 anchoredPosition이 어긋난 경우 대비)
                 for (int i = 0; i < column.Count; i++)
                 {
                     if (column[i] != null)
                     {
                         column[i].HideVisuals();
-                        RestoreBlockToSlot(column[i]);
+                        // anchoredPosition을 슬롯 위치로 강제 설정
+                        if (slotPositions.ContainsKey(column[i]))
+                            SetBlockAnchoredPosition(column[i], slotPositions[column[i]]);
+                        column[i].transform.localScale = Vector3.one;
+                        column[i].transform.localRotation = Quaternion.identity;
                     }
                 }
 
@@ -1416,6 +1433,7 @@ private IEnumerator ProcessFalling()
 
                     if (sourceSlot != targetSlot)
                     {
+                        // ★ 소스 슬롯의 캐시된 슬롯 위치 사용 (블록의 현재 위치가 아닌 원래 슬롯 위치)
                         Vector2 startPos = slotPositions.ContainsKey(column[sourceSlot]) ? slotPositions[column[sourceSlot]] : slotPositions[targetBlock];
                         SetBlockAnchoredPosition(targetBlock, startPos);
                     }
@@ -1453,14 +1471,17 @@ private IEnumerator ProcessFalling()
                 for (int i = 0; i < emptyCount; i++)
                 {
                     int targetSlot = dataList.Count + i;
+                    // ★ anchoredSlots가 있을 때 targetSlot 건너뛰기
+                    while (anchoredSlots.Contains(targetSlot) && targetSlot < column.Count)
+                        targetSlot++;
+                    if (targetSlot >= column.Count) break;
+
                     HexBlock targetBlock = column[targetSlot];
                     if (targetBlock == null) continue;
                     Vector2 targetPos = slotPositions.ContainsKey(targetBlock) ? slotPositions[targetBlock] : Vector2.zero;
 
                     GemType randomGem = GemTypeHelper.GetRandom();
-                    // GemTypeHelper.GetRandom()은 이미 Gray를 필터링함
                     BlockData newData = new BlockData(randomGem);
-                    Debug.Log($"[BRS ProcessFalling] 새 블록 생성: slot={targetSlot}, gemType={randomGem}({(int)randomGem})");
 
                     float startY = topY + spawnOffset + (i * 80f);
                     SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
@@ -1507,11 +1528,53 @@ private IEnumerator ProcessFalling()
             if (completedCount < totalCount)
             {
                 Debug.LogError($"[BRS] ProcessFalling timeout! {completedCount}/{totalCount} completed. Force finishing.");
-                // 강제로 모든 블록을 슬롯 위치로 복원
-                foreach (var anim in existingAnimations)
-                    if (anim.block != null) RestoreBlockToSlot(anim.block);
-                foreach (var anim in newBlockAnimations)
-                    if (anim.block != null) RestoreBlockToSlot(anim.block);
+            }
+
+            // ★ 낙하 완료 후 모든 블록의 위치를 슬롯으로 강제 스냅 (위치 어긋남 방지)
+            SnapAllBlocksToSlots();
+        }
+
+        /// <summary>
+        /// 모든 블록을 캐시된 슬롯 위치로 강제 스냅 (낙하 완료 후 위치 어긋남 방지)
+        /// </summary>
+        private void SnapAllBlocksToSlots()
+        {
+            if (hexGrid == null) return;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null) continue;
+                if (slotPositions.TryGetValue(block, out Vector2 slotPos))
+                {
+                    // ★ 조건 없이 모든 블록을 슬롯 위치로 강제 스냅
+                    // AnimateFall에서 첫 착지 시 이미 onComplete를 호출하므로
+                    // 이 시점에서는 모든 블록이 슬롯에 있어야 함
+                    SetBlockAnchoredPosition(block, slotPos);
+                }
+                // 스케일/로테이션도 보정
+                block.transform.localScale = Vector3.one;
+                block.transform.localRotation = Quaternion.identity;
+            }
+        }
+
+        /// <summary>
+        /// 데이터가 비어있는(ClearData 후) 블록만 슬롯으로 강제 복원
+        /// 특수 블록 파괴 후 ClearData만 호출되고 위치가 복원되지 않은 블록 대비
+        /// </summary>
+        private void SnapClearedBlocksToSlots()
+        {
+            if (hexGrid == null) return;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null) continue;
+                if (block.Data == null || block.Data.gemType == GemType.None)
+                {
+                    if (slotPositions.TryGetValue(block, out Vector2 slotPos))
+                    {
+                        SetBlockAnchoredPosition(block, slotPos);
+                        block.transform.localScale = Vector3.one;
+                        block.transform.localRotation = Quaternion.identity;
+                    }
+                }
             }
         }
 
@@ -1548,13 +1611,14 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
             int maxBounces = 2;
             float elapsed = 0f;
             float maxDuration = 5f; // 안전장치: 최대 5초
+            bool completionInvoked = false; // ★ onComplete 중복 호출 방지
 
             while (elapsed < maxDuration)
             {
                 // 블록이 중간에 파괴되면 즉시 완료 처리
                 if (block == null)
                 {
-                    onComplete?.Invoke();
+                    if (!completionInvoked) { completionInvoked = true; onComplete?.Invoke(); }
                     yield break;
                 }
 
@@ -1571,21 +1635,23 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                     {
                         velocity = -velocity * bounceRatio;
                         bounceCount++;
+
+                        // ★ 첫 착지(첫 바운스) 시점에 블록을 슬롯에 확정 배치하고 onComplete 호출
+                        // 바운스 시각 효과는 SquashEffect로만 표현 (위치는 이동하지 않음)
+                        if (!completionInvoked)
+                        {
+                            SetBlockAnchoredPosition(block, slotPos);
+                            completionInvoked = true;
+                            onComplete?.Invoke();
+                        }
+
                         if (block != null)
                         {
-                            // 바운스 전 스케일 안전장치: 1.0을 초과하면 리셋
-                            if (block.transform.localScale.x > 1.01f || block.transform.localScale.y > 1.01f)
-                            {
-                                block.transform.localScale = Vector3.one;
-                                Debug.LogWarning($"[BRS] 블록 스케일 강제 리셋 (안전장치): {block.Coord}");
-                            }
-
                             // 기존 SquashEffect 코루틴이 실행 중이면 중단 후 새로 시작
                             if (squashEffectCoroutines.ContainsKey(block))
                             {
                                 StopCoroutine(squashEffectCoroutines[block]);
                                 squashEffectCoroutines.Remove(block);
-                                Debug.LogWarning($"[BRS] 기존 SquashEffect 중단: {block.Coord}");
                             }
 
                             Coroutine squashCo = StartCoroutine(SquashEffect(block));
@@ -1595,18 +1661,70 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                             if (AudioManager.Instance != null)
                                 AudioManager.Instance.PlayBlockLandSound();
                         }
-                    }
-                    else
-                    {
+
+                        // ★ 바운스로 Y좌표가 위로 올라가지 않도록 — 위치는 슬롯에 고정
+                        // 바운스 물리 시뮬레이션은 계속하되 위치 업데이트는 하지 않음
+                        // SquashEffect가 착지 느낌을 시각적으로 표현
+                        while (elapsed < maxDuration)
+                        {
+                            if (block == null) yield break;
+                            elapsed += Time.deltaTime;
+                            velocity -= blockGravity * Time.deltaTime;
+                            velocity = Mathf.Max(velocity, -blockMaxSpeed);
+                            float simY = currentY + velocity * Time.deltaTime;
+
+                            if (simY <= targetY)
+                            {
+                                // 다시 바닥에 닿음
+                                if (Mathf.Abs(velocity) <= bounceThreshold || bounceCount >= maxBounces)
+                                {
+                                    // 바운스 종료
+                                    break;
+                                }
+                                bounceCount++;
+                                velocity = -velocity * bounceRatio;
+                                currentY = targetY;
+
+                                // 추가 바운스 스쿼시
+                                if (block != null)
+                                {
+                                    if (squashEffectCoroutines.ContainsKey(block))
+                                    {
+                                        StopCoroutine(squashEffectCoroutines[block]);
+                                        squashEffectCoroutines.Remove(block);
+                                    }
+                                    Coroutine squashCo2 = StartCoroutine(SquashEffect(block));
+                                    squashEffectCoroutines[block] = squashCo2;
+                                }
+                            }
+                            else
+                            {
+                                currentY = simY;
+                            }
+                            // ★ 위치는 항상 슬롯에 고정 (바운스 중에도 이동하지 않음)
+                            yield return null;
+                        }
+                        // 바운스 완전 종료
                         if (block != null)
                         {
                             SetBlockAnchoredPosition(block, slotPos);
                             block.transform.localScale = Vector3.one;
-                            // Spawn pop-in animation for new blocks
                             if (anim.isNewBlock)
                                 StartCoroutine(SpawnPopAnimation(block));
                         }
-                        onComplete?.Invoke();
+                        yield break;
+                    }
+                    else
+                    {
+                        // 바운스 없이 바로 착지
+                        if (block != null)
+                        {
+                            SetBlockAnchoredPosition(block, slotPos);
+                            block.transform.localScale = Vector3.one;
+                            if (anim.isNewBlock)
+                                StartCoroutine(SpawnPopAnimation(block));
+                        }
+                        if (!completionInvoked) { completionInvoked = true; onComplete?.Invoke(); }
                         yield break;
                     }
                 }
@@ -1623,7 +1741,7 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                 block.transform.localScale = Vector3.one;
             }
             Debug.LogWarning($"[BRS] AnimateFall timeout for block at slot Y={targetY}");
-            onComplete?.Invoke();
+            if (!completionInvoked) { completionInvoked = true; onComplete?.Invoke(); }
         }
 
         private IEnumerator SquashEffect(HexBlock block)
@@ -2115,8 +2233,8 @@ public void TriggerBigBang()
                         match.drillDirection, match.gemType));
                     newlyCreatedSpecials.Add(match.specialSpawnBlock);
 
-                    // 미션 시스템에 특수 블록 생성 알림
-                    OnSpecialBlockCreated?.Invoke(match.createdSpecialType);
+                    // 미션 시스템에 특수 블록 생성 알림 (타입 + 드릴방향)
+                    OnSpecialBlockCreated?.Invoke(match.createdSpecialType, match.drillDirection);
 
                     // 생성 가산점
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();

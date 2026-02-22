@@ -105,7 +105,7 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetBombIconSprite()
         {
             if (bombIconSprite == null)
-                bombIconSprite = CreateBombSprite(64);
+                bombIconSprite = CreateBombSprite(128);
             return bombIconSprite;
         }
 

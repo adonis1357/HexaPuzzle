@@ -690,7 +690,7 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
 
             // 각 파트의 스프라이트(이미지)를 코드로 생성
             Sprite drillSprite = GenerateDrillSprite(color, bright, dark);  // 드릴 본체
-            Sprite glowSprite = GenerateCircleSprite(32, new Color(bright.r, bright.g, bright.b, 0.3f)); // 글로우
+            Sprite glowSprite = GenerateCircleSprite(64, new Color(bright.r, bright.g, bright.b, 0.3f)); // 글로우
             Sprite trailSprite = GenerateTrailSprite(color, bright);  // 꼬리 불꽃
 
             // --- 1. Glow (빛나는 원) ---
@@ -763,7 +763,7 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
         /// </summary>
         private Sprite GenerateDrillSprite(Color baseColor, Color bright, Color dark)
         {
-            int w = 32, h = 48; // 이미지 크기: 32x48 픽셀
+            int w = 64, h = 96; // 이미지 크기: 64x96 픽셀 (해상도 개선)
             Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear; // 부드러운 보간
             Color[] px = new Color[w * h];
@@ -777,9 +777,9 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
 
                 // 60% 지점까지는 완만하게 좁아지고, 그 위부터는 급격히 뾰족해짐
                 if (t < 0.6f)
-                    halfW = Mathf.Lerp(6.5f, 3.5f, t / 0.6f);
+                    halfW = Mathf.Lerp(13f, 7f, t / 0.6f);
                 else
-                    halfW = Mathf.Lerp(3.5f, 0f, Mathf.Pow((t - 0.6f) / 0.4f, 1.5f));
+                    halfW = Mathf.Lerp(7f, 0f, Mathf.Pow((t - 0.6f) / 0.4f, 1.5f));
 
                 for (int x = 0; x < w; x++)
                 {
@@ -860,7 +860,7 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
         /// </summary>
         private Sprite GenerateTrailSprite(Color baseColor, Color bright)
         {
-            int w = 16, h = 32;
+            int w = 32, h = 64;
             Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
             Color[] px = new Color[w * h];
@@ -868,7 +868,7 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
             for (int y = 0; y < h; y++)
             {
                 float t = (float)y / (h - 1); // 0(위, 좁음) ~ 1(아래, 넓음)
-                float halfW = Mathf.Lerp(0.5f, w / 2f - 1f, t); // 아래로 갈수록 넓어짐
+                float halfW = Mathf.Lerp(1f, w / 2f - 1f, t); // 아래로 갈수록 넓어짐
                 float alpha = Mathf.Lerp(0f, 0.65f, t); // 아래로 갈수록 불투명
                 for (int x = 0; x < w; x++)
                 {

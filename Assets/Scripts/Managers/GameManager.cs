@@ -94,7 +94,10 @@ namespace JewelsHexaPuzzle.Managers
                 return;
             }
 
+            // UI 렌더링 품질 설정
             QualitySettings.antiAliasing = 4;
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
+            Application.targetFrameRate = 60;
 
             AutoFindReferences();
             InitializeSystems();
@@ -148,7 +151,9 @@ namespace JewelsHexaPuzzle.Managers
             scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.screenMatchMode = UnityEngine.UI.CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0f; // 가로 기준 스케일 (그리드가 가로로 꽉 참)
+            scaler.matchWidthOrHeight = 0.5f; // 가로/세로 균형 스케일 (UI 화질 개선)
+            scaler.referencePixelsPerUnit = 100f; // 스프라이트 렌더링 기준 해상도 통일
+            scaler.dynamicPixelsPerUnit = 2f; // 텍스트/동적 UI 선명도 2배 향상
         }
 
         /// <summary>
@@ -158,6 +163,8 @@ namespace JewelsHexaPuzzle.Managers
         private Text hudScoreText;
         private Text hudTurnText;
         private Text lobbyGoldText;
+        private Text hudLevelBestText;    // 레벨 최고 점수
+        private Text hudPersonalBestText; // 개인 최고 점수
 
         private void CreateHUDElements(Canvas canvas)
         {
@@ -242,6 +249,53 @@ namespace JewelsHexaPuzzle.Managers
             scoreLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
             scoreLabelText.raycastTarget = false;
             scoreLabelText.text = "SCORE";
+
+            // === 레벨 최고 점수 (중앙 상단, SCORE 아래) ===
+            int levelBest = scoreManager != null ? scoreManager.GetLevelHighScore(selectedStage) : 0;
+            int personalBest = scoreManager != null ? scoreManager.GetPersonalLevelBest(selectedStage) : 0;
+
+            GameObject levelBestObj = new GameObject("HUD_LevelBestText");
+            levelBestObj.transform.SetParent(canvas.transform, false);
+            RectTransform levelBestRt = levelBestObj.AddComponent<RectTransform>();
+            levelBestRt.anchorMin = new Vector2(0.5f, 1f);
+            levelBestRt.anchorMax = new Vector2(0.5f, 1f);
+            levelBestRt.pivot = new Vector2(0.5f, 1f);
+            levelBestRt.anchoredPosition = new Vector2(0f, -85f);
+            levelBestRt.sizeDelta = new Vector2(300f, 22f);
+            Text levelBestLabel = levelBestObj.AddComponent<Text>();
+            levelBestLabel.font = font;
+            levelBestLabel.fontSize = 14;
+            levelBestLabel.alignment = TextAnchor.MiddleCenter;
+            levelBestLabel.color = new Color(1f, 0.85f, 0.3f, 0.9f);
+            levelBestLabel.raycastTarget = false;
+            levelBestLabel.text = levelBest > 0 ? string.Format("BEST: {0:N0}", levelBest) : "BEST: ---";
+            hudLevelBestText = levelBestLabel;
+            Outline levelBestOutline = levelBestObj.AddComponent<Outline>();
+            levelBestOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            levelBestOutline.effectDistance = new Vector2(1, 1);
+
+            GameObject personalBestObj = new GameObject("HUD_PersonalBestText");
+            personalBestObj.transform.SetParent(canvas.transform, false);
+            RectTransform personalBestRt = personalBestObj.AddComponent<RectTransform>();
+            personalBestRt.anchorMin = new Vector2(0.5f, 1f);
+            personalBestRt.anchorMax = new Vector2(0.5f, 1f);
+            personalBestRt.pivot = new Vector2(0.5f, 1f);
+            personalBestRt.anchoredPosition = new Vector2(0f, -105f);
+            personalBestRt.sizeDelta = new Vector2(300f, 22f);
+            Text personalBestLabel = personalBestObj.AddComponent<Text>();
+            personalBestLabel.font = font;
+            personalBestLabel.fontSize = 14;
+            personalBestLabel.alignment = TextAnchor.MiddleCenter;
+            personalBestLabel.color = new Color(0.7f, 0.9f, 1f, 0.9f);
+            personalBestLabel.raycastTarget = false;
+            personalBestLabel.text = personalBest > 0 ? string.Format("MY BEST: {0:N0}", personalBest) : "MY BEST: ---";
+            hudPersonalBestText = personalBestLabel;
+            Outline personalBestOutline = personalBestObj.AddComponent<Outline>();
+            personalBestOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            personalBestOutline.effectDistance = new Vector2(1, 1);
+
+            hudElements.Add(levelBestObj);
+            hudElements.Add(personalBestObj);
 
             // === 골드 (우측 상단, 이동횟수 아래) ===
             GameObject goldObj = new GameObject("HUD_GoldText");
@@ -758,7 +812,8 @@ namespace JewelsHexaPuzzle.Managers
             // 팝업 등장 대기
             yield return new WaitForSecondsRealtime(0.5f);
 
-            int finalScore = scoreManager != null ? scoreManager.CurrentScore : 0;
+            // 게임오버 시 점수는 0으로 표시
+            int finalScore = 0;
             int finalMoves = currentGameMode == GameMode.Infinite ? rotationCount : currentTurns;
 
             // 이동 횟수 카운팅 (0.4초)
@@ -832,6 +887,69 @@ namespace JewelsHexaPuzzle.Managers
             {
                 gameOverScoreText.text = "0";
             }
+
+            // 최고 점수 정보 표시
+            yield return new WaitForSecondsRealtime(0.3f);
+            ShowGameOverHighScore(finalScore);
+        }
+
+        /// <summary>
+        /// 게임오버 팝업에 최고 점수 정보 표시
+        /// </summary>
+        private void ShowGameOverHighScore(int currentScore)
+        {
+            if (gameOverPopupObj == null || scoreManager == null) return;
+
+            int levelBest = scoreManager.GetLevelHighScore(selectedStage);
+            int personalBest = scoreManager.GetPersonalLevelBest(selectedStage);
+            bool isNewLevelBest = currentScore >= levelBest && currentScore > 0;
+            bool isNewPersonalBest = currentScore >= personalBest && currentScore > 0;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // 최고 점수 컨테이너
+            GameObject hsObj = new GameObject("GameOverHighScore");
+            hsObj.transform.SetParent(gameOverPopupObj.transform, false);
+            RectTransform hsRt = hsObj.AddComponent<RectTransform>();
+            hsRt.anchoredPosition = new Vector2(0f, -120f);
+            hsRt.sizeDelta = new Vector2(350f, 70f);
+
+            // 레벨 최고 점수 (모든 유저 통합)
+            GameObject lbObj = new GameObject("LevelBestText");
+            lbObj.transform.SetParent(hsObj.transform, false);
+            RectTransform lbRt = lbObj.AddComponent<RectTransform>();
+            lbRt.anchoredPosition = new Vector2(0f, 15f);
+            lbRt.sizeDelta = new Vector2(350f, 28f);
+            Text lbText = lbObj.AddComponent<Text>();
+            lbText.font = font;
+            lbText.fontSize = 18;
+            lbText.fontStyle = FontStyle.Bold;
+            lbText.alignment = TextAnchor.MiddleCenter;
+            lbText.raycastTarget = false;
+            lbText.color = isNewLevelBest ? new Color(1f, 1f, 0.3f) : new Color(1f, 0.85f, 0.3f, 0.9f);
+            string levelBestStr = isNewLevelBest ? "NEW RECORD!" : string.Format("{0:N0}", levelBest);
+            lbText.text = string.Format("BEST: {0}", levelBestStr);
+            Outline lbOutline = lbObj.AddComponent<Outline>();
+            lbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            lbOutline.effectDistance = new Vector2(1, 1);
+
+            // 개인 레벨별 최고 점수
+            GameObject pbObj = new GameObject("PersonalBestText");
+            pbObj.transform.SetParent(hsObj.transform, false);
+            RectTransform pbRt = pbObj.AddComponent<RectTransform>();
+            pbRt.anchoredPosition = new Vector2(0f, -15f);
+            pbRt.sizeDelta = new Vector2(350f, 28f);
+            Text pbText = pbObj.AddComponent<Text>();
+            pbText.font = font;
+            pbText.fontSize = 16;
+            pbText.alignment = TextAnchor.MiddleCenter;
+            pbText.raycastTarget = false;
+            pbText.color = isNewPersonalBest ? new Color(0.5f, 1f, 0.5f) : new Color(0.7f, 0.9f, 1f, 0.9f);
+            string personalBestStr = isNewPersonalBest ? "NEW RECORD!" : string.Format("{0:N0}", personalBest);
+            pbText.text = string.Format("MY BEST: {0}", personalBestStr);
+            Outline pbOutline = pbObj.AddComponent<Outline>();
+            pbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            pbOutline.effectDistance = new Vector2(1, 1);
         }
 
         /// <summary>
@@ -1236,6 +1354,12 @@ private void InitializeSystems()
                 missionSystem.OnMissionProgressChanged += OnSurvivalMissionProgressChanged;
             }
 
+            // StageManager에 특수 블록 생성 이벤트 연결 (스테이지 미션 진행용)
+            if (stageManager != null && blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnSpecialBlockCreated += HandleSpecialBlockCreatedForStage;
+            }
+
             // Stage 모드 이벤트 구독은 StartGameCoroutine에서 처리 (currentGameMode가 설정된 후)
 
             // UI 시스템 자동 초기화 (ScorePopupManager, ComboDisplay)
@@ -1599,7 +1723,8 @@ private void InitializeSystems()
             {
                 Debug.Log($"[GameManager] Stage mode conditions met, subscribing...");
                 blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
-                Debug.Log($"[GameManager] Stage mode: OnGemsRemovedDetailed subscription SUCCESS!");
+                blockRemovalSystem.OnSpecialBlockCreated += HandleSpecialBlockCreatedForStage;
+                Debug.Log($"[GameManager] Stage mode: OnGemsRemovedDetailed + OnSpecialBlockCreated subscription SUCCESS!");
             }
             else
             {
@@ -1914,6 +2039,19 @@ private void OnRotationComplete(bool matchFound)
             if (blockRemovalSystem != null)
             {
                 blockRemovalSystem.OnGemsRemovedDetailed -= HandleStageGemsRemoved;
+                blockRemovalSystem.OnSpecialBlockCreated -= HandleSpecialBlockCreatedForStage;
+            }
+        }
+
+        /// <summary>
+        /// 특수 블록 생성 시 StageManager 미션 진행 알림 (블록별 개별 미션용)
+        /// </summary>
+        private void HandleSpecialBlockCreatedForStage(SpecialBlockType type, DrillDirection drillDir)
+        {
+            if (stageManager != null)
+            {
+                stageManager.OnSpecialBlockCreatedDetailed(type, drillDir);
+                Debug.Log($"[GameManager] 특수 블록 생성 미션 카운트: {type} (드릴방향: {drillDir})");
             }
         }
 
@@ -2517,6 +2655,37 @@ private void OnBigBang()
         {
             if (hudScoreText != null && scoreManager != null)
                 hudScoreText.text = string.Format("{0:N0}", scoreManager.CurrentScore);
+
+            // 최고 점수 HUD 실시간 갱신 (현재 점수가 최고를 넘으면 표시 업데이트)
+            if (scoreManager != null)
+            {
+                int currentScore = scoreManager.CurrentScore;
+                int levelBest = scoreManager.GetLevelHighScore(selectedStage);
+                int personalBest = scoreManager.GetPersonalLevelBest(selectedStage);
+
+                if (hudLevelBestText != null)
+                {
+                    int displayLevelBest = currentScore > levelBest ? currentScore : levelBest;
+                    hudLevelBestText.text = displayLevelBest > 0
+                        ? string.Format("BEST: {0:N0}", displayLevelBest)
+                        : "BEST: ---";
+                    // 새 기록이면 색상 강조
+                    hudLevelBestText.color = currentScore > levelBest && levelBest > 0
+                        ? new Color(1f, 1f, 0.3f, 1f)
+                        : new Color(1f, 0.85f, 0.3f, 0.9f);
+                }
+
+                if (hudPersonalBestText != null)
+                {
+                    int displayPersonalBest = currentScore > personalBest ? currentScore : personalBest;
+                    hudPersonalBestText.text = displayPersonalBest > 0
+                        ? string.Format("MY BEST: {0:N0}", displayPersonalBest)
+                        : "MY BEST: ---";
+                    hudPersonalBestText.color = currentScore > personalBest && personalBest > 0
+                        ? new Color(0.5f, 1f, 0.5f, 1f)
+                        : new Color(0.7f, 0.9f, 1f, 0.9f);
+                }
+            }
         }
 
         private void RefreshTurnDisplay()
@@ -2595,6 +2764,10 @@ private void OnBigBang()
             StageSummaryData? summary = null;
             if (scoreManager != null)
                 summary = scoreManager.CalculateStageClearBonus(remainingTurns, initialTurns);
+
+            // 레벨별 최고 점수 갱신
+            if (scoreManager != null)
+                scoreManager.TryUpdateLevelHighScore(selectedStage);
 
             // 턴 0으로 표시
             currentTurns = 0;
@@ -3195,9 +3368,7 @@ private void OnBigBang()
             SetGameState(GameState.GameOver);
             OnGameOver?.Invoke();
 
-            // 랭킹에 점수 + 이동횟수 저장
-            if (scoreManager != null)
-                scoreManager.SaveScoreToRanking(scoreManager.CurrentScore, rotationCount);
+            // 게임오버 시 점수는 0으로 처리 — 최고 점수 갱신 및 랭킹 저장 하지 않음
 
             // BGM 정지 + 게임 오버 사운드
             if (AudioManager.Instance != null)
@@ -3206,7 +3377,7 @@ private void OnBigBang()
                 AudioManager.Instance.PlayGameOver();
             }
 
-            Debug.Log("Game Over!");
+            Debug.Log("Game Over! (점수 0 처리)");
 
             // 게임오버 팝업 표시 + 카운팅 애니메이션
             if (gameOverScoreText != null)
@@ -3528,22 +3699,71 @@ private void OnBigBang()
 
             if (!isLocked)
             {
-                // 재생 아이콘 (잠긴 레벨에서는 숨김)
-                GameObject playObj = new GameObject("PlayIcon");
-                playObj.transform.SetParent(stageBtn.transform, false);
-                RectTransform playRt = playObj.AddComponent<RectTransform>();
-                playRt.anchorMin = new Vector2(0.5f, 0.5f);
-                playRt.anchorMax = new Vector2(0.5f, 0.5f);
-                playRt.pivot = new Vector2(0.5f, 0.5f);
-                playRt.anchoredPosition = new Vector2(0f, -15f);
-                playRt.sizeDelta = new Vector2(40f, 40f);
-                Text playText = playObj.AddComponent<Text>();
-                playText.font = font;
-                playText.fontSize = 32;
-                playText.alignment = TextAnchor.MiddleCenter;
-                playText.color = Color.white;
-                playText.raycastTarget = false;
-                playText.text = "\u25B6";
+                // 레벨 최고 점수 표시 (BEST: 전체 유저 최고, MY BEST: 개인 레벨 최고)
+                int levelBest = scoreManager != null ? scoreManager.GetLevelHighScore(stageNum) : 0;
+                int personalBest = scoreManager != null ? scoreManager.GetPersonalLevelBest(stageNum) : 0;
+
+                if (levelBest > 0 || personalBest > 0)
+                {
+                    // 레벨 BEST (전체 유저 최고)
+                    GameObject lbObj = new GameObject("LevelBest");
+                    lbObj.transform.SetParent(stageBtn.transform, false);
+                    RectTransform lbRt = lbObj.AddComponent<RectTransform>();
+                    lbRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    lbRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    lbRt.pivot = new Vector2(0.5f, 0.5f);
+                    lbRt.anchoredPosition = new Vector2(0f, -12f);
+                    lbRt.sizeDelta = new Vector2(btnSize * 0.9f, 18f);
+                    Text lbText = lbObj.AddComponent<Text>();
+                    lbText.font = font;
+                    lbText.fontSize = 12;
+                    lbText.alignment = TextAnchor.MiddleCenter;
+                    lbText.color = new Color(1f, 0.85f, 0.3f, 0.95f);
+                    lbText.raycastTarget = false;
+                    lbText.text = levelBest > 0 ? string.Format("BEST: {0:N0}", levelBest) : "";
+                    Outline lbOutline = lbObj.AddComponent<Outline>();
+                    lbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+                    lbOutline.effectDistance = new Vector2(1, 1);
+
+                    // 개인 레벨별 MY BEST
+                    GameObject pbObj = new GameObject("PersonalBest");
+                    pbObj.transform.SetParent(stageBtn.transform, false);
+                    RectTransform pbRt = pbObj.AddComponent<RectTransform>();
+                    pbRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    pbRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    pbRt.pivot = new Vector2(0.5f, 0.5f);
+                    pbRt.anchoredPosition = new Vector2(0f, -28f);
+                    pbRt.sizeDelta = new Vector2(btnSize * 0.9f, 16f);
+                    Text pbText = pbObj.AddComponent<Text>();
+                    pbText.font = font;
+                    pbText.fontSize = 10;
+                    pbText.alignment = TextAnchor.MiddleCenter;
+                    pbText.color = new Color(0.7f, 0.9f, 1f, 0.85f);
+                    pbText.raycastTarget = false;
+                    pbText.text = personalBest > 0 ? string.Format("MY: {0:N0}", personalBest) : "";
+                    Outline pbOutline = pbObj.AddComponent<Outline>();
+                    pbOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+                    pbOutline.effectDistance = new Vector2(1, 1);
+                }
+                else
+                {
+                    // 최고 점수 없으면 재생 아이콘 표시
+                    GameObject playObj = new GameObject("PlayIcon");
+                    playObj.transform.SetParent(stageBtn.transform, false);
+                    RectTransform playRt = playObj.AddComponent<RectTransform>();
+                    playRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    playRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    playRt.pivot = new Vector2(0.5f, 0.5f);
+                    playRt.anchoredPosition = new Vector2(0f, -15f);
+                    playRt.sizeDelta = new Vector2(40f, 40f);
+                    Text playText = playObj.AddComponent<Text>();
+                    playText.font = font;
+                    playText.fontSize = 32;
+                    playText.alignment = TextAnchor.MiddleCenter;
+                    playText.color = Color.white;
+                    playText.raycastTarget = false;
+                    playText.text = "\u25B6";
+                }
             }
 
             // 부제 텍스트
@@ -3553,11 +3773,11 @@ private void OnBigBang()
             subtitleRt.anchorMin = new Vector2(0.5f, 0.5f);
             subtitleRt.anchorMax = new Vector2(0.5f, 0.5f);
             subtitleRt.pivot = new Vector2(0.5f, 0.5f);
-            subtitleRt.anchoredPosition = new Vector2(0f, -40f);
-            subtitleRt.sizeDelta = new Vector2(btnSize * 0.95f, 24f);
+            subtitleRt.anchoredPosition = new Vector2(0f, -48f);
+            subtitleRt.sizeDelta = new Vector2(btnSize * 0.95f, 20f);
             Text subtitleText = subtitleObj.AddComponent<Text>();
             subtitleText.font = font;
-            subtitleText.fontSize = 11;
+            subtitleText.fontSize = 10;
             subtitleText.alignment = TextAnchor.MiddleCenter;
             subtitleText.color = isLocked ? new Color(0.4f, 0.4f, 0.5f) : new Color(0.7f, 0.7f, 0.8f);
             subtitleText.raycastTarget = false;
@@ -3631,7 +3851,104 @@ private void OnBigBang()
             if (lobbyGoldText != null)
                 lobbyGoldText.text = $"\ud83d\udcb0 {currentGold:N0}";
 
+            // 로비 레벨 버튼 최고 점수 갱신
+            RefreshLobbyHighScores();
+
             Debug.Log("[GameManager] 로비 표시");
+        }
+
+        /// <summary>
+        /// 로비 레벨 버튼의 최고 점수 텍스트 갱신
+        /// </summary>
+        private void RefreshLobbyHighScores()
+        {
+            if (lobbyContainer == null || scoreManager == null) return;
+
+            // 각 스테이지 버튼 내부의 LevelBest / PersonalBest 텍스트를 찾아 갱신
+            var allLevels = LevelRegistry.GetAllLevels();
+            for (int i = 0; i < allLevels.Count; i++)
+            {
+                int stageNum = allLevels[i].levelId;
+                GameObject stageBtn = null;
+
+                // Content 안에서 버튼 찾기
+                Transform content = lobbyContainer.transform.Find("LevelScrollView/Content");
+                if (content != null)
+                    stageBtn = content.Find($"Stage{stageNum}Button")?.gameObject;
+
+                if (stageBtn == null) continue;
+
+                int levelBest = scoreManager.GetLevelHighScore(stageNum);
+                int personalBest = scoreManager.GetPersonalLevelBest(stageNum);
+
+                // LevelBest 텍스트 갱신 또는 생성
+                Transform lbTr = stageBtn.transform.Find("LevelBest");
+                Transform pbTr = stageBtn.transform.Find("PersonalBest");
+
+                if (lbTr != null)
+                {
+                    Text lbText = lbTr.GetComponent<Text>();
+                    if (lbText != null)
+                        lbText.text = levelBest > 0 ? string.Format("BEST: {0:N0}", levelBest) : "";
+                }
+                else if (levelBest > 0 && !allLevels[i].isLocked)
+                {
+                    // 이전에 점수가 없어서 PlayIcon만 있었던 경우 → 새로 생성
+                    Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                    float btnSize = stageBtn.GetComponent<RectTransform>().sizeDelta.x;
+
+                    // PlayIcon 제거
+                    Transform playIcon = stageBtn.transform.Find("PlayIcon");
+                    if (playIcon != null) Destroy(playIcon.gameObject);
+
+                    // LevelBest 생성
+                    GameObject lbObj = new GameObject("LevelBest");
+                    lbObj.transform.SetParent(stageBtn.transform, false);
+                    RectTransform lbRt = lbObj.AddComponent<RectTransform>();
+                    lbRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    lbRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    lbRt.pivot = new Vector2(0.5f, 0.5f);
+                    lbRt.anchoredPosition = new Vector2(0f, -12f);
+                    lbRt.sizeDelta = new Vector2(btnSize * 0.9f, 18f);
+                    Text newLbText = lbObj.AddComponent<Text>();
+                    newLbText.font = font;
+                    newLbText.fontSize = 12;
+                    newLbText.alignment = TextAnchor.MiddleCenter;
+                    newLbText.color = new Color(1f, 0.85f, 0.3f, 0.95f);
+                    newLbText.raycastTarget = false;
+                    newLbText.text = string.Format("BEST: {0:N0}", levelBest);
+                    Outline lbOutline = lbObj.AddComponent<Outline>();
+                    lbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+                    lbOutline.effectDistance = new Vector2(1, 1);
+
+                    // PersonalBest 생성
+                    GameObject pbObj = new GameObject("PersonalBest");
+                    pbObj.transform.SetParent(stageBtn.transform, false);
+                    RectTransform pbRt = pbObj.AddComponent<RectTransform>();
+                    pbRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    pbRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    pbRt.pivot = new Vector2(0.5f, 0.5f);
+                    pbRt.anchoredPosition = new Vector2(0f, -28f);
+                    pbRt.sizeDelta = new Vector2(btnSize * 0.9f, 16f);
+                    Text newPbText = pbObj.AddComponent<Text>();
+                    newPbText.font = font;
+                    newPbText.fontSize = 10;
+                    newPbText.alignment = TextAnchor.MiddleCenter;
+                    newPbText.color = new Color(0.7f, 0.9f, 1f, 0.85f);
+                    newPbText.raycastTarget = false;
+                    newPbText.text = personalBest > 0 ? string.Format("MY: {0:N0}", personalBest) : "";
+                    Outline pbOutline = pbObj.AddComponent<Outline>();
+                    pbOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+                    pbOutline.effectDistance = new Vector2(1, 1);
+                }
+
+                if (pbTr != null)
+                {
+                    Text pbText = pbTr.GetComponent<Text>();
+                    if (pbText != null)
+                        pbText.text = personalBest > 0 ? string.Format("MY: {0:N0}", personalBest) : "";
+                }
+            }
         }
 
         /// <summary>
@@ -4060,7 +4377,77 @@ private void OnBigBang()
                 yield return null;
             }
 
-            countText.text = to.ToString();
+            // 미션 완료 (remaining == 0): 숫자 대신 초록색 체크 아이콘 표시
+            if (to <= 0)
+            {
+                countText.text = ""; // 텍스트 숨김
+                ShowCheckMarkOnText(countText);
+            }
+            else
+            {
+                countText.text = to.ToString();
+            }
+        }
+
+        /// <summary>
+        /// 카운트 텍스트 위치에 초록색 체크마크 아이콘 표시
+        /// </summary>
+        private void ShowCheckMarkOnText(Text countText)
+        {
+            if (countText == null) return;
+
+            // 이미 체크마크가 있으면 중복 생성 방지
+            Transform existing = countText.transform.Find("CheckMark");
+            if (existing != null) return;
+
+            GameObject checkObj = new GameObject("CheckMark");
+            checkObj.transform.SetParent(countText.transform, false);
+            RectTransform checkRt = checkObj.AddComponent<RectTransform>();
+            checkRt.anchorMin = new Vector2(0, 0.5f);
+            checkRt.anchorMax = new Vector2(0, 0.5f);
+            checkRt.pivot = new Vector2(0, 0.5f);
+
+            // 텍스트 크기에 맞춰 체크 아이콘 크기 결정
+            float checkSize = countText.fontSize * 1.2f;
+            checkRt.sizeDelta = new Vector2(checkSize, checkSize);
+            checkRt.anchoredPosition = new Vector2(4, 0);
+
+            Image checkImg = checkObj.AddComponent<Image>();
+            checkImg.sprite = MissionUIHelper.CreateCheckMarkSprite();
+            checkImg.color = Color.white;
+            checkImg.raycastTarget = false;
+
+            // 체크마크 등장 애니메이션 (스케일 펀치)
+            StartCoroutine(CheckMarkAppearAnimation(checkRt));
+        }
+
+        /// <summary>
+        /// 체크마크 등장 스케일 애니메이션
+        /// </summary>
+        private IEnumerator CheckMarkAppearAnimation(RectTransform checkRt)
+        {
+            if (checkRt == null) yield break;
+
+            float duration = 0.25f;
+            float elapsed = 0f;
+
+            checkRt.localScale = Vector3.zero;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = elapsed / duration;
+                // 오버슈트 이징: 살짝 커졌다가 원래 크기로
+                float scale = t < 0.6f
+                    ? Mathf.Lerp(0f, 1.3f, t / 0.6f)
+                    : Mathf.Lerp(1.3f, 1f, (t - 0.6f) / 0.4f);
+                if (checkRt != null)
+                    checkRt.localScale = Vector3.one * scale;
+                yield return null;
+            }
+
+            if (checkRt != null)
+                checkRt.localScale = Vector3.one;
         }
 
         /// <summary>
@@ -4162,6 +4549,10 @@ private void OnDestroy()
                 stageManager.OnMissionProgressUpdated -= HandleMissionProgressUpdated;
                 stageManager.OnMissionProgressUpdated -= HandleInfiniteMissionProgressUpdated;
                 stageManager.OnMissionComplete -= HandleMissionComplete;
+            }
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.OnSpecialBlockCreated -= HandleSpecialBlockCreatedForStage;
             }
         }
     }

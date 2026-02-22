@@ -15,7 +15,8 @@ namespace JewelsHexaPuzzle.Utils
         public static Texture2D GenerateHexagonTexture(int size, Color fillColor, Color borderColor, int borderWidth = 2)
         {
             Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            
+            texture.filterMode = FilterMode.Bilinear;
+
             // 배경을 투명하게
             Color[] pixels = new Color[size * size];
             for (int i = 0; i < pixels.Length; i++)

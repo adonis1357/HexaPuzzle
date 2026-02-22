@@ -292,7 +292,7 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetDonutIconSprite()
         {
             if (donutIconSprite == null)
-                donutIconSprite = CreateDonutSprite(64);
+                donutIconSprite = CreateDonutSprite(128);
             return donutIconSprite;
         }
 

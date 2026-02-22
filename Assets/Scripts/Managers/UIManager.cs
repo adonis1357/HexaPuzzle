@@ -674,6 +674,10 @@ namespace JewelsHexaPuzzle.Managers
                     goldRt.localScale = Vector3.one;
                 }
             }
+
+            // 최고 점수 표시
+            yield return new WaitForSeconds(0.2f);
+            yield return StartCoroutine(ShowHighScoreInPopup(summary.totalScore));
         }
 
         private IEnumerator AnimateScoreLine(Text textComp, int targetValue, float duration, string format = null)
@@ -755,6 +759,101 @@ namespace JewelsHexaPuzzle.Managers
             {
                 yield return StartCoroutine(AnimateScoreLine(clearTurnBonusText, goldReward, 0.4f, "+{0} 골드"));
             }
+
+            // 최고 점수 표시
+            ScoreManager sm2 = FindObjectOfType<ScoreManager>();
+            int popupScore = sm2 != null ? sm2.CurrentScore : 0;
+            yield return new WaitForSeconds(0.2f);
+            yield return StartCoroutine(ShowHighScoreInPopup(popupScore));
+        }
+
+        /// <summary>
+        /// 클리어/게임오버 팝업 안에 최고 점수 표시
+        /// </summary>
+        private IEnumerator ShowHighScoreInPopup(int currentScore)
+        {
+            // 부모 팝업 결정 (클리어 팝업 우선)
+            Transform parent = null;
+            if (stageClearPopup != null && stageClearPopup.activeSelf)
+                parent = stageClearPopup.transform;
+            else if (gameOverPopup != null && gameOverPopup.activeSelf)
+                parent = gameOverPopup.transform;
+
+            if (parent == null) yield break;
+
+            ScoreManager sm = FindObjectOfType<ScoreManager>();
+            if (sm == null) yield break;
+
+            int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
+            int levelBest = sm.GetLevelHighScore(stage);
+            int personalBest = sm.GetPersonalLevelBest(stage);
+            bool isNewLevelBest = currentScore >= levelBest && currentScore > 0;
+            bool isNewPersonalBest = currentScore >= personalBest && currentScore > 0;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // 최고 점수 컨테이너
+            GameObject hsContainer = new GameObject("HighScoreContainer");
+            hsContainer.transform.SetParent(parent, false);
+            RectTransform hsRt = hsContainer.AddComponent<RectTransform>();
+            hsRt.anchoredPosition = new Vector2(0f, -80f);
+            hsRt.sizeDelta = new Vector2(350f, 100f);
+
+            // 레벨 최고 점수
+            GameObject levelBestObj = new GameObject("LevelBestText");
+            levelBestObj.transform.SetParent(hsContainer.transform, false);
+            RectTransform lbRt = levelBestObj.AddComponent<RectTransform>();
+            lbRt.anchoredPosition = new Vector2(0f, 25f);
+            lbRt.sizeDelta = new Vector2(350f, 36f);
+            Text lbText = levelBestObj.AddComponent<Text>();
+            lbText.font = font;
+            lbText.fontSize = 20;
+            lbText.fontStyle = FontStyle.Bold;
+            lbText.alignment = TextAnchor.MiddleCenter;
+            lbText.raycastTarget = false;
+            lbText.color = isNewLevelBest ? new Color(1f, 1f, 0.3f) : new Color(1f, 0.85f, 0.3f, 0.9f);
+            string levelBestStr = isNewLevelBest ? "NEW RECORD!" : string.Format("{0:N0}", levelBest);
+            lbText.text = string.Format("BEST: {0}", levelBestStr);
+            Outline lbOutline = levelBestObj.AddComponent<Outline>();
+            lbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            lbOutline.effectDistance = new Vector2(1, 1);
+
+            // 개인 최고 점수
+            GameObject personalBestObj = new GameObject("PersonalBestText");
+            personalBestObj.transform.SetParent(hsContainer.transform, false);
+            RectTransform pbRt = personalBestObj.AddComponent<RectTransform>();
+            pbRt.anchoredPosition = new Vector2(0f, -25f);
+            pbRt.sizeDelta = new Vector2(350f, 36f);
+            Text pbText = personalBestObj.AddComponent<Text>();
+            pbText.font = font;
+            pbText.fontSize = 18;
+            pbText.alignment = TextAnchor.MiddleCenter;
+            pbText.raycastTarget = false;
+            pbText.color = isNewPersonalBest ? new Color(0.5f, 1f, 0.5f) : new Color(0.7f, 0.9f, 1f, 0.9f);
+            string personalBestStr = isNewPersonalBest ? "NEW RECORD!" : string.Format("{0:N0}", personalBest);
+            pbText.text = string.Format("MY BEST: {0}", personalBestStr);
+            Outline pbOutline = personalBestObj.AddComponent<Outline>();
+            pbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            pbOutline.effectDistance = new Vector2(1, 1);
+
+            // 등장 애니메이션 (페이드인 + 슬라이드)
+            CanvasGroup cg = hsContainer.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+            float startY = hsRt.anchoredPosition.y - 20f;
+            float targetY = hsRt.anchoredPosition.y;
+            float duration = 0.4f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = VisualConstants.EaseOutQuart(elapsed / duration);
+                cg.alpha = t;
+                hsRt.anchoredPosition = new Vector2(0f, Mathf.Lerp(startY, targetY, t));
+                yield return null;
+            }
+            cg.alpha = 1f;
+            hsRt.anchoredPosition = new Vector2(0f, targetY);
         }
 
         /// <summary>
@@ -886,7 +985,7 @@ namespace JewelsHexaPuzzle.Managers
             RectTransform panelRect = panel.AddComponent<RectTransform>();
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(650, 550);
+            panelRect.sizeDelta = new Vector2(650, 650);
             panelRect.anchoredPosition = Vector2.zero;
 
             // 패널 배경 (어두운 보라/남색)
@@ -907,7 +1006,7 @@ namespace JewelsHexaPuzzle.Managers
             titleRect.anchorMin = new Vector2(0.5f, 0.5f);
             titleRect.anchorMax = new Vector2(0.5f, 0.5f);
             titleRect.sizeDelta = new Vector2(550, 140);
-            titleRect.anchoredPosition = new Vector2(0, 150);
+            titleRect.anchoredPosition = new Vector2(0, 200);
 
             Text titleText = titleObj.AddComponent<Text>();
             titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -925,8 +1024,8 @@ namespace JewelsHexaPuzzle.Managers
             RectTransform scoreRect = scoreObj.AddComponent<RectTransform>();
             scoreRect.anchorMin = new Vector2(0.5f, 0.5f);
             scoreRect.anchorMax = new Vector2(0.5f, 0.5f);
-            scoreRect.sizeDelta = new Vector2(500, 100);
-            scoreRect.anchoredPosition = new Vector2(0, 30);
+            scoreRect.sizeDelta = new Vector2(500, 50);
+            scoreRect.anchoredPosition = new Vector2(0, 75);
 
             Text scoreText = scoreObj.AddComponent<Text>();
             scoreText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -942,8 +1041,8 @@ namespace JewelsHexaPuzzle.Managers
             RectTransform goldRect = goldObj.AddComponent<RectTransform>();
             goldRect.anchorMin = new Vector2(0.5f, 0.5f);
             goldRect.anchorMax = new Vector2(0.5f, 0.5f);
-            goldRect.sizeDelta = new Vector2(500, 80);
-            goldRect.anchoredPosition = new Vector2(0, -30);
+            goldRect.sizeDelta = new Vector2(500, 50);
+            goldRect.anchoredPosition = new Vector2(0, 25);
 
             Text goldTextComp = goldObj.AddComponent<Text>();
             goldTextComp.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -960,7 +1059,7 @@ namespace JewelsHexaPuzzle.Managers
             buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
             buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
             buttonRect.sizeDelta = new Vector2(220, 65);
-            buttonRect.anchoredPosition = new Vector2(0, -130);
+            buttonRect.anchoredPosition = new Vector2(0, -230);
 
             Image buttonImage = buttonObj.AddComponent<Image>();
             buttonImage.color = new Color(0.5f, 0.2f, 0.7f, 1f); // 보라색
@@ -1680,9 +1779,9 @@ namespace JewelsHexaPuzzle.Managers
             missionRt.anchoredPosition = new Vector2(20, -20);
             missionRt.sizeDelta = new Vector2(400, 200);
 
-            // 배경 패널
+            // 배경 패널 (밝은 라벤더 톤)
             Image bgImage = missionObj.AddComponent<Image>();
-            bgImage.color = new Color(0.08f, 0.06f, 0.15f, 0.9f);
+            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
             bgImage.raycastTarget = false;
 
             // 미션 아이콘 (다색 육각형) - 2배 확대
@@ -1696,16 +1795,7 @@ namespace JewelsHexaPuzzle.Managers
             iconRt.sizeDelta = new Vector2(140, 140);
 
             Image iconImage = iconObj.AddComponent<Image>();
-            Sprite missionIcon = Resources.Load<Sprite>("Icons/MissionIcon");
-            if (missionIcon != null)
-            {
-                iconImage.sprite = missionIcon;
-            }
-            else
-            {
-                // fallback: 프로시저럴 생성
-                iconImage.sprite = CreateProceduralMissionIcon();
-            }
+            SetMissionIconForType(iconImage, mission);
             iconImage.type = Image.Type.Simple;
             iconImage.raycastTarget = false;
             Outline iconOutline = iconObj.AddComponent<Outline>();
@@ -1727,12 +1817,16 @@ namespace JewelsHexaPuzzle.Managers
             countText.fontSize = 56;
             countText.fontStyle = FontStyle.Bold;
             countText.alignment = TextAnchor.MiddleLeft;
-            countText.color = new Color(0.3f, 0.9f, 0.4f);
+            countText.color = Color.white;
             countText.raycastTarget = false;
             countText.text = mission.targetCount.ToString();
+            // 검은색 아웃라인 (2겹으로 두꺼운 효과)
             Outline countOutline = countObj.AddComponent<Outline>();
-            countOutline.effectColor = Color.white;
+            countOutline.effectColor = Color.black;
             countOutline.effectDistance = new Vector2(2, 2);
+            Shadow countShadow = countObj.AddComponent<Shadow>();
+            countShadow.effectColor = Color.black;
+            countShadow.effectDistance = new Vector2(-2, -2);
 
             // 미션 UI 컨테이너 저장 (나중에 애니메이션에서 사용)
             missionObj.name = "GameMissionUI_Level1";
@@ -1775,8 +1869,9 @@ namespace JewelsHexaPuzzle.Managers
             containerRt.anchoredPosition = new Vector2(20, -20);
             containerRt.sizeDelta = new Vector2(280, containerHeight);
 
+            // 밝은 라벤더 톤 배경
             Image containerBg = containerObj.AddComponent<Image>();
-            containerBg.color = new Color(0.08f, 0.06f, 0.15f, 0.9f);
+            containerBg.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
             containerBg.raycastTarget = false;
 
             gameMissionContainerRect = containerRt;
@@ -1810,23 +1905,7 @@ namespace JewelsHexaPuzzle.Managers
                 Image iconImage = iconObj.AddComponent<Image>();
                 iconImage.raycastTarget = false;
 
-                // GemSpriteProvider에서 스프라이트 시도 → 없으면 프로시저럴 육각형 사용
-                GemType gemType = mission.targetGemType;
-                Sprite gemSprite = GemSpriteProvider.GetGemSprite(gemType);
-                if (gemSprite != null)
-                {
-                    iconImage.sprite = gemSprite;
-                    // 개별 텍스처면 원색, 공용이면 틴팅
-                    if (GemSpriteProvider.NeedsTinting(gemType))
-                        iconImage.color = GemColors.GetColor(gemType);
-                    else
-                        iconImage.color = Color.white;
-                }
-                else
-                {
-                    // 프로시저럴 단색 육각형 생성
-                    iconImage.sprite = CreateSingleColorHexIcon(GemColors.GetColor(gemType));
-                }
+                SetMissionIconForType(iconImage, mission);
                 Outline iconOutline = iconObj.AddComponent<Outline>();
                 iconOutline.effectColor = Color.white;
                 iconOutline.effectDistance = new Vector2(2, 2);
@@ -1846,12 +1925,16 @@ namespace JewelsHexaPuzzle.Managers
                 countText.fontSize = 48;
                 countText.fontStyle = FontStyle.Bold;
                 countText.alignment = TextAnchor.MiddleLeft;
-                countText.color = GemColors.GetColor(gemType);
+                countText.color = Color.white;
                 countText.raycastTarget = false;
                 countText.text = mission.targetCount.ToString();
+                // 검은색 아웃라인 (2겹으로 두꺼운 효과)
                 Outline countOutline = countObj.AddComponent<Outline>();
-                countOutline.effectColor = Color.white;
+                countOutline.effectColor = Color.black;
                 countOutline.effectDistance = new Vector2(2, 2);
+                Shadow countShadow = countObj.AddComponent<Shadow>();
+                countShadow.effectColor = Color.black;
+                countShadow.effectDistance = new Vector2(-2, -2);
 
                 // 리스트에 추가
                 gameMissionCountTexts.Add(countText);
@@ -1886,16 +1969,634 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 미션 타입에 따라 적절한 아이콘을 Image에 적용
+        /// </summary>
+        private void SetMissionIconForType(Image iconImage, MissionData mission)
+        {
+            MissionType mType = mission.type;
+            GemType gemType = mission.targetGemType;
+
+            if (mType == MissionType.CollectGem || mType == MissionType.CollectMultiGem)
+            {
+                if (gemType != GemType.None)
+                {
+                    Sprite gemSprite = GemSpriteProvider.GetGemSprite(gemType);
+                    if (gemSprite != null)
+                    {
+                        iconImage.sprite = gemSprite;
+                        if (GemSpriteProvider.NeedsTinting(gemType))
+                            iconImage.color = GemColors.GetColor(gemType);
+                        else
+                            iconImage.color = Color.white;
+                    }
+                    else
+                    {
+                        iconImage.sprite = CreateSingleColorHexIcon(GemColors.GetColor(gemType));
+                    }
+                }
+                else
+                {
+                    Sprite missionIcon = Resources.Load<Sprite>("Icons/MissionIcon");
+                    if (missionIcon != null)
+                        iconImage.sprite = missionIcon;
+                    else
+                        iconImage.sprite = CreateProceduralMissionIcon();
+                }
+            }
+            else if (mType == MissionType.ProcessGem)
+            {
+                if (gemType != GemType.None)
+                    iconImage.sprite = CreateProcessGemIcon(GemColors.GetColor(gemType));
+                else
+                    iconImage.sprite = CreateProcessGemIcon(new Color(0.9f, 0.85f, 0.3f));
+            }
+            else if (mType == MissionType.CreateSpecialGem)
+            {
+                iconImage.sprite = CreateSpecialGemIcon();
+                iconImage.color = Color.white;
+            }
+            // === 특수 블록별 생성 미션 아이콘 (6색 육각형 배경 + 특수 블록 오버레이) ===
+            else if (mType == MissionType.CreateDrillVertical ||
+                     mType == MissionType.CreateDrillSlash ||
+                     mType == MissionType.CreateDrillBackSlash ||
+                     mType == MissionType.CreateBomb ||
+                     mType == MissionType.CreateLaser ||
+                     mType == MissionType.CreateRainbow)
+            {
+                // 배경: 6색 육각형 기본 블록
+                iconImage.sprite = MissionUIHelper.CreateMultiColorHexagonSprite();
+                iconImage.color = Color.white;
+
+                // 오버레이: 특수 블록 아이콘을 위에 겹침
+                Sprite overlaySprite = null;
+                switch (mType)
+                {
+                    case MissionType.CreateDrillVertical:
+                        overlaySprite = HexBlock.GetDrillIconSprite(DrillDirection.Vertical); break;
+                    case MissionType.CreateDrillSlash:
+                        overlaySprite = HexBlock.GetDrillIconSprite(DrillDirection.Slash); break;
+                    case MissionType.CreateDrillBackSlash:
+                        overlaySprite = HexBlock.GetDrillIconSprite(DrillDirection.BackSlash); break;
+                    case MissionType.CreateBomb:
+                        overlaySprite = BombBlockSystem.GetBombIconSprite(); break;
+                    case MissionType.CreateLaser:
+                        overlaySprite = LaserBlockSystem.GetLaserIconSprite(); break;
+                    case MissionType.CreateRainbow:
+                        overlaySprite = DonutBlockSystem.GetDonutIconSprite(); break;
+                }
+
+                if (overlaySprite != null)
+                {
+                    GameObject overlayObj = new GameObject("SpecialOverlay");
+                    overlayObj.transform.SetParent(iconImage.transform, false);
+                    RectTransform overlayRt = overlayObj.AddComponent<RectTransform>();
+                    overlayRt.anchorMin = Vector2.zero;
+                    overlayRt.anchorMax = Vector2.one;
+                    overlayRt.sizeDelta = Vector2.zero;
+                    overlayRt.anchoredPosition = Vector2.zero;
+                    Image overlayImg = overlayObj.AddComponent<Image>();
+                    overlayImg.sprite = overlaySprite;
+                    overlayImg.color = Color.white;
+                    overlayImg.raycastTarget = false;
+                }
+            }
+            else if (mType == MissionType.CreatePerfectGem)
+            {
+                iconImage.sprite = CreatePerfectGemIcon();
+                iconImage.color = Color.white;
+            }
+            else if (mType == MissionType.TriggerBigBang)
+            {
+                Sprite bombIcon = Resources.Load<Sprite>("Icons/icon_bomb");
+                if (bombIcon != null)
+                {
+                    iconImage.sprite = bombIcon;
+                    iconImage.color = new Color(1f, 0.6f, 0.1f);
+                }
+                else
+                {
+                    iconImage.sprite = CreateExplosionIcon();
+                }
+            }
+            else if (mType == MissionType.RemoveVinyl || mType == MissionType.RemoveDoubleVinyl)
+            {
+                iconImage.sprite = CreateVinylIcon(mType == MissionType.RemoveDoubleVinyl);
+            }
+            else if (mType == MissionType.ReachScore)
+            {
+                iconImage.sprite = CreateScoreTargetIcon();
+                iconImage.color = Color.white;
+            }
+            else if (mType == MissionType.RemoveEnemy)
+            {
+                iconImage.sprite = CreateEnemyIcon();
+            }
+            else if (mType == MissionType.AchieveCombo)
+            {
+                iconImage.sprite = CreateComboIcon();
+            }
+            else if (mType == MissionType.MoveItem)
+            {
+                iconImage.sprite = CreateMoveItemIcon();
+            }
+            else
+            {
+                iconImage.sprite = CreateProceduralMissionIcon();
+            }
+        }
+
+        /// <summary>
+        /// 보석 가공 아이콘 (육각형 + 상향 화살표)
+        /// </summary>
+        private Sprite CreateProcessGemIcon(Color gemColor)
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerRadius = size * 0.38f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float distance = pos.magnitude;
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2f;
+
+                    float hexAngle = Mathf.PI / 3f;
+                    float sectorAngle = angle % hexAngle;
+                    float cosAngle = Mathf.Cos(sectorAngle - hexAngle / 2f);
+                    float hexDist = outerRadius * cosAngle;
+
+                    // 상향 화살표 (삼각형) - 우상단에 작게
+                    float arrowCx = size * 0.72f;
+                    float arrowCy = size * 0.72f;
+                    float ax = x - arrowCx;
+                    float ay = y - arrowCy;
+                    bool isArrow = (ay > 0 && ay < size * 0.22f &&
+                                    Mathf.Abs(ax) < ay * 0.7f);
+
+                    if (isArrow)
+                    {
+                        pixels[y * size + x] = Color.white;
+                    }
+                    else if (distance < hexDist)
+                    {
+                        float gradient = 1f - (distance / hexDist) * 0.2f;
+                        Color c = gemColor * gradient;
+                        c.a = 1f;
+
+                        if (distance > hexDist * 0.85f)
+                            c = Color.Lerp(c, Color.white, 0.6f);
+
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 특수 블록 생성 아이콘 (6각 별)
+        /// </summary>
+        private Sprite CreateSpecialGemIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerR = size * 0.42f;
+            float innerR = outerR * 0.5f;
+            Color starColor = new Color(1f, 0.85f, 0.2f); // 금색
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float dist = pos.magnitude;
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2f;
+
+                    // 6각 별 형태
+                    float starAngle = Mathf.PI / 3f;
+                    float sector = angle % starAngle;
+                    float t = Mathf.Abs(sector - starAngle / 2f) / (starAngle / 2f);
+                    float starDist = Mathf.Lerp(outerR, innerR, t);
+
+                    if (dist < starDist)
+                    {
+                        float brightness = 1f - (dist / starDist) * 0.3f;
+                        Color c = starColor * brightness;
+                        c.a = 1f;
+                        if (dist < starDist * 0.25f)
+                            c = Color.Lerp(c, Color.white, 0.5f);
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 완전 보석 아이콘 (다이아몬드 형태)
+        /// </summary>
+        private Sprite CreatePerfectGemIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float radius = size * 0.4f;
+            Color diamondColor = new Color(0.6f, 0.9f, 1f); // 밝은 하늘색
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // 다이아몬드(마름모) 판정
+                    float dx = Mathf.Abs(x - center.x);
+                    float dy = Mathf.Abs(y - center.y);
+                    float diamondDist = dx / radius + dy / (radius * 1.3f);
+
+                    if (diamondDist < 1f)
+                    {
+                        float brightness = 1f - diamondDist * 0.4f;
+                        Color c = diamondColor * brightness;
+                        c.a = 1f;
+
+                        // 중앙 광채
+                        if (diamondDist < 0.3f)
+                            c = Color.Lerp(c, Color.white, 0.6f * (1f - diamondDist / 0.3f));
+
+                        // 테두리
+                        if (diamondDist > 0.88f)
+                            c = Color.white;
+
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 폭발 아이콘 (빅뱅)
+        /// </summary>
+        private Sprite CreateExplosionIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float radius = size * 0.42f;
+            Color explosionColor = new Color(1f, 0.5f, 0.1f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float dist = pos.magnitude;
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2f;
+
+                    // 8각 폭발 패턴
+                    float spikes = 8f;
+                    float spikeRadius = radius * (0.7f + 0.3f * Mathf.Abs(Mathf.Sin(angle * spikes / 2f)));
+
+                    if (dist < spikeRadius)
+                    {
+                        float t = dist / spikeRadius;
+                        Color c = Color.Lerp(Color.white, explosionColor, t);
+                        c.a = 1f;
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 비닐 제거 아이콘
+        /// </summary>
+        private Sprite CreateVinylIcon(bool isDouble)
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerRadius = size * 0.4f;
+            Color vinylColor = isDouble
+                ? new Color(0.8f, 0.6f, 0.2f, 0.85f)
+                : new Color(0.7f, 0.7f, 0.7f, 0.7f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float dist = pos.magnitude;
+
+                    if (dist < outerRadius)
+                    {
+                        Color c = vinylColor;
+                        // 반투명 줄무늬 (비닐 느낌)
+                        float stripe = Mathf.Sin((x + y) * 0.3f) * 0.5f + 0.5f;
+                        c.a = vinylColor.a * (0.7f + stripe * 0.3f);
+                        // 광택 효과
+                        if (dist < outerRadius * 0.3f)
+                            c = Color.Lerp(c, Color.white, 0.3f * (1f - dist / (outerRadius * 0.3f)));
+                        // X 표시 (제거 의미)
+                        float xDist = Mathf.Min(
+                            Mathf.Abs(pos.x - pos.y) / 1.414f,
+                            Mathf.Abs(pos.x + pos.y) / 1.414f);
+                        if (xDist < size * 0.03f && dist > outerRadius * 0.15f)
+                            c = new Color(0.9f, 0.2f, 0.2f);
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 점수 달성 아이콘 (별 모양)
+        /// </summary>
+        private Sprite CreateScoreTargetIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerR = size * 0.42f;
+            float innerR = outerR * 0.4f;
+            Color starColor = new Color(1f, 0.85f, 0f); // 금색 별
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float dist = pos.magnitude;
+                    float angle = Mathf.Atan2(pos.y, pos.x) + Mathf.PI / 2f;
+                    if (angle < 0) angle += Mathf.PI * 2f;
+
+                    // 5각 별
+                    float starAngle = Mathf.PI * 2f / 5f;
+                    float sector = angle % starAngle;
+                    float t = Mathf.Abs(sector - starAngle / 2f) / (starAngle / 2f);
+                    float starDist = Mathf.Lerp(outerR, innerR, t);
+
+                    if (dist < starDist)
+                    {
+                        float brightness = 1f - (dist / starDist) * 0.25f;
+                        Color c = starColor * brightness;
+                        c.a = 1f;
+                        if (dist < starDist * 0.2f)
+                            c = Color.Lerp(c, Color.white, 0.5f);
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 적군 제거 아이콘 (회색 육각형 + X표시)
+        /// </summary>
+        private Sprite CreateEnemyIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float outerRadius = size * 0.4f;
+            Color enemyColor = GemColors.GetColor(GemType.Gray);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 pos = new Vector2(x, y) - center;
+                    float dist = pos.magnitude;
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2f;
+
+                    float hexAngle = Mathf.PI / 3f;
+                    float sectorAngle = angle % hexAngle;
+                    float cosAngle = Mathf.Cos(sectorAngle - hexAngle / 2f);
+                    float hexDist = outerRadius * cosAngle;
+
+                    if (dist < hexDist)
+                    {
+                        Color c = enemyColor;
+                        // X 표시 (퇴치 의미)
+                        float xDist = Mathf.Min(
+                            Mathf.Abs(pos.x - pos.y) / 1.414f,
+                            Mathf.Abs(pos.x + pos.y) / 1.414f);
+                        if (xDist < size * 0.04f && dist > hexDist * 0.15f)
+                            c = new Color(0.9f, 0.15f, 0.15f);
+                        else if (dist > hexDist * 0.85f)
+                            c = Color.Lerp(c, Color.white, 0.4f);
+                        c.a = 1f;
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 콤보 달성 아이콘 (번개 모양)
+        /// </summary>
+        private Sprite CreateComboIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Color boltColor = new Color(1f, 0.9f, 0.2f); // 금색 번개
+
+            // 번개 폴리곤 정의 (정규화 좌표 0~1)
+            Vector2[] boltShape = new Vector2[]
+            {
+                new Vector2(0.55f, 1.0f),
+                new Vector2(0.35f, 0.58f),
+                new Vector2(0.52f, 0.58f),
+                new Vector2(0.42f, 0.0f),
+                new Vector2(0.7f, 0.48f),
+                new Vector2(0.52f, 0.48f),
+                new Vector2(0.65f, 1.0f)
+            };
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float nx = (float)x / size;
+                    float ny = (float)y / size;
+
+                    // 폴리곤 내부 판정 (ray casting)
+                    bool inside = false;
+                    for (int i = 0, j = boltShape.Length - 1; i < boltShape.Length; j = i++)
+                    {
+                        if ((boltShape[i].y > ny) != (boltShape[j].y > ny) &&
+                            nx < (boltShape[j].x - boltShape[i].x) * (ny - boltShape[i].y) / (boltShape[j].y - boltShape[i].y) + boltShape[i].x)
+                        {
+                            inside = !inside;
+                        }
+                    }
+
+                    if (inside)
+                    {
+                        float centerDist = Mathf.Abs(nx - 0.5f) * 2f;
+                        Color c = Color.Lerp(Color.white, boltColor, centerDist);
+                        c.a = 1f;
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 물건 옮기기 아이콘 (하향 화살표)
+        /// </summary>
+        private Sprite CreateMoveItemIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Color arrowColor = new Color(0.3f, 0.8f, 1f); // 밝은 하늘색
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float nx = (float)x / size;
+                    float ny = (float)y / size;
+
+                    bool isArrow = false;
+
+                    // 화살표 몸통 (세로 직사각형)
+                    if (nx > 0.38f && nx < 0.62f && ny > 0.25f && ny < 0.7f)
+                        isArrow = true;
+
+                    // 화살표 머리 (아래 삼각형)
+                    float arrowHeadY = 0.7f;
+                    if (ny >= arrowHeadY && ny < 0.95f)
+                    {
+                        float progress = (ny - arrowHeadY) / (0.95f - arrowHeadY);
+                        float halfWidth = 0.3f * (1f - progress);
+                        if (Mathf.Abs(nx - 0.5f) < halfWidth)
+                            isArrow = true;
+                    }
+
+                    if (isArrow)
+                    {
+                        pixels[y * size + x] = arrowColor;
+                        pixels[y * size + x].a = 1f;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = new Color(0, 0, 0, 0);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
         /// 단색 육각형 아이콘 프로시저럴 생성
         /// </summary>
         private Sprite CreateSingleColorHexIcon(Color gemColor)
         {
-            int size = 128;
+            int size = 256;
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
 
             Vector2 center = new Vector2(size / 2f, size / 2f);
-            float outerRadius = size * 0.42f;
+            float outerRadius = size * 0.44f;
 
             for (int y = 0; y < size; y++)
             {
@@ -1946,7 +2647,7 @@ namespace JewelsHexaPuzzle.Managers
             tex.SetPixels(pixels);
             tex.Apply();
 
-            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f);
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
         }
 
         /// <summary>
@@ -2063,6 +2764,7 @@ namespace JewelsHexaPuzzle.Managers
         {
             int size = 256;
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
 
             Color[] colors = new Color[]
@@ -2106,7 +2808,226 @@ namespace JewelsHexaPuzzle.Managers
             tex.SetPixels(pixels);
             tex.Apply();
 
-            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f);
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+    }
+
+    /// <summary>
+    /// 미션 아이콘 공용 헬퍼 (UIManager, MissionUI 공통 사용)
+    /// </summary>
+    internal static class MissionUIHelper
+    {
+        private static Sprite _cachedMultiColorHex;
+        private static Sprite _cachedCheckSprite;
+
+        /// <summary>
+        /// 초록색 체크마크 스프라이트 생성 (캐싱)
+        /// 미션 완료 시 숫자 0 대신 표시
+        /// </summary>
+        public static Sprite CreateCheckMarkSprite()
+        {
+            if (_cachedCheckSprite != null) return _cachedCheckSprite;
+
+            const int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            // 배경 투명
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = Color.clear;
+
+            // 초록색 원형 배경
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float circleRadius = size * 0.44f;
+            Color bgColor = new Color(0.15f, 0.75f, 0.3f, 1f); // 선명한 초록
+            Color checkColor = Color.white;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x, y);
+                    float dist = Vector2.Distance(p, center);
+                    if (dist <= circleRadius)
+                    {
+                        // 원형 배경 (약간 밝은 그라데이션)
+                        float t = dist / circleRadius;
+                        pixels[y * size + x] = Color.Lerp(bgColor, bgColor * 0.8f, t * 0.3f);
+                    }
+                }
+            }
+
+            // 체크마크 그리기 (✓ 모양, 두꺼운 선)
+            // 체크의 세 꼭짓점: 좌측 중간, 하단 중앙 약간 좌, 우상단
+            Vector2 p1 = new Vector2(size * 0.24f, size * 0.50f); // 시작점 (좌측)
+            Vector2 p2 = new Vector2(size * 0.42f, size * 0.30f); // 꺾이는 점 (하단)
+            Vector2 p3 = new Vector2(size * 0.76f, size * 0.72f); // 끝점 (우상단)
+            float lineWidth = size * 0.09f; // 두꺼운 선
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x, y);
+                    // p1 → p2 선분과의 거리
+                    float d1 = DistToSegment(p, p1, p2);
+                    // p2 → p3 선분과의 거리
+                    float d2 = DistToSegment(p, p2, p3);
+                    float minD = Mathf.Min(d1, d2);
+
+                    if (minD < lineWidth)
+                    {
+                        // 안티앨리어싱 (부드러운 가장자리)
+                        float alpha = Mathf.Clamp01(1f - (minD - lineWidth + 1.5f) / 1.5f);
+                        Color existing = pixels[y * size + x];
+                        pixels[y * size + x] = Color.Lerp(existing, checkColor, alpha);
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            _cachedCheckSprite = Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+            return _cachedCheckSprite;
+        }
+
+        /// <summary>
+        /// 점과 선분 사이의 거리
+        /// </summary>
+        private static float DistToSegment(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float len = ab.magnitude;
+            if (len < 0.001f) return Vector2.Distance(p, a);
+            Vector2 dir = ab / len;
+            Vector2 ap = p - a;
+            float proj = Mathf.Clamp(Vector2.Dot(ap, dir), 0, len);
+            Vector2 closest = a + dir * proj;
+            return Vector2.Distance(p, closest);
+        }
+
+        /// <summary>
+        /// 6색 구역 분할 육각형 스프라이트 생성 (캐싱)
+        /// </summary>
+        public static Sprite CreateMultiColorHexagonSprite()
+        {
+            if (_cachedMultiColorHex != null) return _cachedMultiColorHex;
+
+            const int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            Color[] gemColors = new Color[]
+            {
+                GemColors.GetColor(GemType.Red),
+                GemColors.GetColor(GemType.Orange),
+                GemColors.GetColor(GemType.Yellow),
+                GemColors.GetColor(GemType.Green),
+                GemColors.GetColor(GemType.Blue),
+                GemColors.GetColor(GemType.Purple)
+            };
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float radius = size * 0.44f;
+
+            // flat-top 육각형 꼭짓점 (0°, 60°, 120°, ...) 계산
+            // flat-top: 꼭짓점이 좌우(0°,180°)에 위치
+            Vector2[] verts = new Vector2[6];
+            for (int i = 0; i < 6; i++)
+            {
+                float a = i * Mathf.PI / 3f; // 0°, 60°, 120°, 180°, 240°, 300°
+                verts[i] = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * radius;
+            }
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x, y);
+
+                    // 육각형 내부 판정 (ray-casting)
+                    if (!IsPointInHex(p, verts))
+                    {
+                        pixels[y * size + x] = Color.clear;
+                        continue;
+                    }
+
+                    Vector2 pos = p - center;
+                    float angle = Mathf.Atan2(pos.y, pos.x);
+                    if (angle < 0) angle += Mathf.PI * 2;
+
+                    // 6개 섹터 (각 섹터 60도)
+                    int sector = Mathf.FloorToInt((angle / (Mathf.PI * 2)) * 6) % 6;
+                    Color col = gemColors[sector];
+
+                    // 테두리: 꼭짓점 방사선 경계에 얇은 어두운 선
+                    float sectorAngle = angle / (Mathf.PI * 2) * 6f;
+                    float edgeDist = Mathf.Abs(sectorAngle - Mathf.Round(sectorAngle));
+                    if (edgeDist < 0.04f)
+                    {
+                        col = Color.Lerp(col, new Color(0.15f, 0.15f, 0.15f, 1f), 0.6f);
+                    }
+
+                    // 외곽 테두리 (육각형 바깥 가까이)
+                    float hexDist = HexEdgeDistance(p, center, verts);
+                    if (hexDist < 3f)
+                    {
+                        col = Color.Lerp(col, new Color(0.1f, 0.1f, 0.1f, 1f), 0.7f);
+                    }
+
+                    pixels[y * size + x] = col;
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            _cachedMultiColorHex = Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+            return _cachedMultiColorHex;
+        }
+
+        /// <summary>
+        /// 점이 육각형 내부에 있는지 (ray-casting)
+        /// </summary>
+        private static bool IsPointInHex(Vector2 p, Vector2[] verts)
+        {
+            int n = verts.Length;
+            int crossings = 0;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = verts[i], b = verts[(i + 1) % n];
+                if ((a.y > p.y) != (b.y > p.y))
+                {
+                    float xCross = (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x;
+                    if (p.x < xCross) crossings++;
+                }
+            }
+            return crossings % 2 == 1;
+        }
+
+        /// <summary>
+        /// 점에서 육각형 가장 가까운 변까지의 거리
+        /// </summary>
+        private static float HexEdgeDistance(Vector2 p, Vector2 center, Vector2[] verts)
+        {
+            float minDist = float.MaxValue;
+            int n = verts.Length;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = verts[i], b = verts[(i + 1) % n];
+                Vector2 ab = b - a;
+                float len = ab.magnitude;
+                Vector2 dir = ab / len;
+                Vector2 ap = p - a;
+                float proj = Mathf.Clamp(Vector2.Dot(ap, dir), 0, len);
+                Vector2 closest = a + dir * proj;
+                float dist = Vector2.Distance(p, closest);
+                if (dist < minDist) minDist = dist;
+            }
+            return minDist;
         }
     }
 
@@ -2202,8 +3123,69 @@ namespace JewelsHexaPuzzle.Managers
             displayCount = Mathf.Max(0, to);
             if (countText != null)
             {
-                countText.text = $"x {displayCount}";
+                // 미션 완료 시 체크마크 표시
+                if (displayCount <= 0)
+                {
+                    countText.text = "";
+                    ShowCheckMark();
+                }
+                else
+                {
+                    countText.text = $"x {displayCount}";
+                }
             }
+        }
+
+        /// <summary>
+        /// 카운트 텍스트 위치에 초록색 체크마크 아이콘 표시
+        /// </summary>
+        private void ShowCheckMark()
+        {
+            if (countText == null) return;
+
+            Transform existing = countText.transform.Find("CheckMark");
+            if (existing != null) return;
+
+            GameObject checkObj = new GameObject("CheckMark");
+            checkObj.transform.SetParent(countText.transform, false);
+            RectTransform checkRt = checkObj.AddComponent<RectTransform>();
+            checkRt.anchorMin = new Vector2(0, 0.5f);
+            checkRt.anchorMax = new Vector2(0, 0.5f);
+            checkRt.pivot = new Vector2(0, 0.5f);
+
+            float checkSize = countText.fontSize * 1.2f;
+            checkRt.sizeDelta = new Vector2(checkSize, checkSize);
+            checkRt.anchoredPosition = new Vector2(4, 0);
+
+            Image checkImg = checkObj.AddComponent<Image>();
+            checkImg.sprite = MissionUIHelper.CreateCheckMarkSprite();
+            checkImg.color = Color.white;
+            checkImg.raycastTarget = false;
+
+            // 등장 애니메이션
+            StartCoroutine(CheckMarkAppearCoroutine(checkRt));
+        }
+
+        private IEnumerator CheckMarkAppearCoroutine(RectTransform checkRt)
+        {
+            if (checkRt == null) yield break;
+            float duration = 0.25f;
+            float elapsed = 0f;
+            checkRt.localScale = Vector3.zero;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = elapsed / duration;
+                float scale = t < 0.6f
+                    ? Mathf.Lerp(0f, 1.3f, t / 0.6f)
+                    : Mathf.Lerp(1.3f, 1f, (t - 0.6f) / 0.4f);
+                if (checkRt != null)
+                    checkRt.localScale = Vector3.one * scale;
+                yield return null;
+            }
+            if (checkRt != null)
+                checkRt.localScale = Vector3.one;
         }
 
         /// <summary>
@@ -2211,57 +3193,7 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         private Sprite CreateMultiColorHexagon()
         {
-            const int size = 256;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
-            Color[] pixels = new Color[size * size];
-
-            Color[] gemColors = new Color[]
-            {
-                GemColors.GetColor(GemType.Red),      // 빨강
-                GemColors.GetColor(GemType.Green),    // 초록
-                GemColors.GetColor(GemType.Blue),     // 파랑
-                GemColors.GetColor(GemType.Yellow),   // 노랑
-                GemColors.GetColor(GemType.Purple),   // 보라
-                GemColors.GetColor(GemType.Orange)    // 주황
-            };
-
-            Vector2 center = new Vector2(size / 2f, size / 2f);
-            float radius = size * 0.4f;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    Vector2 pos = new Vector2(x, y) - center;
-                    float angle = Mathf.Atan2(pos.y, pos.x);
-                    if (angle < 0) angle += Mathf.PI * 2;
-
-                    float distance = pos.magnitude;
-
-                    // 육각형 내부
-                    if (distance < radius)
-                    {
-                        // 6개 섹터로 나누기 (각 섹터 60도)
-                        int sector = Mathf.FloorToInt((angle / (Mathf.PI * 2)) * 6) % 6;
-                        pixels[y * size + x] = gemColors[sector];
-
-                        // 중앙 원 (경계선)
-                        if (distance < radius * 0.1f)
-                        {
-                            pixels[y * size + x] = Color.white;
-                        }
-                    }
-                    else
-                    {
-                        pixels[y * size + x] = new Color(0, 0, 0, 0); // 투명
-                    }
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-
-            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f);
+            return MissionUIHelper.CreateMultiColorHexagonSprite();
         }
     }
 

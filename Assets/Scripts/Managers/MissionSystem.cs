@@ -293,7 +293,7 @@ namespace JewelsHexaPuzzle.Managers
         /// <summary>
         /// 특수 블록 생성 추적
         /// </summary>
-        public void OnSpecialBlockCreated(SpecialBlockType type)
+        public void OnSpecialBlockCreated(SpecialBlockType type, DrillDirection drillDir = DrillDirection.Vertical)
         {
             if (currentMission == null || currentMission.IsComplete) return;
 

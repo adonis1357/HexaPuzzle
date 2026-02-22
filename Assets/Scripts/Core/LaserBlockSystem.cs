@@ -234,7 +234,7 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetLaserIconSprite()
         {
             if (laserIconSprite == null)
-                laserIconSprite = CreateLaserSprite(64);
+                laserIconSprite = CreateLaserSprite(128);
             return laserIconSprite;
         }
 

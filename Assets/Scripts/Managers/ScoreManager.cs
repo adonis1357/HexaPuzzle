@@ -55,10 +55,15 @@ namespace JewelsHexaPuzzle.Managers
         private const string TOTAL_GOLD_KEY = "TotalGold";
         private const string RANKING_KEY = "InfiniteRanking";
         private const string MAX_MOVES_KEY = "MaxMoves";
+        private const string LEVEL_HIGH_SCORE_KEY = "LevelHighScore_"; // + stageNumber (모든 유저 최고)
+        private const string PERSONAL_LEVEL_BEST_KEY = "PersonalLevelBest_"; // + stageNumber (개인 레벨별 최고)
         private const int MAX_RANKING_COUNT = 10;
 
         private int maxMoves = 0;
         public int MaxMoves => maxMoves;
+
+        // 이벤트: 최고 점수 갱신 시
+        public event Action<int, int, bool> OnHighScoreUpdated; // stageNumber, newHighScore, isNewPersonalBest
 
         private void Awake()
         {
@@ -448,6 +453,72 @@ namespace JewelsHexaPuzzle.Managers
             turnEnemyKillCount = 0;
 
             return bonus;
+        }
+
+        // ============================================================
+        // 레벨별 최고 점수 시스템
+        // ============================================================
+
+        /// <summary>
+        /// 특정 레벨의 최고 점수 가져오기
+        /// </summary>
+        public int GetLevelHighScore(int stageNumber)
+        {
+            return PlayerPrefs.GetInt(LEVEL_HIGH_SCORE_KEY + stageNumber, 0);
+        }
+
+        /// <summary>
+        /// 레벨별 최고 점수 갱신 시도.
+        /// BEST(전체 유저 최고)와 MY BEST(개인 레벨별 최고) 모두 갱신.
+        /// </summary>
+        /// <returns>새로운 레벨 최고 점수인 경우 true</returns>
+        public bool TryUpdateLevelHighScore(int stageNumber)
+        {
+            if (currentScore <= 0) return false;
+
+            int prevLevelHigh = GetLevelHighScore(stageNumber);
+            int prevPersonalBest = GetPersonalLevelBest(stageNumber);
+            bool isNewLevelHigh = currentScore > prevLevelHigh;
+            bool isNewPersonalBest = currentScore > prevPersonalBest;
+
+            // 레벨 최고 점수 갱신 (모든 유저 통합)
+            if (isNewLevelHigh)
+            {
+                PlayerPrefs.SetInt(LEVEL_HIGH_SCORE_KEY + stageNumber, currentScore);
+                Debug.Log($"[ScoreManager] Stage {stageNumber} 레벨 최고 점수 갱신! {prevLevelHigh} → {currentScore}");
+            }
+
+            // 개인 레벨별 최고 점수 갱신
+            if (isNewPersonalBest)
+            {
+                PlayerPrefs.SetInt(PERSONAL_LEVEL_BEST_KEY + stageNumber, currentScore);
+                Debug.Log($"[ScoreManager] Stage {stageNumber} 개인 최고 점수 갱신! {prevPersonalBest} → {currentScore}");
+            }
+
+            if (isNewLevelHigh || isNewPersonalBest)
+            {
+                PlayerPrefs.Save();
+                OnHighScoreUpdated?.Invoke(stageNumber, currentScore, isNewPersonalBest);
+            }
+
+            return isNewLevelHigh;
+        }
+
+        /// <summary>
+        /// 특정 레벨의 개인 최고 점수 가져오기
+        /// </summary>
+        public int GetPersonalLevelBest(int stageNumber)
+        {
+            return PlayerPrefs.GetInt(PERSONAL_LEVEL_BEST_KEY + stageNumber, 0);
+        }
+
+        /// <summary>
+        /// 하위 호환: GetPersonalBestScore → 레벨별 개인 최고 점수 (deprecated, 레벨 지정 필요)
+        /// </summary>
+        [System.Obsolete("GetPersonalLevelBest(stageNumber) 사용 권장")]
+        public int GetPersonalBestScore()
+        {
+            return 0; // 레벨 미지정 시 0 반환
         }
     }
 

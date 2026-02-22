@@ -307,9 +307,9 @@ namespace JewelsHexaPuzzle.Core
                 hexGemSprite = CreateAAInnerHexSprite(TEX_SIZE, INNER_BORDER_WIDTH * scale);
             if (drillVerticalSprite == null)
             {
-                drillVerticalSprite = CreateArrowSprite(64, 0);      // r축: 화면 세로 ↕
-                drillSlashSprite = CreateArrowSprite(64, -60);     // s축: 화면 / 방향 (세로에서 시계 60°)
-                drillBackSlashSprite = CreateArrowSprite(64, 60);  // q축: 화면 \\ 방향 (세로에서 시계 120°)면 \\ 방향방향 (-60°)
+                drillVerticalSprite = CreateArrowSprite(128, 0);      // r축: 화면 세로 ↕
+                drillSlashSprite = CreateArrowSprite(128, -60);     // s축: 화면 / 방향 (세로에서 시계 60°)
+                drillBackSlashSprite = CreateArrowSprite(128, 60);  // q축: 화면 \\ 방향 (세로에서 시계 120°)
             }
         }
 
@@ -475,6 +475,7 @@ namespace JewelsHexaPuzzle.Core
         private Sprite CreateArrowSprite(int size, float rotation)
         {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
 
             for (int i = 0; i < pixels.Length; i++)
@@ -523,6 +524,7 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite CreateChainOverlaySprite(int size)
         {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
             for (int i = 0; i < pixels.Length; i++)
                 pixels[i] = Color.clear;
@@ -964,6 +966,75 @@ private void UpdateSpecialIndicator()
                 case DrillDirection.BackSlash: return drillBackSlashSprite;
                 default: return drillVerticalSprite;
             }
+        }
+
+        /// <summary>
+        /// 드릴 방향별 아이콘 스프라이트 반환 (미션 UI용 공개 접근자)
+        /// </summary>
+        public static Sprite GetDrillIconSprite(DrillDirection direction)
+        {
+            // 스프라이트가 아직 생성되지 않았으면 생성
+            if (drillVerticalSprite == null)
+            {
+                drillVerticalSprite = CreateArrowSprite_Static(128, 0);
+                drillSlashSprite = CreateArrowSprite_Static(128, -60);
+                drillBackSlashSprite = CreateArrowSprite_Static(128, 60);
+            }
+            switch (direction)
+            {
+                case DrillDirection.Vertical:  return drillVerticalSprite;
+                case DrillDirection.Slash:     return drillSlashSprite;
+                case DrillDirection.BackSlash: return drillBackSlashSprite;
+                default: return drillVerticalSprite;
+            }
+        }
+
+        /// <summary>
+        /// 화살표 스프라이트 생성 (static 버전, 미션 아이콘 초기화용)
+        /// </summary>
+        private static Sprite CreateArrowSprite_Static(int size, float rotation)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = Color.clear;
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float arrowLength = size * 0.4f;
+            float arrowWidth = size * 0.15f;
+            float rad = rotation * Mathf.Deg2Rad;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x - center.x, y - center.y);
+                    float rx = p.x * Mathf.Cos(-rad) - p.y * Mathf.Sin(-rad);
+                    float ry = p.x * Mathf.Sin(-rad) + p.y * Mathf.Cos(-rad);
+
+                    bool inArrow = false;
+                    if (Mathf.Abs(rx) < arrowWidth / 2f && Mathf.Abs(ry) < arrowLength)
+                        inArrow = true;
+                    if (ry > arrowLength * 0.5f && ry < arrowLength)
+                    {
+                        float arrowHead = (arrowLength - ry) / (arrowLength * 0.5f) * arrowWidth;
+                        if (Mathf.Abs(rx) < arrowHead) inArrow = true;
+                    }
+                    if (ry < -arrowLength * 0.5f && ry > -arrowLength)
+                    {
+                        float arrowHead = (arrowLength + ry) / (arrowLength * 0.5f) * arrowWidth;
+                        if (Mathf.Abs(rx) < arrowHead) inArrow = true;
+                    }
+
+                    if (inArrow) pixels[y * size + x] = new Color(0.98f, 0.95f, 0.90f, 1f);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
 /// <summary>

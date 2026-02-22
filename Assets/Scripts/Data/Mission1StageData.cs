@@ -123,7 +123,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 3: 기본 블록 200개 제거
+        // Stage 3: 파란색 블록 40개 제거 (1종 색상 수집)
         // ============================================================
         private static StageData GetStage3()
         {
@@ -132,16 +132,16 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 3,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 25,
+                turnLimit = 15,
                 difficulty = 1,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 200,
-                        description = "기본 블록 200개 제거"
+                        targetGemType = GemType.Blue,
+                        targetCount = 40,
+                        description = "파란색 블록 40개 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -154,7 +154,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 4: 레이아웃 다양화 - 색상도둑 2개 + 고정 블록
+        // Stage 4: 노란색 35 + 보라색 35 제거 (2종 색상 수집)
         // ============================================================
         private static StageData GetStage4()
         {
@@ -163,31 +163,33 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 4,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 32,
+                turnLimit = 22,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 150,
-                        description = "기본 블록 150개 제거"
+                        targetGemType = GemType.Yellow,
+                        targetCount = 35,
+                        description = "노란색 블록 35개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Purple,
+                        targetCount = 35,
+                        description = "보라색 블록 35개 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, -2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, 1), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
                     beforeStageCutscene = "루나가 더 위험한 지역으로 진입한다.\n오라클리온: \"이 숲 깊숙이로 들어갈수록 오염이 심해지는군.\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"이번엔 고정 블록들이 길을 막고 있군.\""
+                        "오라클리온: \"이번엔 두 가지 색상의 보석을 모아봐.\""
                     },
                     stageClearDialogues = new[]
                     {
@@ -201,7 +203,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 5: 복합 장애물 - 색상도둑 2개 + 다양한 조건
+        // Stage 5: 빨강 40 + 파랑 40 제거 + 세로 드릴 1개 생성
         // ============================================================
         private static StageData GetStage5()
         {
@@ -210,30 +212,36 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 5,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 35,
+                turnLimit = 25,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 180,
-                        description = "기본 블록 180개 제거"
+                        targetGemType = GemType.Red,
+                        targetCount = 40,
+                        description = "빨간색 블록 40개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Blue,
+                        targetCount = 40,
+                        description = "파란색 블록 40개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CreateDrillVertical,
+                        targetCount = 1,
+                        description = "세로 드릴 1개 생성"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-3, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(-2, 0), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, 2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, -1), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
-                    beforeStageCutscene = "루나: \"색상도둑이 자꾸만 나타나네요.\"\n오라클리온: \"오염이 점점 심해지고 있는 것 같다. 조심스럽게 진행하거라.\"",
+                    beforeStageCutscene = "루나: \"보석들이 점점 다양해지네요.\"\n오라클리온: \"맞다. 더 많은 색상을 효율적으로 모아야 한다.\"",
                     stageIntroDialogues = new[]
                     {
                         "프리즘: \"루나는 할 수 있어! 이겨내!\""
@@ -250,7 +258,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 6: 색상도둑 3개 첫 등장
+        // Stage 6: 초록·노랑·보라 각 30개 제거 (3종 색상 수집)
         // ============================================================
         private static StageData GetStage6()
         {
@@ -259,16 +267,30 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 6,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 40,
+                turnLimit = 28,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 200,
-                        description = "기본 블록 200개 제거"
+                        targetGemType = GemType.Green,
+                        targetCount = 30,
+                        description = "초록색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Yellow,
+                        targetCount = 30,
+                        description = "노란색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Purple,
+                        targetCount = 30,
+                        description = "보라색 블록 30개 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -299,7 +321,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 7: 대칭 배치
+        // Stage 7: 빨강 35 + 파랑 35 + 폭탄 1개 생성
         // ============================================================
         private static StageData GetStage7()
         {
@@ -308,16 +330,29 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 7,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 42,
+                turnLimit = 30,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 220,
-                        description = "기본 블록 220개 제거"
+                        targetGemType = GemType.Red,
+                        targetCount = 35,
+                        description = "빨간색 블록 35개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Blue,
+                        targetCount = 35,
+                        description = "파란색 블록 35개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CreateBomb,
+                        targetCount = 1,
+                        description = "폭탄 1개 생성"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -348,7 +383,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 8: 불규칙 배치
+        // Stage 8: 4색 각 30개 제거 (4종 색상 수집)
         // ============================================================
         private static StageData GetStage8()
         {
@@ -357,16 +392,37 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 8,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 45,
+                turnLimit = 32,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 250,
-                        description = "기본 블록 250개 제거"
+                        targetGemType = GemType.Red,
+                        targetCount = 30,
+                        description = "빨간색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Blue,
+                        targetCount = 30,
+                        description = "파란색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Yellow,
+                        targetCount = 30,
+                        description = "노란색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Purple,
+                        targetCount = 30,
+                        description = "보라색 블록 30개 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -397,7 +453,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 9: 최종 도전 - 색상도둑 3개 + 고난이도
+        // Stage 9: 4색 각 35개 제거 (4종 색상 수집, 고난이도)
         // ============================================================
         private static StageData GetStage9()
         {
@@ -406,16 +462,37 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 9,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 42,
-                difficulty = 2,
+                turnLimit = 35,
+                difficulty = 3,
                 missions = new[]
                 {
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 280,
-                        description = "기본 블록 280개 제거"
+                        targetGemType = GemType.Red,
+                        targetCount = 35,
+                        description = "빨간색 블록 35개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Green,
+                        targetCount = 35,
+                        description = "초록색 블록 35개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Yellow,
+                        targetCount = 35,
+                        description = "노란색 블록 35개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Purple,
+                        targetCount = 35,
+                        description = "보라색 블록 35개 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -447,7 +524,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 10: 챕터 1 보스 스테이지 - 최종 시험
+        // Stage 10: 챕터 1 보스 - 5색 각 30개 제거 (5종 색상 수집)
         // ============================================================
         private static StageData GetStage10()
         {
@@ -456,7 +533,7 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 10,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 40,
+                turnLimit = 38,
                 difficulty = 3,
                 isBossStage = true,
                 missions = new[]
@@ -464,15 +541,43 @@ namespace JewelsHexaPuzzle.Managers
                     new MissionData
                     {
                         type = MissionType.CollectGem,
-                        targetGemType = GemType.None,
-                        targetCount = 300,
-                        description = "기본 블록 300개 제거"
+                        targetGemType = GemType.Red,
+                        targetCount = 30,
+                        description = "빨간색 블록 30개 제거"
                     },
                     new MissionData
                     {
-                        type = MissionType.AchieveCombo,
-                        targetCount = 20,
-                        description = "20 콤보 달성"
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Blue,
+                        targetCount = 30,
+                        description = "파란색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Green,
+                        targetCount = 30,
+                        description = "초록색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Yellow,
+                        targetCount = 30,
+                        description = "노란색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CollectGem,
+                        targetGemType = GemType.Purple,
+                        targetCount = 30,
+                        description = "보라색 블록 30개 제거"
+                    },
+                    new MissionData
+                    {
+                        type = MissionType.CreateLaser,
+                        targetCount = 1,
+                        description = "레이저 1개 생성"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],

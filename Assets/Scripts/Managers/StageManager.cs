@@ -197,8 +197,14 @@ namespace JewelsHexaPuzzle.Managers
                         mission.targetCount = 5 + stageNumber / 15;
                         break;
                     case 2:
-                        mission.type = MissionType.CreateSpecialGem;
-                        mission.targetCount = 2 + stageNumber / 30;
+                        // 랜덤 특수 블록 생성 미션
+                        MissionType[] specialMissions = {
+                            MissionType.CreateDrillVertical, MissionType.CreateDrillSlash,
+                            MissionType.CreateDrillBackSlash, MissionType.CreateBomb,
+                            MissionType.CreateLaser, MissionType.CreateRainbow
+                        };
+                        mission.type = specialMissions[Random.Range(0, specialMissions.Length)];
+                        mission.targetCount = 1 + stageNumber / 30;
                         break;
                     case 3:
                         mission.type = MissionType.RemoveVinyl;
@@ -306,22 +312,47 @@ namespace JewelsHexaPuzzle.Managers
         }
         
         /// <summary>
-        /// 특수보석 생성 시 호출
+        /// 특수 블록 생성 시 호출 (블록 타입 + 드릴 방향별 개별 미션 카운트)
         /// </summary>
-        public void OnSpecialGemCreated()
+        public void OnSpecialBlockCreatedDetailed(SpecialBlockType specialType, DrillDirection drillDir)
         {
+            // 생성된 블록에 대응하는 미션 타입 결정
+            MissionType targetMissionType = MissionType.CreateSpecialGem; // 기본값 (하위 호환)
+
+            switch (specialType)
+            {
+                case SpecialBlockType.Drill:
+                    switch (drillDir)
+                    {
+                        case DrillDirection.Vertical:  targetMissionType = MissionType.CreateDrillVertical; break;
+                        case DrillDirection.Slash:      targetMissionType = MissionType.CreateDrillSlash; break;
+                        case DrillDirection.BackSlash:  targetMissionType = MissionType.CreateDrillBackSlash; break;
+                    }
+                    break;
+                case SpecialBlockType.Bomb:    targetMissionType = MissionType.CreateBomb; break;
+                case SpecialBlockType.Laser:   targetMissionType = MissionType.CreateLaser; break;
+                case SpecialBlockType.Rainbow: targetMissionType = MissionType.CreateRainbow; break;
+            }
+
             for (int i = 0; i < missionProgress.Count; i++)
             {
                 var progress = missionProgress[i];
                 if (progress.isComplete) continue;
-                
-                if (progress.mission.type == MissionType.CreateSpecialGem)
+
+                // 정확히 일치하는 미션 타입만 카운트
+                if (progress.mission.type == targetMissionType)
+                {
+                    progress.currentCount++;
+                    CheckMissionCompletion(i);
+                }
+                // 구 CreateSpecialGem 미션은 모든 특수 블록 생성을 카운트 (하위 호환)
+                else if (progress.mission.type == MissionType.CreateSpecialGem)
                 {
                     progress.currentCount++;
                     CheckMissionCompletion(i);
                 }
             }
-            
+
             OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
         }
         
@@ -489,7 +520,7 @@ namespace JewelsHexaPuzzle.Managers
         CollectGem = 1,         // 원석 채광
         CollectMultiGem = 2,    // 복수 원석 채광
         ProcessGem = 3,         // 보석 가공
-        CreateSpecialGem = 4,   // 특수보석 생성
+        CreateSpecialGem = 4,   // [사용 안 함] 구 특수보석 생성 (하위 호환용)
         CreatePerfectGem = 5,   // 완전보석 생성
         TriggerBigBang = 6,     // 빅뱅 발생
         RemoveVinyl = 7,        // 비닐 제거
@@ -497,7 +528,15 @@ namespace JewelsHexaPuzzle.Managers
         MoveItem = 9,           // 물건 옮기기
         ReachScore = 10,        // 점수 달성
         RemoveEnemy = 11,       // 적군 제거 (Mission 1)
-        AchieveCombo = 12       // 콤보 달성
+        AchieveCombo = 12,      // 콤보 달성
+
+        // === 특수 블록별 생성 미션 ===
+        CreateDrillVertical = 20,   // 드릴 생성 (세로 ↕)
+        CreateDrillSlash = 21,      // 드릴 생성 (슬래시 /)
+        CreateDrillBackSlash = 22,  // 드릴 생성 (백슬래시 \)
+        CreateBomb = 23,            // 폭탄 생성
+        CreateLaser = 24,           // 레이저 생성
+        CreateRainbow = 25          // 레인보우(도넛) 생성
     }
     
     /// <summary>
