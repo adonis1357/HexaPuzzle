@@ -945,5 +945,18 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
             Destroy(bloom);
         }
+
+        // ============================================================
+        // 합성 시스템용 Public 래퍼
+        // ============================================================
+
+        /// <summary>특수 블록 합성 시스템에서 폭발 이펙트에 사용</summary>
+        public IEnumerator BombExplosionEffectPublic(Vector3 pos, Color color)
+            => BombExplosionEffect(pos, color);
+
+        /// <summary>특수 블록 합성 시스템에서 블록 폭발 파괴에 사용</summary>
+        public IEnumerator DestroyBlockWithExplosionPublic(
+            HexBlock block, Color blockColor, Vector3 bombCenter, bool showEffects = true)
+            => DestroyBlockWithExplosion(block, blockColor, bombCenter, showEffects);
     }
 }

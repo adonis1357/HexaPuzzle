@@ -1,5 +1,7 @@
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Managers;
 
@@ -20,6 +22,8 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private LaserBlockSystem laserSystem;
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
 
+        // 합성 시스템 참조
+        private SpecialBlockComboSystem comboSystem;
 
         [SerializeField] private Camera mainCamera;
         [SerializeField] private Canvas gameCanvas;
@@ -33,6 +37,14 @@ namespace JewelsHexaPuzzle.Core
         private bool isPointerDown = false;
         private Vector2 pointerDownPosition;
         private const float DRAG_CANCEL_THRESHOLD = 10f; // 10px 이상 이동 시 회전 취소
+
+        // 합성 드래그 상태
+        private HexBlock comboSource = null;       // 드래그 시작 특수블록
+        private HexBlock comboTarget = null;       // 드래그 중 인접 특수블록
+        private bool isDraggingCombo = false;       // 합성 드래그 진행 중
+        private GameObject comboSourceHighlight;    // 소스 하이라이트 오브젝트
+        private GameObject comboTargetHighlight;    // 타겟 하이라이트 오브젝트
+        private GameObject comboLineObj;            // 연결선 오브젝트
 
         // 회전 방향 (RotationSystem 연동)
         public bool IsClockwise => rotationSystem != null && rotationSystem.IsClockwise;
@@ -108,6 +120,10 @@ namespace JewelsHexaPuzzle.Core
                 if (blockRemovalSystem != null)
                     Debug.Log("[InputSystem] BlockRemovalSystem auto-found: " + blockRemovalSystem.name);
             }
+
+            comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
+            if (comboSystem != null)
+                Debug.Log("[InputSystem] SpecialBlockComboSystem auto-found: " + comboSystem.name);
         }
 
 private void Update()
@@ -120,6 +136,7 @@ private void Update()
             if (xBlockSystem != null && xBlockSystem.IsActivating) return;
             if (laserSystem != null && laserSystem.IsActivating) return;
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
+            if (comboSystem != null && comboSystem.IsComboActive) return;
 
             // 에디터 모드 활성화 시 일반 입력 차단
             EditorTestSystem editorTestSystem = GetComponent<EditorTestSystem>();
@@ -141,22 +158,41 @@ private void Update()
         private void HandleMouseInput()
         {
             Vector2 mousePos = Input.mousePosition;
-            UpdateClusterPreview(mousePos);
 
             if (Input.GetMouseButtonDown(0))
             {
                 isPointerDown = true;
                 pointerDownPosition = mousePos;
+                // 합성 드래그 시작 시도
+                TryStartComboDrag(mousePos);
+            }
+
+            if (Input.GetMouseButton(0) && isPointerDown && isDraggingCombo)
+            {
+                // 합성 드래그 업데이트
+                UpdateComboDrag(mousePos);
+            }
+
+            if (!isDraggingCombo)
+            {
+                UpdateClusterPreview(mousePos);
             }
 
             if (Input.GetMouseButtonUp(0) && isPointerDown)
             {
                 isPointerDown = false;
+
+                if (isDraggingCombo)
+                {
+                    // 합성 드래그 종료
+                    FinishComboDrag();
+                    return;
+                }
+
                 float dragDistance = Vector2.Distance(pointerDownPosition, mousePos);
 
                 if (dragDistance >= DRAG_CANCEL_THRESHOLD)
                 {
-                    // 드래그 거리 초과 → 회전 취소
                     ClearHighlight();
                     hasValidCluster = false;
                     return;
@@ -179,21 +215,31 @@ private void Update()
                 {
                     isPointerDown = true;
                     pointerDownPosition = touch.position;
+                    TryStartComboDrag(touch.position);
                 }
 
-                if (touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary)
+                if ((touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary) && isPointerDown)
                 {
-                    UpdateClusterPreview(touch.position);
+                    if (isDraggingCombo)
+                        UpdateComboDrag(touch.position);
+                    else
+                        UpdateClusterPreview(touch.position);
                 }
 
                 if (touch.phase == TouchPhase.Ended && isPointerDown)
                 {
                     isPointerDown = false;
+
+                    if (isDraggingCombo)
+                    {
+                        FinishComboDrag();
+                        return;
+                    }
+
                     float dragDistance = Vector2.Distance(pointerDownPosition, touch.position);
 
                     if (dragDistance >= DRAG_CANCEL_THRESHOLD)
                     {
-                        // 드래그 거리 초과 → 회전 취소
                         ClearHighlight();
                         hasValidCluster = false;
                         return;
@@ -208,6 +254,7 @@ private void Update()
                 if (touch.phase == TouchPhase.Canceled)
                 {
                     isPointerDown = false;
+                    CancelComboDrag();
                     ClearHighlight();
                     hasValidCluster = false;
                 }
@@ -432,12 +479,183 @@ private void Update()
             return screenPosition;
         }
 
+        // ============================================================
+        // 합성 드래그 메서드
+        // ============================================================
+
+        /// <summary>합성 가능한 특수블록 타입인지 확인</summary>
+        private bool IsComboableSpecial(JewelsHexaPuzzle.Data.SpecialBlockType type)
+        {
+            return type == JewelsHexaPuzzle.Data.SpecialBlockType.Drill ||
+                   type == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb ||
+                   type == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock;
+        }
+
+        /// <summary>터치 시작 시 합성 드래그 시도</summary>
+        private void TryStartComboDrag(Vector2 screenPos)
+        {
+            if (comboSystem == null) return;
+            Vector2 localPos = ScreenToLocalPosition(screenPos);
+            HexBlock block = GetBlockAtPosition(localPos);
+
+            if (block != null && block.Data != null && IsComboableSpecial(block.Data.specialType))
+            {
+                // 인접에 합성 가능한 특수블록이 있는지 미리 확인
+                bool hasComboNeighbor = false;
+                var neighbors = hexGrid.GetNeighbors(block.Coord);
+                foreach (var n in neighbors)
+                {
+                    if (n.Data != null && IsComboableSpecial(n.Data.specialType))
+                    {
+                        hasComboNeighbor = true;
+                        break;
+                    }
+                }
+
+                if (hasComboNeighbor)
+                {
+                    comboSource = block;
+                    comboTarget = null;
+                    isDraggingCombo = true;
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    CreateComboHighlight(block, true);
+                    Debug.Log($"[InputSystem] 합성 드래그 시작: {block.Coord} ({block.Data.specialType})");
+                }
+            }
+        }
+
+        /// <summary>드래그 중 인접 특수블록 감지</summary>
+        private void UpdateComboDrag(Vector2 screenPos)
+        {
+            if (comboSource == null || comboSystem == null) return;
+
+            Vector2 localPos = ScreenToLocalPosition(screenPos);
+            HexBlock hoverBlock = GetBlockAtPosition(localPos);
+
+            HexBlock newTarget = null;
+            if (hoverBlock != null && hoverBlock != comboSource &&
+                hoverBlock.Data != null && IsComboableSpecial(hoverBlock.Data.specialType) &&
+                comboSource.Coord.DistanceTo(hoverBlock.Coord) == 1)
+            {
+                newTarget = hoverBlock;
+            }
+
+            if (newTarget != comboTarget)
+            {
+                // 이전 타겟 하이라이트 제거
+                if (comboTargetHighlight != null) { Destroy(comboTargetHighlight); comboTargetHighlight = null; }
+                if (comboLineObj != null) { Destroy(comboLineObj); comboLineObj = null; }
+
+                comboTarget = newTarget;
+
+                if (comboTarget != null)
+                {
+                    CreateComboHighlight(comboTarget, false);
+                    CreateComboLine();
+                }
+            }
+        }
+
+        /// <summary>드래그 종료 시 합성 실행</summary>
+        private void FinishComboDrag()
+        {
+            if (comboSource != null && comboTarget != null && comboSystem != null)
+            {
+                if (comboSystem.CanCombo(comboSource, comboTarget))
+                {
+                    Debug.Log($"[InputSystem] 합성 실행: {comboSource.Data.specialType} × {comboTarget.Data.specialType}");
+                    // 이동횟수 1 차감
+                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                    isEnabled = false;
+                    comboSystem.ExecuteCombo(comboSource, comboTarget);
+                    // 합성 완료 후 입력 재개는 ComboSystem에서 처리
+                    StartCoroutine(WaitComboAndReenableInput());
+                }
+            }
+            CancelComboDrag();
+        }
+
+        private IEnumerator WaitComboAndReenableInput()
+        {
+            while (comboSystem != null && comboSystem.IsComboActive)
+                yield return null;
+            // 캐스케이드 완료 대기
+            while (blockRemovalSystem != null && blockRemovalSystem.IsProcessing)
+                yield return null;
+            isEnabled = true;
+        }
+
+        /// <summary>합성 드래그 취소</summary>
+        private void CancelComboDrag()
+        {
+            comboSource = null;
+            comboTarget = null;
+            isDraggingCombo = false;
+            if (comboSourceHighlight != null) { Destroy(comboSourceHighlight); comboSourceHighlight = null; }
+            if (comboTargetHighlight != null) { Destroy(comboTargetHighlight); comboTargetHighlight = null; }
+            if (comboLineObj != null) { Destroy(comboLineObj); comboLineObj = null; }
+        }
+
+        /// <summary>합성 대상 블록 하이라이트 생성</summary>
+        private void CreateComboHighlight(HexBlock block, bool isSource)
+        {
+            if (block == null) return;
+
+            GameObject hl = new GameObject(isSource ? "ComboSrcHL" : "ComboTgtHL");
+            hl.transform.SetParent(block.transform, false);
+            RectTransform rt = hl.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            var img = hl.AddComponent<Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.type = Image.Type.Simple;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+            // 소스: 노란 글로우, 타겟: 흰색 글로우
+            img.color = isSource
+                ? new Color(1f, 0.9f, 0.3f, 0.5f)
+                : new Color(1f, 1f, 1f, 0.5f);
+
+            if (isSource)
+                comboSourceHighlight = hl;
+            else
+                comboTargetHighlight = hl;
+        }
+
+        /// <summary>소스-타겟 사이 연결선 생성</summary>
+        private void CreateComboLine()
+        {
+            if (comboSource == null || comboTarget == null) return;
+
+            RectTransform srcRt = comboSource.GetComponent<RectTransform>();
+            RectTransform tgtRt = comboTarget.GetComponent<RectTransform>();
+            if (srcRt == null || tgtRt == null) return;
+
+            Vector2 srcPos = srcRt.anchoredPosition;
+            Vector2 tgtPos = tgtRt.anchoredPosition;
+            Vector2 mid = (srcPos + tgtPos) / 2f;
+            float dist = Vector2.Distance(srcPos, tgtPos);
+            float angle = Mathf.Atan2(tgtPos.y - srcPos.y, tgtPos.x - srcPos.x) * Mathf.Rad2Deg;
+
+            comboLineObj = new GameObject("ComboLine");
+            comboLineObj.transform.SetParent(hexGrid.transform, false);
+            RectTransform lineRt = comboLineObj.AddComponent<RectTransform>();
+            lineRt.anchoredPosition = mid;
+            lineRt.sizeDelta = new Vector2(dist, 6f);
+            lineRt.localRotation = Quaternion.Euler(0, 0, angle);
+            var lineImg = comboLineObj.AddComponent<Image>();
+            lineImg.color = new Color(1f, 0.85f, 0.2f, 0.7f);
+            lineImg.raycastTarget = false;
+        }
+
         public void SetEnabled(bool enabled)
         {
             isEnabled = enabled;
             if (!enabled)
             {
                 ClearHighlight();
+                CancelComboDrag();
                 hasValidCluster = false;
                 isPointerDown = false;
             }

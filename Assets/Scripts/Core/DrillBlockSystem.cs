@@ -1639,5 +1639,23 @@ private float GetDirectionAngle(DrillDirection direction, bool positive)
 
             Destroy(bloom);
         }
+
+        // ============================================================
+        // 합성 시스템용 Public 래퍼
+        // ============================================================
+
+        /// <summary>특수 블록 합성 시스템에서 방향별 블록 탐색에 사용</summary>
+        public List<HexBlock> GetBlocksInDirectionPublic(HexCoord start, DrillDirection dir, bool positive)
+            => GetBlocksInDirection(start, dir, positive);
+
+        /// <summary>특수 블록 합성 시스템에서 드릴 투사체 발사에 사용</summary>
+        public IEnumerator DrillLineWithProjectilePublic(
+            Vector3 startPos, List<HexBlock> targets, DrillDirection dir,
+            bool positive, Color color, bool showEffects = true)
+            => DrillLineWithProjectile(startPos, targets, dir, positive, color, showEffects);
+
+        /// <summary>특수 블록 합성 시스템에서 방향 델타 계산에 사용</summary>
+        public HexCoord GetDirectionDeltaPublic(DrillDirection dir, bool positive)
+            => GetDirectionDelta(dir, positive);
     }
 }

@@ -486,14 +486,16 @@ namespace JewelsHexaPuzzle.Core
                     break;
 
                 case SpecialBlockType.Laser:
-                    if (laserSystem != null)
+                    // 레이저 제거됨 — 기존 Laser 블록이 남아있을 경우 Bomb으로 대체 발동
+                    if (bombSystem != null)
                     {
-                        if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
-                        laserSystem.ActivateLaser(block);
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
+                        block.Data.specialType = SpecialBlockType.Bomb;
+                        bombSystem.ActivateBomb(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (laserSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (laserSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Laser timeout! ForceReset"); laserSystem.ForceReset(); }
+                        while (bombSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        if (bombSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Laser→Bomb fallback timeout! ForceReset"); bombSystem.ForceReset(); }
                     }
                     break;
             }

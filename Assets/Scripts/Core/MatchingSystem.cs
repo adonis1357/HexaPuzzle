@@ -269,7 +269,8 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
                 merged.score = CalculateScore(merged.blocks.Count);
 
-                // 특수 블록 우선순위: 도넛(7+링) > 레이저(6) > 폭탄(5) > 드릴(4)
+                // 특수 블록 우선순위: 도넛(7+링) > 폭탄(5+) > 드릴(4)
+                // 레이저 제거됨 — 6매칭도 폭탄으로 처리
                 // 뭉친 형태(compact)만 허용: 중심 블록의 그룹 내 인접 수로 검증
                 // 비정형 병합(흩어진 형태)에서는 특수 블록 미생성
                 if (merged.blocks.Count >= 7)
@@ -277,11 +278,7 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                     if (!CheckForDonutPattern(merged))
                         CheckForBombPattern(merged);
                 }
-                else if (merged.blocks.Count == 6)
-                {
-                    CheckForLaserPattern(merged);
-                }
-                else if (merged.blocks.Count == 5)
+                else if (merged.blocks.Count >= 5)
                 {
                     CheckForBombPattern(merged);
                 }

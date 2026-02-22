@@ -134,6 +134,10 @@ namespace JewelsHexaPuzzle.Managers
                 if (FindObjectOfType<SwapItem>() == null)
                     CreateSwapUI(canvas);
 
+                // 한붓그리기 UI 생성
+                if (FindObjectOfType<LineDrawItem>() == null)
+                    CreateLineDrawUI(canvas);
+
                 // 로비 UI 생성
                 CreateLobbyUI(canvas);
             }
@@ -375,16 +379,19 @@ namespace JewelsHexaPuzzle.Managers
             btnRt.anchorMin = new Vector2(0.5f, 0.5f);
             btnRt.anchorMax = new Vector2(0.5f, 0.5f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY - 90f);
-            btnRt.sizeDelta = new Vector2(70f, 70f);
+            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY - 190f);
+            btnRt.sizeDelta = new Vector2(84f, 84f);
 
             Image btnBg = btnObj.AddComponent<Image>();
-            btnBg.color = new Color(0.2f, 0.2f, 0.3f, 0.85f);
+            btnBg.sprite = HexBlock.GetHexFlashSprite();
+            btnBg.type = Image.Type.Simple;
+            btnBg.preserveAspect = true;
+            btnBg.color = new Color(0.55f, 0.70f, 0.85f, 0.90f); // 밝은 하늘색
 
             Button btn = btnObj.AddComponent<Button>();
             var btnColors = btn.colors;
-            btnColors.highlightedColor = new Color(0.35f, 0.35f, 0.5f, 0.9f);
-            btnColors.pressedColor = new Color(0.15f, 0.15f, 0.25f, 0.9f);
+            btnColors.highlightedColor = new Color(0.65f, 0.80f, 0.95f, 0.95f);
+            btnColors.pressedColor = new Color(0.40f, 0.55f, 0.70f, 0.95f);
             btn.colors = btnColors;
 
             // 스피커 아이콘 (프로시저럴)
@@ -488,17 +495,21 @@ namespace JewelsHexaPuzzle.Managers
             btnRt.anchorMin = new Vector2(0.5f, 0.5f);
             btnRt.anchorMax = new Vector2(0.5f, 0.5f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
-            // 사운드 버튼(lowestY - 90) 아래 80px
-            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY - 170f);
-            btnRt.sizeDelta = new Vector2(70f, 70f);
+            // 사운드 버튼(lowestY - 190) 아래 버튼 높이+간격 — 육각형
+            float sndBtnHexH = 84f * Mathf.Sqrt(3f) / 2f; // 84px 육각형 높이 ≈ 72.7
+            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY - 190f - sndBtnHexH - 8f);
+            btnRt.sizeDelta = new Vector2(84f, 84f);
 
             Image btnBg = lobbyExitBtnObj.AddComponent<Image>();
-            btnBg.color = new Color(0.2f, 0.2f, 0.3f, 0.85f);
+            btnBg.sprite = HexBlock.GetHexFlashSprite();
+            btnBg.type = Image.Type.Simple;
+            btnBg.preserveAspect = true;
+            btnBg.color = new Color(0.85f, 0.65f, 0.55f, 0.90f); // 밝은 살구색
 
             Button btn = lobbyExitBtnObj.AddComponent<Button>();
             var btnColors = btn.colors;
-            btnColors.highlightedColor = new Color(0.45f, 0.3f, 0.2f, 0.9f);
-            btnColors.pressedColor = new Color(0.3f, 0.2f, 0.12f, 0.9f);
+            btnColors.highlightedColor = new Color(0.95f, 0.75f, 0.65f, 0.95f);
+            btnColors.pressedColor = new Color(0.65f, 0.50f, 0.40f, 0.95f);
             btn.colors = btnColors;
 
             // === 문 모양 프로시저럴 아이콘 ===
@@ -1229,6 +1240,16 @@ private IEnumerator PostRecoveryCleanup()
                     Debug.Log("[GameManager] LaserBlockSystem auto-found");
             }
 
+            // 특수 블록 합성 시스템 초기화
+            var comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
+            if (comboSystem == null)
+            {
+                GameObject comboObj = new GameObject("SpecialBlockComboSystem");
+                comboSystem = comboObj.AddComponent<SpecialBlockComboSystem>();
+                Debug.Log("[GameManager] SpecialBlockComboSystem auto-created");
+            }
+            comboSystem.Initialize(hexGrid);
+
             if (enemySystem == null)
             {
                 enemySystem = FindObjectOfType<EnemySystem>();
@@ -1395,230 +1416,248 @@ private void InitializeSystems()
             // HammerItem은 Start()에서 생성 (Canvas 완전 초기화 후)
         }
 
-        /// <summary>
-        /// 망치 아이템 UI 직접 생성 (HammerItemSetup 우회)
-        /// </summary>
-        private void CreateHammerUI(Canvas canvas)
+        // ============================================================
+        // 아이템 버튼 공통 (육각형, 블록 대비 110% 크기, 지그재그 가로 배치)
+        // ============================================================
+        private const float ITEM_BTN_SIZE = 110f;
+        private const float ITEM_BTN_GAP = 5f;
+        private static readonly Color HAMMER_BTN_COLOR = new Color(0.0f, 0.70f, 0.70f, 0.92f);
+        private static readonly Color SWAP_BTN_COLOR = new Color(0.85f, 0.35f, 0.65f, 0.92f);
+        private static readonly Color LINEDRAW_BTN_COLOR = new Color(0.35f, 0.55f, 0.35f, 0.92f);
+
+        private Vector2 GetItemButtonPosition(int index)
         {
-            // 배경 오버레이 (활성화 시 표시)
-            GameObject overlayObj = new GameObject("HammerOverlay");
-            overlayObj.transform.SetParent(canvas.transform, false);
-            var overlay = overlayObj.AddComponent<Image>();
-            overlay.color = new Color(0.6f, 1f, 0.6f, 0.15f);
-            overlay.raycastTarget = false;
-            RectTransform overlayRt = overlayObj.GetComponent<RectTransform>();
-            overlayRt.anchorMin = Vector2.zero;
-            overlayRt.anchorMax = Vector2.one;
-            overlayRt.offsetMin = Vector2.zero;
-            overlayRt.offsetMax = Vector2.zero;
-            overlayObj.SetActive(false);
-
-            // 망치 버튼 — 그리드 기준 좌표 (가장 오른쪽 블록 x, 가장 아래 블록 y)
             float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
-            float rightmostX = hSize * 1.5f * 5f;   // q=5 블록의 x 좌표
-            float lowestY = hSize * Mathf.Sqrt(3f) * (-5f); // r=-5 블록의 y 좌표
+            float s = ITEM_BTN_SIZE / 2f; // 버튼 hexSize
+            float gap = ITEM_BTN_GAP;
+            float bs = s + gap / 1.5f; // gap 보정된 버튼 사이즈
+            // flat-top axial 좌표 변환: x = bs*1.5*q, y = -(bs*sqrt(3)*(r + q/2))
+            // 배치: 망치(0,0)=오른쪽 위, 스왑(-1,1)=왼쪽 중앙, 라인(0,1)=오른쪽 아래
+            //   [스왑]  [망치]
+            //      [라인]
+            // → 스왑이 망치-라인 왼쪽에 끼어서 3개 모두 면 맞닿음
+            float sqrt3 = Mathf.Sqrt(3f);
+            // 망치 (q=0, r=0)
+            float x0 = 0f, y0 = 0f;
+            // 스왑 (q=-1, r=1): x = bs*1.5*(-1) = -bs*1.5, y = -(bs*sqrt3*(1 + (-1)/2)) = -(bs*sqrt3*0.5)
+            float x1 = -bs * 1.5f, y1 = -(bs * sqrt3 * 0.5f);
+            // 라인 (q=0, r=1): x = 0, y = -(bs*sqrt3*1)
+            float x2 = 0f, y2 = -(bs * sqrt3);
+            // 무게중심
+            float cx = (x0 + x1 + x2) / 3f;
+            float cy = (y0 + y1 + y2) / 3f;
+            // 그리드 중앙~오른쪽 끝 중간 + 100px 오른쪽 (기존 50 + 추가 50)
+            float gridRight = hSize * 1.5f * 5f;
+            float midX = gridRight / 2f + 80f;
+            float btnHexH = ITEM_BTN_SIZE * sqrt3 / 2f;
+            float baseY = hSize * sqrt3 * (-5f) - btnHexH * 0.3f;
+            float offX = midX - cx;
+            float offY = baseY - cy;
+            if (index == 0) // 망치
+                return new Vector2(x0 + offX, y0 + offY);
+            else if (index == 1) // 스왑
+                return new Vector2(x1 + offX, y1 + offY);
+            else // 라인
+                return new Vector2(x2 + offX, y2 + offY);
+        }
 
-            GameObject btnObj = new GameObject("HammerButton");
+        private (GameObject btnObj, Button btn, Image btnImage) CreateHexItemButton(
+            Canvas canvas, string name, Vector2 position,
+            Color bgColor, Color highlightColor, Color pressedColor)
+        {
+            GameObject btnObj = new GameObject(name);
             btnObj.transform.SetParent(canvas.transform, false);
             RectTransform btnRt = btnObj.AddComponent<RectTransform>();
             btnRt.anchorMin = new Vector2(0.5f, 0.5f);
             btnRt.anchorMax = new Vector2(0.5f, 0.5f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY);
-            btnRt.sizeDelta = new Vector2(80f, 80f);
+            btnRt.anchoredPosition = position;
+            btnRt.sizeDelta = new Vector2(ITEM_BTN_SIZE, ITEM_BTN_SIZE);
             var btnImage = btnObj.AddComponent<Image>();
-            btnImage.color = new Color(0.25f, 0.25f, 0.35f, 0.9f);
+            btnImage.sprite = HexBlock.GetHexFlashSprite();
+            btnImage.type = Image.Type.Simple;
+            btnImage.preserveAspect = true;
+            btnImage.color = bgColor;
+            // 아웃라인
+            GameObject outlineObj = new GameObject(name + "Outline");
+            outlineObj.transform.SetParent(btnObj.transform, false);
+            RectTransform outRt = outlineObj.AddComponent<RectTransform>();
+            outRt.anchorMin = Vector2.zero; outRt.anchorMax = Vector2.one;
+            outRt.offsetMin = Vector2.zero; outRt.offsetMax = Vector2.zero;
+            Image outImg = outlineObj.AddComponent<Image>();
+            outImg.sprite = HexBlock.GetHexBorderSprite();
+            outImg.type = Image.Type.Simple;
+            outImg.preserveAspect = true;
+            outImg.color = new Color(1f, 1f, 1f, 0.6f);
+            outImg.raycastTarget = false;
             var btn = btnObj.AddComponent<Button>();
-            var btnColors = btn.colors;
-            btnColors.highlightedColor = new Color(0.4f, 0.9f, 0.4f, 1f);
-            btnColors.pressedColor = new Color(0.3f, 0.7f, 0.3f, 1f);
-            btn.colors = btnColors;
+            var bc = btn.colors; bc.normalColor = Color.white;
+            bc.highlightedColor = highlightColor; bc.pressedColor = pressedColor;
+            btn.colors = bc;
+            return (btnObj, btn, btnImage);
+        }
 
+        private void CreateItemLabel(GameObject parent, string labelText)
+        {
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject textObj = new GameObject(parent.name.Replace("Button", "Label"));
+            textObj.transform.SetParent(parent.transform, false);
+            var label = textObj.AddComponent<Text>();
+            label.text = labelText; label.font = font; label.fontSize = 13;
+            label.alignment = TextAnchor.MiddleCenter; label.color = Color.white;
+            label.raycastTarget = false; label.fontStyle = FontStyle.Bold;
+            RectTransform textRt = textObj.GetComponent<RectTransform>();
+            textRt.anchorMin = new Vector2(0f, 0f); textRt.anchorMax = new Vector2(1f, 0f);
+            textRt.anchoredPosition = new Vector2(0f, 16f); textRt.sizeDelta = new Vector2(0f, 20f);
+        }
+
+        private Image CreateItemOverlay(Canvas canvas, string name, Color overlayColor)
+        {
+            GameObject overlayObj = new GameObject(name);
+            overlayObj.transform.SetParent(canvas.transform, false);
+            var overlay = overlayObj.AddComponent<Image>();
+            overlay.color = overlayColor; overlay.raycastTarget = false;
+            RectTransform overlayRt = overlayObj.GetComponent<RectTransform>();
+            overlayRt.anchorMin = Vector2.zero; overlayRt.anchorMax = Vector2.one;
+            overlayRt.offsetMin = Vector2.zero; overlayRt.offsetMax = Vector2.zero;
+            overlayObj.SetActive(false);
+            return overlay;
+        }
+
+        private void CreateHammerUI(Canvas canvas)
+        {
+            var overlay = CreateItemOverlay(canvas, "HammerOverlay", new Color(0.6f, 1f, 0.6f, 0.15f));
+            var (btnObj, btn, btnImage) = CreateHexItemButton(canvas, "HammerButton",
+                GetItemButtonPosition(0), HAMMER_BTN_COLOR,
+                new Color(0.0f, 0.85f, 0.85f, 1f), new Color(0.0f, 0.55f, 0.55f, 1f));
             // 망치 머리
             GameObject headObj = new GameObject("HammerHead");
             headObj.transform.SetParent(btnObj.transform, false);
             var headImg = headObj.AddComponent<Image>();
-            headImg.color = new Color(0.7f, 0.7f, 0.75f, 1f);
-            headImg.raycastTarget = false;
+            headImg.color = new Color(0.85f, 0.85f, 0.9f, 1f); headImg.raycastTarget = false;
             RectTransform headRt = headObj.GetComponent<RectTransform>();
-            headRt.anchoredPosition = new Vector2(0f, 12f);
-            headRt.sizeDelta = new Vector2(36f, 18f);
+            headRt.anchoredPosition = new Vector2(0f, 9f);
+            headRt.sizeDelta = new Vector2(40f, 18f);
             headRt.localRotation = Quaternion.Euler(0, 0, -15f);
-
-            // 망치 자루
+            // 자루
             GameObject handleObj = new GameObject("HammerHandle");
             handleObj.transform.SetParent(btnObj.transform, false);
             var handleImg = handleObj.AddComponent<Image>();
-            handleImg.color = new Color(0.55f, 0.35f, 0.15f, 1f);
-            handleImg.raycastTarget = false;
+            handleImg.color = new Color(0.6f, 0.4f, 0.2f, 1f); handleImg.raycastTarget = false;
             RectTransform handleRt = handleObj.GetComponent<RectTransform>();
-            handleRt.anchoredPosition = new Vector2(2f, -12f);
-            handleRt.sizeDelta = new Vector2(8f, 32f);
+            handleRt.anchoredPosition = new Vector2(3f, -11f);
+            handleRt.sizeDelta = new Vector2(8f, 35f);
             handleRt.localRotation = Quaternion.Euler(0, 0, -15f);
-
             // 하이라이트
             GameObject hlObj = new GameObject("HammerHL");
             hlObj.transform.SetParent(headObj.transform, false);
             var hlImg = hlObj.AddComponent<Image>();
-            hlImg.color = new Color(1f, 1f, 1f, 0.3f);
-            hlImg.raycastTarget = false;
+            hlImg.color = new Color(1f, 1f, 1f, 0.35f); hlImg.raycastTarget = false;
             RectTransform hlRt = hlObj.GetComponent<RectTransform>();
-            hlRt.anchoredPosition = new Vector2(-5f, 3f);
-            hlRt.sizeDelta = new Vector2(10f, 6f);
-
-            // 라벨
-            GameObject textObj = new GameObject("HammerLabel");
-            textObj.transform.SetParent(btnObj.transform, false);
-            var label = textObj.AddComponent<Text>();
-            label.text = "망치";
-            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            label.fontSize = 12;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.color = Color.white;
-            label.raycastTarget = false;
-            RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = new Vector2(0f, 0f);
-            textRt.anchorMax = new Vector2(1f, 0f);
-            textRt.anchoredPosition = new Vector2(0f, 8f);
-            textRt.sizeDelta = new Vector2(0f, 16f);
-
-            // 최상위 렌더링
+            hlRt.anchoredPosition = new Vector2(-5f, 3f); hlRt.sizeDelta = new Vector2(11f, 6f);
+            CreateItemLabel(btnObj, "망치");
             btnObj.transform.SetAsLastSibling();
-
-            // HammerItem 컴포넌트 추가 + 필드 직접 설정
             var hammer = btnObj.AddComponent<HammerItem>();
             var type = typeof(HammerItem);
             var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
             type.GetField("hammerButton", flags)?.SetValue(hammer, btn);
             type.GetField("backgroundOverlay", flags)?.SetValue(hammer, overlay);
-
             hudElements.Add(btnObj);
-            // overlayObj는 hudElements에 추가하지 않음 (HideLobby에서 SetActive(true) 방지)
-            Debug.Log("[GameManager] HammerItem UI 직접 생성 완료");
         }
 
-        /// <summary>
-        /// 스왑 아이템 UI 생성 (우측 하단, 망치 버튼 위)
-        /// </summary>
         private void CreateSwapUI(Canvas canvas)
         {
-            // 배경 오버레이 (활성화 시 표시)
-            GameObject overlayObj = new GameObject("SwapOverlay");
-            overlayObj.transform.SetParent(canvas.transform, false);
-            var overlay = overlayObj.AddComponent<Image>();
-            overlay.color = new Color(0.4f, 0.7f, 1f, 0.15f);
-            overlay.raycastTarget = false;
-            RectTransform overlayRt = overlayObj.GetComponent<RectTransform>();
-            overlayRt.anchorMin = Vector2.zero;
-            overlayRt.anchorMax = Vector2.one;
-            overlayRt.offsetMin = Vector2.zero;
-            overlayRt.offsetMax = Vector2.zero;
-            overlayObj.SetActive(false);
-
-            // 스왑 버튼 — 망치 버튼 위에 배치
-            float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
-            float rightmostX = hSize * 1.5f * 5f;
-            float lowestY = hSize * Mathf.Sqrt(3f) * (-5f);
-
-            GameObject btnObj = new GameObject("SwapButton");
-            btnObj.transform.SetParent(canvas.transform, false);
-            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
-            btnRt.pivot = new Vector2(0.5f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY + 90f);
-            btnRt.sizeDelta = new Vector2(80f, 80f);
-            var btnImage = btnObj.AddComponent<Image>();
-            btnImage.color = new Color(0.25f, 0.25f, 0.35f, 0.9f);
-            var btn = btnObj.AddComponent<Button>();
-            var btnColors = btn.colors;
-            btnColors.highlightedColor = new Color(0.4f, 0.7f, 1f, 1f);
-            btnColors.pressedColor = new Color(0.3f, 0.5f, 0.8f, 1f);
-            btn.colors = btnColors;
-
-            // 양방향 화살표 아이콘 (↔) 프로시저럴 생성
-            // 수평 바
+            var overlay = CreateItemOverlay(canvas, "SwapOverlay", new Color(0.4f, 0.7f, 1f, 0.15f));
+            var (btnObj, btn, btnImage) = CreateHexItemButton(canvas, "SwapButton",
+                GetItemButtonPosition(1), SWAP_BTN_COLOR,
+                new Color(0.95f, 0.45f, 0.75f, 1f), new Color(0.65f, 0.25f, 0.50f, 1f));
+            // 양방향 화살표
             GameObject barObj = new GameObject("SwapBar");
             barObj.transform.SetParent(btnObj.transform, false);
             var barImg = barObj.AddComponent<Image>();
-            barImg.color = Color.white;
-            barImg.raycastTarget = false;
+            barImg.color = Color.white; barImg.raycastTarget = false;
             RectTransform barRt = barObj.GetComponent<RectTransform>();
-            barRt.anchoredPosition = new Vector2(0f, 2f);
-            barRt.sizeDelta = new Vector2(30f, 4f);
-
-            // 왼쪽 화살표 머리 (< 형태)
-            GameObject leftArrow1 = new GameObject("LeftArrow1");
-            leftArrow1.transform.SetParent(btnObj.transform, false);
-            var la1Img = leftArrow1.AddComponent<Image>();
-            la1Img.color = Color.white;
-            la1Img.raycastTarget = false;
-            RectTransform la1Rt = leftArrow1.GetComponent<RectTransform>();
-            la1Rt.anchoredPosition = new Vector2(-14f, 7f);
-            la1Rt.sizeDelta = new Vector2(12f, 4f);
-            la1Rt.localRotation = Quaternion.Euler(0, 0, 40f);
-
-            GameObject leftArrow2 = new GameObject("LeftArrow2");
-            leftArrow2.transform.SetParent(btnObj.transform, false);
-            var la2Img = leftArrow2.AddComponent<Image>();
-            la2Img.color = Color.white;
-            la2Img.raycastTarget = false;
-            RectTransform la2Rt = leftArrow2.GetComponent<RectTransform>();
-            la2Rt.anchoredPosition = new Vector2(-14f, -3f);
-            la2Rt.sizeDelta = new Vector2(12f, 4f);
-            la2Rt.localRotation = Quaternion.Euler(0, 0, -40f);
-
-            // 오른쪽 화살표 머리 (> 형태)
-            GameObject rightArrow1 = new GameObject("RightArrow1");
-            rightArrow1.transform.SetParent(btnObj.transform, false);
-            var ra1Img = rightArrow1.AddComponent<Image>();
-            ra1Img.color = Color.white;
-            ra1Img.raycastTarget = false;
-            RectTransform ra1Rt = rightArrow1.GetComponent<RectTransform>();
-            ra1Rt.anchoredPosition = new Vector2(14f, 7f);
-            ra1Rt.sizeDelta = new Vector2(12f, 4f);
-            ra1Rt.localRotation = Quaternion.Euler(0, 0, -40f);
-
-            GameObject rightArrow2 = new GameObject("RightArrow2");
-            rightArrow2.transform.SetParent(btnObj.transform, false);
-            var ra2Img = rightArrow2.AddComponent<Image>();
-            ra2Img.color = Color.white;
-            ra2Img.raycastTarget = false;
-            RectTransform ra2Rt = rightArrow2.GetComponent<RectTransform>();
-            ra2Rt.anchoredPosition = new Vector2(14f, -3f);
-            ra2Rt.sizeDelta = new Vector2(12f, 4f);
-            ra2Rt.localRotation = Quaternion.Euler(0, 0, 40f);
-
-            // 라벨
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            GameObject textObj = new GameObject("SwapLabel");
-            textObj.transform.SetParent(btnObj.transform, false);
-            var label = textObj.AddComponent<Text>();
-            label.text = "스왑";
-            label.font = font;
-            label.fontSize = 12;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.color = Color.white;
-            label.raycastTarget = false;
-            RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = new Vector2(0f, 0f);
-            textRt.anchorMax = new Vector2(1f, 0f);
-            textRt.anchoredPosition = new Vector2(0f, 8f);
-            textRt.sizeDelta = new Vector2(0f, 16f);
-
-            // 최상위 렌더링
+            barRt.anchoredPosition = new Vector2(0f, 3f); barRt.sizeDelta = new Vector2(37f, 5f);
+            // 왼쪽 화살표
+            for (int s = -1; s <= 1; s += 2)
+            {
+                float xDir = s * 16f;
+                for (int a = 0; a < 2; a++)
+                {
+                    GameObject arr = new GameObject(s < 0 ? $"LeftArrow{a+1}" : $"RightArrow{a+1}");
+                    arr.transform.SetParent(btnObj.transform, false);
+                    var ai = arr.AddComponent<Image>();
+                    ai.color = Color.white; ai.raycastTarget = false;
+                    RectTransform art = arr.GetComponent<RectTransform>();
+                    float yOff = a == 0 ? 9f : -3f;
+                    float angle = a == 0 ? (s < 0 ? 40f : -40f) : (s < 0 ? -40f : 40f);
+                    art.anchoredPosition = new Vector2(xDir, yOff);
+                    art.sizeDelta = new Vector2(14f, 5f);
+                    art.localRotation = Quaternion.Euler(0, 0, angle);
+                }
+            }
+            CreateItemLabel(btnObj, "스왑");
             btnObj.transform.SetAsLastSibling();
-
-            // SwapItem 컴포넌트 추가 + 필드 직접 설정
             var swap = btnObj.AddComponent<JewelsHexaPuzzle.Items.SwapItem>();
             var type = typeof(JewelsHexaPuzzle.Items.SwapItem);
             var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
             type.GetField("swapButton", flags)?.SetValue(swap, btn);
             type.GetField("backgroundOverlay", flags)?.SetValue(swap, overlay);
-
             hudElements.Add(btnObj);
-            // overlayObj는 hudElements에 추가하지 않음 (HideLobby에서 SetActive(true) 방지)
-            Debug.Log("[GameManager] SwapItem UI 직접 생성 완료");
+        }
+
+        private void CreateLineDrawUI(Canvas canvas)
+        {
+            var overlay = CreateItemOverlay(canvas, "LineDrawOverlay", new Color(0.9f, 0.6f, 0.2f, 0.15f));
+            var (btnObj, btn, btnImage) = CreateHexItemButton(canvas, "LineDrawButton",
+                GetItemButtonPosition(2), LINEDRAW_BTN_COLOR,
+                new Color(0.45f, 0.65f, 0.45f, 1f), new Color(0.25f, 0.40f, 0.25f, 1f));
+            // 연필 몸통
+            GameObject bodyObj = new GameObject("PencilBody");
+            bodyObj.transform.SetParent(btnObj.transform, false);
+            var bodyImg = bodyObj.AddComponent<Image>();
+            bodyImg.color = new Color(0.95f, 0.75f, 0.35f, 1f); bodyImg.raycastTarget = false;
+            RectTransform bodyRt = bodyObj.GetComponent<RectTransform>();
+            bodyRt.anchoredPosition = new Vector2(3f, 5f);
+            bodyRt.sizeDelta = new Vector2(33f, 8f);
+            bodyRt.localRotation = Quaternion.Euler(0, 0, 40f);
+            // 연필 촉
+            GameObject tipObj = new GameObject("PencilTip");
+            tipObj.transform.SetParent(btnObj.transform, false);
+            var tipImg = tipObj.AddComponent<Image>();
+            tipImg.color = new Color(0.35f, 0.35f, 0.35f, 1f); tipImg.raycastTarget = false;
+            RectTransform tipRt = tipObj.GetComponent<RectTransform>();
+            tipRt.anchoredPosition = new Vector2(-11f, -11f);
+            tipRt.sizeDelta = new Vector2(11f, 8f);
+            tipRt.localRotation = Quaternion.Euler(0, 0, 40f);
+            // 지우개
+            GameObject eraserObj = new GameObject("PencilEraser");
+            eraserObj.transform.SetParent(btnObj.transform, false);
+            var eraserImg = eraserObj.AddComponent<Image>();
+            eraserImg.color = new Color(0.9f, 0.45f, 0.45f, 1f); eraserImg.raycastTarget = false;
+            RectTransform eraserRt = eraserObj.GetComponent<RectTransform>();
+            eraserRt.anchoredPosition = new Vector2(16f, 22f);
+            eraserRt.sizeDelta = new Vector2(8f, 8f);
+            eraserRt.localRotation = Quaternion.Euler(0, 0, 40f);
+            // 라인 도트
+            for (int i = 0; i < 3; i++)
+            {
+                GameObject dotObj = new GameObject($"LineDot_{i}");
+                dotObj.transform.SetParent(btnObj.transform, false);
+                var dotImg = dotObj.AddComponent<Image>();
+                dotImg.color = new Color(1f, 1f, 1f, 0.6f); dotImg.raycastTarget = false;
+                RectTransform dotRt = dotObj.GetComponent<RectTransform>();
+                dotRt.anchoredPosition = new Vector2(-22f + i * 14f, -24f);
+                dotRt.sizeDelta = new Vector2(4f, 4f);
+            }
+            CreateItemLabel(btnObj, "라인");
+            btnObj.transform.SetAsLastSibling();
+            var lineDraw = btnObj.AddComponent<JewelsHexaPuzzle.Items.LineDrawItem>();
+            var type = typeof(JewelsHexaPuzzle.Items.LineDrawItem);
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            type.GetField("lineDrawButton", flags)?.SetValue(lineDraw, btn);
+            type.GetField("backgroundOverlay", flags)?.SetValue(lineDraw, overlay);
+            hudElements.Add(btnObj);
         }
 
         /// <summary>

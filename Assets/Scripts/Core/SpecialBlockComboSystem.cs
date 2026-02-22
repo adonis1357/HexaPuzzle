@@ -1,0 +1,1443 @@
+// ============================================================================
+// SpecialBlockComboSystem.cs - 특수 블록 합성 시스템
+// ============================================================================
+//
+// [한줄 요약]
+// 두 특수 블록(드릴, 폭탄, X블록)을 합성하여 더 강력한 효과를 발동하는 시스템.
+//
+// [합성이란?]
+// 인접한 두 특수 블록을 스왑하면, 둘이 합쳐져서 단일 블록보다 훨씬 강력한
+// 합성 효과가 발동됩니다. 총 6가지 조합이 존재합니다.
+//
+// [합성 조합 6종]
+//   1. 드릴+드릴 → 6방향 드릴 (3축 양방향 동시 발사)
+//   2. 드릴+폭탄 → Ring1 폭발 후 바깥 방향 드릴 6발
+//   3. 드릴+X블록 → 같은 색 블록 전부 드릴로 변환 후 동시 발동
+//   4. 폭탄+폭탄 → 4칸 범위 순차 폭발
+//   5. 폭탄+X블록 → 같은 색 블록 전부 폭탄으로 변환 후 동시 폭발
+//   6. X블록+X블록 → 전체 블록 거리순 순차 파괴 (전판 클리어)
+//
+// [처리 흐름]
+// CanCombo() → ExecuteCombo() → ComboCoroutine() → 합성 타입별 코루틴 → 낙하+캐스케이드
+//
+// ============================================================================
+
+using UnityEngine;
+using UnityEngine.UI;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
+
+namespace JewelsHexaPuzzle.Core
+{
+    /// <summary>
+    /// 특수 블록 합성 시스템.
+    /// 인접한 두 특수 블록(드릴, 폭탄, X블록)을 합성하여
+    /// 더 강력한 효과를 발동시키는 코어 시스템 클래스.
+    /// </summary>
+    public class SpecialBlockComboSystem : MonoBehaviour
+    {
+        // ============================================================
+        // 참조 필드
+        // ============================================================
+
+        /// <summary>육각형 그리드 참조. 블록 위치, 좌표 검증, 이웃 탐색 등에 사용.</summary>
+        private HexGrid hexGrid;
+
+        /// <summary>드릴 특수 블록 시스템. 드릴 생성/발동/투사체 발사 기능 사용.</summary>
+        private DrillBlockSystem drillSystem;
+
+        /// <summary>폭탄 특수 블록 시스템. 폭탄 생성/발동/폭발 이펙트 기능 사용.</summary>
+        private BombBlockSystem bombSystem;
+
+        /// <summary>X블록 특수 블록 시스템. X블록 생성/발동 기능 사용.</summary>
+        private XBlockSystem xBlockSystem;
+
+        /// <summary>블록 제거 시스템. 낙하 및 캐스케이드 처리 위임.</summary>
+        private BlockRemovalSystem blockRemovalSystem;
+
+        /// <summary>이펙트 오브젝트들의 부모 Transform. Canvas 내부에 별도 레이어로 생성.</summary>
+        private Transform effectParent;
+
+        /// <summary>화면 흔들림 중첩 관리 카운터. 마지막 흔들림이 끝날 때만 위치 복원.</summary>
+        private int shakeCount = 0;
+
+        /// <summary>흔들림 시작 시 저장한 원래 위치.</summary>
+        private Vector3 shakeOriginalPos;
+
+        // ============================================================
+        // 상태
+        // ============================================================
+
+        /// <summary>현재 합성이 진행 중인지 여부.</summary>
+        private bool isComboActive = false;
+
+        /// <summary>외부에서 합성 진행 상태를 확인하는 프로퍼티.</summary>
+        public bool IsComboActive => isComboActive;
+
+        // ============================================================
+        // 이벤트
+        // ============================================================
+
+        /// <summary>합성 완료 시 점수를 전달하는 이벤트.</summary>
+        public event System.Action<int> OnComboComplete;
+
+        // ============================================================
+        // 초기화
+        // ============================================================
+
+        /// <summary>
+        /// 합성 시스템을 초기화합니다. GameManager 또는 BlockRemovalSystem에서 호출.
+        /// </summary>
+        /// <param name="grid">육각형 그리드 참조</param>
+        public void Initialize(HexGrid grid)
+        {
+            hexGrid = grid;
+            drillSystem = FindObjectOfType<DrillBlockSystem>();
+            bombSystem = FindObjectOfType<BombBlockSystem>();
+            xBlockSystem = FindObjectOfType<XBlockSystem>();
+            blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+
+            if (drillSystem == null) Debug.LogWarning("[ComboSystem] DrillBlockSystem not found!");
+            if (bombSystem == null) Debug.LogWarning("[ComboSystem] BombBlockSystem not found!");
+            if (xBlockSystem == null) Debug.LogWarning("[ComboSystem] XBlockSystem not found!");
+            if (blockRemovalSystem == null) Debug.LogWarning("[ComboSystem] BlockRemovalSystem not found!");
+        }
+
+        /// <summary>
+        /// 비상 초기화. 합성이 무한 루프에 빠지거나 비정상 상태일 때 강제 리셋.
+        /// </summary>
+        public void ForceReset()
+        {
+            isComboActive = false;
+            StopAllCoroutines();
+            CleanupEffects();
+            Debug.Log("[ComboSystem] ForceReset called");
+        }
+
+        // ============================================================
+        // 핵심 API
+        // ============================================================
+
+        /// <summary>
+        /// 두 블록이 합성 가능한지 판단합니다.
+        /// 조건: 둘 다 null이 아님, 둘 다 Drill/Bomb/XBlock 중 하나, 서로 인접.
+        /// </summary>
+        /// <param name="a">첫 번째 블록</param>
+        /// <param name="b">두 번째 블록</param>
+        /// <returns>합성 가능하면 true</returns>
+        public bool CanCombo(HexBlock a, HexBlock b)
+        {
+            if (a == null || b == null) return false;
+            if (a.Data == null || b.Data == null) return false;
+
+            // 합성 가능한 특수 블록 타입: Drill, Bomb, XBlock만
+            bool aValid = IsComboableType(a.Data.specialType);
+            bool bValid = IsComboableType(b.Data.specialType);
+            if (!aValid || !bValid) return false;
+
+            // 서로 인접 (거리 1)
+            if (a.Coord.DistanceTo(b.Coord) != 1) return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// 합성 가능한 특수 블록 타입인지 확인합니다.
+        /// Drill, Bomb, XBlock만 합성 가능.
+        /// </summary>
+        private bool IsComboableType(SpecialBlockType type)
+        {
+            return type == SpecialBlockType.Drill ||
+                   type == SpecialBlockType.Bomb ||
+                   type == SpecialBlockType.XBlock;
+        }
+
+        /// <summary>
+        /// 합성을 실행합니다. 이미 합성 중이면 무시.
+        /// </summary>
+        /// <param name="source">이동하는 블록 (source → target 위치로 이동)</param>
+        /// <param name="target">목표 위치의 블록</param>
+        public void ExecuteCombo(HexBlock source, HexBlock target)
+        {
+            if (isComboActive) return;
+            StartCoroutine(ComboCoroutine(source, target));
+        }
+
+        // ============================================================
+        // 메인 합성 코루틴
+        // ============================================================
+
+        /// <summary>
+        /// 합성의 전체 과정을 처리하는 메인 코루틴.
+        ///
+        /// 흐름:
+        ///   1. 합성 데이터 캐싱 (ClearData 전에 정보 저장)
+        ///   2. 스왑 이동 애니메이션 (호 궤적)
+        ///   3. 두 블록 ClearData
+        ///   4. 합성 타입 분기 → 해당 합성 코루틴 실행
+        ///   5. 이펙트 정리
+        ///   6. 낙하 + 캐스케이드 트리거
+        ///   7. 완료 대기
+        /// </summary>
+        private IEnumerator ComboCoroutine(HexBlock source, HexBlock target)
+        {
+            isComboActive = true;
+
+            Debug.Log($"[ComboSystem] === COMBO START === source={source.Coord}({source.Data?.specialType}), target={target.Coord}({target.Data?.specialType})");
+
+            // [1단계] 합성에 필요한 데이터를 미리 캐싱 (ClearData 후에는 데이터가 사라짐)
+            SpecialBlockType sourceType = source.Data.specialType;
+            SpecialBlockType targetType = target.Data.specialType;
+            GemType sourceGem = source.Data.gemType;
+            GemType targetGem = target.Data.gemType;
+            DrillDirection sourceDrillDir = source.Data.drillDirection;
+            DrillDirection targetDrillDir = target.Data.drillDirection;
+            HexCoord sourceCoord = source.Coord;
+            HexCoord targetCoord = target.Coord;
+            Vector3 sourcePos = source.transform.position;
+            Vector3 targetPos = target.transform.position;
+
+            // [2단계] 스왑 이동 애니메이션 (source → target 위치로 호 궤적 이동)
+            yield return StartCoroutine(SwapMoveAnimation(source, sourcePos, targetPos, 0.25f));
+
+            // [3단계] 두 블록 모두 데이터 클리어 (합성 실행 위치에서 빈 공간 생성)
+            source.ClearData();
+            target.ClearData();
+
+            // 합성 실행 위치 = target의 좌표와 월드 좌표
+            HexCoord comboPos = targetCoord;
+            Vector3 comboWorldPos = targetPos;
+
+            // 합성 타입에 사용할 색상 결정 (XBlock이 있으면 XBlock의 색상 우선)
+            GemType comboColor = targetGem;
+            DrillDirection comboDrillDir = sourceDrillDir;
+
+            // [4~5단계] 합성 타입 분기
+            if (sourceType == SpecialBlockType.Drill && targetType == SpecialBlockType.Drill)
+            {
+                Debug.Log("[ComboSystem] >> Drill + Drill Combo");
+                yield return StartCoroutine(DrillDrillCombo(comboPos, comboWorldPos, comboColor));
+            }
+            else if ((sourceType == SpecialBlockType.Drill && targetType == SpecialBlockType.Bomb) ||
+                     (sourceType == SpecialBlockType.Bomb && targetType == SpecialBlockType.Drill))
+            {
+                Debug.Log("[ComboSystem] >> Drill + Bomb Combo");
+                DrillDirection drillDir = sourceType == SpecialBlockType.Drill ? sourceDrillDir : targetDrillDir;
+                GemType color = sourceType == SpecialBlockType.Bomb ? sourceGem : targetGem;
+                yield return StartCoroutine(DrillBombCombo(comboPos, comboWorldPos, color, drillDir));
+            }
+            else if ((sourceType == SpecialBlockType.Drill && targetType == SpecialBlockType.XBlock) ||
+                     (sourceType == SpecialBlockType.XBlock && targetType == SpecialBlockType.Drill))
+            {
+                Debug.Log("[ComboSystem] >> Drill + XBlock Combo");
+                GemType xColor = sourceType == SpecialBlockType.XBlock ? sourceGem : targetGem;
+                DrillDirection drillDir = sourceType == SpecialBlockType.Drill ? sourceDrillDir : targetDrillDir;
+                yield return StartCoroutine(DrillXBlockCombo(comboPos, comboWorldPos, xColor, drillDir));
+            }
+            else if (sourceType == SpecialBlockType.Bomb && targetType == SpecialBlockType.Bomb)
+            {
+                Debug.Log("[ComboSystem] >> Bomb + Bomb Combo");
+                yield return StartCoroutine(BombBombCombo(comboPos, comboWorldPos, comboColor));
+            }
+            else if ((sourceType == SpecialBlockType.Bomb && targetType == SpecialBlockType.XBlock) ||
+                     (sourceType == SpecialBlockType.XBlock && targetType == SpecialBlockType.Bomb))
+            {
+                Debug.Log("[ComboSystem] >> Bomb + XBlock Combo");
+                GemType xColor = sourceType == SpecialBlockType.XBlock ? sourceGem : targetGem;
+                yield return StartCoroutine(BombXBlockCombo(comboPos, comboWorldPos, xColor));
+            }
+            else if (sourceType == SpecialBlockType.XBlock && targetType == SpecialBlockType.XBlock)
+            {
+                Debug.Log("[ComboSystem] >> XBlock + XBlock Combo");
+                yield return StartCoroutine(XBlockXBlockCombo(comboPos, comboWorldPos));
+            }
+            else
+            {
+                Debug.LogWarning($"[ComboSystem] Unknown combo: {sourceType} + {targetType}");
+            }
+
+            // [6단계] 이펙트 정리
+            CleanupEffects();
+
+            // [7단계] 낙하 + 캐스케이드 트리거
+            if (blockRemovalSystem != null)
+            {
+                blockRemovalSystem.TriggerFallOnly();
+
+                // 캐스케이드 완료 대기
+                while (blockRemovalSystem.IsProcessing)
+                    yield return null;
+            }
+
+            Debug.Log("[ComboSystem] === COMBO COMPLETE ===");
+            isComboActive = false;
+        }
+
+        // ============================================================
+        // 스왑 이동 애니메이션
+        // ============================================================
+
+        /// <summary>
+        /// 블록을 호 궤적으로 이동시키는 애니메이션.
+        /// 직선이 아닌 살짝 위로 볼록한 호를 그리며 이동합니다.
+        /// </summary>
+        private IEnumerator SwapMoveAnimation(HexBlock block, Vector3 from, Vector3 to, float duration)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            Vector3 midPoint = (from + to) / 2f + Vector3.up * 20f; // 호의 꼭대기
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
+
+                // 이차 베지어 곡선으로 호 궤적 계산
+                Vector3 a = Vector3.Lerp(from, midPoint, eased);
+                Vector3 b = Vector3.Lerp(midPoint, to, eased);
+                block.transform.position = Vector3.Lerp(a, b, eased);
+
+                yield return null;
+            }
+
+            block.transform.position = to;
+        }
+
+        // ============================================================
+        // 합성 조합 1: 드릴 + 드릴
+        // 3축 6방향 동시 드릴 발사 (별 모양 관통)
+        // ============================================================
+
+        /// <summary>
+        /// 드릴+드릴 합성: 합성 위치에서 3축(Vertical, Slash, BackSlash)의
+        /// 양방향(positive/negative) 총 6방향으로 드릴 투사체를 동시 발사합니다.
+        /// </summary>
+        private IEnumerator DrillDrillCombo(HexCoord pos, Vector3 worldPos, GemType color)
+        {
+            SetupEffectParent();
+
+            // 히트스톱 + 줌펀치 (Large 강도)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            Color comboColor = GemColors.GetColor(color);
+
+            // 3축 = Vertical, Slash, BackSlash
+            DrillDirection[] axes = { DrillDirection.Vertical, DrillDirection.Slash, DrillDirection.BackSlash };
+            bool[] sides = { true, false };
+
+            // 점수 및 미션 데이터 수집용
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+            var pendingSpecials = new List<HexBlock>();
+            var allCoroutines = new List<Coroutine>();
+
+            // 6방향 각각에 대해 타겟 수집 → 투사체 발사
+            foreach (var axis in axes)
+            {
+                foreach (bool positive in sides)
+                {
+                    if (drillSystem == null) continue;
+
+                    List<HexBlock> targets = drillSystem.GetBlocksInDirectionPublic(pos, axis, positive);
+
+                    // 타겟 중 특수블록은 pending으로 분리, 일반 블록만 드릴에 전달
+                    List<HexBlock> normalTargets = new List<HexBlock>();
+                    foreach (var t in targets)
+                    {
+                        if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+
+                        // 적군 방패 흡수 체크
+                        if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(t))
+                            continue;
+
+                        if (t.Data.specialType != SpecialBlockType.None &&
+                            t.Data.specialType != SpecialBlockType.FixedBlock)
+                        {
+                            if (!pendingSpecials.Contains(t))
+                            {
+                                pendingSpecials.Add(t);
+                                t.SetPendingActivation();
+                                t.StartWarningBlink(10f);
+                            }
+                        }
+                        else
+                        {
+                            // 점수 사전 수집
+                            blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+                            CollectGemCount(t, gemCountsByColor);
+                            normalTargets.Add(t);
+                        }
+                    }
+
+                    // 드릴 투사체 발사 (병렬)
+                    if (normalTargets.Count > 0)
+                    {
+                        allCoroutines.Add(StartCoroutine(
+                            drillSystem.DrillLineWithProjectilePublic(
+                                worldPos, normalTargets, axis, positive, comboColor, true)));
+                    }
+                }
+            }
+
+            // 화면 흔들림 (Large)
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            // 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            // 미션 시스템 보고
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // 모든 투사체 코루틴 완료 대기
+            foreach (var co in allCoroutines)
+                yield return co;
+
+            // 점수 계산 및 이벤트 발동
+            int totalScore = 500 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DrillDrill complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 2: 드릴 + 폭탄
+        // Ring1 폭발 후, 각 이웃 위치에서 바깥 방향으로 드릴 발사
+        // ============================================================
+
+        /// <summary>
+        /// 드릴+폭탄 합성:
+        ///   1단계: Ring1(인접 6칸) 폭발
+        ///   2단계: 각 Ring1 위치에서 바깥 방향으로 드릴 투사체 발사
+        /// </summary>
+        private IEnumerator DrillBombCombo(HexCoord pos, Vector3 worldPos, GemType color, DrillDirection drillDir)
+        {
+            SetupEffectParent();
+
+            Color comboColor = GemColors.GetColor(color);
+
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+            var pendingSpecials = new List<HexBlock>();
+
+            // === 1단계: Ring1 폭발 ===
+            List<HexBlock> neighbors = hexGrid != null ? hexGrid.GetNeighbors(pos) : new List<HexBlock>();
+
+            // 폭발 이펙트
+            if (bombSystem != null)
+                StartCoroutine(bombSystem.BombExplosionEffectPublic(worldPos, comboColor));
+
+            StartCoroutine(ScreenShake(VisualConstants.ShakeMediumIntensity, VisualConstants.ShakeMediumDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            // Ring1 블록 파괴
+            var destroyCoroutines = new List<Coroutine>();
+            var survivingNeighborCoords = new List<HexCoord>(); // 드릴 발사 위치용
+
+            foreach (var neighbor in neighbors)
+            {
+                if (neighbor == null || neighbor.Data == null || neighbor.Data.gemType == GemType.None) continue;
+
+                survivingNeighborCoords.Add(neighbor.Coord);
+
+                // 적군 방패 흡수 체크
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(neighbor))
+                    continue;
+
+                if (neighbor.Data.specialType != SpecialBlockType.None &&
+                    neighbor.Data.specialType != SpecialBlockType.FixedBlock)
+                {
+                    if (!pendingSpecials.Contains(neighbor))
+                    {
+                        pendingSpecials.Add(neighbor);
+                        neighbor.SetPendingActivation();
+                        neighbor.StartWarningBlink(10f);
+                    }
+                }
+                else
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(neighbor.Data.tier);
+                    CollectGemCount(neighbor, gemCountsByColor);
+
+                    Color blockColor = GemColors.GetColor(neighbor.Data.gemType);
+                    if (bombSystem != null)
+                        destroyCoroutines.Add(StartCoroutine(
+                            bombSystem.DestroyBlockWithExplosionPublic(neighbor, blockColor, worldPos, true)));
+                }
+            }
+
+            yield return new WaitForSeconds(0.15f);
+
+            // === 2단계: 각 Ring1 위치에서 바깥 방향 드릴 발사 ===
+            var drillCoroutines = new List<Coroutine>();
+
+            // Ring1의 각 좌표에서 바깥 방향으로 드릴 발사
+            foreach (var neighborCoord in survivingNeighborCoords)
+            {
+                if (drillSystem == null || hexGrid == null) continue;
+
+                // 바깥 방향 = 이웃 좌표 - 중심 좌표
+                HexCoord delta = neighborCoord - pos;
+                var (drillDirection, positive) = DeltaToDrillDirection(delta);
+
+                // 해당 방향으로 타겟 수집
+                List<HexBlock> targets = drillSystem.GetBlocksInDirectionPublic(neighborCoord, drillDirection, positive);
+
+                // 특수블록 분리
+                List<HexBlock> normalTargets = new List<HexBlock>();
+                foreach (var t in targets)
+                {
+                    if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+
+                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(t))
+                        continue;
+
+                    if (t.Data.specialType != SpecialBlockType.None &&
+                        t.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        if (!pendingSpecials.Contains(t))
+                        {
+                            pendingSpecials.Add(t);
+                            t.SetPendingActivation();
+                            t.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+                        CollectGemCount(t, gemCountsByColor);
+                        normalTargets.Add(t);
+                    }
+                }
+
+                // 드릴 투사체 발사 (6방향 동시 병렬)
+                if (normalTargets.Count > 0)
+                {
+                    Vector3 neighborWorldPos = GetWorldPosition(neighborCoord);
+                    drillCoroutines.Add(StartCoroutine(
+                        drillSystem.DrillLineWithProjectilePublic(
+                            neighborWorldPos, normalTargets, drillDirection, positive, comboColor, true)));
+                }
+            }
+
+            // 히트스톱 + 줌펀치
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            // 미션 시스템 보고
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // 파괴 애니메이션 완료 대기
+            foreach (var co in destroyCoroutines)
+                yield return co;
+
+            // 드릴 완료 대기
+            foreach (var co in drillCoroutines)
+                yield return co;
+
+            // 점수
+            int totalScore = 600 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DrillBomb complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 3: 드릴 + X블록
+        // 같은 색 블록을 전부 드릴로 변환 후 동시 발동
+        // ============================================================
+
+        /// <summary>
+        /// 드릴+X블록 합성:
+        ///   1. X블록 색상과 같은 블록을 모두 수집
+        ///   2. 수집된 블록을 드릴로 변환 (플래시 이펙트)
+        ///   3. 변환된 모든 드릴 동시 발동
+        /// </summary>
+        private IEnumerator DrillXBlockCombo(HexCoord pos, Vector3 worldPos, GemType xColor, DrillDirection drillDir)
+        {
+            SetupEffectParent();
+
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+
+            // 같은 색 블록 수집 (합성 위치 제외)
+            List<HexBlock> colorTargets = new List<HexBlock>();
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null || block.Data == null) continue;
+                    if (block.Data.gemType == GemType.None) continue;
+                    if (block.Coord == pos) continue; // 합성 위치 제외
+
+                    if (block.Data.gemType == xColor)
+                        colorTargets.Add(block);
+                }
+            }
+
+            Debug.Log($"[ComboSystem] DrillXBlock: {colorTargets.Count} blocks of color {xColor}");
+
+            // 타겟 블록들을 드릴로 변환
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+
+                // 점수 사전 수집 (변환 전)
+                if (block.Data.specialType == SpecialBlockType.None ||
+                    block.Data.specialType == SpecialBlockType.FixedBlock)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+                    CollectGemCount(block, gemCountsByColor);
+                }
+
+                // 드릴로 변환
+                if (drillSystem != null)
+                    drillSystem.CreateDrillBlock(block, drillDir, block.Data.gemType);
+
+                // 변환 플래시 이펙트
+                StartCoroutine(TransformFlash(block.transform.position, GemColors.GetColor(xColor)));
+            }
+
+            // 변환 이펙트 대기
+            yield return new WaitForSeconds(0.2f);
+
+            // 변환된 모든 드릴 동시 발동
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.specialType != SpecialBlockType.Drill) continue;
+
+                if (drillSystem != null)
+                    drillSystem.ActivateDrill(block);
+            }
+
+            // 히트스톱 + 줌펀치 + 화면 흔들림 (Large)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            // 미션 시스템 보고
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // 모든 드릴 완료 대기 (최대 5초 타임아웃)
+            float timeout = 5f;
+            float waited = 0f;
+            while (waited < timeout && drillSystem != null && drillSystem.IsDrilling)
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            if (waited >= timeout)
+                Debug.LogWarning("[ComboSystem] DrillXBlock timeout! Forcing completion.");
+
+            // 점수
+            int totalScore = 700 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DrillXBlock complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 4: 폭탄 + 폭탄
+        // 4칸 범위 순차 폭발 (링 1~4 순차)
+        // ============================================================
+
+        /// <summary>
+        /// 폭탄+폭탄 합성:
+        ///   Ring1 → Ring2 → Ring3 → Ring4 순차적으로 폭발.
+        ///   각 링의 폭발 강도가 점차 감소합니다.
+        /// </summary>
+        private IEnumerator BombBombCombo(HexCoord pos, Vector3 worldPos, GemType color)
+        {
+            SetupEffectParent();
+
+            Color comboColor = GemColors.GetColor(color);
+
+            // 히트스톱 + 줌펀치 (Large)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            // 중앙 폭발 이펙트
+            if (bombSystem != null)
+                StartCoroutine(bombSystem.BombExplosionEffectPublic(worldPos, comboColor));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+            var pendingSpecials = new List<HexBlock>();
+            var allDestroyCoroutines = new List<Coroutine>();
+
+            // Ring 1~4 순차 폭발
+            for (int ring = 1; ring <= 4; ring++)
+            {
+                // 현재 링 거리의 블록들 수집
+                var allInRange = HexCoord.GetHexesInRadius(pos, ring);
+                var prevRange = HexCoord.GetHexesInRadius(pos, ring - 1);
+                var ringCoords = allInRange.Except(prevRange).ToList();
+
+                // 폭발 강도 점감
+                float intensity = 1.0f - ring * 0.15f;
+                float shakeIntensity = VisualConstants.ShakeLargeIntensity * intensity;
+                float shakeDuration = VisualConstants.ShakeLargeDuration * intensity;
+
+                List<Coroutine> ringDestroyCoroutines = new List<Coroutine>();
+
+                foreach (var coord in ringCoords)
+                {
+                    if (hexGrid == null) continue;
+                    if (!hexGrid.IsValidCoord(coord)) continue;
+
+                    HexBlock block = hexGrid.GetBlock(coord);
+                    if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+
+                    // 적군 방패 흡수
+                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(block))
+                        continue;
+
+                    if (block.Data.specialType != SpecialBlockType.None &&
+                        block.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        if (!pendingSpecials.Contains(block))
+                        {
+                            pendingSpecials.Add(block);
+                            block.SetPendingActivation();
+                            block.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        blockScoreSum += ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+                        CollectGemCount(block, gemCountsByColor);
+
+                        Color blockColor = GemColors.GetColor(block.Data.gemType);
+                        if (bombSystem != null)
+                        {
+                            ringDestroyCoroutines.Add(StartCoroutine(
+                                bombSystem.DestroyBlockWithExplosionPublic(block, blockColor, worldPos, true)));
+                        }
+                    }
+                }
+
+                // 폭발 이펙트 (강도 점감)
+                if (ring <= 2)
+                {
+                    Vector3 ringCenter = worldPos; // 링 중심은 여전히 합성 위치
+                    StartCoroutine(ComboExplosionWave(ringCenter, comboColor, intensity));
+                }
+
+                StartCoroutine(ScreenShake(shakeIntensity, shakeDuration));
+
+                allDestroyCoroutines.AddRange(ringDestroyCoroutines);
+
+                // 링 간 대기
+                yield return new WaitForSeconds(0.1f);
+            }
+
+            // 미션 시스템 보고
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // 모든 파괴 애니메이션 완료 대기
+            foreach (var co in allDestroyCoroutines)
+                yield return co;
+
+            // 점수
+            int totalScore = 800 + blockScoreSum;
+            Debug.Log($"[ComboSystem] BombBomb complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 5: 폭탄 + X블록
+        // 같은 색 블록을 전부 폭탄으로 변환 후 동시 폭발
+        // ============================================================
+
+        /// <summary>
+        /// 폭탄+X블록 합성:
+        ///   1. X블록 색상과 같은 블록을 모두 수집
+        ///   2. 수집된 블록을 폭탄으로 변환
+        ///   3. 변환된 모든 폭탄 동시 발동
+        /// </summary>
+        private IEnumerator BombXBlockCombo(HexCoord pos, Vector3 worldPos, GemType xColor)
+        {
+            SetupEffectParent();
+
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+
+            // 같은 색 블록 수집
+            List<HexBlock> colorTargets = new List<HexBlock>();
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null || block.Data == null) continue;
+                    if (block.Data.gemType == GemType.None) continue;
+                    if (block.Coord == pos) continue;
+
+                    if (block.Data.gemType == xColor)
+                        colorTargets.Add(block);
+                }
+            }
+
+            Debug.Log($"[ComboSystem] BombXBlock: {colorTargets.Count} blocks of color {xColor}");
+
+            // 타겟 블록들을 폭탄으로 변환
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+
+                // 점수 사전 수집
+                if (block.Data.specialType == SpecialBlockType.None ||
+                    block.Data.specialType == SpecialBlockType.FixedBlock)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+                    CollectGemCount(block, gemCountsByColor);
+                }
+
+                // 폭탄으로 변환
+                if (bombSystem != null)
+                    bombSystem.CreateBombBlock(block, block.Data.gemType);
+
+                // 변환 플래시 이펙트
+                StartCoroutine(TransformFlash(block.transform.position, GemColors.GetColor(xColor)));
+            }
+
+            // 변환 이펙트 대기
+            yield return new WaitForSeconds(0.2f);
+
+            // 변환된 모든 폭탄 동시 발동
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.specialType != SpecialBlockType.Bomb) continue;
+
+                if (bombSystem != null)
+                    bombSystem.ActivateBomb(block);
+            }
+
+            // 히트스톱 + 줌펀치 + 화면 흔들림 (Large)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            // 미션 시스템 보고
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // 모든 폭탄 완료 대기 (최대 5초 타임아웃)
+            float timeout = 5f;
+            float waited = 0f;
+            while (waited < timeout && bombSystem != null && bombSystem.IsBombing)
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            if (waited >= timeout)
+                Debug.LogWarning("[ComboSystem] BombXBlock timeout! Forcing completion.");
+
+            // 점수
+            int totalScore = 700 + blockScoreSum;
+            Debug.Log($"[ComboSystem] BombXBlock complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 6: X블록 + X블록
+        // 전체 블록 거리순 순차 파괴 (전판 클리어)
+        // ============================================================
+
+        /// <summary>
+        /// X블록+X블록 합성:
+        ///   전체 블록을 합성 위치에서의 거리순으로 정렬하여 순차 파괴.
+        ///   가장 강력한 합성. 전판 클리어에 가까운 효과.
+        /// </summary>
+        private IEnumerator XBlockXBlockCombo(HexCoord pos, Vector3 worldPos)
+        {
+            SetupEffectParent();
+
+            // 히트스톱 + 줌펀치 (Large)
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+
+            // 모든 블록 수집
+            List<HexBlock> allBlocks = new List<HexBlock>();
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null || block.Data == null) continue;
+                    if (block.Data.gemType == GemType.None) continue;
+                    if (block.Coord == pos) continue; // 합성 위치 제외
+
+                    allBlocks.Add(block);
+                }
+            }
+
+            // 합성 위치에서 거리순 정렬
+            allBlocks.Sort((a, b) =>
+            {
+                int distA = a.Coord.DistanceTo(pos);
+                int distB = b.Coord.DistanceTo(pos);
+                return distA.CompareTo(distB);
+            });
+
+            Debug.Log($"[ComboSystem] XBlockXBlock: {allBlocks.Count} total blocks");
+
+            // 최대 거리 계산
+            int maxDistance = 0;
+            foreach (var block in allBlocks)
+            {
+                int dist = block.Coord.DistanceTo(pos);
+                if (dist > maxDistance) maxDistance = dist;
+            }
+
+            // 점수 사전 수집
+            foreach (var block in allBlocks)
+            {
+                if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+                if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+
+                if (block.Data.specialType == SpecialBlockType.None)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+                    CollectGemCount(block, gemCountsByColor);
+                }
+            }
+
+            // 미션 시스템 보고 (파괴 전)
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // Ring별 순차 파괴
+            for (int ring = 1; ring <= maxDistance; ring++)
+            {
+                // 현재 거리의 블록들 필터
+                var ringBlocks = allBlocks.Where(b => b.Coord.DistanceTo(pos) == ring).ToList();
+
+                foreach (var block in ringBlocks)
+                {
+                    if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+
+                    // FixedBlock은 파괴 불가
+                    if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+
+                    // 특수 블록은 pending 처리
+                    if (block.Data.specialType != SpecialBlockType.None)
+                    {
+                        block.SetPendingActivation();
+                        block.StartWarningBlink(10f);
+                        continue;
+                    }
+
+                    // 적군 방패 흡수
+                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(block))
+                        continue;
+
+                    // 플래시 + 파괴 애니메이션
+                    Color blockColor = GemColors.GetColor(block.Data.gemType);
+                    StartCoroutine(DestroyFlash(block.transform.position, blockColor));
+                    StartCoroutine(SpawnDebris(block.transform.position, blockColor, 4));
+                    StartCoroutine(DualEasingDestroy(block));
+
+                    // 사운드 (간헐적)
+                    if (AudioManager.Instance != null && Random.value > 0.5f)
+                        AudioManager.Instance.PlayBlockDestroySound();
+                }
+
+                // 화면 흔들림 (강도 점감)
+                float intensity = Mathf.Max(0.3f, 1.0f - ring * 0.12f);
+                StartCoroutine(ScreenShake(
+                    VisualConstants.ShakeMediumIntensity * intensity,
+                    VisualConstants.ShakeMediumDuration * intensity));
+
+                // 링 간 대기
+                yield return new WaitForSeconds(0.08f);
+            }
+
+            // 파괴 애니메이션 완료 대기
+            yield return new WaitForSeconds(0.3f);
+
+            // 점수
+            int totalScore = 1000 + blockScoreSum;
+            Debug.Log($"[ComboSystem] XBlockXBlock complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // VFX 유틸 메서드
+        // ============================================================
+
+        /// <summary>
+        /// 이펙트 레이어를 Canvas 내부에 생성합니다.
+        /// 이미 생성되어 있으면 건너뜁니다.
+        /// </summary>
+        private void SetupEffectParent()
+        {
+            if (effectParent != null) return;
+            if (hexGrid == null) return;
+
+            Canvas canvas = hexGrid.GetComponentInParent<Canvas>();
+            if (canvas == null) return;
+
+            GameObject layer = new GameObject("ComboEffectLayer");
+            layer.transform.SetParent(canvas.transform, false);
+
+            RectTransform rt = layer.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+
+            layer.transform.SetAsLastSibling();
+            effectParent = layer.transform;
+
+            Debug.Log("[ComboSystem] Effect layer created under Canvas");
+        }
+
+        /// <summary>
+        /// effectParent의 모든 자식 이펙트 오브젝트를 제거하고,
+        /// effectParent 자체도 제거합니다.
+        /// </summary>
+        private void CleanupEffects()
+        {
+            if (effectParent == null) return;
+
+            for (int i = effectParent.childCount - 1; i >= 0; i--)
+                Destroy(effectParent.GetChild(i).gameObject);
+
+            Destroy(effectParent.gameObject);
+            effectParent = null;
+        }
+
+        /// <summary>
+        /// 화면을 랜덤하게 흔드는 코루틴.
+        /// shakeCount로 중첩을 관리하며, 마지막 흔들림이 끝날 때만 원래 위치로 복원.
+        /// </summary>
+        private IEnumerator ScreenShake(float intensity, float duration)
+        {
+            Transform target = hexGrid != null ? hexGrid.transform : transform;
+
+            if (shakeCount == 0)
+                shakeOriginalPos = target.localPosition;
+            shakeCount++;
+
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float decay = 1f - VisualConstants.EaseInQuad(t);
+                float x = Random.Range(-1f, 1f) * intensity * decay;
+                float y = Random.Range(-1f, 1f) * intensity * decay;
+                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                yield return null;
+            }
+
+            shakeCount--;
+            if (shakeCount <= 0)
+            {
+                shakeCount = 0;
+                target.localPosition = shakeOriginalPos;
+            }
+        }
+
+        /// <summary>
+        /// 히트스톱: 게임 시간을 잠깐 멈춘 뒤 슬로모션을 거쳐 정상 복귀.
+        /// 쿨다운이 있어 너무 자주 실행되지 않음.
+        /// </summary>
+        private IEnumerator HitStop(float stopDuration)
+        {
+            if (!VisualConstants.CanHitStop()) yield break;
+            VisualConstants.RecordHitStop();
+
+            Time.timeScale = 0f;
+            yield return new WaitForSecondsRealtime(stopDuration);
+
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.HitStopSlowMoDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
+                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+            Time.timeScale = 1f;
+        }
+
+        /// <summary>
+        /// 줌 펀치: hexGrid.transform을 잠깐 확대했다가 원래 크기로 돌려놓습니다.
+        /// </summary>
+        private IEnumerator ZoomPunch(float targetScale)
+        {
+            Transform target = hexGrid != null ? hexGrid.transform : transform;
+            Vector3 origScale = target.localScale;
+            Vector3 punchScale = origScale * targetScale;
+
+            // 줌인
+            float elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            // 줌아웃
+            elapsed = 0f;
+            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                yield return null;
+            }
+
+            target.localScale = origScale;
+        }
+
+        /// <summary>
+        /// 이중 이징 파괴 애니메이션:
+        ///   전반 20%: 1.0 → 1.2 확장 (EaseOutCubic)
+        ///   후반 80%: 1.2 → 0.0 축소 + 가로 찌그러짐 (EaseInQuad)
+        ///   완료 후 ClearData()
+        /// </summary>
+        private IEnumerator DualEasingDestroy(HexBlock block, float duration = 0.3f)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
+            Vector3 origScale = block.transform.localScale;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                if (t < expandRatio)
+                {
+                    // 전반부: 확장
+                    float expandT = t / expandRatio;
+                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
+                    block.transform.localScale = origScale * scale;
+                }
+                else
+                {
+                    // 후반부: 찌그러짐 + 축소
+                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
+                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
+                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
+                    block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                }
+
+                yield return null;
+            }
+
+            block.transform.localScale = Vector3.one;
+            block.ClearData();
+        }
+
+        /// <summary>
+        /// 블록 파괴 시 백색 플래시 오버레이 생성.
+        /// effectParent 자식으로 생성되며, 0.15초 동안 페이드아웃.
+        /// </summary>
+        private IEnumerator DestroyFlash(Vector3 pos, Color color)
+        {
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            GameObject flash = new GameObject("ComboDestroyFlash");
+            flash.transform.SetParent(parent, false);
+            flash.transform.position = pos;
+
+            var img = flash.AddComponent<Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 60f * VisualConstants.DestroyFlashSizeMultiplier;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            float duration = 0.15f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha * (1f - t));
+
+                // 약간 확장
+                float scale = 1f + t * 0.3f;
+                rt.sizeDelta = new Vector2(size * scale, size * scale);
+
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        /// <summary>
+        /// 파편 입자를 생성하는 코루틴.
+        /// 사방으로 흩어지며 중력으로 떨어지고, 회전하면서 투명해집니다.
+        /// </summary>
+        private IEnumerator SpawnDebris(Vector3 pos, Color color, int count = 6)
+        {
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            for (int i = 0; i < count; i++)
+            {
+                StartCoroutine(AnimateDebrisParticle(pos, color, parent));
+            }
+            yield break;
+        }
+
+        /// <summary>
+        /// 개별 파편 입자 애니메이션.
+        /// </summary>
+        private IEnumerator AnimateDebrisParticle(Vector3 center, Color color, Transform parent)
+        {
+            GameObject debris = new GameObject("ComboDebris");
+            debris.transform.SetParent(parent, false);
+            debris.transform.position = center;
+
+            var image = debris.AddComponent<Image>();
+            image.raycastTarget = false;
+
+            float variation = Random.Range(-0.15f, 0.15f);
+            Color debrisColor = new Color(
+                Mathf.Clamp01(color.r + variation),
+                Mathf.Clamp01(color.g + variation),
+                Mathf.Clamp01(color.b + variation),
+                1f
+            );
+            image.color = debrisColor;
+
+            RectTransform rt = debris.GetComponent<RectTransform>();
+            float w = Random.Range(VisualConstants.DebrisBaseSizeMin, VisualConstants.DebrisBaseSizeMax);
+            float h = Random.Range(VisualConstants.DebrisBaseSizeMin, VisualConstants.DebrisBaseSizeMax * 0.9f);
+            rt.sizeDelta = new Vector2(w, h);
+
+            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float speed = Random.Range(VisualConstants.DebrisBaseSpeedMin, VisualConstants.DebrisBaseSpeedMax);
+            Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+
+            float rotSpeed = Random.Range(VisualConstants.DebrisRotSpeedMin, VisualConstants.DebrisRotSpeedMax);
+            float lifetime = Random.Range(VisualConstants.DebrisLifetimeMin, VisualConstants.DebrisLifetimeMax);
+            float elapsed = 0f;
+            float rot = Random.Range(0f, 360f);
+
+            while (elapsed < lifetime)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / lifetime;
+
+                velocity.y += VisualConstants.DebrisGravity * Time.deltaTime;
+                Vector3 p = debris.transform.position;
+                p.x += velocity.x * Time.deltaTime;
+                p.y += velocity.y * Time.deltaTime;
+                debris.transform.position = p;
+
+                rot += rotSpeed * Time.deltaTime;
+                debris.transform.localRotation = Quaternion.Euler(0, 0, rot);
+
+                debrisColor.a = 1f - t * t;
+                image.color = debrisColor;
+                float shrink = 1f - t * 0.5f;
+                rt.sizeDelta = new Vector2(w * shrink, h * shrink);
+
+                yield return null;
+            }
+
+            Destroy(debris);
+        }
+
+        /// <summary>
+        /// 블록 변환 시 짧은 플래시 이펙트.
+        /// 드릴이나 폭탄으로 변환될 때 위치에 번쩍이는 연출.
+        /// </summary>
+        private IEnumerator TransformFlash(Vector3 pos, Color color)
+        {
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            GameObject flash = new GameObject("TransformFlash");
+            flash.transform.SetParent(parent, false);
+            flash.transform.position = pos;
+
+            var img = flash.AddComponent<Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            Color flashColor = VisualConstants.Brighten(color);
+            flashColor.a = 0.9f;
+            img.color = flashColor;
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 40f;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            float duration = 0.1f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float scale = 1f + t * 1.5f;
+                rt.sizeDelta = new Vector2(size * scale, size * scale);
+                flashColor.a = 0.9f * (1f - t);
+                img.color = flashColor;
+
+                yield return null;
+            }
+
+            Destroy(flash);
+        }
+
+        /// <summary>
+        /// 합성 폭발 파동 이펙트.
+        /// BombBomb 합성에서 링별 폭발 시 사용하는 충격파 원형 파동.
+        /// </summary>
+        private IEnumerator ComboExplosionWave(Vector3 pos, Color color, float intensityMult)
+        {
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            GameObject wave = new GameObject("ComboWave");
+            wave.transform.SetParent(parent, false);
+            wave.transform.position = pos;
+
+            var img = wave.AddComponent<Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            img.color = new Color(color.r, color.g, color.b, 0.6f * intensityMult);
+
+            RectTransform rt = wave.GetComponent<RectTransform>();
+            float initSize = VisualConstants.WaveLargeInitialSize;
+            rt.sizeDelta = new Vector2(initSize, initSize);
+
+            float duration = VisualConstants.WaveLargeDuration;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = VisualConstants.EaseOutCubic(t);
+                float scale = 1f + eased * (VisualConstants.WaveLargeExpand * intensityMult - 1f);
+                rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
+                img.color = new Color(color.r, color.g, color.b, 0.6f * intensityMult * (1f - t));
+                yield return null;
+            }
+
+            Destroy(wave);
+        }
+
+        // ============================================================
+        // 좌표/방향 유틸 메서드
+        // ============================================================
+
+        /// <summary>
+        /// HexCoord delta → DrillDirection + positive 변환.
+        /// Ring1의 각 이웃에서 바깥 방향 드릴을 발사할 때 사용.
+        /// </summary>
+        private (DrillDirection dir, bool positive) DeltaToDrillDirection(HexCoord delta)
+        {
+            // Vertical: r축 (0, +1) / (0, -1)
+            if (delta.q == 0 && delta.r > 0) return (DrillDirection.Vertical, true);
+            if (delta.q == 0 && delta.r < 0) return (DrillDirection.Vertical, false);
+
+            // Slash: s축 (+1, -1) / (-1, +1)
+            if (delta.q > 0 && delta.r < 0) return (DrillDirection.Slash, true);
+            if (delta.q < 0 && delta.r > 0) return (DrillDirection.Slash, false);
+
+            // BackSlash: q축 (+1, 0) / (-1, 0)
+            if (delta.q > 0 && delta.r == 0) return (DrillDirection.BackSlash, true);
+            if (delta.q < 0 && delta.r == 0) return (DrillDirection.BackSlash, false);
+
+            return (DrillDirection.Vertical, true); // 기본값
+        }
+
+        /// <summary>
+        /// HexCoord 좌표에 위치한 블록의 월드 좌표를 반환합니다.
+        /// 블록이 있으면 RectTransform.position 사용, 없으면 좌표 계산.
+        /// </summary>
+        private Vector3 GetWorldPosition(HexCoord coord)
+        {
+            if (hexGrid != null)
+            {
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block != null)
+                    return block.transform.position;
+            }
+
+            // 블록이 없는 경우 수학적 계산
+            float hexSize = 50f; // 기본 hexSize
+            Vector2 pos2D = coord.ToWorldPosition(hexSize);
+            return new Vector3(pos2D.x, pos2D.y, 0);
+        }
+
+        /// <summary>
+        /// HexBlock의 월드 좌표를 반환합니다.
+        /// </summary>
+        private Vector3 GetBlockWorldPosition(HexBlock block)
+        {
+            if (block != null)
+                return block.transform.position;
+            return Vector3.zero;
+        }
+
+        // ============================================================
+        // 점수/미션 유틸 메서드
+        // ============================================================
+
+        /// <summary>
+        /// 블록의 기본 점수를 반환합니다.
+        /// </summary>
+        private int CalculateBlockScore(HexBlock block)
+        {
+            if (block == null || block.Data == null) return 0;
+            return ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+        }
+
+        /// <summary>
+        /// 블록의 젬 타입을 색상별 카운트 딕셔너리에 누적합니다.
+        /// 미션 시스템 보고용.
+        /// </summary>
+        private void CollectGemCount(HexBlock block, Dictionary<GemType, int> gemCounts)
+        {
+            if (block == null || block.Data == null) return;
+            if (block.Data.gemType == GemType.None) return;
+
+            // 기본 블록(GemType 1~5: Red, Blue, Green, Yellow, Purple)만 카운트
+            int gemValue = (int)block.Data.gemType;
+            if (gemValue >= 1 && gemValue <= 5)
+            {
+                if (gemCounts.ContainsKey(block.Data.gemType))
+                    gemCounts[block.Data.gemType]++;
+                else
+                    gemCounts[block.Data.gemType] = 1;
+            }
+        }
+    }
+}
