@@ -79,6 +79,7 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralSpecialImpact;
         private AudioClip proceduralEnemySpawn;
         private AudioClip proceduralChromophageRemoval;
+        private AudioClip proceduralTransformTick;
 
         // 배경음악 캐시
         private AudioClip proceduralLobbySereneBGM;
@@ -199,6 +200,9 @@ namespace JewelsHexaPuzzle.Managers
 
             // 색상도둑 제거: 슬라임 분해음 (저음 노이즈 버스트 0.15s)
             proceduralChromophageRemoval = ProceduralAudio.CreateNoiseBurst(0.15f);
+
+            // 특수 블록 변환 틱 사운드 (XBlock 합성용)
+            proceduralTransformTick = ProceduralAudio.CreateTransformTick(0.08f);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
@@ -448,6 +452,14 @@ namespace JewelsHexaPuzzle.Managers
 
         // 매칭 감지 톤
         public void PlayMatchDetectTone() => PlaySFX(Resolve(matchSound, proceduralMatch), 0.4f);
+
+        // 특수 블록 변환 틱 사운드 (XBlock 합성 시 순차 변환용)
+        // index: 변환 순번, total: 전체 블록 수 → 피치를 점진적으로 올림
+        public void PlayTransformTickSound(int index = 0, int total = 1)
+        {
+            float pitch = 1.0f + 0.5f * ((float)index / Mathf.Max(1, total - 1));
+            PlaySFXWithPitchAndLimit(proceduralTransformTick, pitch, 4, 0.55f);
+        }
 
         // ============================================================
         // 볼륨 설정

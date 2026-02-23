@@ -138,6 +138,18 @@ namespace JewelsHexaPuzzle.Managers
                 if (FindObjectOfType<LineDrawItem>() == null)
                     CreateLineDrawUI(canvas);
 
+                // 골드 추가 버튼 생성 (좌측 하단)
+                CreateGoldAddButton(canvas);
+
+                // 아이템 수량 변경 이벤트 구독
+                if (ItemManager.Instance != null)
+                {
+                    ItemManager.Instance.OnItemCountChanged += UpdateItemCountBadge;
+                }
+
+                // 특수 블록 테스트 버튼 패널 생성
+                CreateTestBlockPanel(canvas);
+
                 // 로비 UI 생성
                 CreateLobbyUI(canvas);
             }
@@ -353,8 +365,7 @@ namespace JewelsHexaPuzzle.Managers
             hudElements.Add(turnLabelObj);
             hudElements.Add(scoreObj);
             hudElements.Add(scoreLabelObj);
-            hudElements.Add(goldObj);
-            hudElements.Add(goldLabelObj);
+            // 골드는 hudElements에 넣지 않음 → 로비/인게임 모두 항상 표시
 
             Debug.Log("[GameManager] HUD 요소 생성 완료 (이동횟수 + 누적 점수 + 골드)");
         }
@@ -1424,6 +1435,7 @@ private void InitializeSystems()
         private static readonly Color HAMMER_BTN_COLOR = new Color(0.0f, 0.70f, 0.70f, 0.92f);
         private static readonly Color SWAP_BTN_COLOR = new Color(0.85f, 0.35f, 0.65f, 0.92f);
         private static readonly Color LINEDRAW_BTN_COLOR = new Color(0.35f, 0.55f, 0.35f, 0.92f);
+        private static readonly Color GOLD_BTN_COLOR = new Color(0.85f, 0.65f, 0.10f, 0.92f);
 
         private Vector2 GetItemButtonPosition(int index)
         {
@@ -1450,7 +1462,7 @@ private void InitializeSystems()
             float gridRight = hSize * 1.5f * 5f;
             float midX = gridRight / 2f + 80f;
             float btnHexH = ITEM_BTN_SIZE * sqrt3 / 2f;
-            float baseY = hSize * sqrt3 * (-5f) - btnHexH * 0.3f;
+            float baseY = hSize * sqrt3 * (-5f) - btnHexH * 0.3f - 5f;
             float offX = midX - cx;
             float offY = baseY - cy;
             if (index == 0) // 망치
@@ -1497,18 +1509,514 @@ private void InitializeSystems()
             return (btnObj, btn, btnImage);
         }
 
-        private void CreateItemLabel(GameObject parent, string labelText)
+        // ============================================================
+        // 아이템 수량 배지 (x99 스타일, 버튼 하단 중앙)
+        // ============================================================
+        private Dictionary<ItemType, Text> itemCountBadges = new Dictionary<ItemType, Text>();
+
+        /// <summary>
+        /// 아이템 버튼 하단 중앙에 수량 배지 생성 (x99, 흰색 바탕 + 검정 아웃라인)
+        /// </summary>
+        private void CreateItemCountBadge(GameObject btnObj, ItemType itemType)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            GameObject textObj = new GameObject(parent.name.Replace("Button", "Label"));
-            textObj.transform.SetParent(parent.transform, false);
-            var label = textObj.AddComponent<Text>();
-            label.text = labelText; label.font = font; label.fontSize = 13;
-            label.alignment = TextAnchor.MiddleCenter; label.color = Color.white;
-            label.raycastTarget = false; label.fontStyle = FontStyle.Bold;
+
+            // 배지 배경 (흰색, 하단 중앙)
+            GameObject badgeBg = new GameObject("CountBadgeBg");
+            badgeBg.transform.SetParent(btnObj.transform, false);
+            Image bgImg = badgeBg.AddComponent<Image>();
+            bgImg.color = new Color(1f, 1f, 1f, 0.92f);
+            bgImg.raycastTarget = false;
+            RectTransform bgRt = badgeBg.GetComponent<RectTransform>();
+            bgRt.anchorMin = new Vector2(0.5f, 0f);
+            bgRt.anchorMax = new Vector2(0.5f, 0f);
+            bgRt.pivot = new Vector2(0.5f, 0.5f);
+            bgRt.anchoredPosition = new Vector2(0f, 14f);
+            bgRt.sizeDelta = new Vector2(38f, 16f);
+
+            // 배지 아웃라인 (검정, 배경 뒤)
+            GameObject outlineObj = new GameObject("CountBadgeOutline");
+            outlineObj.transform.SetParent(badgeBg.transform, false);
+            Image outlineImg = outlineObj.AddComponent<Image>();
+            outlineImg.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
+            outlineImg.raycastTarget = false;
+            RectTransform outlineRt = outlineObj.GetComponent<RectTransform>();
+            outlineRt.anchorMin = Vector2.zero;
+            outlineRt.anchorMax = Vector2.one;
+            outlineRt.offsetMin = new Vector2(-1.5f, -1.5f);
+            outlineRt.offsetMax = new Vector2(1.5f, 1.5f);
+            outlineObj.transform.SetAsFirstSibling();
+
+            // 수량 텍스트
+            GameObject textObj = new GameObject("CountBadgeText");
+            textObj.transform.SetParent(badgeBg.transform, false);
+            Text countText = textObj.AddComponent<Text>();
+            int count = ItemManager.Instance != null ? ItemManager.Instance.GetItemCount(itemType) : 0;
+            countText.text = $"x{count}";
+            countText.font = font;
+            countText.fontSize = 11;
+            countText.fontStyle = FontStyle.Bold;
+            countText.alignment = TextAnchor.MiddleCenter;
+            countText.color = new Color(0.1f, 0.1f, 0.1f, 1f);
+            countText.raycastTarget = false;
+            countText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            countText.verticalOverflow = VerticalWrapMode.Overflow;
             RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = new Vector2(0f, 0f); textRt.anchorMax = new Vector2(1f, 0f);
-            textRt.anchoredPosition = new Vector2(0f, 16f); textRt.sizeDelta = new Vector2(0f, 20f);
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = Vector2.zero;
+            textRt.offsetMax = Vector2.zero;
+
+            // 딕셔너리에 저장
+            itemCountBadges[itemType] = countText;
+        }
+
+        /// <summary>
+        /// 모든 아이템 수량 배지 업데이트
+        /// </summary>
+        public void UpdateAllItemCountBadges()
+        {
+            if (ItemManager.Instance == null) return;
+            foreach (var kvp in itemCountBadges)
+            {
+                if (kvp.Value != null)
+                {
+                    int count = ItemManager.Instance.GetItemCount(kvp.Key);
+                    kvp.Value.text = $"x{count}";
+                }
+            }
+        }
+
+        /// <summary>
+        /// 특정 아이템 수량 배지 업데이트
+        /// </summary>
+        public void UpdateItemCountBadge(ItemType type, int count)
+        {
+            if (itemCountBadges.ContainsKey(type) && itemCountBadges[type] != null)
+            {
+                itemCountBadges[type].text = $"x{count}";
+            }
+        }
+
+        // ============================================================
+        // 아이템 구매 팝업 시스템
+        // ============================================================
+        private GameObject purchasePopupObj;
+
+        /// <summary>
+        /// 아이템 구매 팝업 표시
+        /// </summary>
+        public void ShowItemPurchasePopup(ItemType itemType)
+        {
+            if (purchasePopupObj != null)
+            {
+                Destroy(purchasePopupObj);
+            }
+
+            Canvas canvas = hexGrid != null ? hexGrid.GetComponentInParent<Canvas>() : FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            // 팝업 오픈 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayPopupOpen();
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            int price = ItemManager.GetItemGoldPrice(itemType);
+            string itemName = ItemManager.GetItemDisplayName(itemType);
+
+            // 팝업 배경 오버레이
+            purchasePopupObj = new GameObject("PurchasePopup");
+            purchasePopupObj.transform.SetParent(canvas.transform, false);
+            purchasePopupObj.transform.SetAsLastSibling();
+            RectTransform popupRt = purchasePopupObj.AddComponent<RectTransform>();
+            popupRt.anchorMin = Vector2.zero;
+            popupRt.anchorMax = Vector2.one;
+            popupRt.offsetMin = Vector2.zero;
+            popupRt.offsetMax = Vector2.zero;
+
+            // 반투명 배경
+            Image bgOverlay = purchasePopupObj.AddComponent<Image>();
+            bgOverlay.color = new Color(0f, 0f, 0f, 0.6f);
+
+            // 닫기용 버튼 (배경 클릭)
+            Button bgBtn = purchasePopupObj.AddComponent<Button>();
+            bgBtn.onClick.AddListener(() =>
+            {
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayButtonClick();
+                ClosePurchasePopup();
+            });
+            var bgBc = bgBtn.colors;
+            bgBc.normalColor = Color.white;
+            bgBc.highlightedColor = Color.white;
+            bgBc.pressedColor = Color.white;
+            bgBtn.colors = bgBc;
+
+            // 팝업 패널
+            GameObject panel = new GameObject("PurchasePanel");
+            panel.transform.SetParent(purchasePopupObj.transform, false);
+            RectTransform panelRt = panel.AddComponent<RectTransform>();
+            panelRt.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRt.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRt.pivot = new Vector2(0.5f, 0.5f);
+            panelRt.anchoredPosition = Vector2.zero;
+            panelRt.sizeDelta = new Vector2(420f, 300f);
+            Image panelBg = panel.AddComponent<Image>();
+            panelBg.color = new Color(0.15f, 0.15f, 0.25f, 0.95f);
+            // 패널 클릭 시 배경 닫기 이벤트 전파 방지
+            Button panelBlocker = panel.AddComponent<Button>();
+            var pbColors = panelBlocker.colors;
+            pbColors.normalColor = Color.white; pbColors.highlightedColor = Color.white;
+            pbColors.pressedColor = Color.white; pbColors.selectedColor = Color.white;
+            panelBlocker.colors = pbColors;
+            panelBlocker.transition = Selectable.Transition.None;
+
+            // 패널 테두리
+            GameObject borderObj = new GameObject("PanelBorder");
+            borderObj.transform.SetParent(panel.transform, false);
+            RectTransform borderRt = borderObj.AddComponent<RectTransform>();
+            borderRt.anchorMin = Vector2.zero;
+            borderRt.anchorMax = Vector2.one;
+            borderRt.offsetMin = new Vector2(-2f, -2f);
+            borderRt.offsetMax = new Vector2(2f, 2f);
+            Image borderImg = borderObj.AddComponent<Image>();
+            borderImg.color = new Color(1f, 0.84f, 0f, 0.7f);
+            borderImg.raycastTarget = false;
+            borderObj.transform.SetAsFirstSibling();
+
+            // 타이틀
+            GameObject titleObj = new GameObject("Title");
+            titleObj.transform.SetParent(panel.transform, false);
+            Text titleText = titleObj.AddComponent<Text>();
+            titleText.text = "아이템 구매";
+            titleText.font = font;
+            titleText.fontSize = 22;
+            titleText.fontStyle = FontStyle.Bold;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = new Color(1f, 0.9f, 0.4f, 1f);
+            titleText.raycastTarget = false;
+            RectTransform titleRt = titleObj.GetComponent<RectTransform>();
+            titleRt.anchorMin = new Vector2(0f, 1f);
+            titleRt.anchorMax = new Vector2(1f, 1f);
+            titleRt.pivot = new Vector2(0.5f, 1f);
+            titleRt.anchoredPosition = new Vector2(0f, -12f);
+            titleRt.sizeDelta = new Vector2(0f, 30f);
+
+            // 내용: 아이템 이름
+            GameObject descObj = new GameObject("Description");
+            descObj.transform.SetParent(panel.transform, false);
+            Text descText = descObj.AddComponent<Text>();
+            descText.text = $"{itemName} x1";
+            descText.font = font;
+            descText.fontSize = 18;
+            descText.alignment = TextAnchor.MiddleCenter;
+            descText.color = Color.white;
+            descText.raycastTarget = false;
+            descText.lineSpacing = 1.2f;
+            RectTransform descRt = descObj.GetComponent<RectTransform>();
+            descRt.anchorMin = new Vector2(0.1f, 0.55f);
+            descRt.anchorMax = new Vector2(0.9f, 0.8f);
+            descRt.offsetMin = Vector2.zero;
+            descRt.offsetMax = Vector2.zero;
+
+            bool canAfford = currentGold >= price;
+
+            // 가격 표시 (골드 부족 시 빨간색)
+            GameObject priceObj = new GameObject("PriceText");
+            priceObj.transform.SetParent(panel.transform, false);
+            Text priceText = priceObj.AddComponent<Text>();
+            priceText.text = $"가격: {price} 골드";
+            priceText.font = font;
+            priceText.fontSize = 18;
+            priceText.fontStyle = FontStyle.Bold;
+            priceText.alignment = TextAnchor.MiddleCenter;
+            priceText.color = canAfford ? new Color(1f, 0.9f, 0.4f, 1f) : new Color(1f, 0.3f, 0.3f, 1f);
+            priceText.raycastTarget = false;
+            RectTransform priceRt = priceObj.GetComponent<RectTransform>();
+            priceRt.anchorMin = new Vector2(0.1f, 0.30f);
+            priceRt.anchorMax = new Vector2(0.9f, 0.55f);
+            priceRt.offsetMin = Vector2.zero;
+            priceRt.offsetMax = Vector2.zero;
+
+            // 구매 버튼
+            GameObject buyBtnObj = new GameObject("BuyButton");
+            buyBtnObj.transform.SetParent(panel.transform, false);
+            RectTransform buyBtnRt = buyBtnObj.AddComponent<RectTransform>();
+            buyBtnRt.anchorMin = new Vector2(0.10f, 0.05f);
+            buyBtnRt.anchorMax = new Vector2(0.464f, 0.23f);
+            buyBtnRt.offsetMin = Vector2.zero;
+            buyBtnRt.offsetMax = Vector2.zero;
+            Image buyBtnImg = buyBtnObj.AddComponent<Image>();
+            buyBtnImg.color = new Color(0.2f, 0.7f, 0.3f, 1f);
+            Button buyBtn = buyBtnObj.AddComponent<Button>();
+            var buyBc = buyBtn.colors;
+            buyBc.normalColor = Color.white;
+            buyBc.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            buyBc.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+            buyBtn.colors = buyBc;
+
+            ItemType capturedType = itemType;
+            GameObject capturedBuyBtnObj = buyBtnObj;
+            buyBtn.onClick.AddListener(() =>
+            {
+                // 클릭 사운드
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayButtonClick();
+
+                // 버튼 리액션 애니메이션
+                StartCoroutine(PopupButtonReaction(capturedBuyBtnObj));
+
+                if (ItemManager.Instance != null && ItemManager.Instance.PurchaseItem(capturedType, 1))
+                {
+                    // 구매 성공 → 수량 배지 업데이트
+                    UpdateItemCountBadge(capturedType, ItemManager.Instance.GetItemCount(capturedType));
+                    StartCoroutine(DelayedAction(0.12f, () => ClosePurchasePopup()));
+                    Debug.Log($"[GameManager] 구매 완료: {capturedType}");
+                }
+                else
+                {
+                    // 골드 부족 메시지 표시 + 버튼 흔들림
+                    StartCoroutine(PopupButtonShake(capturedBuyBtnObj));
+                    ShowFloatingMessage("골드가 부족합니다");
+                    Debug.Log($"[GameManager] 구매 실패: 골드 부족");
+                }
+            });
+
+            // 구매 버튼 텍스트
+            GameObject buyTextObj = new GameObject("BuyText");
+            buyTextObj.transform.SetParent(buyBtnObj.transform, false);
+            Text buyText = buyTextObj.AddComponent<Text>();
+            buyText.text = "구매";
+            buyText.font = font;
+            buyText.fontSize = 18;
+            buyText.fontStyle = FontStyle.Bold;
+            buyText.alignment = TextAnchor.MiddleCenter;
+            buyText.color = Color.white;
+            buyText.raycastTarget = false;
+            RectTransform buyTextRt = buyTextObj.GetComponent<RectTransform>();
+            buyTextRt.anchorMin = Vector2.zero;
+            buyTextRt.anchorMax = Vector2.one;
+            buyTextRt.offsetMin = Vector2.zero;
+            buyTextRt.offsetMax = Vector2.zero;
+
+            // 취소 버튼
+            GameObject cancelBtnObj = new GameObject("CancelButton");
+            cancelBtnObj.transform.SetParent(panel.transform, false);
+            RectTransform cancelBtnRt = cancelBtnObj.AddComponent<RectTransform>();
+            cancelBtnRt.anchorMin = new Vector2(0.536f, 0.05f);
+            cancelBtnRt.anchorMax = new Vector2(0.90f, 0.23f);
+            cancelBtnRt.offsetMin = Vector2.zero;
+            cancelBtnRt.offsetMax = Vector2.zero;
+            Image cancelBtnImg = cancelBtnObj.AddComponent<Image>();
+            cancelBtnImg.color = new Color(0.5f, 0.3f, 0.3f, 1f);
+            Button cancelBtn = cancelBtnObj.AddComponent<Button>();
+            var cancelBc = cancelBtn.colors;
+            cancelBc.normalColor = Color.white;
+            cancelBc.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            cancelBc.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+            cancelBtn.colors = cancelBc;
+            GameObject capturedCancelBtnObj = cancelBtnObj;
+            cancelBtn.onClick.AddListener(() =>
+            {
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayButtonClick();
+                StartCoroutine(PopupButtonReaction(capturedCancelBtnObj));
+                StartCoroutine(DelayedAction(0.12f, () => ClosePurchasePopup()));
+            });
+
+            // 취소 버튼 텍스트
+            GameObject cancelTextObj = new GameObject("CancelText");
+            cancelTextObj.transform.SetParent(cancelBtnObj.transform, false);
+            Text cancelText = cancelTextObj.AddComponent<Text>();
+            cancelText.text = "취소";
+            cancelText.font = font;
+            cancelText.fontSize = 18;
+            cancelText.fontStyle = FontStyle.Bold;
+            cancelText.alignment = TextAnchor.MiddleCenter;
+            cancelText.color = Color.white;
+            cancelText.raycastTarget = false;
+            RectTransform cancelTextRt = cancelTextObj.GetComponent<RectTransform>();
+            cancelTextRt.anchorMin = Vector2.zero;
+            cancelTextRt.anchorMax = Vector2.one;
+            cancelTextRt.offsetMin = Vector2.zero;
+            cancelTextRt.offsetMax = Vector2.zero;
+
+            // 패널 등장 애니메이션
+            StartCoroutine(PopupPanelAppear(panel));
+
+            Debug.Log($"[GameManager] 구매 팝업 표시: {itemName}, 가격 {price} 골드");
+        }
+
+        /// <summary>
+        /// 팝업 패널 등장 애니메이션 (스케일 0→1 바운스)
+        /// </summary>
+        private IEnumerator PopupPanelAppear(GameObject panel)
+        {
+            if (panel == null) yield break;
+            Transform t = panel.transform;
+            t.localScale = Vector3.zero;
+            float duration = 0.25f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                if (t == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float p = Mathf.Clamp01(elapsed / duration);
+                // 오버슈트 이징: 살짝 커졌다 돌아옴
+                float scale = p < 0.7f
+                    ? Mathf.Lerp(0f, 1.08f, p / 0.7f)
+                    : Mathf.Lerp(1.08f, 1f, (p - 0.7f) / 0.3f);
+                t.localScale = Vector3.one * scale;
+                yield return null;
+            }
+            if (t != null) t.localScale = Vector3.one;
+        }
+
+        /// <summary>
+        /// 팝업 버튼 클릭 리액션 (축소→복원 펄스)
+        /// </summary>
+        private IEnumerator PopupButtonReaction(GameObject btnObj)
+        {
+            if (btnObj == null) yield break;
+            Transform t = btnObj.transform;
+            float duration = 0.12f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                if (t == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float p = Mathf.Clamp01(elapsed / duration);
+                float scale = 1f - 0.15f * Mathf.Sin(p * Mathf.PI);
+                t.localScale = Vector3.one * scale;
+                yield return null;
+            }
+            if (t != null) t.localScale = Vector3.one;
+        }
+
+        /// <summary>
+        /// 팝업 버튼 실패 시 좌우 흔들림
+        /// </summary>
+        private IEnumerator PopupButtonShake(GameObject btnObj)
+        {
+            if (btnObj == null) yield break;
+            RectTransform rt = btnObj.GetComponent<RectTransform>();
+            if (rt == null) yield break;
+            Vector2 origPos = rt.anchoredPosition;
+            float duration = 0.3f;
+            float elapsed = 0f;
+            float intensity = 5f;
+            while (elapsed < duration)
+            {
+                if (rt == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float p = Mathf.Clamp01(elapsed / duration);
+                float decay = 1f - p;
+                float offsetX = Mathf.Sin(p * Mathf.PI * 6f) * intensity * decay;
+                rt.anchoredPosition = origPos + new Vector2(offsetX, 0f);
+                yield return null;
+            }
+            if (rt != null) rt.anchoredPosition = origPos;
+        }
+
+        /// <summary>
+        /// 딜레이 후 액션 실행 헬퍼
+        /// </summary>
+        private IEnumerator DelayedAction(float delay, System.Action action)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+            action?.Invoke();
+        }
+
+        /// <summary>
+        /// 구매 팝업 닫기
+        /// </summary>
+        public void ClosePurchasePopup()
+        {
+            if (purchasePopupObj != null)
+            {
+                Destroy(purchasePopupObj);
+                purchasePopupObj = null;
+            }
+        }
+
+        /// <summary>
+        /// 구매 팝업이 열려있는지 확인
+        /// </summary>
+        public bool IsPurchasePopupOpen => purchasePopupObj != null;
+
+        // ============================================================
+        // 플로팅 메시지 (화면 상단 1/4 지점, 3초 유지 후 위로 페이드아웃)
+        // ============================================================
+
+        /// <summary>
+        /// 화면 상단 1/4 지점에 메시지를 표시하고 3초 후 위로 올라가며 페이드아웃
+        /// </summary>
+        public void ShowFloatingMessage(string message)
+        {
+            Canvas canvas = hexGrid != null ? hexGrid.GetComponentInParent<Canvas>() : FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+            StartCoroutine(FloatingMessageCoroutine(canvas, message));
+        }
+
+        private IEnumerator FloatingMessageCoroutine(Canvas canvas, string message)
+        {
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            GameObject msgObj = new GameObject("FloatingMessage");
+            msgObj.transform.SetParent(canvas.transform, false);
+            msgObj.transform.SetAsLastSibling();
+
+            Text msgText = msgObj.AddComponent<Text>();
+            msgText.text = message;
+            msgText.font = font;
+            msgText.fontSize = 40;
+            msgText.fontStyle = FontStyle.Bold;
+            msgText.alignment = TextAnchor.MiddleCenter;
+            msgText.color = Color.white;
+            msgText.raycastTarget = false;
+            msgText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            msgText.verticalOverflow = VerticalWrapMode.Overflow;
+
+            // 그림자 효과
+            var shadow = msgObj.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            shadow.effectDistance = new Vector2(1.5f, -1.5f);
+
+            // 화면 상단 1/4 지점, 가로 중앙
+            RectTransform rt = msgObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.75f);
+            rt.anchorMax = new Vector2(0.5f, 0.75f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = new Vector2(400f, 40f);
+
+            // 3초 대기
+            yield return new WaitForSeconds(3f);
+
+            // 위로 올라가면서 페이드아웃 (1초)
+            float fadeDuration = 1f;
+            float elapsed = 0f;
+            Vector2 startPos = rt.anchoredPosition;
+
+            while (elapsed < fadeDuration)
+            {
+                if (msgObj == null) yield break;
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDuration);
+                float eased = t * t; // EaseIn — 서서히 가속
+
+                // 위로 이동 (30px)
+                rt.anchoredPosition = startPos + new Vector2(0f, eased * 30f);
+
+                // 알파 페이드아웃
+                float alpha = 1f - t;
+                msgText.color = new Color(1f, 1f, 1f, alpha);
+
+                yield return null;
+            }
+
+            if (msgObj != null)
+                Destroy(msgObj);
         }
 
         private Image CreateItemOverlay(Canvas canvas, string name, Color overlayColor)
@@ -1555,7 +2063,7 @@ private void InitializeSystems()
             hlImg.color = new Color(1f, 1f, 1f, 0.35f); hlImg.raycastTarget = false;
             RectTransform hlRt = hlObj.GetComponent<RectTransform>();
             hlRt.anchoredPosition = new Vector2(-5f, 3f); hlRt.sizeDelta = new Vector2(11f, 6f);
-            CreateItemLabel(btnObj, "망치");
+            CreateItemCountBadge(btnObj, ItemType.Hammer);
             btnObj.transform.SetAsLastSibling();
             var hammer = btnObj.AddComponent<HammerItem>();
             var type = typeof(HammerItem);
@@ -1596,7 +2104,7 @@ private void InitializeSystems()
                     art.localRotation = Quaternion.Euler(0, 0, angle);
                 }
             }
-            CreateItemLabel(btnObj, "스왑");
+            CreateItemCountBadge(btnObj, ItemType.Bomb);
             btnObj.transform.SetAsLastSibling();
             var swap = btnObj.AddComponent<JewelsHexaPuzzle.Items.SwapItem>();
             var type = typeof(JewelsHexaPuzzle.Items.SwapItem);
@@ -1650,7 +2158,7 @@ private void InitializeSystems()
                 dotRt.anchoredPosition = new Vector2(-22f + i * 14f, -24f);
                 dotRt.sizeDelta = new Vector2(4f, 4f);
             }
-            CreateItemLabel(btnObj, "라인");
+            CreateItemCountBadge(btnObj, ItemType.SSD);
             btnObj.transform.SetAsLastSibling();
             var lineDraw = btnObj.AddComponent<JewelsHexaPuzzle.Items.LineDrawItem>();
             var type = typeof(JewelsHexaPuzzle.Items.LineDrawItem);
@@ -1658,6 +2166,162 @@ private void InitializeSystems()
             type.GetField("lineDrawButton", flags)?.SetValue(lineDraw, btn);
             type.GetField("backgroundOverlay", flags)?.SetValue(lineDraw, overlay);
             hudElements.Add(btnObj);
+        }
+
+        // ============================================================
+        // 골드 추가 버튼 (좌측 하단, 육각형)
+        // ============================================================
+        private void CreateGoldAddButton(Canvas canvas)
+        {
+            float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
+            float sqrt3 = Mathf.Sqrt(3f);
+            // 왼쪽 하단 위치 계산 (아이템 버튼 대칭 위치)
+            float gridLeft = -(hSize * 1.5f * 5f);
+            float posX = gridLeft / 2f - 80f;
+            float btnHexH = ITEM_BTN_SIZE * sqrt3 / 2f;
+            float posY = hSize * sqrt3 * (-5f) - btnHexH * 0.3f - 5f;
+
+            var (btnObj, btn, btnImage) = CreateHexItemButton(canvas, "GoldAddButton",
+                new Vector2(posX, posY), GOLD_BTN_COLOR,
+                new Color(1f, 0.85f, 0.3f, 1f), new Color(0.65f, 0.50f, 0.10f, 1f));
+
+            // 코인 원형 (큰 원)
+            GameObject coinObj = new GameObject("CoinCircle");
+            coinObj.transform.SetParent(btnObj.transform, false);
+            var coinImg = coinObj.AddComponent<Image>();
+            coinImg.color = new Color(1f, 0.85f, 0.2f, 1f);
+            coinImg.raycastTarget = false;
+            RectTransform coinRt = coinObj.GetComponent<RectTransform>();
+            coinRt.anchoredPosition = new Vector2(0f, 5f);
+            coinRt.sizeDelta = new Vector2(38f, 38f);
+
+            // 코인 내부 원 (입체감)
+            GameObject innerObj = new GameObject("CoinInner");
+            innerObj.transform.SetParent(coinObj.transform, false);
+            var innerImg = innerObj.AddComponent<Image>();
+            innerImg.color = new Color(0.95f, 0.75f, 0.1f, 1f);
+            innerImg.raycastTarget = false;
+            RectTransform innerRt = innerObj.GetComponent<RectTransform>();
+            innerRt.anchoredPosition = Vector2.zero;
+            innerRt.sizeDelta = new Vector2(28f, 28f);
+
+            // 코인 G 마크
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject gObj = new GameObject("GoldMark");
+            gObj.transform.SetParent(coinObj.transform, false);
+            Text gText = gObj.AddComponent<Text>();
+            gText.text = "G";
+            gText.font = font;
+            gText.fontSize = 18;
+            gText.fontStyle = FontStyle.Bold;
+            gText.alignment = TextAnchor.MiddleCenter;
+            gText.color = new Color(0.5f, 0.35f, 0.0f, 1f);
+            gText.raycastTarget = false;
+            RectTransform gRt = gObj.GetComponent<RectTransform>();
+            gRt.anchoredPosition = Vector2.zero;
+            gRt.sizeDelta = new Vector2(30f, 30f);
+
+            // + 표시 (오른쪽 아래)
+            GameObject plusObj = new GameObject("PlusSign");
+            plusObj.transform.SetParent(btnObj.transform, false);
+            Text plusText = plusObj.AddComponent<Text>();
+            plusText.text = "+";
+            plusText.font = font;
+            plusText.fontSize = 22;
+            plusText.fontStyle = FontStyle.Bold;
+            plusText.alignment = TextAnchor.MiddleCenter;
+            plusText.color = new Color(1f, 1f, 1f, 0.9f);
+            plusText.raycastTarget = false;
+            RectTransform plusRt = plusObj.GetComponent<RectTransform>();
+            plusRt.anchoredPosition = new Vector2(16f, -14f);
+            plusRt.sizeDelta = new Vector2(24f, 24f);
+
+            // "+100" 라벨 (하단)
+            GameObject labelObj = new GameObject("GoldLabel");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            Text labelText = labelObj.AddComponent<Text>();
+            labelText.text = "+100";
+            labelText.font = font;
+            labelText.fontSize = 12;
+            labelText.fontStyle = FontStyle.Bold;
+            labelText.alignment = TextAnchor.MiddleCenter;
+            labelText.color = new Color(1f, 1f, 1f, 0.85f);
+            labelText.raycastTarget = false;
+            var labelShadow = labelObj.AddComponent<Shadow>();
+            labelShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            labelShadow.effectDistance = new Vector2(1f, -1f);
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0.5f, 0f);
+            labelRt.anchorMax = new Vector2(0.5f, 0f);
+            labelRt.pivot = new Vector2(0.5f, 0f);
+            labelRt.anchoredPosition = new Vector2(0f, 10f);
+            labelRt.sizeDelta = new Vector2(60f, 18f);
+
+            // 클릭 이벤트: 100 골드 추가
+            btn.onClick.AddListener(() =>
+            {
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayButtonClick();
+
+                AddGold(100);
+                ShowFloatingMessage("+100 골드!");
+
+                // 버튼 펄스 리액션
+                StartCoroutine(GoldButtonPulse(btnObj));
+            });
+
+            btnObj.transform.SetAsLastSibling();
+            hudElements.Add(btnObj);
+        }
+
+        private System.Collections.IEnumerator GoldButtonPulse(GameObject btnObj)
+        {
+            if (btnObj == null) yield break;
+            RectTransform rt = btnObj.GetComponent<RectTransform>();
+            if (rt == null) yield break;
+
+            Vector3 origScale = rt.localScale;
+            float duration = 0.15f;
+            float t = 0f;
+
+            // 확대
+            while (t < duration)
+            {
+                t += Time.unscaledDeltaTime;
+                float p = t / duration;
+                float scale = 1f + 0.15f * Mathf.Sin(p * Mathf.PI);
+                rt.localScale = origScale * scale;
+                yield return null;
+            }
+            rt.localScale = origScale;
+        }
+
+        // ============================================================
+        // 특수 블록 테스트 버튼 패널 (좌측 하단, 임시 테스트용)
+        // ============================================================
+        private EditorTestSystem editorTestSystemRef;
+
+        private void CreateTestBlockPanel(Canvas canvas)
+        {
+            // EditorTestSystem 컴포넌트 확인/추가
+            editorTestSystemRef = GetComponent<EditorTestSystem>();
+            if (editorTestSystemRef == null)
+            {
+                editorTestSystemRef = gameObject.AddComponent<EditorTestSystem>();
+            }
+
+            // Canvas UI 초기화 (hexGrid 직접 전달)
+            editorTestSystemRef.InitializeUI(canvas, hexGrid);
+
+            // HUD 관리에 패널 추가
+            if (editorTestSystemRef.PanelObject != null)
+                hudElements.Add(editorTestSystemRef.PanelObject);
+
+            // InputSystem에 직접 참조 전달 (FindObjectOfType 의존 제거)
+            if (inputSystem != null)
+                inputSystem.SetEditorTestSystem(editorTestSystemRef);
+
+            Debug.Log("[GameManager] 특수 블록 테스트 버튼 패널 생성 완료");
         }
 
         /// <summary>
@@ -1744,6 +2408,10 @@ private void InitializeSystems()
                 scoreManager.ResetScore();
             currentGold = 0;
 
+            // 아이템 게임당 사용 횟수 리셋
+            if (itemManager != null)
+                itemManager.ResetPerGameUsage();
+
             UpdateUI();
 
             // 직접 참조 강제 동기화
@@ -1767,7 +2435,10 @@ private void InitializeSystems()
             }
             else
             {
-                Debug.LogError($"[GameManager] Stage mode subscription FAILED! Mode check: {currentGameMode == GameMode.Stage}");
+                if (currentGameMode == GameMode.Stage)
+                    Debug.LogError($"[GameManager] Stage mode subscription FAILED! stageManager={stageManager != null}, blockRemovalSystem={blockRemovalSystem != null}");
+                else
+                    Debug.Log($"[GameManager] Non-stage mode ({currentGameMode}), skipping stage subscription.");
             }
 
             // 게임 중 미션 UI 표시
@@ -3347,6 +4018,22 @@ private void OnBigBang()
             OnGoldChanged?.Invoke(currentGold);
             uiManager.UpdateGoldDisplay(currentGold);
             SaveGold();
+        }
+
+        /// <summary>
+        /// 골드 차감 (아이템 구매 등)
+        /// </summary>
+        /// <returns>차감 성공 여부</returns>
+        public bool SpendGold(int amount)
+        {
+            if (currentGold < amount) return false;
+            currentGold -= amount;
+            OnGoldChanged?.Invoke(currentGold);
+            if (uiManager != null)
+                uiManager.UpdateGoldDisplay(currentGold);
+            SaveGold();
+            Debug.Log($"[GameManager] 골드 차감: -{amount}, 잔액: {currentGold}");
+            return true;
         }
 
         /// <summary>

@@ -91,8 +91,35 @@ namespace JewelsHexaPuzzle.Items
         private void OnHammerButtonClicked()
         {
             if (isProcessing) return;
-            if (isActive) Deactivate();
-            else Activate();
+
+            // 활성 상태에서 다시 클릭 → 비활성화
+            if (isActive)
+            {
+                Deactivate();
+                return;
+            }
+
+            // 수량 체크: 아이템이 없으면 구매 팝업 표시
+            if (ItemManager.Instance != null)
+            {
+                int count = ItemManager.Instance.GetItemCount(ItemType.Hammer);
+                if (count <= 0)
+                {
+                    // 구매 팝업 표시
+                    if (GameManager.Instance != null)
+                        GameManager.Instance.ShowItemPurchasePopup(ItemType.Hammer);
+                    return;
+                }
+
+                // 게임당 사용 제한 체크
+                if (!ItemManager.Instance.CanUseItem(ItemType.Hammer))
+                {
+                    Debug.Log("[HammerItem] 게임당 사용 제한 초과");
+                    return;
+                }
+            }
+
+            Activate();
         }
 
         // ============================================================
@@ -334,6 +361,8 @@ namespace JewelsHexaPuzzle.Items
         private void Update()
         {
             if (!isActive || isProcessing) return;
+            // 구매 팝업 열려있으면 입력 차단
+            if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
             if (Input.GetMouseButtonDown(0))
                 HandleClick(Input.mousePosition);
         }
@@ -396,6 +425,11 @@ namespace JewelsHexaPuzzle.Items
         {
             isProcessing = true;
             Debug.Log("[HammerItem] Smashing block at " + block.Coord);
+
+            // 아이템 소모
+            if (ItemManager.Instance != null)
+                ItemManager.Instance.ConsumeItem(ItemType.Hammer);
+
             bool isSpecial = block.Data.specialType != SpecialBlockType.None;
             SpecialBlockType specialType = block.Data.specialType;
 

@@ -8,36 +8,92 @@ namespace JewelsHexaPuzzle.Managers
 {
     /// <summary>
     /// 아이템 시스템 관리
-    /// 기획서 6. 아이템 구현
+    /// - 보유 수량 (PlayerPrefs 영구 저장)
+    /// - 게임당 사용 제한 (기본 3회, 증가 가능)
+    /// - 골드 구매
+    /// - 수량 변경 이벤트
     /// </summary>
     public class ItemManager : MonoBehaviour
     {
+        public static ItemManager Instance { get; private set; }
+
         [Header("References")]
         [SerializeField] private HexGrid hexGrid;
         [SerializeField] private UIManager uiManager;
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
         [SerializeField] private InputSystem inputSystem;
 
-        
+
         [Header("Item Data")]
         [SerializeField] private ItemData[] items;
-        
+
         [Header("Visual")]
         [SerializeField] private GameObject itemTargetIndicator;
         [SerializeField] private LineRenderer laserLineRenderer;
-        
+
         // 현재 사용 중인 아이템
         private ItemType? activeItem = null;
         private bool isSelectingTarget = false;
-        
+
         // 이벤트
         public event System.Action<ItemType> OnItemUsed;
         public event System.Action<ItemType> OnItemActivated;
         public event System.Action OnItemCancelled;
-        
+        /// <summary>아이템 수량 변경 시 발생 (타입, 보유수량)</summary>
+        public event System.Action<ItemType, int> OnItemCountChanged;
+
         // 아이템 보유 수량 (PlayerPrefs 저장)
         private Dictionary<ItemType, int> itemCounts = new Dictionary<ItemType, int>();
-        
+
+        // ============================================================
+        // 게임당 사용 제한 시스템
+        // ============================================================
+        private Dictionary<ItemType, int> perGameUsageCount = new Dictionary<ItemType, int>();
+        private int perGameUsageLimit = 3; // 기본 게임당 3회 제한
+
+        /// <summary>현재 게임당 사용 제한 횟수</summary>
+        public int PerGameUsageLimit => perGameUsageLimit;
+
+        // ============================================================
+        // 아이템 골드 가격 (정수)
+        // ============================================================
+        private static readonly Dictionary<ItemType, int> itemGoldPrices = new Dictionary<ItemType, int>
+        {
+            { ItemType.Hammer, 100 },
+            { ItemType.Bomb, 200 },
+            { ItemType.SixWayLaser, 300 },
+            { ItemType.SSD, 150 },
+            { ItemType.TurnPlus5, 500 }
+        };
+
+        /// <summary>아이템의 골드 가격 반환</summary>
+        public static int GetItemGoldPrice(ItemType type)
+        {
+            return itemGoldPrices.ContainsKey(type) ? itemGoldPrices[type] : 100;
+        }
+
+        // 아이템 한글 이름 매핑
+        private static readonly Dictionary<ItemType, string> itemDisplayNames = new Dictionary<ItemType, string>
+        {
+            { ItemType.Hammer, "망치" },
+            { ItemType.Bomb, "스왑" },
+            { ItemType.SixWayLaser, "레이저" },
+            { ItemType.SSD, "라인" },
+            { ItemType.TurnPlus5, "턴+5" }
+        };
+
+        /// <summary>아이템의 표시 이름 반환</summary>
+        public static string GetItemDisplayName(ItemType type)
+        {
+            return itemDisplayNames.ContainsKey(type) ? itemDisplayNames[type] : type.ToString();
+        }
+
+        private void Awake()
+        {
+            if (Instance == null)
+                Instance = this;
+        }
+
         private void Start()
         {
             LoadItemCounts();
@@ -46,7 +102,7 @@ namespace JewelsHexaPuzzle.Managers
             if (blockRemovalSystem == null)
                 blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
         }
-        
+
         /// <summary>
         /// 아이템 초기화
         /// </summary>
@@ -91,11 +147,11 @@ namespace JewelsHexaPuzzle.Managers
                     }
                 };
             }
-            
+
             // UI 업데이트
             UpdateItemUI();
         }
-        
+
         /// <summary>
         /// 아이템 수량 로드
         /// </summary>
@@ -107,7 +163,7 @@ namespace JewelsHexaPuzzle.Managers
                 itemCounts[type] = count;
             }
         }
-        
+
         /// <summary>
         /// 아이템 수량 저장
         /// </summary>
@@ -119,7 +175,120 @@ namespace JewelsHexaPuzzle.Managers
             }
             PlayerPrefs.Save();
         }
-        
+
+        // ============================================================
+        // 게임당 사용 제한
+        // ============================================================
+
+        /// <summary>
+        /// 새 게임 시작 시 게임당 사용 횟수 리셋 (GameManager에서 호출)
+        /// </summary>
+        public void ResetPerGameUsage()
+        {
+            perGameUsageCount.Clear();
+            Debug.Log("[ItemManager] 게임당 사용 횟수 리셋");
+        }
+
+        /// <summary>
+        /// 게임당 사용 제한 증가 (추후 버프/기능에서 사용)
+        /// </summary>
+        public void IncreasePerGameLimit(int amount)
+        {
+            perGameUsageLimit += amount;
+            Debug.Log($"[ItemManager] 게임당 사용 제한 증가: {perGameUsageLimit}");
+        }
+
+        /// <summary>
+        /// 특정 아이템의 이번 게임 사용 횟수
+        /// </summary>
+        public int GetPerGameUsageCount(ItemType type)
+        {
+            return perGameUsageCount.ContainsKey(type) ? perGameUsageCount[type] : 0;
+        }
+
+        /// <summary>
+        /// 이번 게임에서 아이템 사용 가능 여부 (보유 수량 + 게임당 제한 모두 확인)
+        /// </summary>
+        public bool CanUseItem(ItemType type)
+        {
+            int count = GetItemCount(type);
+            if (count <= 0) return false;
+
+            int used = GetPerGameUsageCount(type);
+            if (used >= perGameUsageLimit) return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// 이번 게임에서 남은 사용 가능 횟수
+        /// </summary>
+        public int GetRemainingUsesThisGame(ItemType type)
+        {
+            int used = GetPerGameUsageCount(type);
+            int remaining = perGameUsageLimit - used;
+            int owned = GetItemCount(type);
+            return Mathf.Min(remaining, owned);
+        }
+
+        /// <summary>
+        /// 아이템 1회 소모 (보유 수량 감소 + 게임당 사용 횟수 증가)
+        /// </summary>
+        public void ConsumeItem(ItemType type)
+        {
+            // 보유 수량 감소
+            if (itemCounts.ContainsKey(type) && itemCounts[type] > 0)
+            {
+                itemCounts[type]--;
+                SaveItemCounts();
+            }
+
+            // 게임당 사용 횟수 증가
+            if (!perGameUsageCount.ContainsKey(type))
+                perGameUsageCount[type] = 0;
+            perGameUsageCount[type]++;
+
+            // 이벤트 발생
+            OnItemCountChanged?.Invoke(type, GetItemCount(type));
+            UpdateItemUI();
+
+            Debug.Log($"[ItemManager] {type} 소모됨. 보유: {GetItemCount(type)}, 이번게임 사용: {perGameUsageCount[type]}/{perGameUsageLimit}");
+        }
+
+        // ============================================================
+        // 구매 시스템
+        // ============================================================
+
+        /// <summary>
+        /// 골드로 아이템 구매
+        /// </summary>
+        /// <returns>구매 성공 여부</returns>
+        public bool PurchaseItem(ItemType type, int quantity = 1)
+        {
+            int price = GetItemGoldPrice(type) * quantity;
+
+            if (GameManager.Instance == null)
+            {
+                Debug.LogWarning("[ItemManager] GameManager 없음, 구매 불가");
+                return false;
+            }
+
+            if (GameManager.Instance.CurrentGold < price)
+            {
+                Debug.Log($"[ItemManager] 골드 부족: 보유 {GameManager.Instance.CurrentGold}, 필요 {price}");
+                return false;
+            }
+
+            // 골드 차감
+            GameManager.Instance.SpendGold(price);
+
+            // 아이템 추가
+            AddItem(type, quantity);
+
+            Debug.Log($"[ItemManager] {type} x{quantity} 구매 완료 (골드 -{price})");
+            return true;
+        }
+
         /// <summary>
         /// 아이템 사용 시작
         /// </summary>
@@ -131,7 +300,14 @@ namespace JewelsHexaPuzzle.Managers
                 Debug.Log($"No {type} available");
                 return;
             }
-            
+
+            // 게임당 사용 제한 확인
+            if (!CanUseItem(type))
+            {
+                Debug.Log($"[ItemManager] {type} 게임당 사용 제한 초과");
+                return;
+            }
+
             // 해금 확인
             ItemData itemData = GetItemData(type);
             if (itemData != null && GameManager.Instance.CurrentStage < itemData.unlockStage)
@@ -139,26 +315,26 @@ namespace JewelsHexaPuzzle.Managers
                 Debug.Log($"{type} is locked until stage {itemData.unlockStage}");
                 return;
             }
-            
+
             activeItem = type;
             isSelectingTarget = true;
-            
+
             // 입력 모드 변경
             if (inputSystem != null)
             {
                 inputSystem.SetEnabled(false);
             }
-            
+
             // 타겟 선택 UI 표시
             if (itemTargetIndicator != null)
             {
                 itemTargetIndicator.SetActive(true);
             }
-            
+
             OnItemActivated?.Invoke(type);
             Debug.Log($"Item {type} activated. Select target.");
         }
-        
+
         /// <summary>
         /// 아이템 사용 취소
         /// </summary>
@@ -166,42 +342,42 @@ namespace JewelsHexaPuzzle.Managers
         {
             activeItem = null;
             isSelectingTarget = false;
-            
+
             if (inputSystem != null)
             {
                 inputSystem.SetEnabled(true);
             }
-            
+
             if (itemTargetIndicator != null)
             {
                 itemTargetIndicator.SetActive(false);
             }
-            
+
             OnItemCancelled?.Invoke();
         }
-        
+
         /// <summary>
         /// 타겟 선택 (화면 터치 시 호출)
         /// </summary>
         public void SelectTarget(Vector2 screenPosition)
         {
             if (!isSelectingTarget || !activeItem.HasValue) return;
-            
+
             // 화면 좌표를 그리드 좌표로 변환
             Vector2 worldPos = Camera.main.ScreenToWorldPoint(screenPosition);
             HexCoord coord = HexCoord.FromWorldPosition(worldPos, hexGrid.HexSize);
-            
+
             HexBlock targetBlock = hexGrid.GetBlock(coord);
             if (targetBlock == null)
             {
                 Debug.Log("Invalid target position");
                 return;
             }
-            
+
             // 아이템 효과 실행
             StartCoroutine(ExecuteItem(activeItem.Value, targetBlock));
         }
-        
+
         /// <summary>
         /// 아이템 효과 실행
         /// </summary>
@@ -252,44 +428,41 @@ namespace JewelsHexaPuzzle.Managers
 
             OnItemUsed?.Invoke(type);
         }
-        
+
         /// <summary>
         /// 해머 - 단일 블록 제거
         /// </summary>
         private void ExecuteHammer(HexBlock target)
         {
             if (target.Data == null) return;
-            
+
             // 제거 가능한 블록인지 확인
             if (target.Data.specialType == SpecialBlockType.FixedBlock)
             {
                 Debug.Log("Cannot remove fixed block with hammer");
                 return;
             }
-            
+
             // 비닐 제거
             if (target.Data.vinylLayer > 0)
             {
                 target.RemoveVinyl();
                 return;
             }
-            
+
             // 체인 제거
             if (target.Data.hasChain)
             {
                 target.RemoveChain();
                 return;
             }
-            
+
             // 블록 제거
             target.SetBlockData(new BlockData());
-            
-            // 이펙트 재생
-            // TODO: 해머 이펙트
-            
+
             Debug.Log($"Hammer used on {target.Coord}");
         }
-        
+
         /// <summary>
         /// 폭탄 - 주변 블록 제거
         /// </summary>
@@ -297,63 +470,60 @@ namespace JewelsHexaPuzzle.Managers
         {
             List<HexBlock> blocksToRemove = new List<HexBlock> { target };
             blocksToRemove.AddRange(hexGrid.GetNeighbors(target.Coord));
-            
+
             foreach (var block in blocksToRemove)
             {
-                if (block.Data != null && 
+                if (block.Data != null &&
                     block.Data.specialType != SpecialBlockType.FixedBlock)
                 {
                     block.SetBlockData(new BlockData());
                 }
             }
-            
-            // 폭발 이펙트
-            // TODO: 폭발 파티클
-            
+
             Debug.Log($"Bomb used on {target.Coord}, affected {blocksToRemove.Count} blocks");
         }
-        
+
         /// <summary>
         /// 6방향 레이저 - 6방향 모든 블록 제거
         /// </summary>
         private void ExecuteSixWayLaser(HexBlock target)
         {
             List<HexBlock> blocksToRemove = new List<HexBlock> { target };
-            
+
             // 6방향으로 끝까지
             for (int dir = 0; dir < 6; dir++)
             {
                 HexCoord current = target.Coord;
-                
+
                 while (true)
                 {
                     current = current.GetNeighbor(dir);
                     HexBlock block = hexGrid.GetBlock(current);
-                    
+
                     if (block == null) break;
-                    
+
                     blocksToRemove.Add(block);
                 }
             }
-            
+
             // 레이저 비주얼
             if (laserLineRenderer != null)
             {
                 StartCoroutine(ShowLaserEffect(target.transform.position));
             }
-            
+
             foreach (var block in blocksToRemove)
             {
-                if (block.Data != null && 
+                if (block.Data != null &&
                     block.Data.specialType != SpecialBlockType.FixedBlock)
                 {
                     block.SetBlockData(new BlockData());
                 }
             }
-            
+
             Debug.Log($"6-Way Laser used on {target.Coord}, affected {blocksToRemove.Count} blocks");
         }
-        
+
         /// <summary>
         /// SSD - 한붓그리기 연결 제거
         /// </summary>
@@ -362,31 +532,31 @@ namespace JewelsHexaPuzzle.Managers
             GemType targetType = startBlock.Data.gemType;
             List<HexBlock> connectedBlocks = new List<HexBlock>();
             HashSet<HexBlock> visited = new HashSet<HexBlock>();
-            
+
             // BFS로 연결된 같은 타입 또는 보석 찾기
             Queue<HexBlock> queue = new Queue<HexBlock>();
             queue.Enqueue(startBlock);
             visited.Add(startBlock);
-            
+
             while (queue.Count > 0)
             {
                 HexBlock current = queue.Dequeue();
                 connectedBlocks.Add(current);
-                
+
                 // 하이라이트 효과
                 current.SetHighlighted(true);
                 yield return new WaitForSeconds(0.05f);
-                
+
                 foreach (var neighbor in hexGrid.GetNeighbors(current.Coord))
                 {
                     if (visited.Contains(neighbor)) continue;
                     if (neighbor.Data == null) continue;
-                    
+
                     // 같은 타입이거나 보석/특수보석
-                    bool canConnect = 
+                    bool canConnect =
                         neighbor.Data.gemType == targetType ||
                         neighbor.Data.tier >= BlockTier.ProcessedGem;
-                    
+
                     if (canConnect)
                     {
                         queue.Enqueue(neighbor);
@@ -394,49 +564,49 @@ namespace JewelsHexaPuzzle.Managers
                     }
                 }
             }
-            
+
             yield return new WaitForSeconds(0.3f);
-            
+
             // 모두 제거
             foreach (var block in connectedBlocks)
             {
                 block.SetHighlighted(false);
                 block.SetBlockData(new BlockData());
             }
-            
+
             Debug.Log($"SSD used, connected {connectedBlocks.Count} blocks of type {targetType}");
         }
-        
+
         /// <summary>
         /// 레이저 이펙트 표시
         /// </summary>
         private IEnumerator ShowLaserEffect(Vector3 center)
         {
             if (laserLineRenderer == null) yield break;
-            
+
             laserLineRenderer.enabled = true;
-            
+
             // 6방향 레이저 그리기
             float duration = 0.5f;
             float elapsed = 0f;
-            
+
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
                 float alpha = 1f - (elapsed / duration);
-                
+
                 // 레이저 색상 페이드
                 Color color = laserLineRenderer.startColor;
                 color.a = alpha;
                 laserLineRenderer.startColor = color;
                 laserLineRenderer.endColor = color;
-                
+
                 yield return null;
             }
-            
+
             laserLineRenderer.enabled = false;
         }
-        
+
         /// <summary>
         /// 아이템 UI 업데이트
         /// </summary>
@@ -446,27 +616,27 @@ namespace JewelsHexaPuzzle.Managers
             {
                 for (int i = 0; i < items.Length; i++)
                 {
-                    items[i].count = itemCounts.ContainsKey(items[i].type) ? 
+                    items[i].count = itemCounts.ContainsKey(items[i].type) ?
                         itemCounts[items[i].type] : 0;
                 }
                 uiManager.UpdateItemButtons(items);
             }
         }
-        
+
         /// <summary>
         /// 아이템 데이터 가져오기
         /// </summary>
-        private ItemData GetItemData(ItemType type)
+        public ItemData GetItemData(ItemType type)
         {
             if (items == null) return null;
-            
+
             foreach (var item in items)
             {
                 if (item.type == type) return item;
             }
             return null;
         }
-        
+
         /// <summary>
         /// 아이템 추가 (구매, 보상 등)
         /// </summary>
@@ -474,14 +644,17 @@ namespace JewelsHexaPuzzle.Managers
         {
             if (!itemCounts.ContainsKey(type))
                 itemCounts[type] = 0;
-            
+
             itemCounts[type] += amount;
             SaveItemCounts();
             UpdateItemUI();
-            
+
+            // 이벤트 발생
+            OnItemCountChanged?.Invoke(type, itemCounts[type]);
+
             Debug.Log($"Added {amount} {type}. Total: {itemCounts[type]}");
         }
-        
+
         /// <summary>
         /// 아이템 보유 수량 확인
         /// </summary>
@@ -490,7 +663,7 @@ namespace JewelsHexaPuzzle.Managers
             return itemCounts.ContainsKey(type) ? itemCounts[type] : 0;
         }
     }
-    
+
     /// <summary>
     /// 아이템 타입
     /// </summary>
@@ -502,7 +675,7 @@ namespace JewelsHexaPuzzle.Managers
         SSD = 4,
         TurnPlus5 = 5  // 턴 +5 (게임오버 시)
     }
-    
+
     /// <summary>
     /// 아이템 데이터
     /// </summary>

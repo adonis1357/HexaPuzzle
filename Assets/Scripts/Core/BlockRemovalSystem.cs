@@ -1010,8 +1010,15 @@ namespace JewelsHexaPuzzle.Core
         {
             if (block == null) yield break;
 
+            // 이미 합체 애니메이션으로 scale=0인 블록은 축소 애니메이션 생략
+            if (block.transform.localScale.sqrMagnitude < 0.001f)
+            {
+                yield break;
+            }
+
             float elapsed = 0f;
             float duration = removeAnimationDuration; // 0.14초
+            float startScale = block.transform.localScale.x;
 
             while (elapsed < duration)
             {
@@ -1021,7 +1028,7 @@ namespace JewelsHexaPuzzle.Core
 
                 // EaseInBack: 살짝 커졌다가 빠르게 축소 (탄력감)
                 float easeT = t * t * (2.7f * t - 1.7f);
-                float scale = Mathf.Max(0f, 1f - easeT);
+                float scale = Mathf.Max(0f, startScale * (1f - easeT));
 
                 block.transform.localScale = Vector3.one * scale;
                 yield return null;

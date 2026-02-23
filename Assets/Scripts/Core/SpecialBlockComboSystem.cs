@@ -11,7 +11,7 @@
 //
 // [합성 조합 6종]
 //   1. 드릴+드릴 → 6방향 드릴 (3축 양방향 동시 발사)
-//   2. 드릴+폭탄 → Ring1 폭발 후 바깥 방향 드릴 6발
+//   2. 드릴+폭탄 → Ring1+Ring2 폭발 후, 드릴 방향 축으로 확장 범위에서 드릴 발사
 //   3. 드릴+X블록 → 같은 색 블록 전부 드릴로 변환 후 동시 발동
 //   4. 폭탄+폭탄 → 4칸 범위 순차 폭발
 //   5. 폭탄+X블록 → 같은 색 블록 전부 폭탄으로 변환 후 동시 폭발
@@ -408,13 +408,17 @@ namespace JewelsHexaPuzzle.Core
 
         // ============================================================
         // 합성 조합 2: 드릴 + 폭탄
-        // Ring1 폭발 후, 각 이웃 위치에서 바깥 방향으로 드릴 발사
+        // 폭탄 2단 폭발 후, 드릴 방향 축으로 폭발범위를 확장하여 드릴 발사
         // ============================================================
 
         /// <summary>
         /// 드릴+폭탄 합성:
         ///   1단계: Ring1(인접 6칸) 폭발
-        ///   2단계: 각 Ring1 위치에서 바깥 방향으로 드릴 투사체 발사
+        ///   2단계: Ring2(2칸 범위) 폭발
+        ///   3단계: 폭발 범위 경계에서 드릴 방향에 수직으로 나란히 배치된
+        ///          약 5개 블록이 드릴 방향으로 병렬 드릴 동시 발사 (양방향 총 ~10발)
+        ///
+        /// 연출: 폭발 파동 → 발사 기지 플래시 → 병렬 드릴 동시 발사
         /// </summary>
         private IEnumerator DrillBombCombo(HexCoord pos, Vector3 worldPos, GemType color, DrillDirection drillDir)
         {
@@ -425,129 +429,353 @@ namespace JewelsHexaPuzzle.Core
             int blockScoreSum = 0;
             var gemCountsByColor = new Dictionary<GemType, int>();
             var pendingSpecials = new List<HexBlock>();
+            HashSet<HexCoord> alreadyTargeted = new HashSet<HexCoord>();
+            alreadyTargeted.Add(pos); // 합성 위치
 
-            // === 1단계: Ring1 폭발 ===
-            List<HexBlock> neighbors = hexGrid != null ? hexGrid.GetNeighbors(pos) : new List<HexBlock>();
+            var allDestroyCoroutines = new List<Coroutine>();
 
-            // 폭발 이펙트
+            // ================================================================
+            // 1단계: Ring1 폭발 (인접 6칸)
+            // ================================================================
+
+            // 중앙 폭발 이펙트
             if (bombSystem != null)
                 StartCoroutine(bombSystem.BombExplosionEffectPublic(worldPos, comboColor));
-
-            StartCoroutine(ScreenShake(VisualConstants.ShakeMediumIntensity, VisualConstants.ShakeMediumDuration));
-
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBombSound();
 
-            // Ring1 블록 파괴
-            var destroyCoroutines = new List<Coroutine>();
-            var survivingNeighborCoords = new List<HexCoord>(); // 드릴 발사 위치용
-
-            foreach (var neighbor in neighbors)
+            // Ring1 타겟 수집
+            List<HexBlock> ring1Targets = new List<HexBlock>();
+            if (hexGrid != null)
             {
-                if (neighbor == null || neighbor.Data == null || neighbor.Data.gemType == GemType.None) continue;
+                var neighbors = hexGrid.GetNeighbors(pos);
+                foreach (var neighbor in neighbors)
+                {
+                    if (neighbor == null || neighbor.Data == null || neighbor.Data.gemType == GemType.None) continue;
+                    alreadyTargeted.Add(neighbor.Coord);
+                    ring1Targets.Add(neighbor);
+                }
+            }
 
-                survivingNeighborCoords.Add(neighbor.Coord);
+            // Ring1 블록 파괴
+            foreach (var target in ring1Targets)
+            {
+                if (target == null || target.Data == null || target.Data.gemType == GemType.None) continue;
 
-                // 적군 방패 흡수 체크
-                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(neighbor))
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
                     continue;
 
-                if (neighbor.Data.specialType != SpecialBlockType.None &&
-                    neighbor.Data.specialType != SpecialBlockType.FixedBlock)
+                if (target.Data.specialType != SpecialBlockType.None &&
+                    target.Data.specialType != SpecialBlockType.FixedBlock)
                 {
-                    if (!pendingSpecials.Contains(neighbor))
+                    if (!pendingSpecials.Contains(target))
                     {
-                        pendingSpecials.Add(neighbor);
-                        neighbor.SetPendingActivation();
-                        neighbor.StartWarningBlink(10f);
+                        pendingSpecials.Add(target);
+                        target.SetPendingActivation();
+                        target.StartWarningBlink(10f);
                     }
                 }
                 else
                 {
-                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(neighbor.Data.tier);
-                    CollectGemCount(neighbor, gemCountsByColor);
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+                    CollectGemCount(target, gemCountsByColor);
 
-                    Color blockColor = GemColors.GetColor(neighbor.Data.gemType);
+                    Color blockColor = GemColors.GetColor(target.Data.gemType);
                     if (bombSystem != null)
-                        destroyCoroutines.Add(StartCoroutine(
-                            bombSystem.DestroyBlockWithExplosionPublic(neighbor, blockColor, worldPos, true)));
+                        allDestroyCoroutines.Add(StartCoroutine(
+                            bombSystem.DestroyBlockWithExplosionPublic(target, blockColor, worldPos, true)));
                 }
             }
 
-            yield return new WaitForSeconds(0.15f);
+            // ================================================================
+            // 2단계: 0.1초 후 Ring2 폭발 (2칸 범위)
+            // ================================================================
+            yield return new WaitForSeconds(0.1f);
 
-            // === 2단계: 각 Ring1 위치에서 바깥 방향 드릴 발사 ===
-            var drillCoroutines = new List<Coroutine>();
+            // Ring2 충격파 이펙트
+            StartCoroutine(ComboExplosionWave(worldPos, comboColor, 0.85f));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity * 0.7f, VisualConstants.ShakeLargeDuration * 0.8f));
 
-            // Ring1의 각 좌표에서 바깥 방향으로 드릴 발사
-            foreach (var neighborCoord in survivingNeighborCoords)
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            // Ring2 타겟 수집 (Ring1과 중복 제외)
+            List<HexBlock> ring2Targets = new List<HexBlock>();
+            if (hexGrid != null)
             {
-                if (drillSystem == null || hexGrid == null) continue;
-
-                // 바깥 방향 = 이웃 좌표 - 중심 좌표
-                HexCoord delta = neighborCoord - pos;
-                var (drillDirection, positive) = DeltaToDrillDirection(delta);
-
-                // 해당 방향으로 타겟 수집
-                List<HexBlock> targets = drillSystem.GetBlocksInDirectionPublic(neighborCoord, drillDirection, positive);
-
-                // 특수블록 분리
-                List<HexBlock> normalTargets = new List<HexBlock>();
-                foreach (var t in targets)
+                var allInR2 = HexCoord.GetHexesInRadius(pos, 2);
+                foreach (var coord in allInR2)
                 {
-                    if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+                    if (alreadyTargeted.Contains(coord)) continue;
+                    if (!hexGrid.IsValidCoord(coord)) continue;
 
-                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(t))
-                        continue;
+                    HexBlock block = hexGrid.GetBlock(coord);
+                    if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
 
-                    if (t.Data.specialType != SpecialBlockType.None &&
-                        t.Data.specialType != SpecialBlockType.FixedBlock)
-                    {
-                        if (!pendingSpecials.Contains(t))
-                        {
-                            pendingSpecials.Add(t);
-                            t.SetPendingActivation();
-                            t.StartWarningBlink(10f);
-                        }
-                    }
-                    else
-                    {
-                        blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
-                        CollectGemCount(t, gemCountsByColor);
-                        normalTargets.Add(t);
-                    }
-                }
-
-                // 드릴 투사체 발사 (6방향 동시 병렬)
-                if (normalTargets.Count > 0)
-                {
-                    Vector3 neighborWorldPos = GetWorldPosition(neighborCoord);
-                    drillCoroutines.Add(StartCoroutine(
-                        drillSystem.DrillLineWithProjectilePublic(
-                            neighborWorldPos, normalTargets, drillDirection, positive, comboColor, true)));
+                    alreadyTargeted.Add(coord);
+                    ring2Targets.Add(block);
                 }
             }
 
-            // 히트스톱 + 줌펀치
+            // Ring2 블록 파괴
+            foreach (var target in ring2Targets)
+            {
+                if (target == null || target.Data == null || target.Data.gemType == GemType.None) continue;
+
+                if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
+                    continue;
+
+                if (target.Data.specialType != SpecialBlockType.None &&
+                    target.Data.specialType != SpecialBlockType.FixedBlock)
+                {
+                    if (!pendingSpecials.Contains(target))
+                    {
+                        pendingSpecials.Add(target);
+                        target.SetPendingActivation();
+                        target.StartWarningBlink(10f);
+                    }
+                }
+                else
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+                    CollectGemCount(target, gemCountsByColor);
+
+                    Color blockColor = GemColors.GetColor(target.Data.gemType);
+                    if (bombSystem != null)
+                        allDestroyCoroutines.Add(StartCoroutine(
+                            bombSystem.DestroyBlockWithExplosionPublic(target, blockColor, worldPos, true)));
+                }
+            }
+
+            // ================================================================
+            // 3단계: 폭발 범위 경계에서 드릴 방향으로 5개 병렬 드릴 발사
+            //
+            // 폭발 범위(Ring2)의 경계에서 드릴 방향에 수직인 라인을 따라
+            // 나란히 배치된 블록들(약 5개)이 각각 드릴 방향으로 동시 발사.
+            // 양방향(positive/negative) 모두 실행하므로 총 약 10개 드릴.
+            // ================================================================
+            yield return new WaitForSeconds(0.12f);
+
+            // 히트스톱 + 줌펀치 (드릴 발사 강조)
             StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            var drillCoroutines = new List<Coroutine>();
+
+            // 드릴 방향 델타
+            HexCoord drillDelta = drillSystem != null
+                ? drillSystem.GetDirectionDeltaPublic(drillDir, true)
+                : new HexCoord(0, 1);
+
+            // 드릴 방향에 수직인 2개 축 구하기
+            // hex 6방향: (0,1), (1,-1), (1,0), (0,-1), (-1,1), (-1,0)
+            // drillDelta와 내적이 0인 (= 수직인) 방향들을 수집
+            HexCoord[] allHexDirs = {
+                new HexCoord(0, 1), new HexCoord(1, -1), new HexCoord(1, 0),
+                new HexCoord(0, -1), new HexCoord(-1, 1), new HexCoord(-1, 0)
+            };
+            // 수직 방향 = drillDelta와 같지도, 반대도 아닌 4방향 중 인접한 2쌍
+            // 실제로는 drillDelta의 양쪽 60° 방향 2개가 수직 성분
+            List<HexCoord> perpDirs = new List<HexCoord>();
+            foreach (var d in allHexDirs)
+            {
+                // drillDelta와 같거나 반대 방향이면 스킵
+                if ((d.q == drillDelta.q && d.r == drillDelta.r) ||
+                    (d.q == -drillDelta.q && d.r == -drillDelta.r))
+                    continue;
+                perpDirs.Add(d);
+            }
+
+            // 양방향(positive/negative)으로 드릴 발사
+            bool[] drillSides = { true, false };
+            foreach (bool positive in drillSides)
+            {
+                HexCoord fireDir = positive ? drillDelta : new HexCoord(-drillDelta.q, -drillDelta.r);
+
+                // Ring2 경계에서 드릴 방향 쪽 끝 좌표 = pos + fireDir * 2
+                HexCoord edgeCenter = pos + new HexCoord(fireDir.q * 2, fireDir.r * 2);
+
+                // edgeCenter + 수직 방향으로 ±2칸 탐색하여 발사 기지 좌표 수집
+                // (edgeCenter 자체 포함, 최대 5개 좌표)
+                List<HexCoord> launchCoords = new List<HexCoord>();
+                launchCoords.Add(edgeCenter); // 중앙
+
+                // 수직 방향 중 한 쌍을 골라 양쪽으로 확장
+                // perpDirs에서 서로 반대가 아닌 독립 방향 2개를 선택
+                HashSet<HexCoord> launchSet = new HashSet<HexCoord>();
+                launchSet.Add(edgeCenter);
+
+                foreach (var pd in perpDirs)
+                {
+                    for (int step = 1; step <= 2; step++)
+                    {
+                        HexCoord candidate = edgeCenter + new HexCoord(pd.q * step, pd.r * step);
+                        if (hexGrid != null && hexGrid.IsValidCoord(candidate) && !launchSet.Contains(candidate))
+                        {
+                            // Ring2 경계 또는 바로 바깥에 있는 좌표만 (거리 2~3)
+                            int distFromCenter = candidate.DistanceTo(pos);
+                            if (distFromCenter >= 2)
+                            {
+                                launchSet.Add(candidate);
+                                launchCoords.Add(candidate);
+                            }
+                        }
+                    }
+                }
+
+                // 발사 전 글로우 이펙트: 각 발사 기지에 플래시
+                foreach (var launchCoord in launchCoords)
+                {
+                    Vector3 lp = GetWorldPosition(launchCoord);
+                    StartCoroutine(DrillExtImpactFlash(lp, VisualConstants.Brighten(comboColor)));
+                }
+
+                yield return new WaitForSeconds(0.08f);
+
+                // 각 발사 기지에서 드릴 방향으로 드릴 투사체 발사
+                foreach (var launchCoord in launchCoords)
+                {
+                    if (drillSystem == null) continue;
+
+                    // 발사 기지 블록이 아직 남아있으면 파괴 (폭발 범위 안이면 이미 파괴됨)
+                    if (!alreadyTargeted.Contains(launchCoord))
+                    {
+                        alreadyTargeted.Add(launchCoord);
+                        HexBlock launchBlock = hexGrid != null ? hexGrid.GetBlock(launchCoord) : null;
+                        if (launchBlock != null && launchBlock.Data != null && launchBlock.Data.gemType != GemType.None)
+                        {
+                            if (launchBlock.Data.specialType != SpecialBlockType.None &&
+                                launchBlock.Data.specialType != SpecialBlockType.FixedBlock)
+                            {
+                                if (!pendingSpecials.Contains(launchBlock))
+                                {
+                                    pendingSpecials.Add(launchBlock);
+                                    launchBlock.SetPendingActivation();
+                                    launchBlock.StartWarningBlink(10f);
+                                }
+                            }
+                            else
+                            {
+                                blockScoreSum += ScoreCalculator.GetBlockBaseScore(launchBlock.Data.tier);
+                                CollectGemCount(launchBlock, gemCountsByColor);
+                                StartCoroutine(DestroyFlash(launchBlock.transform.position,
+                                    GemColors.GetColor(launchBlock.Data.gemType)));
+                                allDestroyCoroutines.Add(StartCoroutine(DualEasingDestroy(launchBlock, 0.15f)));
+                            }
+                        }
+                    }
+
+                    // 드릴 방향으로 타겟 수집
+                    List<HexBlock> drillTargets = drillSystem.GetBlocksInDirectionPublic(
+                        launchCoord, drillDir, positive);
+
+                    List<HexBlock> filteredTargets = new List<HexBlock>();
+                    foreach (var t in drillTargets)
+                    {
+                        if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+                        if (alreadyTargeted.Contains(t.Coord)) continue;
+
+                        alreadyTargeted.Add(t.Coord);
+
+                        if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(t))
+                            continue;
+
+                        if (t.Data.specialType != SpecialBlockType.None &&
+                            t.Data.specialType != SpecialBlockType.FixedBlock)
+                        {
+                            if (!pendingSpecials.Contains(t))
+                            {
+                                pendingSpecials.Add(t);
+                                t.SetPendingActivation();
+                                t.StartWarningBlink(10f);
+                            }
+                        }
+                        else
+                        {
+                            blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+                            CollectGemCount(t, gemCountsByColor);
+                            filteredTargets.Add(t);
+                        }
+                    }
+
+                    if (filteredTargets.Count > 0)
+                    {
+                        Vector3 launchWorldPos = GetWorldPosition(launchCoord);
+                        drillCoroutines.Add(StartCoroutine(
+                            drillSystem.DrillLineWithProjectilePublic(
+                                launchWorldPos, filteredTargets, drillDir, positive, comboColor, true)));
+                    }
+                }
+            }
+
+            // 드릴 발사 순간 추가 화면 흔들림
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
 
             // 미션 시스템 보고
             if (gemCountsByColor.Count > 0)
                 GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
 
-            // 파괴 애니메이션 완료 대기
-            foreach (var co in destroyCoroutines)
+            // 모든 파괴 애니메이션 완료 대기
+            foreach (var co in allDestroyCoroutines)
                 yield return co;
 
             // 드릴 완료 대기
             foreach (var co in drillCoroutines)
                 yield return co;
 
-            // 점수
-            int totalScore = 600 + blockScoreSum;
+            // 점수 (기본 700 + 블록 점수)
+            int totalScore = 700 + blockScoreSum;
             Debug.Log($"[ComboSystem] DrillBomb complete. Score={totalScore}");
             OnComboComplete?.Invoke(totalScore);
+        }
+
+        /// <summary>
+        /// 드릴 발사 기지에서의 임팩트 플래시 이펙트.
+        /// 병렬 드릴 발사 직전 각 발사 위치에 플래시를 표시.
+        /// </summary>
+        private IEnumerator DrillExtImpactFlash(Vector3 pos, Color color)
+        {
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            GameObject flash = new GameObject("DrillExtImpact");
+            flash.transform.SetParent(parent, false);
+            flash.transform.position = pos;
+
+            var img = flash.AddComponent<Image>();
+            img.sprite = HexBlock.GetHexFlashSprite();
+            img.raycastTarget = false;
+            img.color = new Color(1f, 1f, 1f, 0.85f);
+
+            RectTransform rt = flash.GetComponent<RectTransform>();
+            float size = 40f;
+            rt.sizeDelta = new Vector2(size, size);
+
+            float elapsed = 0f;
+            float duration = 0.12f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                yield return null;
+
+                // yield 이후 오브젝트 파괴 체크
+                if ((object)flash == null || flash == null) yield break;
+
+                float scale = 1f + t * 1.5f;
+                rt.sizeDelta = new Vector2(size * scale, size * scale);
+
+                // 백색 → 컬러 전환 + 페이드
+                Color c = Color.Lerp(Color.white, color, t);
+                c.a = 0.85f * (1f - t);
+                img.color = c;
+            }
+
+            if ((object)flash != null && flash != null) Destroy(flash);
         }
 
         // ============================================================
@@ -576,16 +804,23 @@ namespace JewelsHexaPuzzle.Core
                 {
                     if (block == null || block.Data == null) continue;
                     if (block.Data.gemType == GemType.None) continue;
-                    if (block.Coord == pos) continue; // 합성 위치 제외
+                    if (block.Coord == pos) continue;
 
                     if (block.Data.gemType == xColor)
                         colorTargets.Add(block);
                 }
             }
 
+            // 합성 위치에서 가까운 순으로 정렬
+            colorTargets.Sort((a, b) => a.Coord.DistanceTo(pos).CompareTo(b.Coord.DistanceTo(pos)));
+
             Debug.Log($"[ComboSystem] DrillXBlock: {colorTargets.Count} blocks of color {xColor}");
 
-            // 타겟 블록들을 드릴로 변환
+            // 순차적으로 시간차를 두며 드릴로 변환
+            float perBlockDelay = Mathf.Clamp(0.8f / Mathf.Max(1, colorTargets.Count), 0.02f, 0.1f);
+            int transformIndex = 0;
+            int transformTotal = colorTargets.Count;
+
             foreach (var block in colorTargets)
             {
                 if (block == null || block.Data == null) continue;
@@ -602,12 +837,25 @@ namespace JewelsHexaPuzzle.Core
                 if (drillSystem != null)
                     drillSystem.CreateDrillBlock(block, drillDir, block.Data.gemType);
 
-                // 변환 플래시 이펙트
+                // 변환 플래시 이펙트 + 사운드 + 스케일 펀치
                 StartCoroutine(TransformFlash(block.transform.position, GemColors.GetColor(xColor)));
+                StartCoroutine(TransformScalePunch(block));
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayTransformTickSound(transformIndex, transformTotal);
+                transformIndex++;
+
+                yield return new WaitForSeconds(perBlockDelay);
             }
 
-            // 변환 이펙트 대기
-            yield return new WaitForSeconds(0.2f);
+            // 마지막 변환 후 빨간 테두리 표시 + 0.3초 딜레이
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.specialType != SpecialBlockType.Drill) continue;
+                SetRedBorder(block);
+            }
+
+            yield return new WaitForSeconds(0.3f);
 
             // 변환된 모든 드릴 동시 발동
             foreach (var block in colorTargets)
@@ -615,6 +863,7 @@ namespace JewelsHexaPuzzle.Core
                 if (block == null || block.Data == null) continue;
                 if (block.Data.specialType != SpecialBlockType.Drill) continue;
 
+                ClearRedBorder(block);
                 if (drillSystem != null)
                     drillSystem.ActivateDrill(block);
             }
@@ -791,9 +1040,16 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
+            // 합성 위치에서 가까운 순으로 정렬
+            colorTargets.Sort((a, b) => a.Coord.DistanceTo(pos).CompareTo(b.Coord.DistanceTo(pos)));
+
             Debug.Log($"[ComboSystem] BombXBlock: {colorTargets.Count} blocks of color {xColor}");
 
-            // 타겟 블록들을 폭탄으로 변환
+            // 순차적으로 시간차를 두며 폭탄으로 변환
+            float perBlockDelay = Mathf.Clamp(0.8f / Mathf.Max(1, colorTargets.Count), 0.02f, 0.1f);
+            int transformIndex = 0;
+            int transformTotal = colorTargets.Count;
+
             foreach (var block in colorTargets)
             {
                 if (block == null || block.Data == null) continue;
@@ -810,12 +1066,25 @@ namespace JewelsHexaPuzzle.Core
                 if (bombSystem != null)
                     bombSystem.CreateBombBlock(block, block.Data.gemType);
 
-                // 변환 플래시 이펙트
+                // 변환 플래시 이펙트 + 사운드 + 스케일 펀치
                 StartCoroutine(TransformFlash(block.transform.position, GemColors.GetColor(xColor)));
+                StartCoroutine(TransformScalePunch(block));
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayTransformTickSound(transformIndex, transformTotal);
+                transformIndex++;
+
+                yield return new WaitForSeconds(perBlockDelay);
             }
 
-            // 변환 이펙트 대기
-            yield return new WaitForSeconds(0.2f);
+            // 마지막 변환 후 빨간 테두리 표시 + 0.3초 딜레이
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.specialType != SpecialBlockType.Bomb) continue;
+                SetRedBorder(block);
+            }
+
+            yield return new WaitForSeconds(0.3f);
 
             // 변환된 모든 폭탄 동시 발동
             foreach (var block in colorTargets)
@@ -823,6 +1092,7 @@ namespace JewelsHexaPuzzle.Core
                 if (block == null || block.Data == null) continue;
                 if (block.Data.specialType != SpecialBlockType.Bomb) continue;
 
+                ClearRedBorder(block);
                 if (bombSystem != null)
                     bombSystem.ActivateBomb(block);
             }
@@ -1274,45 +1544,166 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 블록 변환 시 짧은 플래시 이펙트.
-        /// 드릴이나 폭탄으로 변환될 때 위치에 번쩍이는 연출.
+        /// 블록 변환 시 플래시+링+스파크 이펙트.
+        /// XBlock 합성에서 블록이 특수 블록으로 변환될 때 사용.
         /// </summary>
         private IEnumerator TransformFlash(Vector3 pos, Color color)
         {
             Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+            Color brightColor = VisualConstants.Brighten(color);
 
+            // ── 1. 중앙 플래시 (빠른 팽창 + 페이드아웃) ──
             GameObject flash = new GameObject("TransformFlash");
             flash.transform.SetParent(parent, false);
             flash.transform.position = pos;
+            var flashImg = flash.AddComponent<Image>();
+            flashImg.sprite = HexBlock.GetHexFlashSprite();
+            flashImg.raycastTarget = false;
+            flashImg.color = new Color(1f, 1f, 1f, 0.95f); // 밝은 백색 시작
+            RectTransform flashRt = flash.GetComponent<RectTransform>();
+            float flashSize = 30f;
+            flashRt.sizeDelta = new Vector2(flashSize, flashSize);
 
-            var img = flash.AddComponent<Image>();
-            img.sprite = HexBlock.GetHexFlashSprite();
-            img.raycastTarget = false;
-            Color flashColor = VisualConstants.Brighten(color);
-            flashColor.a = 0.9f;
-            img.color = flashColor;
+            // ── 2. 확산 링 (테두리 스프라이트로 원형 파동) ──
+            GameObject ring = new GameObject("TransformRing");
+            ring.transform.SetParent(parent, false);
+            ring.transform.position = pos;
+            var ringImg = ring.AddComponent<Image>();
+            ringImg.sprite = HexBlock.GetHexBorderSprite();
+            ringImg.raycastTarget = false;
+            ringImg.color = new Color(brightColor.r, brightColor.g, brightColor.b, 0.8f);
+            RectTransform ringRt = ring.GetComponent<RectTransform>();
+            ringRt.sizeDelta = new Vector2(10f, 10f);
 
-            RectTransform rt = flash.GetComponent<RectTransform>();
-            float size = 40f;
-            rt.sizeDelta = new Vector2(size, size);
+            // ── 3. 작은 스파크 4개 ──
+            GameObject[] sparks = new GameObject[4];
+            Vector2[] sparkDirs = {
+                new Vector2(1f, 0.5f).normalized,
+                new Vector2(-1f, 0.5f).normalized,
+                new Vector2(0.5f, -1f).normalized,
+                new Vector2(-0.5f, -1f).normalized
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                sparks[i] = new GameObject("TransformSpark");
+                sparks[i].transform.SetParent(parent, false);
+                sparks[i].transform.position = pos;
+                var sImg = sparks[i].AddComponent<Image>();
+                sImg.sprite = HexBlock.GetHexFlashSprite();
+                sImg.raycastTarget = false;
+                sImg.color = brightColor;
+                RectTransform sRt = sparks[i].GetComponent<RectTransform>();
+                sRt.sizeDelta = new Vector2(8f, 8f);
+            }
 
+            // ── 애니메이션 (0.18초) ──
             float elapsed = 0f;
-            float duration = 0.1f;
+            float duration = 0.18f;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
 
-                float scale = 1f + t * 1.5f;
-                rt.sizeDelta = new Vector2(size * scale, size * scale);
-                flashColor.a = 0.9f * (1f - t);
-                img.color = flashColor;
+                // 플래시: 급팽창 후 페이드
+                float flashScale = 1f + t * 2.5f;
+                flashRt.sizeDelta = new Vector2(flashSize * flashScale, flashSize * flashScale);
+                float flashAlpha = t < 0.3f ? 0.95f : 0.95f * (1f - (t - 0.3f) / 0.7f);
+                Color fc = Color.Lerp(Color.white, brightColor, t);
+                fc.a = Mathf.Max(0f, flashAlpha);
+                flashImg.color = fc;
+
+                // 링: 확산 + 페이드
+                float ringScale = 10f + t * 70f;
+                ringRt.sizeDelta = new Vector2(ringScale, ringScale);
+                ringImg.color = new Color(brightColor.r, brightColor.g, brightColor.b, 0.8f * (1f - t));
+
+                // 스파크: 바깥으로 사출 + 축소 + 페이드
+                for (int i = 0; i < 4; i++)
+                {
+                    if (sparks[i] == null) continue;
+                    float dist = t * 35f;
+                    sparks[i].transform.position = pos + (Vector3)(sparkDirs[i] * dist);
+                    float sScale = Mathf.Max(0f, 1f - t * 1.2f);
+                    sparks[i].GetComponent<RectTransform>().sizeDelta = new Vector2(8f * sScale, 8f * sScale);
+                    var sImg = sparks[i].GetComponent<Image>();
+                    Color sc = brightColor;
+                    sc.a = Mathf.Max(0f, 1f - t * 1.5f);
+                    sImg.color = sc;
+                }
 
                 yield return null;
             }
 
             Destroy(flash);
+            Destroy(ring);
+            for (int i = 0; i < 4; i++)
+                if (sparks[i] != null) Destroy(sparks[i]);
+        }
+
+        // ── XBlock 합성 전용: 변환 스케일 펀치 + 빨간 테두리 표시/해제 ──
+
+        /// <summary>
+        /// 블록이 특수 블록으로 변환될 때 짧은 스케일 펀치 (1.0 → 1.25 → 1.0)
+        /// </summary>
+        private IEnumerator TransformScalePunch(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            float elapsed = 0f;
+            float duration = 0.12f;
+            Vector3 originalScale = block.transform.localScale;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                // 빠른 팽창 후 복귀: sin 곡선
+                float punch = 1f + 0.25f * Mathf.Sin(t * Mathf.PI);
+                block.transform.localScale = originalScale * punch;
+                yield return null;
+            }
+
+            if (block != null)
+                block.transform.localScale = originalScale;
+        }
+
+        /// <summary>
+        /// 블록에 빨간 경고 테두리(오버레이)를 추가한다.
+        /// 발동 직전 0.3초 동안 유지되어 플레이어에게 실행 예고를 알린다.
+        /// </summary>
+        private void SetRedBorder(HexBlock block)
+        {
+            if (block == null) return;
+
+            // 기존 오버레이 제거 (중복 방지)
+            ClearRedBorder(block);
+
+            GameObject border = new GameObject("ComboRedBorder");
+            border.transform.SetParent(block.transform, false);
+            RectTransform rt = border.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(-2f, -2f);
+            rt.offsetMax = new Vector2(2f, 2f);
+
+            Image img = border.AddComponent<Image>();
+            img.sprite = HexBlock.GetHexBorderSprite();
+            img.type = Image.Type.Simple;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+            img.color = new Color(1f, 0.15f, 0.1f, 0.95f); // 선명한 빨간색
+        }
+
+        /// <summary>
+        /// SetRedBorder로 추가한 빨간 테두리 오버레이를 제거한다.
+        /// </summary>
+        private void ClearRedBorder(HexBlock block)
+        {
+            if (block == null) return;
+            Transform existing = block.transform.Find("ComboRedBorder");
+            if (existing != null)
+                Destroy(existing.gameObject);
         }
 
         /// <summary>

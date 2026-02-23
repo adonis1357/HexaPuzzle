@@ -847,6 +847,30 @@ namespace JewelsHexaPuzzle.Utils
         }
 
         /// <summary>
+        /// 특수 블록 변환 사운드 — 짧고 밝은 "틱!" (XBlock 합성에서 블록이 하나씩 변환될 때)
+        /// 상승 톤 + 금속성 클릭으로 변환 느낌 연출
+        /// </summary>
+        public static AudioClip CreateTransformTick(float duration = 0.08f)
+        {
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float tNorm = (float)i / sampleCount;
+                float envelope = (1f - tNorm) * (1f - tNorm); // 빠른 감쇠
+                float tone = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(1200f, 1800f, tNorm) * t); // 상승 톤
+                float click = Mathf.Sin(2f * Mathf.PI * 4000f * t) * (1f - tNorm * 3f); // 금속 클릭
+                click = Mathf.Clamp01(click) * 0.3f;
+                data[i] = (tone * 0.6f + click) * envelope * 0.4f;
+            }
+            ApplyFades(data, 4, 32);
+            AudioClip clip = AudioClip.Create("TransformTick", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>
         /// 적군 스폰 사운드 — 저음 럼블 + 불길한 단조 톤 (0.25s)
         /// </summary>
         public static AudioClip CreateEnemySpawnSound(float duration = 0.25f)

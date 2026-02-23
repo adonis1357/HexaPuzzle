@@ -112,8 +112,33 @@ namespace JewelsHexaPuzzle.Items
         private void OnLineDrawButtonClicked()
         {
             if (isProcessing) return;
-            if (isActive) Deactivate();
-            else Activate();
+
+            // 활성 상태에서 다시 클릭 → 비활성화
+            if (isActive)
+            {
+                Deactivate();
+                return;
+            }
+
+            // 수량 체크: 아이템이 없으면 구매 팝업 표시
+            if (ItemManager.Instance != null)
+            {
+                int count = ItemManager.Instance.GetItemCount(ItemType.SSD);
+                if (count <= 0)
+                {
+                    if (GameManager.Instance != null)
+                        GameManager.Instance.ShowItemPurchasePopup(ItemType.SSD);
+                    return;
+                }
+
+                if (!ItemManager.Instance.CanUseItem(ItemType.SSD))
+                {
+                    Debug.Log("[LineDrawItem] 게임당 사용 제한 초과");
+                    return;
+                }
+            }
+
+            Activate();
         }
 
         // ============================================================
@@ -307,6 +332,8 @@ namespace JewelsHexaPuzzle.Items
         private void Update()
         {
             if (!isActive || isProcessing) return;
+            // 구매 팝업 열려있으면 입력 차단
+            if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
 
 #if UNITY_EDITOR || UNITY_STANDALONE
             HandleMouseInput();
@@ -535,6 +562,10 @@ namespace JewelsHexaPuzzle.Items
         {
             isProcessing = true;
             Debug.Log($"[LineDrawItem] Removing {blocksToRemove.Count} blocks");
+
+            // 아이템 소모
+            if (ItemManager.Instance != null)
+                ItemManager.Instance.ConsumeItem(ItemType.SSD);
 
             // 1. HitStop + ZoomPunch (체인 길이에 비례)
             float hitStopDur = Mathf.Min(blocksToRemove.Count * 0.005f, VisualConstants.HitStopDurationSmall);

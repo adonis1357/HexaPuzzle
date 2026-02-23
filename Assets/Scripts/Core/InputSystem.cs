@@ -25,6 +25,18 @@ namespace JewelsHexaPuzzle.Core
         // 합성 시스템 참조
         private SpecialBlockComboSystem comboSystem;
 
+        // 에디터 테스트 시스템 참조
+        private EditorTestSystem cachedEditorTestSystem;
+
+        /// <summary>
+        /// 외부에서 EditorTestSystem 참조를 직접 설정
+        /// </summary>
+        public void SetEditorTestSystem(EditorTestSystem ets)
+        {
+            cachedEditorTestSystem = ets;
+            Debug.Log($"[InputSystem] EditorTestSystem 참조 설정됨: {(ets != null ? "OK" : "null")}");
+        }
+
         [SerializeField] private Camera mainCamera;
         [SerializeField] private Canvas gameCanvas;
 
@@ -124,6 +136,8 @@ namespace JewelsHexaPuzzle.Core
             comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
             if (comboSystem != null)
                 Debug.Log("[InputSystem] SpecialBlockComboSystem auto-found: " + comboSystem.name);
+
+            cachedEditorTestSystem = FindObjectOfType<EditorTestSystem>();
         }
 
 private void Update()
@@ -138,10 +152,19 @@ private void Update()
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
             if (comboSystem != null && comboSystem.IsComboActive) return;
 
-            // 에디터 모드 활성화 시 일반 입력 차단
-            EditorTestSystem editorTestSystem = GetComponent<EditorTestSystem>();
-            if (editorTestSystem != null && editorTestSystem.IsEditorModeActive)
+            // 구매 팝업 열려있으면 입력 차단
+            if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+
+            // 에디터 모드 활성화 시: 블록 설치만 처리, 회전/합성/발동 완전 차단
+            if (cachedEditorTestSystem == null)
+                cachedEditorTestSystem = FindObjectOfType<EditorTestSystem>();
+            if (cachedEditorTestSystem != null && cachedEditorTestSystem.IsEditorModeActive)
+            {
+                HandleEditorPlacement();
                 return;
+            }
+            // 에디터 모드 비활성 상태면 에디터 전용 입력 상태 초기화
+            editorPointerDown = false;
 
             HandleInput();
         }
@@ -155,12 +178,37 @@ private void Update()
 #endif
         }
 
+        /// <summary>
+        /// 테스트 버튼 패널 위의 클릭인지 확인
+        /// </summary>
+        private bool IsClickOnTestPanel(Vector2 screenPos)
+        {
+            if (EventSystem.current == null) return false;
+            var pointerData = new PointerEventData(EventSystem.current);
+            pointerData.position = screenPos;
+            var results = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointerData, results);
+            foreach (var r in results)
+            {
+                if (r.gameObject != null && r.gameObject.name.StartsWith("TestBtn_"))
+                    return true;
+            }
+            return false;
+        }
+
         private void HandleMouseInput()
         {
             Vector2 mousePos = Input.mousePosition;
 
             if (Input.GetMouseButtonDown(0))
             {
+                // 테스트 버튼 패널 위 클릭이면 무시 (Button.onClick에서 처리)
+                if (IsClickOnTestPanel(mousePos))
+                {
+                    isPointerDown = false;
+                    return;
+                }
+
                 isPointerDown = true;
                 pointerDownPosition = mousePos;
                 // 합성 드래그 시작 시도
@@ -181,6 +229,16 @@ private void Update()
             if (Input.GetMouseButtonUp(0) && isPointerDown)
             {
                 isPointerDown = false;
+
+                // MouseUp 시점에서 에디터 모드가 활성화되었으면 (Button.onClick이 먼저 실행된 경우)
+                // 회전/발동 대신 에디터 설치 처리
+                if (cachedEditorTestSystem != null && cachedEditorTestSystem.IsEditorModeActive)
+                {
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    CancelComboDrag();
+                    return; // 이 프레임에서는 아무것도 하지 않음 — 다음 프레임부터 HandleEditorPlacement가 처리
+                }
 
                 if (isDraggingCombo)
                 {
@@ -213,6 +271,13 @@ private void Update()
 
                 if (touch.phase == TouchPhase.Began)
                 {
+                    // 테스트 버튼 패널 위 터치이면 무시
+                    if (IsClickOnTestPanel(touch.position))
+                    {
+                        isPointerDown = false;
+                        return;
+                    }
+
                     isPointerDown = true;
                     pointerDownPosition = touch.position;
                     TryStartComboDrag(touch.position);
@@ -229,6 +294,15 @@ private void Update()
                 if (touch.phase == TouchPhase.Ended && isPointerDown)
                 {
                     isPointerDown = false;
+
+                    // TouchEnded 시점에서 에디터 모드가 활성화되었으면 회전/발동 차단
+                    if (cachedEditorTestSystem != null && cachedEditorTestSystem.IsEditorModeActive)
+                    {
+                        ClearHighlight();
+                        hasValidCluster = false;
+                        CancelComboDrag();
+                        return;
+                    }
 
                     if (isDraggingCombo)
                     {
@@ -647,6 +721,98 @@ private void Update()
             var lineImg = comboLineObj.AddComponent<Image>();
             lineImg.color = new Color(1f, 0.85f, 0.2f, 0.7f);
             lineImg.raycastTarget = false;
+        }
+
+        // ============================================================
+        // 에디터 모드: 블록 설치 전용 입력 처리
+        // 회전/합성/특수블록 발동은 여기서 절대 실행되지 않음
+        // ============================================================
+
+        // 에디터 모드 전용 상태 (일반 isPointerDown과 분리)
+        private bool editorPointerDown = false;
+        private Vector2 editorPointerDownPos;
+
+        private void HandleEditorPlacement()
+        {
+            // 하이라이트/클러스터 상태 정리 (회전 절대 방지)
+            if (hasValidCluster) ClearHighlight();
+            hasValidCluster = false;
+            if (isDraggingCombo) CancelComboDrag();
+            isPointerDown = false;
+
+#if UNITY_EDITOR || UNITY_STANDALONE
+            // ── 에디터/PC: 마우스 입력 ──
+            if (Input.GetMouseButtonDown(0))
+            {
+                // 테스트 버튼 위 클릭이면 Button.onClick에서 처리 → 여기선 무시
+                if (IsClickOnTestPanel(Input.mousePosition))
+                {
+                    editorPointerDown = false;
+                    return;
+                }
+
+                // 그리드 블록 위 클릭 시작
+                editorPointerDown = true;
+                editorPointerDownPos = Input.mousePosition;
+            }
+
+            if (Input.GetMouseButtonUp(0))
+            {
+                if (editorPointerDown)
+                {
+                    editorPointerDown = false;
+                    float drag = Vector2.Distance(editorPointerDownPos, (Vector2)Input.mousePosition);
+                    if (drag < DRAG_CANCEL_THRESHOLD)
+                    {
+                        EditorPlaceAtScreen(Input.mousePosition);
+                    }
+                }
+            }
+#else
+            // ── 모바일: 터치 입력 ──
+            if (Input.touchCount > 0)
+            {
+                Touch touch = Input.GetTouch(0);
+
+                if (touch.phase == TouchPhase.Began)
+                {
+                    if (IsClickOnTestPanel(touch.position))
+                    {
+                        editorPointerDown = false;
+                        return;
+                    }
+
+                    editorPointerDown = true;
+                    editorPointerDownPos = touch.position;
+                }
+
+                if (touch.phase == TouchPhase.Ended && editorPointerDown)
+                {
+                    editorPointerDown = false;
+                    float drag = Vector2.Distance(editorPointerDownPos, touch.position);
+                    if (drag < DRAG_CANCEL_THRESHOLD)
+                    {
+                        EditorPlaceAtScreen(touch.position);
+                    }
+                }
+
+                if (touch.phase == TouchPhase.Canceled)
+                {
+                    editorPointerDown = false;
+                }
+            }
+#endif
+        }
+
+        private void EditorPlaceAtScreen(Vector2 screenPos)
+        {
+            Vector2 localPos = ScreenToLocalPosition(screenPos);
+            HexBlock block = GetBlockAtPosition(localPos);
+
+            Debug.Log($"[InputSystem] EditorPlaceAtScreen: screenPos={screenPos}, block={block?.Coord.ToString() ?? "null"}");
+
+            // EditorTestSystem에 위임
+            cachedEditorTestSystem.TryPlaceOnBlock(block);
         }
 
         public void SetEnabled(bool enabled)
