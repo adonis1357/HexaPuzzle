@@ -55,6 +55,8 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private DonutBlockSystem donutSystem;       // 무지개(도넛) 특수 블록 시스템 (같은 색 전체 파괴)
         [SerializeField] private XBlockSystem xBlockSystem;          // X블록 특수 블록 시스템 (링 색상 파괴)
         [SerializeField] private LaserBlockSystem laserSystem;       // 레이저 특수 블록 시스템 (3축 빔 파괴)
+        [SerializeField] private DroneBlockSystem droneSystem;       // 드론 특수 블록 시스템 (우선순위 단일 타격)
+        private SpecialBlockComboSystem comboSystem;                  // 특수 블록 합성 시스템 (즉시 합성용)
 
         // ============================================================
         // 애니메이션 설정값 (시간 관련)
@@ -249,10 +251,9 @@ namespace JewelsHexaPuzzle.Core
                 xBlockSystem = FindObjectOfType<XBlockSystem>();
             if (laserSystem == null)
                 laserSystem = FindObjectOfType<LaserBlockSystem>();
-
-
-
-
+            if (droneSystem == null)
+                droneSystem = FindObjectOfType<DroneBlockSystem>();
+            comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
         }
 
         /// <summary>
@@ -485,6 +486,26 @@ namespace JewelsHexaPuzzle.Core
                     }
                     break;
 
+                case SpecialBlockType.Drone:
+                    if (droneSystem != null)
+                    {
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
+                        droneSystem.ActivateDrone(block);
+                        float droneTimeout = 5f;
+                        float droneWaited = 0f;
+                        while (droneSystem.IsActivating && droneWaited < droneTimeout)
+                        {
+                            droneWaited += Time.deltaTime;
+                            yield return null;
+                        }
+                        if (droneSystem.IsActivating)
+                        {
+                            Debug.LogWarning("[BRS] Drone activation timeout! ForceReset.");
+                            droneSystem.ForceReset();
+                        }
+                    }
+                    break;
+
                 case SpecialBlockType.Laser:
                     // 레이저 제거됨 — 기존 Laser 블록이 남아있을 경우 Bomb으로 대체 발동
                     if (bombSystem != null)
@@ -662,6 +683,10 @@ namespace JewelsHexaPuzzle.Core
                 case SpecialBlockType.Laser:
                     if (laserSystem != null)
                         laserSystem.CreateLaserBlock(block, gemType);
+                    break;
+                case SpecialBlockType.Drone:
+                    if (droneSystem != null)
+                        droneSystem.CreateDroneBlock(block, gemType);
                     break;
             }
         }
@@ -2232,8 +2257,10 @@ public void TriggerBigBang()
 
             foreach (var match in matches)
             {
+                Debug.Log($"[BRS] 매칭 처리: count={match.blocks.Count}, specialType={match.createdSpecialType}, spawnBlock={match.specialSpawnBlock?.Coord}");
                 if (match.createdSpecialType != SpecialBlockType.None && match.specialSpawnBlock != null)
                 {
+                    Debug.Log($"[BRS] 특수 블록 생성 시작: {match.createdSpecialType} at ({match.specialSpawnBlock.Coord})");
                     // 특수 블록 합체 사운드
                     if (AudioManager.Instance != null)
                         AudioManager.Instance.PlaySpecialGemSound();
@@ -2252,6 +2279,22 @@ public void TriggerBigBang()
                             match.createdSpecialType,
                             currentCascadeDepth,
                             match.specialSpawnBlock.transform.position);
+
+                    // X블록 생성 시 기존 특수 블록과 즉시 합성
+                    if (match.createdSpecialType == SpecialBlockType.XBlock &&
+                        match.preExistingSpecialType != SpecialBlockType.None &&
+                        comboSystem != null)
+                    {
+                        Debug.Log($"[BRS] X블록 즉시 합성: 기존={match.preExistingSpecialType} at ({match.specialSpawnBlock.Coord})");
+                        match.specialSpawnBlock.ClearData();
+                        newlyCreatedSpecials.Remove(match.specialSpawnBlock);
+                        yield return StartCoroutine(comboSystem.ExecuteInPlaceCombo(
+                            match.specialSpawnBlock.Coord,
+                            match.specialSpawnBlock.transform.position,
+                            match.gemType,
+                            match.preExistingSpecialType,
+                            match.preExistingDrillDirection));
+                    }
                 }
             }
 

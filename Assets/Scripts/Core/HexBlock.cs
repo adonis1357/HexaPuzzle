@@ -39,6 +39,7 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite donutIconSprite;
         private static Sprite xBlockIconSprite;
         private static Sprite laserIconSprite;
+        private static Sprite droneIconSprite;
         private static Sprite chainOverlaySprite;
         private static Sprite thornOverlaySprite;
 
@@ -901,6 +902,12 @@ private void UpdateSpecialIndicator()
                     ShowSpecialIcon(laserIconSprite);
                     break;
 
+                case SpecialBlockType.Drone:
+                    if (droneIconSprite == null)
+                        droneIconSprite = DroneBlockSystem.GetDroneIconSprite();
+                    ShowSpecialIcon(droneIconSprite);
+                    break;
+
                 case SpecialBlockType.TimeBomb:
                     if (drillIndicator != null) drillIndicator.enabled = false;
                     ShowTimerText(blockData.timeBombCount);
@@ -1064,6 +1071,12 @@ public void ShowBombIndicator()
             if (bombIconSprite == null)
                 bombIconSprite = BombBlockSystem.GetBombIconSprite();
             ShowSpecialIcon(bombIconSprite);
+        }
+public void ShowDroneIndicator()
+        {
+            if (droneIconSprite == null)
+                droneIconSprite = DroneBlockSystem.GetDroneIconSprite();
+            ShowSpecialIcon(droneIconSprite);
         }
 
         private void SetGemColor(Color color)

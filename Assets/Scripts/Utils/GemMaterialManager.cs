@@ -110,6 +110,12 @@ namespace JewelsHexaPuzzle.Utils
                         mat.SetFloat("_EnergyPulse", 0.15f);
                         mat.SetFloat("_RainbowStrength", 0.4f);
                         break;
+                    case SpecialBlockType.Drone:
+                        mat.SetFloat("_ShimmerSpeed", 2.0f);
+                        mat.SetFloat("_ShimmerIntensity", 0.12f);
+                        mat.SetFloat("_EnergyPulse", 0.14f);
+                        mat.SetFloat("_RainbowStrength", 0f);
+                        break;
                 }
 
                 _specialMats[type] = mat;

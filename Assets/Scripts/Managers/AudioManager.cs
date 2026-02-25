@@ -80,6 +80,7 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralEnemySpawn;
         private AudioClip proceduralChromophageRemoval;
         private AudioClip proceduralTransformTick;
+        private AudioClip proceduralDroneSound;
 
         // 배경음악 캐시
         private AudioClip proceduralLobbySereneBGM;
@@ -203,6 +204,9 @@ namespace JewelsHexaPuzzle.Managers
 
             // 특수 블록 변환 틱 사운드 (XBlock 합성용)
             proceduralTransformTick = ProceduralAudio.CreateTransformTick(0.08f);
+
+            // 드론: 프로펠러 윙윙 + 급하강 타격 (0.5s)
+            proceduralDroneSound = ProceduralAudio.CreateDroneSound(0.5f);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
@@ -434,6 +438,7 @@ namespace JewelsHexaPuzzle.Managers
         public void PlayLaserSound() => PlaySFX(Resolve(laserSound, proceduralLaser), 0.7f);
         public void PlayDonutSound() => PlaySFX(Resolve(donutSound, proceduralDonut), 0.7f);
         public void PlayXBlockSound() => PlaySFX(Resolve(xBlockSound, proceduralXBlock), 0.7f);
+        public void PlayDroneSound() => PlaySFX(proceduralDroneSound, 0.7f);
 
         // 블록 파괴/착지 (피치 변형 + 동시 재생 제한)
         public void PlayBlockDestroySound() => PlaySFXWithVariationAndLimit(Resolve(blockDestroySound, proceduralBlockDestroy), 0.08f, 3, 0.65f);

@@ -55,6 +55,9 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>X블록 특수 블록 시스템. X블록 생성/발동 기능 사용.</summary>
         private XBlockSystem xBlockSystem;
 
+        /// <summary>드론 특수 블록 시스템. 드론 생성/발동 기능 사용.</summary>
+        private DroneBlockSystem droneSystem;
+
         /// <summary>블록 제거 시스템. 낙하 및 캐스케이드 처리 위임.</summary>
         private BlockRemovalSystem blockRemovalSystem;
 
@@ -98,11 +101,13 @@ namespace JewelsHexaPuzzle.Core
             drillSystem = FindObjectOfType<DrillBlockSystem>();
             bombSystem = FindObjectOfType<BombBlockSystem>();
             xBlockSystem = FindObjectOfType<XBlockSystem>();
+            droneSystem = FindObjectOfType<DroneBlockSystem>();
             blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
 
             if (drillSystem == null) Debug.LogWarning("[ComboSystem] DrillBlockSystem not found!");
             if (bombSystem == null) Debug.LogWarning("[ComboSystem] BombBlockSystem not found!");
             if (xBlockSystem == null) Debug.LogWarning("[ComboSystem] XBlockSystem not found!");
+            if (droneSystem == null) Debug.LogWarning("[ComboSystem] DroneBlockSystem not found!");
             if (blockRemovalSystem == null) Debug.LogWarning("[ComboSystem] BlockRemovalSystem not found!");
         }
 
@@ -146,13 +151,14 @@ namespace JewelsHexaPuzzle.Core
 
         /// <summary>
         /// 합성 가능한 특수 블록 타입인지 확인합니다.
-        /// Drill, Bomb, XBlock만 합성 가능.
+        /// Drill, Bomb, XBlock, Drone만 합성 가능.
         /// </summary>
         private bool IsComboableType(SpecialBlockType type)
         {
             return type == SpecialBlockType.Drill ||
                    type == SpecialBlockType.Bomb ||
-                   type == SpecialBlockType.XBlock;
+                   type == SpecialBlockType.XBlock ||
+                   type == SpecialBlockType.Drone;
         }
 
         /// <summary>
@@ -253,6 +259,32 @@ namespace JewelsHexaPuzzle.Core
             {
                 Debug.Log("[ComboSystem] >> XBlock + XBlock Combo");
                 yield return StartCoroutine(XBlockXBlockCombo(comboPos, comboWorldPos));
+            }
+            // ── 드론 합성 조합 (4가지) ──
+            else if (sourceType == SpecialBlockType.Drone && targetType == SpecialBlockType.Drone)
+            {
+                Debug.Log("[ComboSystem] >> Drone + Drone Combo");
+                yield return StartCoroutine(DroneDroneCombo(comboPos, comboWorldPos, comboColor));
+            }
+            else if ((sourceType == SpecialBlockType.Drone && targetType == SpecialBlockType.Drill) ||
+                     (sourceType == SpecialBlockType.Drill && targetType == SpecialBlockType.Drone))
+            {
+                Debug.Log("[ComboSystem] >> Drone + Drill Combo");
+                DrillDirection drillDir = sourceType == SpecialBlockType.Drill ? sourceDrillDir : targetDrillDir;
+                yield return StartCoroutine(DroneDrillCombo(comboPos, comboWorldPos, comboColor, drillDir));
+            }
+            else if ((sourceType == SpecialBlockType.Drone && targetType == SpecialBlockType.Bomb) ||
+                     (sourceType == SpecialBlockType.Bomb && targetType == SpecialBlockType.Drone))
+            {
+                Debug.Log("[ComboSystem] >> Drone + Bomb Combo");
+                yield return StartCoroutine(DroneBombCombo(comboPos, comboWorldPos, comboColor));
+            }
+            else if ((sourceType == SpecialBlockType.Drone && targetType == SpecialBlockType.XBlock) ||
+                     (sourceType == SpecialBlockType.XBlock && targetType == SpecialBlockType.Drone))
+            {
+                Debug.Log("[ComboSystem] >> Drone + XBlock Combo");
+                GemType xColor = sourceType == SpecialBlockType.XBlock ? sourceGem : targetGem;
+                yield return StartCoroutine(DroneXBlockCombo(comboPos, comboWorldPos, xColor));
             }
             else
             {
@@ -1253,6 +1285,731 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
+        // 합성 조합 7: 드론 + 드론
+        // 3개 랜덤 타겟 순차 타격 (우선순위 기반)
+        // ============================================================
+
+        /// <summary>
+        /// 드론+드론 합성: 우선순위 기반으로 3개 타겟을 순차 타격.
+        /// 각 타격마다 드론 비행 + 티어 강등 적용.
+        /// </summary>
+        private IEnumerator DroneDroneCombo(HexCoord pos, Vector3 worldPos, GemType color)
+        {
+            SetupEffectParent();
+
+            Color comboColor = GemColors.GetColor(color);
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+
+            // 히트스톱 + 줌펀치
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationMedium));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
+
+            // 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDroneSound();
+
+            // 5개 드론 동시 비행 타격
+            int strikes = 5;
+            HashSet<HexBlock> alreadyStruck = new HashSet<HexBlock>();
+
+            // 1) 타겟 5개 미리 선정
+            List<HexBlock> targets = new List<HexBlock>();
+            for (int i = 0; i < strikes; i++)
+            {
+                HexBlock target = FindBestTarget(pos, alreadyStruck);
+                if (target == null)
+                {
+                    Debug.Log($"[ComboSystem] DroneDrone: 타겟 {i + 1} - 타겟 없음");
+                    break;
+                }
+                alreadyStruck.Add(target);
+                targets.Add(target);
+
+                // 점수 수집
+                if (target.Data != null && target.Data.specialType == SpecialBlockType.None)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+                    CollectGemCount(target, gemCountsByColor);
+                }
+            }
+
+            if (targets.Count == 0)
+            {
+                Debug.Log("[ComboSystem] DroneDrone: 타겟 없음, 종료");
+                OnComboComplete?.Invoke(400);
+                yield break;
+            }
+
+            // 2) 5개 드론 동시 비행 시작 (각 드론 약간의 시간차로 발사)
+            List<Coroutine> flyCoroutines = new List<Coroutine>();
+            for (int i = 0; i < targets.Count; i++)
+            {
+                Vector3 targetPos = targets[i].transform.position;
+                float delay = i * 0.06f; // 각 드론 0.06초 간격으로 발사 (동시 느낌 유지)
+                flyCoroutines.Add(StartCoroutine(ComboDroneFlyWithDelay(worldPos, targetPos, comboColor, delay, i)));
+            }
+
+            // 3) 모든 드론 비행 완료 대기 (가장 늦은 드론: delay + 비행시간)
+            float maxWait = (targets.Count - 1) * 0.06f + 0.35f;
+            yield return new WaitForSeconds(maxWait);
+
+            // 4) 모든 타겟에 동시 타격 적용
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                HexBlock target = targets[i];
+                if (target == null || target.Data == null) continue;
+
+                // 타격 플래시
+                StartCoroutine(DestroyFlash(target.transform.position, comboColor));
+
+                // 타격 효과
+                if (target.Data != null && target.Data.specialType != SpecialBlockType.None &&
+                    target.Data.specialType != SpecialBlockType.FixedBlock)
+                {
+                    target.SetPendingActivation();
+                    target.StartWarningBlink(10f);
+                }
+                else
+                {
+                    ApplyDroneStrikeCombo(target);
+                }
+            }
+
+            yield return new WaitForSeconds(0.1f);
+
+            // 미션 보고
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            int totalScore = 500 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DroneDrone complete. Targets={targets.Count}, Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 8: 드론 + 드릴
+        // 드론이 타겟 블록까지 비행 후 해당 블록에서 3축 드릴 발사
+        // ============================================================
+
+        /// <summary>
+        /// 드론+드릴 합성: 드론이 우선순위 타겟까지 비행 후,
+        /// 타겟 위치에서 원래 드릴 방향(drillDir) 양쪽 2방향 드릴 발사
+        /// </summary>
+        private IEnumerator DroneDrillCombo(HexCoord pos, Vector3 worldPos, GemType color, DrillDirection drillDir)
+        {
+            SetupEffectParent();
+
+            Color comboColor = GemColors.GetColor(color);
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+            var pendingSpecials = new List<HexBlock>();
+
+            // 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDroneSound();
+
+            // 타겟 선택
+            HexBlock target = FindBestTarget(pos, new HashSet<HexBlock>());
+            HexCoord drillPos = pos;
+            Vector3 drillWorldPos = worldPos;
+
+            if (target != null)
+            {
+                drillPos = target.Coord;
+                drillWorldPos = target.transform.position;
+
+                // 드론 비행 이펙트
+                yield return StartCoroutine(ComboDroneFly(worldPos, drillWorldPos, comboColor));
+
+                // 타겟 블록 파괴 (1데미지)
+                if (target.Data != null)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+                    CollectGemCount(target, gemCountsByColor);
+                    StartCoroutine(DestroyFlash(drillWorldPos, comboColor));
+                    target.ClearData();
+                }
+            }
+
+            // 히트스톱 + 줌펀치
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            // 타겟 위치에서 원래 드릴 방향(drillDir) 양쪽 2방향만 발사
+            bool[] sides = { true, false };
+            var allCoroutines = new List<Coroutine>();
+
+            foreach (bool positive in sides)
+            {
+                if (drillSystem == null) continue;
+
+                List<HexBlock> targets = drillSystem.GetBlocksInDirectionPublic(drillPos, drillDir, positive);
+                List<HexBlock> normalTargets = new List<HexBlock>();
+                foreach (var t in targets)
+                {
+                    if (t == null || t.Data == null || t.Data.gemType == GemType.None) continue;
+                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(t))
+                        continue;
+                    if (t.Data.specialType != SpecialBlockType.None &&
+                        t.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        if (!pendingSpecials.Contains(t))
+                        {
+                            pendingSpecials.Add(t);
+                            t.SetPendingActivation();
+                            t.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        blockScoreSum += ScoreCalculator.GetBlockBaseScore(t.Data.tier);
+                        CollectGemCount(t, gemCountsByColor);
+                        normalTargets.Add(t);
+                    }
+                }
+
+                if (normalTargets.Count > 0)
+                {
+                    allCoroutines.Add(StartCoroutine(
+                        drillSystem.DrillLineWithProjectilePublic(
+                            drillWorldPos, normalTargets, drillDir, positive, comboColor, true)));
+                }
+            }
+
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDrillSound();
+
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            foreach (var co in allCoroutines)
+                yield return co;
+
+            int totalScore = 600 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DroneDrill complete. drillDir={drillDir}, Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 9: 드론 + 폭탄
+        // 드론이 타겟까지 비행 후 해당 위치에서 폭탄 폭발
+        // ============================================================
+
+        /// <summary>
+        /// 드론+폭탄 합성: 우선순위 타겟까지 드론 비행 후,
+        /// 타겟 위치에서 Ring1+Ring2 2단 폭발
+        /// </summary>
+        private IEnumerator DroneBombCombo(HexCoord pos, Vector3 worldPos, GemType color)
+        {
+            SetupEffectParent();
+
+            Color comboColor = GemColors.GetColor(color);
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+            var pendingSpecials = new List<HexBlock>();
+            var allDestroyCoroutines = new List<Coroutine>();
+
+            // 사운드
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDroneSound();
+
+            // 타겟 선택
+            HexBlock target = FindBestTarget(pos, new HashSet<HexBlock>());
+            HexCoord bombPos = pos;
+            Vector3 bombWorldPos = worldPos;
+
+            if (target != null)
+            {
+                bombPos = target.Coord;
+                bombWorldPos = target.transform.position;
+
+                // 드론 비행 이펙트
+                yield return StartCoroutine(ComboDroneFly(worldPos, bombWorldPos, comboColor));
+
+                // 타겟 블록 파괴
+                if (target.Data != null)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+                    CollectGemCount(target, gemCountsByColor);
+                    target.ClearData();
+                }
+            }
+
+            // 히트스톱 + 줌펀치
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+
+            // 폭발 이펙트
+            if (bombSystem != null)
+                StartCoroutine(bombSystem.BombExplosionEffectPublic(bombWorldPos, comboColor));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            // Ring1 폭발
+            HashSet<HexCoord> alreadyTargeted = new HashSet<HexCoord>();
+            alreadyTargeted.Add(bombPos);
+
+            if (hexGrid != null)
+            {
+                var neighbors = hexGrid.GetNeighbors(bombPos);
+                foreach (var neighbor in neighbors)
+                {
+                    if (neighbor == null || neighbor.Data == null || neighbor.Data.gemType == GemType.None) continue;
+                    alreadyTargeted.Add(neighbor.Coord);
+
+                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(neighbor))
+                        continue;
+
+                    if (neighbor.Data.specialType != SpecialBlockType.None &&
+                        neighbor.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        if (!pendingSpecials.Contains(neighbor))
+                        {
+                            pendingSpecials.Add(neighbor);
+                            neighbor.SetPendingActivation();
+                            neighbor.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        blockScoreSum += ScoreCalculator.GetBlockBaseScore(neighbor.Data.tier);
+                        CollectGemCount(neighbor, gemCountsByColor);
+                        Color blockColor = GemColors.GetColor(neighbor.Data.gemType);
+                        if (bombSystem != null)
+                            allDestroyCoroutines.Add(StartCoroutine(
+                                bombSystem.DestroyBlockWithExplosionPublic(neighbor, blockColor, bombWorldPos, true)));
+                    }
+                }
+            }
+
+            // Ring2 폭발 (0.1초 후)
+            yield return new WaitForSeconds(0.1f);
+            StartCoroutine(ComboExplosionWave(bombWorldPos, comboColor, 0.85f));
+
+            if (hexGrid != null)
+            {
+                var allInR2 = HexCoord.GetHexesInRadius(bombPos, 2);
+                foreach (var coord in allInR2)
+                {
+                    if (alreadyTargeted.Contains(coord)) continue;
+                    if (!hexGrid.IsValidCoord(coord)) continue;
+
+                    HexBlock block = hexGrid.GetBlock(coord);
+                    if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+
+                    alreadyTargeted.Add(coord);
+
+                    if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(block))
+                        continue;
+
+                    if (block.Data.specialType != SpecialBlockType.None &&
+                        block.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        if (!pendingSpecials.Contains(block))
+                        {
+                            pendingSpecials.Add(block);
+                            block.SetPendingActivation();
+                            block.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        blockScoreSum += ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+                        CollectGemCount(block, gemCountsByColor);
+                        Color blockColor = GemColors.GetColor(block.Data.gemType);
+                        if (bombSystem != null)
+                            allDestroyCoroutines.Add(StartCoroutine(
+                                bombSystem.DestroyBlockWithExplosionPublic(block, blockColor, bombWorldPos, true)));
+                    }
+                }
+            }
+
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            foreach (var co in allDestroyCoroutines)
+                yield return co;
+
+            int totalScore = 600 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DroneBomb complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 합성 조합 10: 드론 + X블록
+        // 같은 색 블록을 모두 드론으로 변환 후 동시 발동
+        // ============================================================
+
+        /// <summary>
+        /// 드론+X블록 합성: X블록 색상과 같은 블록을 모두 드론으로 변환 후
+        /// 순차적으로 드론 발동 (각각 우선순위 타겟 타격)
+        /// </summary>
+        private IEnumerator DroneXBlockCombo(HexCoord pos, Vector3 worldPos, GemType xColor)
+        {
+            SetupEffectParent();
+
+            int blockScoreSum = 0;
+            var gemCountsByColor = new Dictionary<GemType, int>();
+            Color comboColor = GemColors.GetColor(xColor);
+
+            // 같은 색 블록 수집
+            List<HexBlock> colorTargets = new List<HexBlock>();
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null || block.Data == null) continue;
+                    if (block.Data.gemType == GemType.None) continue;
+                    if (block.Coord == pos) continue;
+                    if (block.Data.gemType == xColor)
+                        colorTargets.Add(block);
+                }
+            }
+
+            // 가까운 순 정렬
+            colorTargets.Sort((a, b) => a.Coord.DistanceTo(pos).CompareTo(b.Coord.DistanceTo(pos)));
+
+            Debug.Log($"[ComboSystem] DroneXBlock: {colorTargets.Count} blocks of color {xColor}");
+
+            // 순차적으로 드론으로 변환
+            float perBlockDelay = Mathf.Clamp(0.8f / Mathf.Max(1, colorTargets.Count), 0.02f, 0.1f);
+            int transformIndex = 0;
+            int transformTotal = colorTargets.Count;
+
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+
+                if (block.Data.specialType == SpecialBlockType.None ||
+                    block.Data.specialType == SpecialBlockType.FixedBlock)
+                {
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(block.Data.tier);
+                    CollectGemCount(block, gemCountsByColor);
+                }
+
+                // 드론으로 변환
+                if (droneSystem != null)
+                    droneSystem.CreateDroneBlock(block, block.Data.gemType);
+
+                StartCoroutine(TransformFlash(block.transform.position, comboColor));
+                StartCoroutine(TransformScalePunch(block));
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayTransformTickSound(transformIndex, transformTotal);
+                transformIndex++;
+
+                yield return new WaitForSeconds(perBlockDelay);
+            }
+
+            // 빨간 테두리 표시
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.specialType != SpecialBlockType.Drone) continue;
+                SetRedBorder(block);
+            }
+
+            yield return new WaitForSeconds(0.3f);
+
+            // 변환된 모든 드론 동시 발동
+            foreach (var block in colorTargets)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.specialType != SpecialBlockType.Drone) continue;
+
+                ClearRedBorder(block);
+                if (droneSystem != null)
+                    droneSystem.ActivateDrone(block);
+            }
+
+            // 히트스톱 + 줌펀치
+            StartCoroutine(HitStop(VisualConstants.HitStopDurationLarge));
+            StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
+            StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDroneSound();
+
+            if (gemCountsByColor.Count > 0)
+                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+
+            // 드론 완료 대기 (최대 5초)
+            float timeout = 5f;
+            float waited = 0f;
+            while (waited < timeout && droneSystem != null && droneSystem.IsActivating)
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            if (waited >= timeout)
+                Debug.LogWarning("[ComboSystem] DroneXBlock timeout! Forcing completion.");
+
+            int totalScore = 700 + blockScoreSum;
+            Debug.Log($"[ComboSystem] DroneXBlock complete. Score={totalScore}");
+            OnComboComplete?.Invoke(totalScore);
+        }
+
+        // ============================================================
+        // 드론 합성 유틸 메서드
+        // ============================================================
+
+        /// <summary>
+        /// 우선순위 기반 최적 타겟 블록 검색 (이미 타격한 블록 제외)
+        /// </summary>
+        private HexBlock FindBestTarget(HexCoord fromPos, HashSet<HexBlock> excludeBlocks)
+        {
+            if (hexGrid == null) return null;
+
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (excludeBlocks.Contains(block)) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+                candidates.Add(block);
+            }
+
+            if (candidates.Count == 0) return null;
+
+            HexCoord origin = new HexCoord(0, 0);
+            candidates.Sort((a, b) =>
+            {
+                int prioA = GetComboTargetPriority(a);
+                int prioB = GetComboTargetPriority(b);
+                if (prioA != prioB) return prioB.CompareTo(prioA);
+                int distA = a.Coord.DistanceTo(origin);
+                int distB = b.Coord.DistanceTo(origin);
+                if (distA != distB) return distB.CompareTo(distA);
+                return b.Coord.r.CompareTo(a.Coord.r);
+            });
+
+            // 최상위 우선순위가 기본 블록(50)이면 기본 블록들 중 랜덤 선택
+            int topPriority = GetComboTargetPriority(candidates[0]);
+            if (topPriority == 50)
+            {
+                List<HexBlock> basics = new List<HexBlock>();
+                foreach (var c in candidates)
+                {
+                    if (GetComboTargetPriority(c) == 50)
+                        basics.Add(c);
+                }
+                return basics[Random.Range(0, basics.Count)];
+            }
+
+            return candidates[0];
+        }
+
+        /// <summary>
+        /// 합성용 타겟 우선순위 (DroneBlockSystem.GetTargetPriority와 동일)
+        /// 1순위: 장애물 > 2순위: 높은 티어 > 3순위: 기본 블록 > 4순위: 특수 블록(희귀도 낮은 순)
+        /// </summary>
+        private int GetComboTargetPriority(HexBlock block)
+        {
+            var data = block.Data;
+            if (data == null) return 0;
+
+            // 1순위: 장애물
+            if (data.specialType == SpecialBlockType.FixedBlock) return 200;
+            if (data.specialType == SpecialBlockType.TimeBomb) return 190;
+            if (data.vinylLayer > 0) return 180;
+            if (data.hasChain) return 170;
+            if (data.enemyType != EnemyType.None) return 160;
+
+            // 2순위: 높은 티어 블록
+            if (data.tier >= BlockTier.ProcessedGem) return 140;
+            if (data.tier >= BlockTier.Tier3) return 130;
+            if (data.tier >= BlockTier.Tier2) return 120;
+            if (data.tier >= BlockTier.Tier1) return 110;
+
+            // 3순위: 기본 블록 (Normal 티어 + 특수 아님)
+            if (data.specialType == SpecialBlockType.None) return 50;
+
+            // 4순위: 특수 블록 (희귀도 낮은 순, 기본 블록 없을 때만 타겟)
+            if (data.specialType == SpecialBlockType.Drill) return 14;
+            if (data.specialType == SpecialBlockType.Bomb) return 12;
+            if (data.specialType == SpecialBlockType.Laser) return 10;
+            if (data.specialType == SpecialBlockType.Rainbow) return 8;
+            if (data.specialType == SpecialBlockType.XBlock) return 6;
+
+            return 4;
+        }
+
+        /// <summary>
+        /// 합성용 드론 타격 효과: 티어 1단계 강등, Normal이면 파괴
+        /// </summary>
+        private void ApplyDroneStrikeCombo(HexBlock target)
+        {
+            if (target == null || target.Data == null) return;
+            var data = target.Data;
+
+            if (data.vinylLayer > 0) { data.vinylLayer--; target.SetBlockData(data); return; }
+            if (data.hasChain) { data.hasChain = false; target.SetBlockData(data); return; }
+            if (data.enemyShieldCount > 0) { data.enemyShieldCount--; target.SetBlockData(data); return; }
+            if (data.tier == BlockTier.Normal) { target.ClearData(); return; }
+
+            data.tier = (BlockTier)((int)data.tier - 1);
+            target.SetBlockData(data);
+        }
+
+        /// <summary>
+        /// 합성 드론 비행 이펙트: 시작 위치에서 타겟까지 포물선 비행
+        /// </summary>
+        private IEnumerator ComboDroneFly(Vector3 startPos, Vector3 targetPos, Color color)
+        {
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            // 드론 비행체 생성
+            GameObject droneObj = new GameObject("ComboDroneFlyer");
+            droneObj.transform.SetParent(parent, false);
+            droneObj.transform.position = startPos;
+
+            var droneImg = droneObj.AddComponent<Image>();
+            droneImg.sprite = DroneBlockSystem.GetDroneIconSprite();
+            droneImg.type = Image.Type.Simple;
+            droneImg.preserveAspect = true;
+            droneImg.color = Color.white;
+            droneImg.raycastTarget = false;
+
+            RectTransform droneRt = droneObj.GetComponent<RectTransform>();
+            droneRt.sizeDelta = new Vector2(100f, 100f);
+
+            // 비행 (단독 드론과 동일한 속도)
+            float duration = 0.396f;
+            float elapsed = 0f;
+            float arcHeight = 50f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = t * t * (3f - 2f * t); // SmoothStep
+
+                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased);
+                pos.y += arcHeight * 4f * t * (1f - t);
+                droneObj.transform.position = pos;
+
+                yield return null;
+            }
+
+            Destroy(droneObj);
+        }
+
+        /// <summary>
+        /// 동시 발사용 드론 비행: 딜레이 후 포물선 비행 (각 드론마다 다른 arc로 시각적 구분)
+        /// </summary>
+        private IEnumerator ComboDroneFlyWithDelay(Vector3 startPos, Vector3 targetPos, Color color, float delay, int droneIndex)
+        {
+            // 발사 딜레이
+            if (delay > 0f)
+                yield return new WaitForSeconds(delay);
+
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+
+            // 드론 비행체 생성
+            GameObject droneObj = new GameObject($"ComboDroneFlyer_{droneIndex}");
+            droneObj.transform.SetParent(parent, false);
+            droneObj.transform.position = startPos;
+
+            var droneImg = droneObj.AddComponent<Image>();
+            droneImg.sprite = DroneBlockSystem.GetDroneIconSprite();
+            droneImg.type = Image.Type.Simple;
+            droneImg.preserveAspect = true;
+            droneImg.color = Color.white;
+            droneImg.raycastTarget = false;
+
+            RectTransform droneRt = droneObj.GetComponent<RectTransform>();
+            droneRt.sizeDelta = new Vector2(100f, 100f);
+
+            // 비행 (단독 드론과 동일한 속도, 각 드론마다 다른 arc 높이)
+            float duration = 0.396f;
+            float elapsed = 0f;
+            float[] arcHeights = { 60f, 40f, 75f, 30f, 55f };
+            float arcHeight = arcHeights[droneIndex % arcHeights.Length];
+
+            Vector3 prevPos = startPos;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = t * t * (3f - 2f * t); // SmoothStep
+
+                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased);
+                pos.y += arcHeight * 4f * t * (1f - t);
+
+                // 약간의 좌우 오프셋으로 드론들이 겹치지 않게
+                float sideOffset = (droneIndex - 2) * 8f * (1f - t);
+                pos.x += sideOffset * Mathf.Sin(t * Mathf.PI);
+
+                droneObj.transform.position = pos;
+
+                // 드론 회전 (비행 방향으로)
+                if (t > 0.05f)
+                {
+                    Vector3 dir = (pos - prevPos).normalized;
+                    if (dir.sqrMagnitude > 0.001f)
+                    {
+                        float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                        droneRt.localRotation = Quaternion.Euler(0, 0, angle - 90f);
+                    }
+                }
+
+                prevPos = pos;
+                yield return null;
+            }
+
+            // 착탄 시 작은 임팩트 링
+            GameObject impactObj = new GameObject($"DroneImpact_{droneIndex}");
+            impactObj.transform.SetParent(parent, false);
+            impactObj.transform.position = targetPos;
+            var impactImg = impactObj.AddComponent<Image>();
+            impactImg.color = new Color(color.r, color.g, color.b, 0.7f);
+            impactImg.raycastTarget = false;
+            RectTransform impactRt = impactObj.GetComponent<RectTransform>();
+            impactRt.sizeDelta = new Vector2(20f, 20f);
+
+            // 임팩트 확장 애니메이션 (비동기)
+            StartCoroutine(ExpandAndFade(impactObj, 0.15f, 50f));
+
+            Destroy(droneObj);
+        }
+
+        /// <summary>
+        /// 임팩트 링 확장 후 페이드아웃
+        /// </summary>
+        private IEnumerator ExpandAndFade(GameObject obj, float duration, float targetSize)
+        {
+            if (obj == null) yield break;
+            RectTransform rt = obj.GetComponent<RectTransform>();
+            Image img = obj.GetComponent<Image>();
+            if (rt == null || img == null) { Destroy(obj); yield break; }
+
+            Color startColor = img.color;
+            Vector2 startSize = rt.sizeDelta;
+            Vector2 endSize = new Vector2(targetSize, targetSize);
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                rt.sizeDelta = Vector2.Lerp(startSize, endSize, t);
+                img.color = new Color(startColor.r, startColor.g, startColor.b, startColor.a * (1f - t));
+                yield return null;
+            }
+
+            Destroy(obj);
+        }
+
+        // ============================================================
         // VFX 유틸 메서드
         // ============================================================
 
@@ -1281,6 +2038,29 @@ namespace JewelsHexaPuzzle.Core
             effectParent = layer.transform;
 
             Debug.Log("[ComboSystem] Effect layer created under Canvas");
+        }
+
+        /// <summary>
+        /// X블록 생성 시 기존 특수 블록과 즉시 합성 실행 (스왑 애니메이션 없이).
+        /// BlockRemovalSystem에서 X블록 생성 직후 호출됩니다.
+        /// </summary>
+        public IEnumerator ExecuteInPlaceCombo(
+            HexCoord pos, Vector3 worldPos, GemType xBlockGemType,
+            SpecialBlockType existingSpecialType, DrillDirection existingDrillDir)
+        {
+            Debug.Log($"[ComboSystem] ExecuteInPlaceCombo: pos=({pos}), xGem={xBlockGemType}, existing={existingSpecialType}");
+            SetupEffectParent();
+
+            if (existingSpecialType == SpecialBlockType.Drill)
+                yield return StartCoroutine(DrillXBlockCombo(pos, worldPos, xBlockGemType, existingDrillDir));
+            else if (existingSpecialType == SpecialBlockType.Bomb)
+                yield return StartCoroutine(BombXBlockCombo(pos, worldPos, xBlockGemType));
+            else if (existingSpecialType == SpecialBlockType.XBlock)
+                yield return StartCoroutine(XBlockXBlockCombo(pos, worldPos));
+            else if (existingSpecialType == SpecialBlockType.Drone)
+                yield return StartCoroutine(DroneXBlockCombo(pos, worldPos, xBlockGemType));
+
+            CleanupEffects();
         }
 
         /// <summary>

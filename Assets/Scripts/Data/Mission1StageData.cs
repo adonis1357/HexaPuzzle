@@ -572,12 +572,6 @@ namespace JewelsHexaPuzzle.Managers
                         targetGemType = GemType.Purple,
                         targetCount = 30,
                         description = "보라색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CreateLaser,
-                        targetCount = 1,
-                        description = "레이저 1개 생성"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],

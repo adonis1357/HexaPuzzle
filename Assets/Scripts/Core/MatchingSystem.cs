@@ -21,6 +21,10 @@ namespace JewelsHexaPuzzle.Core
             public SpecialBlockType createdSpecialType = SpecialBlockType.None;
             public HexBlock specialSpawnBlock;
             public DrillDirection drillDirection;
+            // X블록 생성 시 기존 특수 블록 정보 (즉시 합성용)
+            public SpecialBlockType preExistingSpecialType = SpecialBlockType.None;
+            public DrillDirection preExistingDrillDirection;
+            public GemType preExistingGemType = GemType.None;
         }
 
         private void Start()
@@ -178,8 +182,20 @@ private List<MatchGroup> FindRingMatches()
                     specialSpawnBlock = block
                 };
 
+                // 중앙 블록에 기존 특수 블록이 있으면 정보 캐싱 (즉시 합성용)
+                if (block.Data.specialType == SpecialBlockType.Drill ||
+                    block.Data.specialType == SpecialBlockType.Bomb ||
+                    block.Data.specialType == SpecialBlockType.XBlock ||
+                    block.Data.specialType == SpecialBlockType.Drone)
+                {
+                    group.preExistingSpecialType = block.Data.specialType;
+                    group.preExistingDrillDirection = block.Data.drillDirection;
+                    group.preExistingGemType = block.Data.gemType;
+                }
+
                 rings.Add(group);
-                Debug.Log($"[MatchingSystem] RING X-BLOCK: center=({center}) centerColor={centerColor}, ringColor={ringColor}");
+                Debug.Log($"[MatchingSystem] RING X-BLOCK: center=({center}) centerColor={centerColor}, ringColor={ringColor}" +
+                    (group.preExistingSpecialType != SpecialBlockType.None ? $" [기존특수:{group.preExistingSpecialType}]" : ""));
             }
             return rings;
         }
@@ -269,18 +285,19 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
                 merged.score = CalculateScore(merged.blocks.Count);
 
-                // 특수 블록 우선순위: 도넛(7+링) > 폭탄(5+) > 드릴(4)
-                // 레이저 제거됨 — 6매칭도 폭탄으로 처리
-                // 뭉친 형태(compact)만 허용: 중심 블록의 그룹 내 인접 수로 검증
-                // 비정형 병합(흩어진 형태)에서는 특수 블록 미생성
+                // 특수 블록 우선순위: 도넛(7+링) > 드론(5+나비) > 폭탄(5+뭉침) > 드릴(4)
+                // 드론: 중앙 + 4이웃(2쌍 분리), 폭탄: 중앙 + 4이웃(뭉침)
+                // 드론이 폭탄보다 먼저 체크 (나비 패턴이 뭉침 조건도 만족할 수 있으므로)
                 if (merged.blocks.Count >= 7)
                 {
                     if (!CheckForDonutPattern(merged))
-                        CheckForBombPattern(merged);
+                        if (!CheckForDronePattern(merged))
+                            CheckForBombPattern(merged);
                 }
                 else if (merged.blocks.Count >= 5)
                 {
-                    CheckForBombPattern(merged);
+                    if (!CheckForDronePattern(merged))
+                        CheckForBombPattern(merged);
                 }
                 else if (merged.blocks.Count >= 4)
                 {
@@ -364,9 +381,9 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
             return true;
         }
 
-        private void CheckForBombPattern(MatchGroup group)
+        private bool CheckForBombPattern(MatchGroup group)
         {
-            if (group.blocks.Count < 5) return;
+            if (group.blocks.Count < 5) return false;
 
             HexBlock centerBlock = null;
             int maxNeighborCount = 0;
@@ -393,18 +410,19 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 }
             }
 
-            if (centerBlock == null) return;
+            if (centerBlock == null) return false;
 
             // 뭉친 형태 검증: 중심 블록이 그룹 내 4개 이상과 인접해야 함
             if (maxNeighborCount < 4)
             {
                 Debug.Log($"[MatchingSystem] BOMB REJECTED: Count={group.blocks.Count}, MaxNeighbor={maxNeighborCount} < 4 (비정형)");
-                return;
+                return false;
             }
 
             group.createdSpecialType = SpecialBlockType.Bomb;
             group.specialSpawnBlock = centerBlock;
             Debug.Log($"[MatchingSystem] BOMB: Count={group.blocks.Count}, Center=({centerBlock.Coord}), NeighborCount={maxNeighborCount}");
+            return true;
         }
 
 private void CheckForLaserPattern(MatchGroup group)
@@ -451,6 +469,129 @@ private void CheckForLaserPattern(MatchGroup group)
             Debug.Log($"[MatchingSystem] LASER: Count={group.blocks.Count}, Center=({centerBlock.Coord}), NeighborCount={maxNeighborCount}");
         }
 
+
+        /// <summary>
+        /// 드론 패턴 체크: 5개 이상의 블록이 3축(q,r,s) 중 하나의 방향으로 직선을 이루는지 확인.
+        /// 폭탄이 거부된 경우(비정형 = 직선 형태)에만 호출됨.
+        /// 직선 5개: 중심 블록의 그룹 내 인접 수가 정확히 2 (양쪽 1개씩).
+        /// </summary>
+        /// <summary>
+        /// 드론 패턴 감지: "나비" 형태
+        /// - 중앙 블록 1개 + 주변 4개 = 총 5개
+        /// - 주변 4개는 모두 중앙과 면(face) 인접
+        /// - 4개 중 2개씩 쌍(pair)을 이루며, 쌍 내부는 서로 인접
+        /// - 두 쌍 간에는 서로 인접하면 안 됨 (분리되어야 함)
+        ///
+        /// 예시 (육각형 이웃 인덱스 0~5):
+        ///     [A1][A2]       이웃 0,1 → 쌍A (서로 인접)
+        ///       \ /
+        ///       [C]          중앙
+        ///       / \
+        ///     [B1][B2]       이웃 3,4 → 쌍B (서로 인접, 쌍A와 비인접)
+        /// </summary>
+        private bool CheckForDronePattern(MatchGroup group)
+        {
+            if (group.blocks.Count < 5) return false;
+
+            // 그룹 좌표 HashSet 구축
+            HashSet<HexCoord> groupCoords = new HashSet<HexCoord>();
+            Dictionary<HexCoord, HexBlock> coordToBlock = new Dictionary<HexCoord, HexBlock>();
+            foreach (var block in group.blocks)
+            {
+                groupCoords.Add(block.Coord);
+                coordToBlock[block.Coord] = block;
+            }
+
+            // 각 그룹 내 블록을 중앙 후보로 시도
+            Debug.Log($"[MatchingSystem] DRONE CHECK: group size={group.blocks.Count}, coords=[{string.Join(",", group.blocks.Select(b => b.Coord.ToString()))}]");
+
+            foreach (var block in group.blocks)
+            {
+                if (block.Data == null || block.Data.specialType != SpecialBlockType.None)
+                    continue;
+
+                HexCoord center = block.Coord;
+                HexCoord[] neighbors = center.GetAllNeighbors(); // [0]~[5]
+
+                // 중앙의 6이웃 중 그룹에 속하는 것과 인덱스 수집
+                List<int> inGroupIndices = new List<int>();
+                for (int i = 0; i < 6; i++)
+                {
+                    if (groupCoords.Contains(neighbors[i]))
+                        inGroupIndices.Add(i);
+                }
+
+                Debug.Log($"[MatchingSystem] DRONE: center=({center}), inGroupNeighbors={inGroupIndices.Count} [{string.Join(",", inGroupIndices)}]");
+
+                // 최소 4개 이웃이 그룹에 있어야 함
+                if (inGroupIndices.Count < 4) continue;
+
+                // 인접 쌍(pair) 수집: 이웃 인덱스 i,j가 둘 다 그룹에 있고 서로 인접(hex 거리 1)인 경우
+                List<(int a, int b)> adjacentPairs = new List<(int, int)>();
+                for (int i = 0; i < inGroupIndices.Count; i++)
+                {
+                    for (int j = i + 1; j < inGroupIndices.Count; j++)
+                    {
+                        int idxA = inGroupIndices[i];
+                        int idxB = inGroupIndices[j];
+                        // 두 이웃 좌표가 서로 인접한지 확인
+                        if (AreNeighbors(neighbors[idxA], neighbors[idxB]))
+                            adjacentPairs.Add((idxA, idxB));
+                    }
+                }
+
+                Debug.Log($"[MatchingSystem] DRONE: center=({center}), adjacentPairs={adjacentPairs.Count} [{string.Join(",", adjacentPairs.Select(p => $"({p.a},{p.b})"))}]");
+
+                // 최소 2개의 인접 쌍이 필요
+                if (adjacentPairs.Count < 2) continue;
+
+                // 두 쌍을 선택하되, 쌍 간의 블록이 서로 인접하지 않아야 함
+                for (int p = 0; p < adjacentPairs.Count; p++)
+                {
+                    for (int q_ = p + 1; q_ < adjacentPairs.Count; q_++)
+                    {
+                        var pairA = adjacentPairs[p];
+                        var pairB = adjacentPairs[q_];
+
+                        // 두 쌍이 인덱스를 공유하면 안 됨
+                        if (pairA.a == pairB.a || pairA.a == pairB.b ||
+                            pairA.b == pairB.a || pairA.b == pairB.b)
+                            continue;
+
+                        // 쌍A의 어떤 블록도 쌍B의 어떤 블록과 인접하면 안 됨
+                        bool pairsAdjacent = false;
+                        int[] pairAIndices = { pairA.a, pairA.b };
+                        int[] pairBIndices = { pairB.a, pairB.b };
+
+                        foreach (int ai in pairAIndices)
+                        {
+                            foreach (int bi in pairBIndices)
+                            {
+                                if (AreNeighbors(neighbors[ai], neighbors[bi]))
+                                {
+                                    pairsAdjacent = true;
+                                    break;
+                                }
+                            }
+                            if (pairsAdjacent) break;
+                        }
+
+                        if (pairsAdjacent) continue;
+
+                        // 드론 패턴 성립! 중앙 블록에 드론 생성
+                        group.createdSpecialType = SpecialBlockType.Drone;
+                        group.specialSpawnBlock = block;
+
+                        Debug.Log($"[MatchingSystem] DRONE (butterfly): Center=({center}), " +
+                                  $"PairA=({neighbors[pairA.a]},{neighbors[pairA.b]}), " +
+                                  $"PairB=({neighbors[pairB.a]},{neighbors[pairB.b]})");
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         private void CheckForDrillPattern(MatchGroup group)
         {

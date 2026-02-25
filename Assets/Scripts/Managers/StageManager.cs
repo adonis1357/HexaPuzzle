@@ -201,7 +201,7 @@ namespace JewelsHexaPuzzle.Managers
                         MissionType[] specialMissions = {
                             MissionType.CreateDrillVertical, MissionType.CreateDrillSlash,
                             MissionType.CreateDrillBackSlash, MissionType.CreateBomb,
-                            MissionType.CreateLaser, MissionType.CreateRainbow
+                            MissionType.CreateRainbow
                         };
                         mission.type = specialMissions[Random.Range(0, specialMissions.Length)];
                         mission.targetCount = 1 + stageNumber / 30;

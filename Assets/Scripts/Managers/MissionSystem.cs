@@ -111,15 +111,15 @@ namespace JewelsHexaPuzzle.Managers
         // missionPool에서 동일 타입을 여러 번 넣으면 가중치가 올라감
         private static readonly WaveConfig[] waves = new WaveConfig[]
         {
-            // 웨이브 1 (#1~5): 보석 수집 전용
+            // 웨이브 1 (#1~5): 보석 수집 전용 — 보상 6~7
             new WaveConfig {
                 startMission = 1, endMission = 5,
-                rewardMin = 6, rewardMax = 8, difficultyScale = 1.0f,
+                rewardMin = 6, rewardMax = 7, difficultyScale = 1.0f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectAny }
             },
-            // 웨이브 2 (#6~10): 보석 수집 위주 + CollectMulti 등장
+            // 웨이브 2 (#6~10): 보석 수집 위주 + CollectMulti 등장 — 보상 5~7
             new WaveConfig {
                 startMission = 6, endMission = 10,
                 rewardMin = 5, rewardMax = 7, difficultyScale = 1.3f,
@@ -128,7 +128,7 @@ namespace JewelsHexaPuzzle.Managers
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectAny,
                     SurvivalMissionType.CollectMulti }
             },
-            // 웨이브 3 (#11~20): 보석 수집 60% + 기타 미션
+            // 웨이브 3 (#11~20): 보석 수집 60% + 기타 미션 — 보상 4~6
             new WaveConfig {
                 startMission = 11, endMission = 20,
                 rewardMin = 4, rewardMax = 6, difficultyScale = 1.6f,
@@ -137,7 +137,7 @@ namespace JewelsHexaPuzzle.Managers
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectMulti,
                     SurvivalMissionType.CreateSpecial, SurvivalMissionType.AchieveCombo, SurvivalMissionType.UseSpecial }
             },
-            // 웨이브 4 (#21~35): 보석 수집 50% + 다양한 미션
+            // 웨이브 4 (#21~35): 보석 수집 50% + 다양한 미션 — 보상 3~5
             new WaveConfig {
                 startMission = 21, endMission = 35,
                 rewardMin = 3, rewardMax = 5, difficultyScale = 2.0f,
@@ -147,10 +147,10 @@ namespace JewelsHexaPuzzle.Managers
                     SurvivalMissionType.CreateSpecial, SurvivalMissionType.AchieveCombo,
                     SurvivalMissionType.SingleTurnRemoval, SurvivalMissionType.UseSpecial }
             },
-            // 웨이브 5 (#36+): 보석 수집 40% + 고난이도
+            // 웨이브 5 (#36+): 보석 수집 40% + 고난이도 — 보상 3~4
             new WaveConfig {
                 startMission = 36, endMission = 9999,
-                rewardMin = 2, rewardMax = 4, difficultyScale = 2.5f,
+                rewardMin = 3, rewardMax = 4, difficultyScale = 2.5f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectMulti, SurvivalMissionType.CollectMulti,

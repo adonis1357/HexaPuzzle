@@ -687,6 +687,60 @@ namespace JewelsHexaPuzzle.Utils
         }
 
         /// <summary>
+        /// 드론 - 프로펠러 윙윙 상승 + 급하강 타격음
+        /// 부드러운 윙윙거림이 점점 높아지다가 급하강하며 타격
+        /// </summary>
+        public static AudioClip CreateDroneSound(float duration = 0.5f)
+        {
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            System.Random rng = new System.Random(99);
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float tNorm = (float)i / sampleCount;
+                float envelope = ADSR(tNorm, 0.03f, 0.1f, 0.6f, 0.3f);
+
+                // 프로펠러 윙윙: 삼각파 + 약간의 노이즈 (주파수 상승)
+                float propFreq = Mathf.Lerp(200f, 600f, Mathf.Min(tNorm * 1.5f, 1f));
+                float propeller = GenerateWaveform(Waveform.Triangle, 2f * Mathf.PI * propFreq * t) * 0.25f;
+
+                // 프로펠러 블레이드 모듈레이션 (15~25Hz)
+                float bladeModFreq = Mathf.Lerp(15f, 25f, tNorm);
+                float bladeMod = 0.7f + 0.3f * Mathf.Sin(2f * Mathf.PI * bladeModFreq * t);
+                propeller *= bladeMod;
+
+                // 급하강 타격 (후반 30%)
+                float strikeComponent = 0f;
+                if (tNorm > 0.7f)
+                {
+                    float strikeT = (tNorm - 0.7f) / 0.3f;
+                    float strikeFreq = Mathf.Lerp(800f, 150f, strikeT); // 급하강
+                    strikeComponent = Mathf.Sin(2f * Mathf.PI * strikeFreq * t)
+                                    * 0.35f * Mathf.Max(0f, 1f - strikeT * 1.5f);
+                    // 임팩트 노이즈
+                    if (strikeT > 0.5f)
+                    {
+                        float noise = (float)(rng.NextDouble() * 2.0 - 1.0);
+                        strikeComponent += noise * 0.15f * Mathf.Max(0f, 1f - (strikeT - 0.5f) * 4f);
+                    }
+                }
+
+                // 고주파 윙 (장식음)
+                float whine = Mathf.Sin(2f * Mathf.PI * 1200f * t) * 0.08f
+                            * Mathf.Max(0f, 1f - tNorm * 2.5f);
+
+                data[i] = (propeller + strikeComponent + whine) * envelope * 0.45f;
+            }
+            ApplyFades(data, 16, 128);
+            ApplyLowPass(data, 0.12f);
+            ApplyReverb(data, 25f, 0.22f, 3);
+            AudioClip clip = AudioClip.Create("Drone", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>
         /// 특수 젬 생성 - 크리스탈 쉬머 빌드업 + "띵글링" + 스파클 꼬리
         /// </summary>
         public static AudioClip CreateSpecialGemSound(float duration = 0.5f)

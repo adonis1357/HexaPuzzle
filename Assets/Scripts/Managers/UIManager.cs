@@ -83,6 +83,7 @@ namespace JewelsHexaPuzzle.Managers
         // 미션 진행도 (단일 미션 하위호환)
         public static Text gameMissionCountText;
         public static RectTransform gameMissionIconRect;
+        public static Text gameMissionRewardText;
 
         // 복수 미션 진행도
         public static List<Text> gameMissionCountTexts = new List<Text>();
@@ -1947,6 +1948,42 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 무한도전 미션 보상 텍스트 표시 ("+N" 형태)
+        /// </summary>
+        public void SetMissionRewardText(int reward)
+        {
+            if (gameMissionIconRect == null) return;
+
+            // 기존 보상 텍스트 제거
+            if (gameMissionRewardText != null)
+                Destroy(gameMissionRewardText.gameObject);
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            GameObject rewardObj = new GameObject("RewardText");
+            rewardObj.transform.SetParent(gameMissionIconRect, false);
+            RectTransform rewardRt = rewardObj.AddComponent<RectTransform>();
+            rewardRt.anchorMin = new Vector2(0, 0);
+            rewardRt.anchorMax = new Vector2(1, 0);
+            rewardRt.pivot = new Vector2(0.5f, 0);
+            rewardRt.anchoredPosition = new Vector2(0, 8f);
+            rewardRt.sizeDelta = new Vector2(0, 28f);
+
+            gameMissionRewardText = rewardObj.AddComponent<Text>();
+            gameMissionRewardText.font = font;
+            gameMissionRewardText.fontSize = 22;
+            gameMissionRewardText.fontStyle = FontStyle.Bold;
+            gameMissionRewardText.alignment = TextAnchor.MiddleCenter;
+            gameMissionRewardText.color = new Color(0.2f, 1f, 0.4f, 1f); // 밝은 녹색
+            gameMissionRewardText.raycastTarget = false;
+            gameMissionRewardText.text = $"+{reward}";
+
+            Outline outline = rewardObj.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(1, 1);
+        }
+
+        /// <summary>
         /// 게임 미션 UI 정리 (로비 전환 시 호출)
         /// </summary>
         public void CleanupGameMissionUI()
@@ -1964,6 +2001,7 @@ namespace JewelsHexaPuzzle.Managers
             // static 필드 초기화
             gameMissionCountText = null;
             gameMissionIconRect = null;
+            gameMissionRewardText = null;
             gameMissionCountTexts.Clear();
             gameMissionContainerRect = null;
         }

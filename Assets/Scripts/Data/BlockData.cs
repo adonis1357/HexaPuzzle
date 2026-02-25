@@ -65,7 +65,8 @@ namespace JewelsHexaPuzzle.Data
         Bomb,       // 폭탄 (5개 이상 매칭 시 생성, 주변 블록을 원형으로 폭파)
         Rainbow,    // 무지개/도넛 (7개 이상 매칭 시 생성, 같은 색상 블록 전체 파괴)
         XBlock,     // X블록 (링 모양 매칭 시 생성, 같은 색상 전체 파괴)
-        Laser       // 레이저 (정확히 6개 매칭 시 생성, 3방향 빔으로 직선 파괴)
+        Laser,      // 레이저 (정확히 6개 매칭 시 생성, 3방향 빔으로 직선 파괴)
+        Drone       // 드론 (5개 직선 매칭 시 생성, 우선순위 기반 단일 타격)
     }
 
     /// <summary>
@@ -370,6 +371,12 @@ namespace JewelsHexaPuzzle.Data
         public bool IsBomb()
         {
             return specialType == SpecialBlockType.Bomb;
+        }
+
+        /// <summary>드론 블록인지 확인</summary>
+        public bool IsDrone()
+        {
+            return specialType == SpecialBlockType.Drone;
         }
 
         /// <summary>

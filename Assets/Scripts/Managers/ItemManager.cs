@@ -63,7 +63,8 @@ namespace JewelsHexaPuzzle.Managers
             { ItemType.Bomb, 200 },
             { ItemType.SixWayLaser, 300 },
             { ItemType.SSD, 150 },
-            { ItemType.TurnPlus5, 500 }
+            { ItemType.TurnPlus5, 500 },
+            { ItemType.ReverseRotation, 80 }
         };
 
         /// <summary>아이템의 골드 가격 반환</summary>
@@ -79,7 +80,8 @@ namespace JewelsHexaPuzzle.Managers
             { ItemType.Bomb, "스왑" },
             { ItemType.SixWayLaser, "레이저" },
             { ItemType.SSD, "라인" },
-            { ItemType.TurnPlus5, "턴+5" }
+            { ItemType.TurnPlus5, "턴+5" },
+            { ItemType.ReverseRotation, "역회전" }
         };
 
         /// <summary>아이템의 표시 이름 반환</summary>
@@ -673,7 +675,8 @@ namespace JewelsHexaPuzzle.Managers
         Bomb = 2,
         SixWayLaser = 3,
         SSD = 4,
-        TurnPlus5 = 5  // 턴 +5 (게임오버 시)
+        TurnPlus5 = 5,          // 턴 +5 (게임오버 시)
+        ReverseRotation = 6     // 역회전 (1회성 반시계 회전)
     }
 
     /// <summary>

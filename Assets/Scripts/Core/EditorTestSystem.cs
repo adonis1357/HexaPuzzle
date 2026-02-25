@@ -27,14 +27,15 @@ namespace JewelsHexaPuzzle.Core
         private Image[] buttonBackgrounds;
         private Image[] buttonOutlines;
 
-        // 특수 블록 타입 배열 (드릴 3방향 포함, 5개)
+        // 특수 블록 타입 배열 (드릴 3방향 + 드론 포함, 6개)
         private static readonly SpecialBlockType[] specialBlockTypes = new SpecialBlockType[]
         {
             SpecialBlockType.Bomb,
             SpecialBlockType.Drill,      // Vertical
             SpecialBlockType.Drill,      // Slash
             SpecialBlockType.Drill,      // BackSlash
-            SpecialBlockType.XBlock
+            SpecialBlockType.XBlock,
+            SpecialBlockType.Drone
         };
 
         // 드릴 방향 매핑
@@ -43,12 +44,14 @@ namespace JewelsHexaPuzzle.Core
             DrillDirection.Vertical,    // index 0 (Bomb - 미사용)
             DrillDirection.Vertical,    // index 1
             DrillDirection.Slash,       // index 2
-            DrillDirection.BackSlash    // index 3
+            DrillDirection.BackSlash,   // index 3
+            DrillDirection.Vertical,    // index 4 (XBlock - 미사용)
+            DrillDirection.Vertical     // index 5 (Drone - 미사용)
         };
 
         private static readonly string[] buttonLabels = new string[]
         {
-            "폭탄", "드릴↕", "드릴╱", "드릴╲", "엑스"
+            "폭탄", "드릴↕", "드릴╱", "드릴╲", "엑스", "드론"
         };
 
         private static readonly Color[] buttonColors = new Color[]
@@ -57,7 +60,8 @@ namespace JewelsHexaPuzzle.Core
             new Color(0.25f, 0.55f, 0.75f, 0.90f),
             new Color(0.25f, 0.55f, 0.75f, 0.90f),
             new Color(0.25f, 0.55f, 0.75f, 0.90f),
-            new Color(0.80f, 0.65f, 0.20f, 0.90f)
+            new Color(0.80f, 0.65f, 0.20f, 0.90f),
+            new Color(0.40f, 0.75f, 0.70f, 0.90f)
         };
 
         private static readonly Color INACTIVE_BORDER = new Color(1f, 1f, 1f, 0.5f);
@@ -243,6 +247,8 @@ namespace JewelsHexaPuzzle.Core
                     return HexBlock.GetDrillIconSprite(DrillDirection.Vertical);
                 case SpecialBlockType.XBlock:
                     return XBlockSystem.GetXBlockIconSprite();
+                case SpecialBlockType.Drone:
+                    return DroneBlockSystem.GetDroneIconSprite();
                 default:
                     return null;
             }

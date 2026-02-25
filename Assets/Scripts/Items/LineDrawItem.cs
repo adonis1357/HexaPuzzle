@@ -62,6 +62,9 @@ namespace JewelsHexaPuzzle.Items
         private const float HIGHLIGHT_ALPHA = 0.4f;
         private const float HIGHLIGHT_SIZE = 70f;
 
+        // 블록 감지 범위 배율 (한붓그리기 활성 시 판정 영역 확장)
+        private const float BLOCK_DETECT_SCALE = 2.0f;
+
         private void Start()
         {
             AutoFindReferences();
@@ -545,7 +548,17 @@ namespace JewelsHexaPuzzle.Items
                 if (rt == null) continue;
                 Vector2 localPoint;
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, screenPos, null, out localPoint);
-                if (rt.rect.Contains(localPoint))
+
+                // 판정 영역을 BLOCK_DETECT_SCALE 배 확장
+                Rect expandedRect = rt.rect;
+                float expandW = expandedRect.width * (BLOCK_DETECT_SCALE - 1f) * 0.5f;
+                float expandH = expandedRect.height * (BLOCK_DETECT_SCALE - 1f) * 0.5f;
+                expandedRect.xMin -= expandW;
+                expandedRect.xMax += expandW;
+                expandedRect.yMin -= expandH;
+                expandedRect.yMax += expandH;
+
+                if (expandedRect.Contains(localPoint))
                 {
                     float dist = localPoint.sqrMagnitude;
                     if (dist < closestDist) { closestDist = dist; closest = block; }

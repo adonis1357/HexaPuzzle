@@ -19,12 +19,14 @@ namespace JewelsHexaPuzzle.Core
         private bool clockwiseRotation = true;
         private bool isRotating = false;
         private int lastRotationCost = 1;
+        private bool oneTimeCounterClockwise = false; // 1회성 반시계 회전 플래그
 
         public event System.Action<bool> OnRotationComplete;
         public event System.Action OnRotationStarted;
 
         public bool IsRotating => isRotating;
-        public bool IsClockwise => clockwiseRotation;
+        public bool IsClockwise => clockwiseRotation && !oneTimeCounterClockwise;
+        public bool IsOneTimeCounterClockwiseActive => oneTimeCounterClockwise;
         public int LastRotationCost => lastRotationCost;
 
         private void Start()
@@ -52,6 +54,16 @@ namespace JewelsHexaPuzzle.Core
         public void SetRotationDirection(bool clockwise)
         {
             clockwiseRotation = clockwise;
+        }
+
+        /// <summary>
+        /// 1회성 반시계 회전 설정 (아이템 사용 시 호출).
+        /// 다음 회전 1회만 반시계로 실행 후 자동 리셋됩니다.
+        /// </summary>
+        public void SetOneTimeCounterClockwise()
+        {
+            oneTimeCounterClockwise = true;
+            Debug.Log("[RotationSystem] 1회성 반시계 회전 활성화");
         }
 
 /// <summary>
@@ -197,7 +209,7 @@ namespace JewelsHexaPuzzle.Core
             float d02 = blocks[0].Coord.DistanceTo(blocks[2].Coord);
             Vector2 centroid = (originalPositions[0] + originalPositions[1] + originalPositions[2]) / 3f;
 
-            Debug.Log($"[Rotation] Start ({(clockwiseRotation ? "CW" : "CCW")}) " +
+            Debug.Log($"[Rotation] Start ({(IsClockwise ? "CW" : "CCW")}{(oneTimeCounterClockwise ? " [1회역회전]" : "")}) " +
                 $"coords=({blocks[0].Coord},{blocks[1].Coord},{blocks[2].Coord}) " +
                 $"hexDist=({d01},{d12},{d02}) " +
                 $"pos=({originalPositions[0]},{originalPositions[1]},{originalPositions[2]}) " +
@@ -232,6 +244,7 @@ namespace JewelsHexaPuzzle.Core
                     foreach (var m in matches) totalBlocks += m.blocks.Count;
                     AudioManager.Instance.PlayMatchSound(totalBlocks);
                 }
+                oneTimeCounterClockwise = false; // 1회성 역회전 리셋
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
                 yield break;
@@ -256,6 +269,7 @@ namespace JewelsHexaPuzzle.Core
                     foreach (var m in matches) totalBlocks += m.blocks.Count;
                     AudioManager.Instance.PlayMatchSound(totalBlocks);
                 }
+                oneTimeCounterClockwise = false; // 1회성 역회전 리셋
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
                 yield break;
@@ -273,6 +287,7 @@ namespace JewelsHexaPuzzle.Core
             Debug.Log("[Rotation] No match, reverted");
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayFailSound();
+            oneTimeCounterClockwise = false; // 1회성 역회전 리셋
             isRotating = false;
             OnRotationComplete?.Invoke(false);
         }
@@ -286,7 +301,8 @@ namespace JewelsHexaPuzzle.Core
             Vector2 center = (originalPositions[0] + originalPositions[1] + originalPositions[2]) / 3f;
 
             float elapsed = 0f;
-            float targetAngle = clockwiseRotation ? -120f : 120f;
+            bool effectiveClockwise = clockwiseRotation && !oneTimeCounterClockwise;
+            float targetAngle = effectiveClockwise ? -120f : 120f;
 
             while (elapsed < rotationDuration)
             {
@@ -343,7 +359,8 @@ namespace JewelsHexaPuzzle.Core
             BlockData d1 = blocks[1].Data.Clone();
             BlockData d2 = blocks[2].Data.Clone();
 
-            if (clockwiseRotation)
+            bool effectiveClockwise = clockwiseRotation && !oneTimeCounterClockwise;
+            if (effectiveClockwise)
             {
                 // 시계방향: 각 블록의 데이터가 다음 블록으로 이동
                 blocks[0].SetBlockData(d2);

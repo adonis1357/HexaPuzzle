@@ -20,6 +20,7 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private BombBlockSystem bombSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
         [SerializeField] private LaserBlockSystem laserSystem;
+        [SerializeField] private DroneBlockSystem droneSystem;
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
 
         // 합성 시스템 참조
@@ -65,6 +66,15 @@ namespace JewelsHexaPuzzle.Core
         {
             if (rotationSystem != null)
                 rotationSystem.ToggleRotationDirection();
+        }
+
+        /// <summary>
+        /// 1회성 반시계 회전 설정 (아이템 사용 시 GameManager에서 호출)
+        /// </summary>
+        public void SetOneTimeCounterClockwise()
+        {
+            if (rotationSystem != null)
+                rotationSystem.SetOneTimeCounterClockwise();
         }
 
         private void Awake()
@@ -119,6 +129,13 @@ namespace JewelsHexaPuzzle.Core
                     Debug.Log("[InputSystem] LaserBlockSystem auto-found: " + laserSystem.name);
             }
 
+            if (droneSystem == null)
+            {
+                droneSystem = FindObjectOfType<DroneBlockSystem>();
+                if (droneSystem != null)
+                    Debug.Log("[InputSystem] DroneBlockSystem auto-found: " + droneSystem.name);
+            }
+
             if (gameCanvas == null)
             {
                 gameCanvas = FindObjectOfType<Canvas>();
@@ -149,6 +166,7 @@ private void Update()
             if (bombSystem != null && bombSystem.IsBombing) return;
             if (xBlockSystem != null && xBlockSystem.IsActivating) return;
             if (laserSystem != null && laserSystem.IsActivating) return;
+            if (droneSystem != null && droneSystem.IsActivating) return;
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
             if (comboSystem != null && comboSystem.IsComboActive) return;
 
@@ -404,10 +422,26 @@ private void Update()
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
                     Debug.Log($"[InputSystem] Laser block clicked at {clickedBlock.Coord}");
-                    // 발동 시작 시점에 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
                     laserSystem.ActivateLaser(clickedBlock);
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return true;
+                }
+                return false;
+            }
+
+            // 드론도 좁은 클릭 범위
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drone && droneSystem != null)
+            {
+                HexBlock tightBlock = GetBlockAtPositionTight(localPos);
+                if (tightBlock != null && tightBlock == clickedBlock)
+                {
+                    Debug.Log($"[InputSystem] Drone block clicked at {clickedBlock.Coord}");
+                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
+                    droneSystem.ActivateDrone(clickedBlock);
                     ClearHighlight();
                     hasValidCluster = false;
                     return true;
@@ -562,7 +596,8 @@ private void Update()
         {
             return type == JewelsHexaPuzzle.Data.SpecialBlockType.Drill ||
                    type == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb ||
-                   type == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock;
+                   type == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock ||
+                   type == JewelsHexaPuzzle.Data.SpecialBlockType.Drone;
         }
 
         /// <summary>터치 시작 시 합성 드래그 시도</summary>
@@ -631,11 +666,12 @@ private void Update()
             }
         }
 
-        /// <summary>드래그 종료 시 합성 실행</summary>
+        /// <summary>드래그 종료 시 합성 실행 또는 단독 발동</summary>
         private void FinishComboDrag()
         {
             if (comboSource != null && comboTarget != null && comboSystem != null)
             {
+                // 드래그로 타겟까지 이동 → 합성 실행
                 if (comboSystem.CanCombo(comboSource, comboTarget))
                 {
                     Debug.Log($"[InputSystem] 합성 실행: {comboSource.Data.specialType} × {comboTarget.Data.specialType}");
@@ -646,8 +682,96 @@ private void Update()
                     // 합성 완료 후 입력 재개는 ComboSystem에서 처리
                     StartCoroutine(WaitComboAndReenableInput());
                 }
+                CancelComboDrag();
             }
-            CancelComboDrag();
+            else if (comboSource != null && comboTarget == null)
+            {
+                // 드래그 없이 같은 자리에서 탭 → 단독 발동 시도
+                float dragDist = Vector2.Distance(pointerDownPosition, Input.mousePosition);
+                #if !UNITY_EDITOR && !UNITY_STANDALONE
+                if (Input.touchCount > 0)
+                    dragDist = Vector2.Distance(pointerDownPosition, Input.GetTouch(0).position);
+                #endif
+
+                HexBlock sourceBlock = comboSource;
+                CancelComboDrag();
+
+                if (dragDist < DRAG_CANCEL_THRESHOLD)
+                {
+                    // 단독 발동
+                    Debug.Log($"[InputSystem] 합성 드래그 취소 → 단독 발동 시도: {sourceBlock.Coord} ({sourceBlock.Data.specialType})");
+                    TryActivateSingleSpecialBlock(sourceBlock);
+                }
+            }
+            else
+            {
+                CancelComboDrag();
+            }
+        }
+
+        /// <summary>특수 블록 단독 발동 (블록 참조 직접 전달)</summary>
+        private bool TryActivateSingleSpecialBlock(HexBlock block)
+        {
+            if (block == null || block.Data == null) return false;
+
+            var specialType = block.Data.specialType;
+
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
+            {
+                Debug.Log($"[InputSystem] Drill 단독 발동: {block.Coord}");
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
+                drillSystem.ActivateDrill(block);
+                ClearHighlight();
+                hasValidCluster = false;
+                return true;
+            }
+
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb && bombSystem != null)
+            {
+                Debug.Log($"[InputSystem] Bomb 단독 발동: {block.Coord}");
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
+                bombSystem.ActivateBomb(block);
+                ClearHighlight();
+                hasValidCluster = false;
+                return true;
+            }
+
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock && xBlockSystem != null)
+            {
+                Debug.Log($"[InputSystem] XBlock 단독 발동: {block.Coord}");
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
+                xBlockSystem.ActivateXBlock(block);
+                ClearHighlight();
+                hasValidCluster = false;
+                return true;
+            }
+
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Laser && laserSystem != null)
+            {
+                Debug.Log($"[InputSystem] Laser 단독 발동: {block.Coord}");
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
+                laserSystem.ActivateLaser(block);
+                ClearHighlight();
+                hasValidCluster = false;
+                return true;
+            }
+
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drone && droneSystem != null)
+            {
+                Debug.Log($"[InputSystem] Drone 단독 발동: {block.Coord}");
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
+                droneSystem.ActivateDrone(block);
+                ClearHighlight();
+                hasValidCluster = false;
+                return true;
+            }
+
+            return false;
         }
 
         private IEnumerator WaitComboAndReenableInput()

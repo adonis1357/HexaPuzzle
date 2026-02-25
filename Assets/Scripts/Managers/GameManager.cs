@@ -26,6 +26,7 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private DonutBlockSystem donutSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
         [SerializeField] private LaserBlockSystem laserSystem;
+        [SerializeField] private DroneBlockSystem droneSystem;
         [SerializeField] private EnemySystem enemySystem;
 
 
@@ -137,6 +138,10 @@ namespace JewelsHexaPuzzle.Managers
                 // 한붓그리기 UI 생성
                 if (FindObjectOfType<LineDrawItem>() == null)
                     CreateLineDrawUI(canvas);
+
+                // 역회전 UI 생성
+                if (FindObjectOfType<JewelsHexaPuzzle.Items.ReverseRotationItem>() == null)
+                    CreateReverseRotationUI(canvas);
 
                 // 골드 추가 버튼 생성 (좌측 하단)
                 CreateGoldAddButton(canvas);
@@ -378,19 +383,15 @@ namespace JewelsHexaPuzzle.Managers
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             bool startMuted = AudioManager.Instance != null && AudioManager.Instance.IsMuted;
 
-            // 망치 버튼과 같은 좌표 체계 — 바로 아래 배치
-            float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
-            float rightmostX = hSize * 1.5f * 5f;
-            float lowestY = hSize * Mathf.Sqrt(3f) * (-5f);
-
+            // 우측 하단 고정 배치
             // 버튼 컨테이너
             GameObject btnObj = new GameObject("SoundToggleButton");
             btnObj.transform.SetParent(canvas.transform, false);
             RectTransform btnRt = btnObj.AddComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMin = new Vector2(1f, 0f);
+            btnRt.anchorMax = new Vector2(1f, 0f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY - 190f);
+            btnRt.anchoredPosition = new Vector2(-72f, 160f);
             btnRt.sizeDelta = new Vector2(84f, 84f);
 
             Image btnBg = btnObj.AddComponent<Image>();
@@ -496,20 +497,18 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         private void CreateLobbyExitButton(Canvas canvas)
         {
-            float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
-            float rightmostX = hSize * 1.5f * 5f;
-            float lowestY = hSize * Mathf.Sqrt(3f) * (-5f);
+            float btnSize = 84f;
+            float sndBtnHexH = btnSize * Mathf.Sqrt(3f) / 2f; // 육각형 높이 ≈ 72.7
 
+            // 우측 하단 고정 배치 — 사운드 버튼 바로 아래
             lobbyExitBtnObj = new GameObject("LobbyExitButton");
             lobbyExitBtnObj.transform.SetParent(canvas.transform, false);
             RectTransform btnRt = lobbyExitBtnObj.AddComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMin = new Vector2(1f, 0f);
+            btnRt.anchorMax = new Vector2(1f, 0f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
-            // 사운드 버튼(lowestY - 190) 아래 버튼 높이+간격 — 육각형
-            float sndBtnHexH = 84f * Mathf.Sqrt(3f) / 2f; // 84px 육각형 높이 ≈ 72.7
-            btnRt.anchoredPosition = new Vector2(rightmostX, lowestY - 190f - sndBtnHexH - 8f);
-            btnRt.sizeDelta = new Vector2(84f, 84f);
+            btnRt.anchoredPosition = new Vector2(-72f, 160f - sndBtnHexH - 8f);
+            btnRt.sizeDelta = new Vector2(btnSize, btnSize);
 
             Image btnBg = lobbyExitBtnObj.AddComponent<Image>();
             btnBg.sprite = HexBlock.GetHexFlashSprite();
@@ -998,6 +997,7 @@ private void Update()
                         if (donutSystem != null) donutSystem.ForceReset();
                         if (xBlockSystem != null) xBlockSystem.ForceReset();
                         if (laserSystem != null) laserSystem.ForceReset();
+            if (droneSystem != null) droneSystem.ForceReset();
                         SetGameState(GameState.Playing);
                         if (inputSystem != null) inputSystem.SetEnabled(true);
                     }
@@ -1012,7 +1012,8 @@ private void Update()
                             || (bombSystem != null && bombSystem.IsBombing)
                             || (donutSystem != null && donutSystem.IsActivating)
                             || (xBlockSystem != null && xBlockSystem.IsActivating)
-                            || (laserSystem != null && laserSystem.IsActivating);
+                            || (laserSystem != null && laserSystem.IsActivating)
+                            || (droneSystem != null && droneSystem.IsActivating);
 
                         if (systemsActive)
                         {
@@ -1044,6 +1045,7 @@ private void Update()
                     if (donutSystem != null) donutSystem.ForceReset();
                     if (xBlockSystem != null) xBlockSystem.ForceReset();
                     if (laserSystem != null) laserSystem.ForceReset();
+            if (droneSystem != null) droneSystem.ForceReset();
 
                     // 재진입 방지 (매 프레임 반복 호출 차단)
                     processingStartTime = float.MaxValue;
@@ -1083,6 +1085,7 @@ private void ForceRecoverFromStuck()
             if (donutSystem != null) donutSystem.ForceReset();
             if (xBlockSystem != null) xBlockSystem.ForceReset();
             if (laserSystem != null) laserSystem.ForceReset();
+            if (droneSystem != null) droneSystem.ForceReset();
 
             // pending 플래그 전체 클리어 + matched 상태 해제
             if (hexGrid != null)
@@ -1251,6 +1254,19 @@ private IEnumerator PostRecoveryCleanup()
                     Debug.Log("[GameManager] LaserBlockSystem auto-found");
             }
 
+            if (droneSystem == null)
+            {
+                droneSystem = FindObjectOfType<DroneBlockSystem>();
+                if (droneSystem == null)
+                {
+                    GameObject droneObj = new GameObject("DroneBlockSystem");
+                    droneSystem = droneObj.AddComponent<DroneBlockSystem>();
+                    Debug.Log("[GameManager] DroneBlockSystem auto-created");
+                }
+                else
+                    Debug.Log("[GameManager] DroneBlockSystem auto-found");
+            }
+
             // 특수 블록 합성 시스템 초기화
             var comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
             if (comboSystem == null)
@@ -1352,6 +1368,9 @@ private void InitializeSystems()
             if (laserSystem != null)
                 laserSystem.OnLaserComplete += OnSpecialBlockCompleted;
 
+            if (droneSystem != null)
+                droneSystem.OnDroneComplete += OnSpecialBlockCompleted;
+
             // 스테이지 관리자 이벤트 연결 (Mission 1 미션 진행도)
             if (stageManager != null)
             {
@@ -1435,6 +1454,7 @@ private void InitializeSystems()
         private static readonly Color HAMMER_BTN_COLOR = new Color(0.0f, 0.70f, 0.70f, 0.92f);
         private static readonly Color SWAP_BTN_COLOR = new Color(0.85f, 0.35f, 0.65f, 0.92f);
         private static readonly Color LINEDRAW_BTN_COLOR = new Color(0.35f, 0.55f, 0.35f, 0.92f);
+        private static readonly Color REVERSE_BTN_COLOR = new Color(0.60f, 0.40f, 0.80f, 0.92f);
         private static readonly Color GOLD_BTN_COLOR = new Color(0.85f, 0.65f, 0.10f, 0.92f);
 
         private Vector2 GetItemButtonPosition(int index)
@@ -1444,10 +1464,10 @@ private void InitializeSystems()
             float gap = ITEM_BTN_GAP;
             float bs = s + gap / 1.5f; // gap 보정된 버튼 사이즈
             // flat-top axial 좌표 변환: x = bs*1.5*q, y = -(bs*sqrt(3)*(r + q/2))
-            // 배치: 망치(0,0)=오른쪽 위, 스왑(-1,1)=왼쪽 중앙, 라인(0,1)=오른쪽 아래
-            //   [스왑]  [망치]
-            //      [라인]
-            // → 스왑이 망치-라인 왼쪽에 끼어서 3개 모두 면 맞닿음
+            // 배치:
+            //   [스왑(-1,1)]  [망치(0,0)]
+            //      [라인(0,1)]
+            //   [역회전(-1,2)]
             float sqrt3 = Mathf.Sqrt(3f);
             // 망치 (q=0, r=0)
             float x0 = 0f, y0 = 0f;
@@ -1455,9 +1475,11 @@ private void InitializeSystems()
             float x1 = -bs * 1.5f, y1 = -(bs * sqrt3 * 0.5f);
             // 라인 (q=0, r=1): x = 0, y = -(bs*sqrt3*1)
             float x2 = 0f, y2 = -(bs * sqrt3);
-            // 무게중심
-            float cx = (x0 + x1 + x2) / 3f;
-            float cy = (y0 + y1 + y2) / 3f;
+            // 역회전 (q=-1, r=2): x = -bs*1.5, y = -(bs*sqrt3*(2 + (-1)/2)) = -(bs*sqrt3*1.5) → 스왑 아래
+            float x3 = -bs * 1.5f, y3 = -(bs * sqrt3 * 1.5f);
+            // 무게중심 (4개 기준)
+            float cx = (x0 + x1 + x2 + x3) / 4f;
+            float cy = (y0 + y1 + y2 + y3) / 4f;
             // 그리드 중앙~오른쪽 끝 중간 + 100px 오른쪽 (기존 50 + 추가 50)
             float gridRight = hSize * 1.5f * 5f;
             float midX = gridRight / 2f + 80f;
@@ -1469,8 +1491,10 @@ private void InitializeSystems()
                 return new Vector2(x0 + offX, y0 + offY);
             else if (index == 1) // 스왑
                 return new Vector2(x1 + offX, y1 + offY);
-            else // 라인
+            else if (index == 2) // 라인
                 return new Vector2(x2 + offX, y2 + offY);
+            else // 역회전
+                return new Vector2(x3 + offX, y3 + offY);
         }
 
         private (GameObject btnObj, Button btn, Image btnImage) CreateHexItemButton(
@@ -2168,32 +2192,157 @@ private void InitializeSystems()
             hudElements.Add(btnObj);
         }
 
+        private void CreateReverseRotationUI(Canvas canvas)
+        {
+            // 즉시 효과 아이템 → backgroundOverlay 불필요
+            var (btnObj, btn, btnImage) = CreateHexItemButton(canvas, "ReverseRotationButton",
+                GetItemButtonPosition(3), REVERSE_BTN_COLOR,
+                new Color(0.70f, 0.50f, 0.90f, 1f), new Color(0.40f, 0.20f, 0.60f, 1f));
+
+            // 아이콘: 곡선 화살표 (회전 방향 표시)
+            // 화살표 컨테이너 (방향 전환 시 scaleX 반전)
+            GameObject arrowContainer = new GameObject("ArrowContainer");
+            arrowContainer.transform.SetParent(btnObj.transform, false);
+            RectTransform arrowContRt = arrowContainer.AddComponent<RectTransform>();
+            arrowContRt.anchoredPosition = new Vector2(0f, 2f);
+            arrowContRt.sizeDelta = new Vector2(50f, 50f);
+
+            // 호(arc) 형태 화살표: 세그먼트 4개로 원호 표현
+            float radius = 15f;
+            int segCount = 4;
+            for (int i = 0; i < segCount; i++)
+            {
+                float angle = -60f + i * 50f; // -60, -10, 40, 90
+                float rad = angle * Mathf.Deg2Rad;
+
+                GameObject seg = new GameObject($"ArcSeg_{i}");
+                seg.transform.SetParent(arrowContainer.transform, false);
+                var segImg = seg.AddComponent<Image>();
+                segImg.color = Color.white;
+                segImg.raycastTarget = false;
+                RectTransform segRt = seg.GetComponent<RectTransform>();
+                segRt.anchoredPosition = new Vector2(
+                    Mathf.Cos(rad) * radius,
+                    Mathf.Sin(rad) * radius
+                );
+                segRt.sizeDelta = new Vector2(13f, 5f);
+                segRt.localRotation = Quaternion.Euler(0, 0, angle + 90f);
+            }
+
+            // 화살촉 (시계방향 끝)
+            GameObject arrowHead1 = new GameObject("ArrowHead1");
+            arrowHead1.transform.SetParent(arrowContainer.transform, false);
+            var ah1Img = arrowHead1.AddComponent<Image>();
+            ah1Img.color = Color.white;
+            ah1Img.raycastTarget = false;
+            RectTransform ah1Rt = arrowHead1.GetComponent<RectTransform>();
+            float headAngle = 90f * Mathf.Deg2Rad;
+            ah1Rt.anchoredPosition = new Vector2(
+                Mathf.Cos(headAngle) * radius + 4f,
+                Mathf.Sin(headAngle) * radius + 2f
+            );
+            ah1Rt.sizeDelta = new Vector2(10f, 5f);
+            ah1Rt.localRotation = Quaternion.Euler(0, 0, 145f);
+
+            // 화살촉 아래쪽 날개
+            GameObject arrowHead2 = new GameObject("ArrowHead2");
+            arrowHead2.transform.SetParent(arrowContainer.transform, false);
+            var ah2Img = arrowHead2.AddComponent<Image>();
+            ah2Img.color = Color.white;
+            ah2Img.raycastTarget = false;
+            RectTransform ah2Rt = arrowHead2.GetComponent<RectTransform>();
+            ah2Rt.anchoredPosition = new Vector2(
+                Mathf.Cos(headAngle) * radius + 4f,
+                Mathf.Sin(headAngle) * radius - 3f
+            );
+            ah2Rt.sizeDelta = new Vector2(10f, 5f);
+            ah2Rt.localRotation = Quaternion.Euler(0, 0, -145f);
+
+            // "R" 텍스트 (중앙, 소형)
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject labelObj = new GameObject("ReverseLabel");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            var labelText = labelObj.AddComponent<Text>();
+            labelText.text = "R";
+            labelText.font = font;
+            labelText.fontSize = 14;
+            labelText.fontStyle = FontStyle.Bold;
+            labelText.alignment = TextAnchor.MiddleCenter;
+            labelText.color = new Color(1f, 1f, 1f, 0.5f);
+            labelText.raycastTarget = false;
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchoredPosition = new Vector2(0f, 2f);
+            labelRt.sizeDelta = new Vector2(20f, 20f);
+
+            // 수량 배지
+            CreateItemCountBadge(btnObj, ItemType.ReverseRotation);
+            btnObj.transform.SetAsLastSibling();
+
+            // ReverseRotationItem 컴포넌트 연결
+            var reverseItem = btnObj.AddComponent<JewelsHexaPuzzle.Items.ReverseRotationItem>();
+            var type = typeof(JewelsHexaPuzzle.Items.ReverseRotationItem);
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            type.GetField("reverseButton", flags)?.SetValue(reverseItem, btn);
+            type.GetField("arrowContainer", flags)?.SetValue(reverseItem, arrowContRt);
+            hudElements.Add(btnObj);
+        }
+
         // ============================================================
         // 골드 추가 버튼 (좌측 하단, 육각형)
         // ============================================================
+        private const float GOLD_BTN_SIZE = 77f; // 기존 70에서 10% 확대
+
         private void CreateGoldAddButton(Canvas canvas)
         {
             float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
             float sqrt3 = Mathf.Sqrt(3f);
             // 왼쪽 하단 위치 계산 (아이템 버튼 대칭 위치)
             float gridLeft = -(hSize * 1.5f * 5f);
-            float posX = gridLeft / 2f - 80f;
-            float btnHexH = ITEM_BTN_SIZE * sqrt3 / 2f;
+            float posX = gridLeft / 2f - 80f + 15f; // 오른쪽으로 15px 이동
+            float btnHexH = GOLD_BTN_SIZE * sqrt3 / 2f;
             float posY = hSize * sqrt3 * (-5f) - btnHexH * 0.3f - 5f;
 
-            var (btnObj, btn, btnImage) = CreateHexItemButton(canvas, "GoldAddButton",
-                new Vector2(posX, posY), GOLD_BTN_COLOR,
-                new Color(1f, 0.85f, 0.3f, 1f), new Color(0.65f, 0.50f, 0.10f, 1f));
+            // 70px 사이즈 육각형 버튼 직접 생성
+            GameObject btnObj = new GameObject("GoldAddButton");
+            btnObj.transform.SetParent(canvas.transform, false);
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(posX, posY);
+            btnRt.sizeDelta = new Vector2(GOLD_BTN_SIZE, GOLD_BTN_SIZE);
+            var btnImage = btnObj.AddComponent<Image>();
+            btnImage.sprite = HexBlock.GetHexFlashSprite();
+            btnImage.type = Image.Type.Simple;
+            btnImage.preserveAspect = true;
+            btnImage.color = GOLD_BTN_COLOR;
+            // 아웃라인
+            GameObject outlineObj = new GameObject("GoldBtnOutline");
+            outlineObj.transform.SetParent(btnObj.transform, false);
+            RectTransform outRt = outlineObj.AddComponent<RectTransform>();
+            outRt.anchorMin = Vector2.zero; outRt.anchorMax = Vector2.one;
+            outRt.offsetMin = Vector2.zero; outRt.offsetMax = Vector2.zero;
+            Image outImg = outlineObj.AddComponent<Image>();
+            outImg.sprite = HexBlock.GetHexBorderSprite();
+            outImg.type = Image.Type.Simple;
+            outImg.preserveAspect = true;
+            outImg.color = new Color(1f, 1f, 1f, 0.6f);
+            outImg.raycastTarget = false;
+            var btn = btnObj.AddComponent<Button>();
+            var bc = btn.colors; bc.normalColor = Color.white;
+            bc.highlightedColor = new Color(1f, 0.85f, 0.3f, 1f);
+            bc.pressedColor = new Color(0.65f, 0.50f, 0.10f, 1f);
+            btn.colors = bc;
 
-            // 코인 원형 (큰 원)
+            // 코인 원형 (70/110 비율로 축소)
             GameObject coinObj = new GameObject("CoinCircle");
             coinObj.transform.SetParent(btnObj.transform, false);
             var coinImg = coinObj.AddComponent<Image>();
             coinImg.color = new Color(1f, 0.85f, 0.2f, 1f);
             coinImg.raycastTarget = false;
             RectTransform coinRt = coinObj.GetComponent<RectTransform>();
-            coinRt.anchoredPosition = new Vector2(0f, 5f);
-            coinRt.sizeDelta = new Vector2(38f, 38f);
+            coinRt.anchoredPosition = new Vector2(0f, 3f);
+            coinRt.sizeDelta = new Vector2(24f, 24f);
 
             // 코인 내부 원 (입체감)
             GameObject innerObj = new GameObject("CoinInner");
@@ -2203,7 +2352,7 @@ private void InitializeSystems()
             innerImg.raycastTarget = false;
             RectTransform innerRt = innerObj.GetComponent<RectTransform>();
             innerRt.anchoredPosition = Vector2.zero;
-            innerRt.sizeDelta = new Vector2(28f, 28f);
+            innerRt.sizeDelta = new Vector2(18f, 18f);
 
             // 코인 G 마크
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -2212,14 +2361,14 @@ private void InitializeSystems()
             Text gText = gObj.AddComponent<Text>();
             gText.text = "G";
             gText.font = font;
-            gText.fontSize = 18;
+            gText.fontSize = 12;
             gText.fontStyle = FontStyle.Bold;
             gText.alignment = TextAnchor.MiddleCenter;
             gText.color = new Color(0.5f, 0.35f, 0.0f, 1f);
             gText.raycastTarget = false;
             RectTransform gRt = gObj.GetComponent<RectTransform>();
             gRt.anchoredPosition = Vector2.zero;
-            gRt.sizeDelta = new Vector2(30f, 30f);
+            gRt.sizeDelta = new Vector2(20f, 20f);
 
             // + 표시 (오른쪽 아래)
             GameObject plusObj = new GameObject("PlusSign");
@@ -2227,14 +2376,14 @@ private void InitializeSystems()
             Text plusText = plusObj.AddComponent<Text>();
             plusText.text = "+";
             plusText.font = font;
-            plusText.fontSize = 22;
+            plusText.fontSize = 14;
             plusText.fontStyle = FontStyle.Bold;
             plusText.alignment = TextAnchor.MiddleCenter;
             plusText.color = new Color(1f, 1f, 1f, 0.9f);
             plusText.raycastTarget = false;
             RectTransform plusRt = plusObj.GetComponent<RectTransform>();
-            plusRt.anchoredPosition = new Vector2(16f, -14f);
-            plusRt.sizeDelta = new Vector2(24f, 24f);
+            plusRt.anchoredPosition = new Vector2(10f, -9f);
+            plusRt.sizeDelta = new Vector2(16f, 16f);
 
             // "+100" 라벨 (하단)
             GameObject labelObj = new GameObject("GoldLabel");
@@ -2242,7 +2391,7 @@ private void InitializeSystems()
             Text labelText = labelObj.AddComponent<Text>();
             labelText.text = "+100";
             labelText.font = font;
-            labelText.fontSize = 12;
+            labelText.fontSize = 9;
             labelText.fontStyle = FontStyle.Bold;
             labelText.alignment = TextAnchor.MiddleCenter;
             labelText.color = new Color(1f, 1f, 1f, 0.85f);
@@ -2254,8 +2403,8 @@ private void InitializeSystems()
             labelRt.anchorMin = new Vector2(0.5f, 0f);
             labelRt.anchorMax = new Vector2(0.5f, 0f);
             labelRt.pivot = new Vector2(0.5f, 0f);
-            labelRt.anchoredPosition = new Vector2(0f, 10f);
-            labelRt.sizeDelta = new Vector2(60f, 18f);
+            labelRt.anchoredPosition = new Vector2(0f, 6f);
+            labelRt.sizeDelta = new Vector2(50f, 14f);
 
             // 클릭 이벤트: 100 골드 추가
             btn.onClick.AddListener(() =>
@@ -2403,10 +2552,10 @@ private void InitializeSystems()
                 }
             }
 
-            // 점수 및 골드 리셋 (게임 시작 시마다)
+            // 점수 리셋 (게임 시작 시마다) — 골드는 유지 (PlayerPrefs에서 로드된 누적 골드)
             if (scoreManager != null)
                 scoreManager.ResetScore();
-            currentGold = 0;
+            // currentGold는 초기화하지 않음 (Awake에서 PlayerPrefs 로드한 값 유지)
 
             // 아이템 게임당 사용 횟수 리셋
             if (itemManager != null)
@@ -2418,7 +2567,7 @@ private void InitializeSystems()
             if (hudScoreText != null) hudScoreText.text = "0";
             if (hudTurnText != null) hudTurnText.text = currentTurns.ToString();
 
-            // 골드 UI 동기화
+            // 골드 UI 동기화 (현재 보유 골드 표시)
             if (uiManager != null)
                 uiManager.UpdateGoldDisplay(currentGold);
 
@@ -2466,16 +2615,9 @@ private void InitializeSystems()
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayGameBGM();
 
-            // 무한모드: 미션 UI 생성 + 생존 모드 시작
+            // 무한모드: 생존 모드 시작 (미션 UI는 OnSurvivalMissionAssigned 콜백에서 생성)
             if (currentGameMode == GameMode.Infinite && missionSystem != null)
             {
-                if (uiManager != null)
-                {
-                    Canvas canvas = FindObjectOfType<Canvas>();
-                    if (canvas != null)
-                        uiManager.CreateSurvivalMissionUI(canvas);
-                }
-
                 // InfiniteConfig가 있으면 커스텀 설정으로 시작
                 if (selectedLevelData?.infiniteConfig != null)
                     missionSystem.StartSurvival(selectedLevelData.infiniteConfig);
@@ -3032,6 +3174,7 @@ private IEnumerator ProcessSpecialBlockAftermath()
                 if (donutSystem != null) donutSystem.PendingSpecialBlocks.Clear();
                 if (xBlockSystem != null) xBlockSystem.PendingSpecialBlocks.Clear();
                 if (laserSystem != null) laserSystem.PendingSpecialBlocks.Clear();
+                if (droneSystem != null) droneSystem.PendingSpecialBlocks.Clear();
 
                 // 2. 낙하 전: pendingActivation 블록의 블링크만 중지
                 if (hexGrid != null)
@@ -3283,6 +3426,17 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         if (laserSystem.IsBlockActive(block)) { Debug.LogError("[GM] Laser timeout!"); laserSystem.ForceReset(); }
                     }
                     break;
+
+                case SpecialBlockType.Drone:
+                    if (droneSystem != null)
+                    {
+                        droneSystem.ActivateDrone(block);
+                        yield return new WaitForSeconds(0.1f);
+                        waited = 0f;
+                        while (droneSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
+                        if (droneSystem.IsBlockActive(block)) { Debug.LogError("[GM] Drone timeout!"); droneSystem.ForceReset(); }
+                    }
+                    break;
             }
         }
 
@@ -3423,6 +3577,7 @@ private void OnBigBang()
             if (donutSystem != null) donutSystem.ForceReset();
             if (xBlockSystem != null) xBlockSystem.ForceReset();
             if (laserSystem != null) laserSystem.ForceReset();
+            if (droneSystem != null) droneSystem.ForceReset();
 
             SetGameState(GameState.StageClear);
             processingStartTime = Time.time; // StageClear 워치독 타이머 시작
@@ -3608,6 +3763,7 @@ private void OnBigBang()
                 if (donutSystem != null && donutSystem.IsActivating) anyActive = true;
                 if (xBlockSystem != null && xBlockSystem.IsActivating) anyActive = true;
                 if (laserSystem != null && laserSystem.IsActivating) anyActive = true;
+                if (droneSystem != null && droneSystem.IsActivating) anyActive = true;
                 if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) anyActive = true;
 
                 if (!anyActive) break;
@@ -3959,6 +4115,29 @@ private void OnBigBang()
         }
 
         /// <summary>
+        /// 드론 블록 발동
+        /// </summary>
+        private IEnumerator ActivateDroneBlock(HexBlock block)
+        {
+            if (droneSystem != null)
+            {
+                droneSystem.ActivateDrone(block);
+                float waited = 0f;
+                while (droneSystem.IsActivating && waited < 5f)
+                {
+                    waited += Time.deltaTime;
+                    processingStartTime = Time.time;
+                    yield return null;
+                }
+                if (droneSystem.IsActivating)
+                {
+                    Debug.LogWarning("[GameManager] ActivateDroneBlock timeout! ForceReset.");
+                    droneSystem.ForceReset();
+                }
+            }
+        }
+
+        /// <summary>
         /// 스케일 펀치 애니메이션
         /// </summary>
         private IEnumerator ScalePunchAnimation(Transform target, float duration, float punchScale)
@@ -4057,9 +4236,21 @@ private void OnBigBang()
         // 생존 미션 콜백
         // ============================================================
 
+        // 무한도전 최대 이동 횟수
+        private const int MAX_INFINITE_TURNS = 20;
+
         private void OnSurvivalMissionCompleted(SurvivalMission mission, int reward)
         {
             AddTurns(reward);
+
+            // 무한도전: 최대 20턴 제한
+            if (currentTurns > MAX_INFINITE_TURNS)
+            {
+                currentTurns = MAX_INFINITE_TURNS;
+                OnTurnChanged?.Invoke(currentTurns);
+                UpdateUI();
+            }
+
             if (uiManager != null)
                 uiManager.AnimateMissionComplete(reward);
 
@@ -4077,13 +4268,73 @@ private void OnBigBang()
         private void OnSurvivalMissionAssigned(SurvivalMission mission)
         {
             if (uiManager != null)
-                uiManager.ShowNewMission(mission);
+            {
+                // 이전 미션 UI 정리 후 스테이지 스타일 미션 UI 재생성
+                uiManager.CleanupGameMissionUI();
+                Canvas canvas = FindObjectOfType<Canvas>();
+                if (canvas != null)
+                {
+                    MissionData md = ConvertSurvivalToMissionData(mission);
+                    uiManager.CreateGameMissionUI(canvas, md);
+                    uiManager.SetMissionRewardText(mission.reward); // 보상 이동 횟수 표시
+                }
+            }
         }
 
         private void OnSurvivalMissionProgressChanged(SurvivalMission mission)
         {
-            if (uiManager != null)
-                uiManager.UpdateSurvivalMissionProgress(mission);
+            // 스테이지 스타일 UI: 남은 개수 업데이트
+            if (UIManager.gameMissionCountText != null)
+            {
+                int remaining = mission.targetCount - mission.currentCount;
+                if (remaining < 0) remaining = 0;
+                UIManager.gameMissionCountText.text = remaining.ToString();
+            }
+        }
+
+        /// <summary>
+        /// SurvivalMission → MissionData 변환 (스테이지 미션 UI에서 사용)
+        /// </summary>
+        private MissionData ConvertSurvivalToMissionData(SurvivalMission sm)
+        {
+            var md = new MissionData();
+            md.targetCount = sm.targetCount;
+            md.currentCount = sm.currentCount;
+            md.description = sm.description;
+
+            switch (sm.type)
+            {
+                case SurvivalMissionType.CollectGem:
+                    md.type = MissionType.CollectGem;
+                    md.targetGemType = sm.targetGemType;
+                    break;
+                case SurvivalMissionType.CollectAny:
+                    md.type = MissionType.CollectGem;
+                    md.targetGemType = GemType.None;
+                    break;
+                case SurvivalMissionType.CollectMulti:
+                    md.type = MissionType.CollectMultiGem;
+                    md.targetGemType = sm.targetGemType;
+                    md.secondaryGemType = sm.targetGemType2;
+                    break;
+                case SurvivalMissionType.CreateSpecial:
+                    md.type = MissionType.CreateSpecialGem;
+                    break;
+                case SurvivalMissionType.AchieveCombo:
+                    md.type = MissionType.AchieveCombo;
+                    break;
+                case SurvivalMissionType.ProcessGem:
+                    md.type = MissionType.ProcessGem;
+                    break;
+                case SurvivalMissionType.ReachScore:
+                    md.type = MissionType.ReachScore;
+                    break;
+                default:
+                    md.type = MissionType.CollectGem;
+                    md.targetGemType = GemType.None;
+                    break;
+            }
+            return md;
         }
 
         /// <summary>
@@ -5268,6 +5519,9 @@ private void OnDestroy()
 
             if (laserSystem != null)
                 laserSystem.OnLaserComplete -= OnSpecialBlockCompleted;
+
+            if (droneSystem != null)
+                droneSystem.OnDroneComplete -= OnSpecialBlockCompleted;
 
             // 미션 이벤트 정리
             if (stageManager != null)
