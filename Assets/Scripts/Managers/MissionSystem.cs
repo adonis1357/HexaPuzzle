@@ -91,6 +91,10 @@ namespace JewelsHexaPuzzle.Managers
         private SurvivalMission currentMission;
         public SurvivalMission CurrentMission => currentMission;
 
+        // 다음 미션 미리보기 (UI 표시용 사전 생성)
+        private SurvivalMission nextPreviewMission;
+        public SurvivalMission NextPreviewMission => nextPreviewMission;
+
         // 미션 카운터
         private int completedMissionCount = 0;
         public int CompletedMissionCount => completedMissionCount;
@@ -109,48 +113,77 @@ namespace JewelsHexaPuzzle.Managers
 
         // 웨이브 설정 — 보석 수집 미션 중심
         // missionPool에서 동일 타입을 여러 번 넣으면 가중치가 올라감
+        // 보상: 점진적 감소 (초반 관대 → 후반 엄격, 최소 3)
         private static readonly WaveConfig[] waves = new WaveConfig[]
         {
-            // 웨이브 1 (#1~5): 보석 수집 전용 — 보상 6~7
+            // 웨이브 1 (#1~3): 보석 수집 전용, 초반 넉넉 — 보상 9~10
             new WaveConfig {
-                startMission = 1, endMission = 5,
-                rewardMin = 6, rewardMax = 7, difficultyScale = 1.0f,
+                startMission = 1, endMission = 3,
+                rewardMin = 9, rewardMax = 10, difficultyScale = 1.0f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectAny }
             },
-            // 웨이브 2 (#6~10): 보석 수집 위주 + CollectMulti 등장 — 보상 5~7
+            // 웨이브 2 (#4~6): 보석 수집 전용 — 보상 8~9
             new WaveConfig {
-                startMission = 6, endMission = 10,
-                rewardMin = 5, rewardMax = 7, difficultyScale = 1.3f,
+                startMission = 4, endMission = 6,
+                rewardMin = 8, rewardMax = 9, difficultyScale = 1.1f,
+                missionPool = new[] {
+                    SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
+                    SurvivalMissionType.CollectAny, SurvivalMissionType.CollectAny }
+            },
+            // 웨이브 3 (#7~10): 보석 수집 위주 + CollectMulti 등장 — 보상 7~8
+            new WaveConfig {
+                startMission = 7, endMission = 10,
+                rewardMin = 7, rewardMax = 8, difficultyScale = 1.3f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectAny,
                     SurvivalMissionType.CollectMulti }
             },
-            // 웨이브 3 (#11~20): 보석 수집 60% + 기타 미션 — 보상 4~6
+            // 웨이브 4 (#11~15): 보석 수집 60% + 기타 미션 — 보상 6~7
             new WaveConfig {
-                startMission = 11, endMission = 20,
-                rewardMin = 4, rewardMax = 6, difficultyScale = 1.6f,
+                startMission = 11, endMission = 15,
+                rewardMin = 6, rewardMax = 7, difficultyScale = 1.5f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectMulti,
                     SurvivalMissionType.CreateSpecial, SurvivalMissionType.AchieveCombo, SurvivalMissionType.UseSpecial }
             },
-            // 웨이브 4 (#21~35): 보석 수집 50% + 다양한 미션 — 보상 3~5
+            // 웨이브 5 (#16~20): 보석 수집 55% + 다양한 미션 — 보상 5~6
             new WaveConfig {
-                startMission = 21, endMission = 35,
-                rewardMin = 3, rewardMax = 5, difficultyScale = 2.0f,
+                startMission = 16, endMission = 20,
+                rewardMin = 5, rewardMax = 6, difficultyScale = 1.7f,
+                missionPool = new[] {
+                    SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
+                    SurvivalMissionType.CollectAny, SurvivalMissionType.CollectMulti,
+                    SurvivalMissionType.CreateSpecial, SurvivalMissionType.AchieveCombo, SurvivalMissionType.UseSpecial }
+            },
+            // 웨이브 6 (#21~30): 보석 수집 50% + 다양한 미션 — 보상 4~5
+            new WaveConfig {
+                startMission = 21, endMission = 30,
+                rewardMin = 4, rewardMax = 5, difficultyScale = 2.0f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectAny, SurvivalMissionType.CollectMulti, SurvivalMissionType.CollectMulti,
                     SurvivalMissionType.CreateSpecial, SurvivalMissionType.AchieveCombo,
                     SurvivalMissionType.SingleTurnRemoval, SurvivalMissionType.UseSpecial }
             },
-            // 웨이브 5 (#36+): 보석 수집 40% + 고난이도 — 보상 3~4
+            // 웨이브 7 (#31~45): 보석 수집 40% + 고난이도 — 보상 3~4
             new WaveConfig {
-                startMission = 36, endMission = 9999,
-                rewardMin = 3, rewardMax = 4, difficultyScale = 2.5f,
+                startMission = 31, endMission = 45,
+                rewardMin = 3, rewardMax = 4, difficultyScale = 2.3f,
+                missionPool = new[] {
+                    SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
+                    SurvivalMissionType.CollectMulti, SurvivalMissionType.CollectMulti,
+                    SurvivalMissionType.CreateSpecial, SurvivalMissionType.AchieveCombo,
+                    SurvivalMissionType.AchieveCascade, SurvivalMissionType.SingleTurnRemoval,
+                    SurvivalMissionType.UseSpecial }
+            },
+            // 웨이브 8 (#46+): 최고 난이도 — 보상 고정 3
+            new WaveConfig {
+                startMission = 46, endMission = 9999,
+                rewardMin = 3, rewardMax = 3, difficultyScale = 2.5f,
                 missionPool = new[] {
                     SurvivalMissionType.CollectGem, SurvivalMissionType.CollectGem,
                     SurvivalMissionType.CollectMulti, SurvivalMissionType.CollectMulti,
@@ -185,6 +218,7 @@ namespace JewelsHexaPuzzle.Managers
             maxCascadeThisTurn = 0;
             pendingMissionComplete = false;
             currentMission = null;
+            nextPreviewMission = null;
             scoreBaseline = 0;
 
             AssignNextMission();
@@ -214,27 +248,52 @@ namespace JewelsHexaPuzzle.Managers
 
         /// <summary>
         /// 다음 미션 배정
+        /// 사전 생성된 nextPreviewMission이 있으면 그것을 사용, 없으면 새로 생성
         /// </summary>
         public void AssignNextMission()
         {
             int nextNumber = completedMissionCount + 1;
-            WaveConfig wave = GetWaveForMission(nextNumber);
 
-            SurvivalMissionType mType = wave.missionPool[Random.Range(0, wave.missionPool.Length)];
+            // 사전 생성된 미리보기 미션이 있으면 사용
+            if (nextPreviewMission != null)
+            {
+                currentMission = nextPreviewMission;
+                nextPreviewMission = null;
+            }
+            else
+            {
+                WaveConfig wave = GetWaveForMission(nextNumber);
+                SurvivalMissionType mType = wave.missionPool[Random.Range(0, wave.missionPool.Length)];
+                currentMission = GenerateMission(mType, nextNumber, wave);
+            }
 
-            currentMission = GenerateMission(mType, nextNumber, wave);
             pendingMissionComplete = false;
 
             // ReachScore 기준점 설정
-            if (mType == SurvivalMissionType.ReachScore)
+            if (currentMission.type == SurvivalMissionType.ReachScore)
             {
                 var sm = GameManager.Instance?.GetComponent<ScoreManager>();
                 if (sm != null)
                     scoreBaseline = sm.CurrentScore;
             }
 
+            // 다음 미션 미리보기 사전 생성
+            GenerateNextPreview();
+
             Debug.Log($"[MissionSystem] 미션 #{nextNumber} 배정: {currentMission.description} (웨이브 {currentMission.waveNumber}, 보상 +{currentMission.reward})");
             OnMissionAssigned?.Invoke(currentMission);
+        }
+
+        /// <summary>
+        /// 다음 미션 미리보기 사전 생성 (UI 표시용)
+        /// </summary>
+        private void GenerateNextPreview()
+        {
+            int previewNumber = completedMissionCount + 2; // 현재 +1이 배정됨, +2가 다음
+            WaveConfig wave = GetWaveForMission(previewNumber);
+            SurvivalMissionType mType = wave.missionPool[Random.Range(0, wave.missionPool.Length)];
+            nextPreviewMission = GenerateMission(mType, previewNumber, wave);
+            Debug.Log($"[MissionSystem] 다음 미션 미리보기 생성: #{previewNumber} {nextPreviewMission.description}");
         }
 
         // ============================================================
@@ -387,6 +446,60 @@ namespace JewelsHexaPuzzle.Managers
                 case SurvivalMissionType.SingleTurnRemoval:
                     int turnTotal = 0;
                     foreach (var count in gemTypeCount.Values)
+                        turnTotal += count;
+                    turnRemovalCount += turnTotal;
+                    break;
+            }
+
+            CheckPendingComplete();
+        }
+
+        /// <summary>
+        /// 특수 블록 실행으로 제거된 블록들 추적 (색상별 Dictionary 버전)
+        /// GameManager에서 통합 호출됨 (Stage/Survival 모드 공통 경로)
+        /// </summary>
+        public void OnSpecialBlockDestroyedByColor(Dictionary<GemType, int> gemCounts)
+        {
+            if (currentMission == null || currentMission.IsComplete || gemCounts == null || gemCounts.Count == 0)
+                return;
+
+            switch (currentMission.type)
+            {
+                case SurvivalMissionType.CollectGem:
+                    if (gemCounts.ContainsKey(currentMission.targetGemType))
+                    {
+                        currentMission.currentCount += gemCounts[currentMission.targetGemType];
+                        NotifyProgress();
+                    }
+                    break;
+
+                case SurvivalMissionType.CollectAny:
+                    int totalCount = 0;
+                    foreach (var count in gemCounts.Values)
+                        totalCount += count;
+                    if (totalCount > 0)
+                    {
+                        currentMission.currentCount += totalCount;
+                        NotifyProgress();
+                    }
+                    break;
+
+                case SurvivalMissionType.CollectMulti:
+                    if (gemCounts.ContainsKey(currentMission.targetGemType))
+                    {
+                        currentMission.currentCount += gemCounts[currentMission.targetGemType];
+                        NotifyProgress();
+                    }
+                    if (gemCounts.ContainsKey(currentMission.targetGemType2))
+                    {
+                        currentMission.currentCount2 += gemCounts[currentMission.targetGemType2];
+                        NotifyProgress();
+                    }
+                    break;
+
+                case SurvivalMissionType.SingleTurnRemoval:
+                    int turnTotal = 0;
+                    foreach (var count in gemCounts.Values)
                         turnTotal += count;
                     turnRemovalCount += turnTotal;
                     break;
@@ -654,7 +767,7 @@ namespace JewelsHexaPuzzle.Managers
 
         private SpecialBlockType GetRandomSpecialType()
         {
-            SpecialBlockType[] types = { SpecialBlockType.Drill, SpecialBlockType.Bomb, SpecialBlockType.Laser };
+            SpecialBlockType[] types = { SpecialBlockType.Drill, SpecialBlockType.Bomb };
             return types[Random.Range(0, types.Length)];
         }
 
@@ -678,7 +791,6 @@ namespace JewelsHexaPuzzle.Managers
             {
                 case SpecialBlockType.Drill: return "드릴";
                 case SpecialBlockType.Bomb: return "폭탄";
-                case SpecialBlockType.Laser: return "레이저";
                 case SpecialBlockType.Rainbow: return "무지개";
                 case SpecialBlockType.XBlock: return "X블록";
                 default: return "특수 블록";

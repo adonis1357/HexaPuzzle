@@ -25,7 +25,7 @@ namespace JewelsHexaPuzzle.Managers
                 [SerializeField] private BombBlockSystem bombSystem;
         [SerializeField] private DonutBlockSystem donutSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
-        [SerializeField] private LaserBlockSystem laserSystem;
+
         [SerializeField] private DroneBlockSystem droneSystem;
         [SerializeField] private EnemySystem enemySystem;
 
@@ -996,7 +996,7 @@ private void Update()
                         if (bombSystem != null) bombSystem.ForceReset();
                         if (donutSystem != null) donutSystem.ForceReset();
                         if (xBlockSystem != null) xBlockSystem.ForceReset();
-                        if (laserSystem != null) laserSystem.ForceReset();
+
             if (droneSystem != null) droneSystem.ForceReset();
                         SetGameState(GameState.Playing);
                         if (inputSystem != null) inputSystem.SetEnabled(true);
@@ -1012,7 +1012,7 @@ private void Update()
                             || (bombSystem != null && bombSystem.IsBombing)
                             || (donutSystem != null && donutSystem.IsActivating)
                             || (xBlockSystem != null && xBlockSystem.IsActivating)
-                            || (laserSystem != null && laserSystem.IsActivating)
+
                             || (droneSystem != null && droneSystem.IsActivating);
 
                         if (systemsActive)
@@ -1044,7 +1044,6 @@ private void Update()
                     if (bombSystem != null) bombSystem.ForceReset();
                     if (donutSystem != null) donutSystem.ForceReset();
                     if (xBlockSystem != null) xBlockSystem.ForceReset();
-                    if (laserSystem != null) laserSystem.ForceReset();
             if (droneSystem != null) droneSystem.ForceReset();
 
                     // 재진입 방지 (매 프레임 반복 호출 차단)
@@ -1084,7 +1083,6 @@ private void ForceRecoverFromStuck()
             if (bombSystem != null) bombSystem.ForceReset();
             if (donutSystem != null) donutSystem.ForceReset();
             if (xBlockSystem != null) xBlockSystem.ForceReset();
-            if (laserSystem != null) laserSystem.ForceReset();
             if (droneSystem != null) droneSystem.ForceReset();
 
             // pending 플래그 전체 클리어 + matched 상태 해제
@@ -1247,13 +1245,6 @@ private IEnumerator PostRecoveryCleanup()
                     Debug.Log("[GameManager] XBlockSystem auto-found");
             }
 
-            if (laserSystem == null)
-            {
-                laserSystem = FindObjectOfType<LaserBlockSystem>();
-                if (laserSystem != null)
-                    Debug.Log("[GameManager] LaserBlockSystem auto-found");
-            }
-
             if (droneSystem == null)
             {
                 droneSystem = FindObjectOfType<DroneBlockSystem>();
@@ -1364,9 +1355,6 @@ private void InitializeSystems()
 
             if (xBlockSystem != null)
                 xBlockSystem.OnXBlockComplete += OnSpecialBlockCompleted;
-
-            if (laserSystem != null)
-                laserSystem.OnLaserComplete += OnSpecialBlockCompleted;
 
             if (droneSystem != null)
                 droneSystem.OnDroneComplete += OnSpecialBlockCompleted;
@@ -2952,6 +2940,27 @@ private void OnRotationComplete(bool matchFound)
         }
 
         /// <summary>
+        /// 특수 블록(드릴 등)이 개별 블록 1개를 파괴할 때 미션 카운팅
+        /// 드릴의 연출과 동기화하여 1개씩 보고
+        /// </summary>
+        public void OnSingleGemDestroyedForMission(GemType gemType)
+        {
+            if (gemType == GemType.None) return;
+
+            // Stage 모드: stageManager에 보고
+            if (currentGameMode == GameMode.Stage && stageManager != null)
+            {
+                stageManager.OnGemCollected(gemType, 1);
+            }
+
+            // 무한도전 모드: missionSystem에 보고
+            if (currentGameMode == GameMode.Infinite && missionSystem != null)
+            {
+                missionSystem.OnGemsRemoved(1, gemType, 0);
+            }
+        }
+
+        /// <summary>
         /// 연쇄 완료 이벤트
         /// </summary>
 private void OnCascadeComplete()
@@ -3173,7 +3182,6 @@ private IEnumerator ProcessSpecialBlockAftermath()
                 if (bombSystem != null) bombSystem.PendingSpecialBlocks.Clear();
                 if (donutSystem != null) donutSystem.PendingSpecialBlocks.Clear();
                 if (xBlockSystem != null) xBlockSystem.PendingSpecialBlocks.Clear();
-                if (laserSystem != null) laserSystem.PendingSpecialBlocks.Clear();
                 if (droneSystem != null) droneSystem.PendingSpecialBlocks.Clear();
 
                 // 2. 낙하 전: pendingActivation 블록의 블링크만 중지
@@ -3416,17 +3424,6 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                     }
                     break;
 
-                case SpecialBlockType.Laser:
-                    if (laserSystem != null)
-                    {
-                        laserSystem.ActivateLaser(block);
-                        yield return new WaitForSeconds(0.1f);
-                        waited = 0f;
-                        while (laserSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
-                        if (laserSystem.IsBlockActive(block)) { Debug.LogError("[GM] Laser timeout!"); laserSystem.ForceReset(); }
-                    }
-                    break;
-
                 case SpecialBlockType.Drone:
                     if (droneSystem != null)
                     {
@@ -3576,7 +3573,6 @@ private void OnBigBang()
             if (bombSystem != null) bombSystem.ForceReset();
             if (donutSystem != null) donutSystem.ForceReset();
             if (xBlockSystem != null) xBlockSystem.ForceReset();
-            if (laserSystem != null) laserSystem.ForceReset();
             if (droneSystem != null) droneSystem.ForceReset();
 
             SetGameState(GameState.StageClear);
@@ -3762,7 +3758,6 @@ private void OnBigBang()
                 if (bombSystem != null && bombSystem.IsBombing) anyActive = true;
                 if (donutSystem != null && donutSystem.IsActivating) anyActive = true;
                 if (xBlockSystem != null && xBlockSystem.IsActivating) anyActive = true;
-                if (laserSystem != null && laserSystem.IsActivating) anyActive = true;
                 if (droneSystem != null && droneSystem.IsActivating) anyActive = true;
                 if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) anyActive = true;
 
@@ -3919,7 +3914,7 @@ private void OnBigBang()
                    type == SpecialBlockType.Bomb ||
                    type == SpecialBlockType.Rainbow ||
                    type == SpecialBlockType.XBlock ||
-                   type == SpecialBlockType.Laser;
+                   type == SpecialBlockType.Drone;
         }
 
         /// <summary>
@@ -3933,7 +3928,7 @@ private void OnBigBang()
             List<HexBlock> bombBlocks = new List<HexBlock>();
             List<HexBlock> donutBlocks = new List<HexBlock>();
             List<HexBlock> xBlocks = new List<HexBlock>();
-            List<HexBlock> laserBlocks = new List<HexBlock>();
+            List<HexBlock> droneBlocks = new List<HexBlock>();
 
             // 필드의 모든 특수 블록 수집
             foreach (var block in hexGrid.GetAllBlocks())
@@ -3948,8 +3943,8 @@ private void OnBigBang()
                     donutBlocks.Add(block);
                 else if (block.Data.IsXBlock())
                     xBlocks.Add(block);
-                else if (block.Data.IsLaser())
-                    laserBlocks.Add(block);
+                else if (block.Data.IsDrone())
+                    droneBlocks.Add(block);
             }
 
             // 모든 특수 블록을 동시에 발동 (병렬 코루틴)
@@ -3983,11 +3978,11 @@ private void OnBigBang()
                     activationCoroutines.Add(StartCoroutine(ActivateXBlock(block)));
             }
 
-            // 레이저 발동
-            foreach (var block in laserBlocks)
+            // 드론 발동
+            foreach (var block in droneBlocks)
             {
-                if (laserSystem != null)
-                    activationCoroutines.Add(StartCoroutine(ActivateLaserBlock(block)));
+                if (droneSystem != null)
+                    activationCoroutines.Add(StartCoroutine(ActivateDroneBlock(block)));
             }
 
             // 모든 발동 완료 대기
@@ -3996,7 +3991,7 @@ private void OnBigBang()
                 yield return coroutine;
             }
 
-            Debug.Log($"[GameManager] 특수 블록 발동 완료: 드릴({drillBlocks.Count}), 폭탄({bombBlocks.Count}), 무지개({donutBlocks.Count}), X({xBlocks.Count}), 레이저({laserBlocks.Count})");
+            Debug.Log($"[GameManager] 특수 블록 발동 완료: 드릴({drillBlocks.Count}), 폭탄({bombBlocks.Count}), 무지개({donutBlocks.Count}), X({xBlocks.Count}), 드론({droneBlocks.Count})");
         }
 
         /// <summary>
@@ -4087,29 +4082,6 @@ private void OnBigBang()
                 {
                     Debug.LogWarning("[GameManager] ActivateXBlock timeout! ForceReset.");
                     xBlockSystem.ForceReset();
-                }
-            }
-        }
-
-        /// <summary>
-        /// 레이저 블록 발동
-        /// </summary>
-        private IEnumerator ActivateLaserBlock(HexBlock block)
-        {
-            if (laserSystem != null)
-            {
-                laserSystem.ActivateLaser(block);
-                float waited = 0f;
-                while (laserSystem.IsActivating && waited < 5f)
-                {
-                    waited += Time.deltaTime;
-                    processingStartTime = Time.time;
-                    yield return null;
-                }
-                if (laserSystem.IsActivating)
-                {
-                    Debug.LogWarning("[GameManager] ActivateLaserBlock timeout! ForceReset.");
-                    laserSystem.ForceReset();
                 }
             }
         }
@@ -4251,34 +4223,98 @@ private void OnBigBang()
                 UpdateUI();
             }
 
-            if (uiManager != null)
-                uiManager.AnimateMissionComplete(reward);
-
-            // 1.2초 후 다음 미션 배정
-            StartCoroutine(AssignNextMissionDelayed());
-        }
-
-        private IEnumerator AssignNextMissionDelayed()
-        {
-            yield return new WaitForSeconds(1.2f);
+            // 무브 수치 증가와 동시에 다음 미션 배정
             if (missionSystem != null)
                 missionSystem.AssignNextMission();
         }
 
+        private Coroutine missionEntranceCoroutine;
+
         private void OnSurvivalMissionAssigned(SurvivalMission mission)
         {
-            if (uiManager != null)
+            if (uiManager == null) return;
+
+            // 이전 등장 애니메이션 중단
+            if (missionEntranceCoroutine != null)
+                StopCoroutine(missionEntranceCoroutine);
+
+            // 전체 흐름을 하나의 코루틴으로 래핑 (UI 생성 → 레이아웃 대기 → 애니메이션)
+            missionEntranceCoroutine = StartCoroutine(SetupAndAnimateMission(mission));
+        }
+
+        /// <summary>
+        /// 미션 UI 생성 + 등장 애니메이션을 하나의 코루틴으로 래핑.
+        /// UI 생성 후 yield return null로 Canvas 레이아웃 갱신을 기다린 뒤 애니메이션 시작.
+        /// </summary>
+        private IEnumerator SetupAndAnimateMission(SurvivalMission mission)
+        {
+            // 이전 미션 UI 정리
+            uiManager.CleanupGameMissionUI();
+
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) yield break;
+
+            MissionData md = ConvertSurvivalToMissionData(mission);
+            uiManager.CreateGameMissionUI(canvas, md);
+            uiManager.SetMissionRewardText(mission.reward);
+
+            // gameMissionIconRect 참조 확인
+            RectTransform missionRt = UIManager.gameMissionIconRect;
+            if (missionRt == null)
             {
-                // 이전 미션 UI 정리 후 스테이지 스타일 미션 UI 재생성
-                uiManager.CleanupGameMissionUI();
-                Canvas canvas = FindObjectOfType<Canvas>();
-                if (canvas != null)
-                {
-                    MissionData md = ConvertSurvivalToMissionData(mission);
-                    uiManager.CreateGameMissionUI(canvas, md);
-                    uiManager.SetMissionRewardText(mission.reward); // 보상 이동 횟수 표시
-                }
+                Debug.LogWarning("[MissionEntrance] gameMissionIconRect가 null — 애니메이션 건너뜀");
+                yield break;
             }
+
+            // CreateGameMissionUI에서 설정한 최종 목표 위치 (하드코딩으로 레이아웃 간섭 차단)
+            Vector2 targetPos = new Vector2(20f, -20f);
+            Vector2 startPos = new Vector2(targetPos.x - 420f, targetPos.y);
+
+            // 시작 상태 설정: 화면 밖 + 축소 + 투명
+            missionRt.anchoredPosition = startPos;
+            missionRt.localScale = Vector3.one * 0.6f;
+
+            CanvasGroup cg = missionRt.GetComponent<CanvasGroup>();
+            if (cg == null)
+                cg = missionRt.gameObject.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+
+            // 2프레임 대기: Canvas 레이아웃 완전 settle 보장
+            yield return null;
+            yield return null;
+
+            // 레이아웃 강제 갱신 후 시작 위치 재설정 (Canvas가 position을 override했을 수 있음)
+            missionRt.anchoredPosition = startPos;
+
+            Debug.Log($"[MissionEntrance] 애니메이션 시작 — start:{startPos} → target:{targetPos}");
+
+            // 슬라이드 + 페이드인 (EaseOutBack, unscaledDeltaTime으로 HitStop 중에도 동작)
+            float slideDuration = 0.4f;
+            float elapsed = 0f;
+
+            while (elapsed < slideDuration)
+            {
+                if (missionRt == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / slideDuration);
+                float eased = VisualConstants.EaseOutBack(t);
+                missionRt.anchoredPosition = Vector2.LerpUnclamped(startPos, targetPos, eased);
+                missionRt.localScale = Vector3.one * Mathf.LerpUnclamped(0.6f, 1f, eased);
+                cg.alpha = Mathf.Clamp01(t * 2.5f);
+                yield return null;
+            }
+
+            // 최종 값 확정
+            if (missionRt != null)
+            {
+                missionRt.anchoredPosition = targetPos;
+                missionRt.localScale = Vector3.one;
+            }
+            if (cg != null)
+                cg.alpha = 1f;
+
+            Debug.Log("[MissionEntrance] 애니메이션 완료");
+            missionEntranceCoroutine = null;
         }
 
         private void OnSurvivalMissionProgressChanged(SurvivalMission mission)
@@ -4288,7 +4324,17 @@ private void OnBigBang()
             {
                 int remaining = mission.targetCount - mission.currentCount;
                 if (remaining < 0) remaining = 0;
-                UIManager.gameMissionCountText.text = remaining.ToString();
+
+                // 미션 완료 시 체크마크 아이콘 표시 (레벨 미션과 동일)
+                if (mission.IsComplete)
+                {
+                    UIManager.gameMissionCountText.text = "";
+                    ShowCheckMarkOnText(UIManager.gameMissionCountText);
+                }
+                else
+                {
+                    UIManager.gameMissionCountText.text = remaining.ToString();
+                }
             }
         }
 
@@ -5095,7 +5141,7 @@ private void OnBigBang()
                 var st = block.Data.specialType;
                 if (st == SpecialBlockType.Drill || st == SpecialBlockType.Bomb ||
                     st == SpecialBlockType.Rainbow || st == SpecialBlockType.XBlock ||
-                    st == SpecialBlockType.Laser)
+                    st == SpecialBlockType.Drone)
                     return true;
             }
             return false;
@@ -5516,9 +5562,6 @@ private void OnDestroy()
 
             if (xBlockSystem != null)
                 xBlockSystem.OnXBlockComplete -= OnSpecialBlockCompleted;
-
-            if (laserSystem != null)
-                laserSystem.OnLaserComplete -= OnSpecialBlockCompleted;
 
             if (droneSystem != null)
                 droneSystem.OnDroneComplete -= OnSpecialBlockCompleted;

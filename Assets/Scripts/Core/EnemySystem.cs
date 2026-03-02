@@ -340,6 +340,10 @@ namespace JewelsHexaPuzzle.Core
             Color originalColor = GemColors.GetColor(block.Data.gemType);
             ApplyEnemyToBlock(block, type, twinId);
 
+            // ★ 튜토리얼 트리거: 적군 등장
+            if (TutorialManager.Instance != null)
+                TutorialManager.Instance.OnEnemyEncountered(type);
+
             // 스폰 애니메이션
             float duration = 0.3f;
             float elapsed = 0f;

@@ -369,8 +369,8 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             Coroutine drill2 = StartCoroutine(DrillLineWithProjectile(
                 drillWorldPos, targets2, direction, false, drillColor, isFirstDrill));
 
-            // 색상별 미션 카운팅 — 파괴 애니메이션 시작 직후, 완료 대기 전에 호출
-            GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Drill");
+            // 미션 카운팅: DrillLineWithProjectile에서 블록 파괴 시점마다 개별 보고
+            // (일괄 보고 제거 — 드릴 파괴 연출과 미션 숫자 감소가 동기화됨)
 
             // [7단계] 양방향 투사체가 모두 끝날 때까지 대기
             yield return drill1;
@@ -380,33 +380,8 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             int totalScore = 100 + blockScoreSum;
             Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:100 + blockTierSum:{blockScoreSum})");
 
-            // 미션 시스템에 파괴된 블록들 알림 (기본 블록만 — 특수 블록은 별도 처리됨)
-            List<HexBlock> basicBlocksOnly = new List<HexBlock>();
-            foreach (var t in allDrillTargets)
-            {
-                if (t != null && t.Data != null && t.Data.gemType != GemType.None)
-                {
-                    // 기본 블록만 포함: 특수블록 제외
-                    if (t.Data.specialType == SpecialBlockType.None || t.Data.specialType == SpecialBlockType.FixedBlock)
-                    {
-                        basicBlocksOnly.Add(t);
-                        Debug.Log($"[DrillBlockSystem]   BasicBlock: {t.Coord}, gemType={t.Data.gemType}");
-                    }
-                }
-            }
+            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
 
-            Debug.Log($"[DrillBlockSystem] Passing {basicBlocksOnly.Count} basic blocks to MissionSystem (from {allDrillTargets.Count} total targets)");
-
-            // 미션 시스템에 "드릴이 이 블록들을 파괴했다"고 알림
-            MissionSystem ms = Object.FindObjectOfType<MissionSystem>();
-            if (ms != null)
-            {
-                ms.OnSpecialBlockDestroyedBlocks(basicBlocksOnly);
-            }
-            else
-            {
-                Debug.LogWarning("[DrillBlockSystem] MissionSystem not found!");
-            }
 
             // 드릴 완료 이벤트 발생 → 점수 반영
             OnDrillComplete?.Invoke(totalScore);
@@ -560,8 +535,9 @@ private IEnumerator DrillLineWithProjectile(
                     continue; // 방패가 흡수 → 블록 보존, 다음 타겟으로
                 }
 
-                // 경로 위의 블록이 "다른 특수 블록"인 경우: 직접 파괴하지 않고 연쇄 예약
-                if (target.Data.specialType != SpecialBlockType.None && target.Data.specialType != SpecialBlockType.FixedBlock)
+                // 경로 위의 블록이 "연쇄 발동 가능한 특수 블록"인 경우: 직접 파괴하지 않고 연쇄 예약
+                // TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로 일반 블록처럼 파괴
+                if (IsChainActivatable(target.Data.specialType))
                 {
                     Debug.Log($"[DrillBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
                     if (!pendingSpecialBlocks.Contains(target))
@@ -577,11 +553,16 @@ private IEnumerator DrillLineWithProjectile(
                 else
                 {
                     // 일반 블록: 파편과 함께 파괴 애니메이션 실행
-                    Color blockColor = GemColors.GetColor(target.Data.gemType);
+                    GemType destroyedGemType = target.Data.gemType;
+                    Color blockColor = GemColors.GetColor(destroyedGemType);
                     float drillAngle = GetDirectionAngle(direction, positive);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithDebris(target, blockColor, drillAngle, showEffects)));
                     if (showEffects)
                         StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
+
+                    // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (드릴 파괴 연출과 동기화)
+                    if (destroyedGemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType);
                 }
 
                 // 블록 사이 약간의 간격을 두어 "하나씩 뚫어가는" 느낌 연출
@@ -644,6 +625,20 @@ private IEnumerator DrillLineWithProjectile(
             foreach (var co in destroyCoroutines)
                 yield return co;
 
+        }
+
+        /// <summary>
+        /// 연쇄 발동 가능한 특수 블록인지 판별.
+        /// TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로
+        /// 일반 블록처럼 파괴해야 함 (pending 마킹 금지).
+        /// </summary>
+        private static bool IsChainActivatable(SpecialBlockType type)
+        {
+            return type == SpecialBlockType.Drill ||
+                   type == SpecialBlockType.Bomb ||
+                   type == SpecialBlockType.Rainbow ||
+                   type == SpecialBlockType.XBlock ||
+                   type == SpecialBlockType.Drone;
         }
 
         // ============================================================
@@ -1316,6 +1311,10 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         /// <param name="duration">흔들림 지속 시간(초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
+            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             // 첫 번째 흔들림이면 현재 위치를 "원래 위치"로 저장
             if (shakeCount == 0)
@@ -1343,6 +1342,7 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
                 shakeCount = 0;
                 target.localPosition = shakeOriginalPos;
             }
+            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1529,6 +1529,10 @@ private float GetDirectionAngle(DrillDirection direction, bool positive)
         /// </summary>
         private IEnumerator ZoomPunch(float targetScale)
         {
+            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginZoomPunch();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             Vector3 origScale = target.localScale;
             Vector3 punchScale = origScale * targetScale; // 확대될 크기
@@ -1554,6 +1558,7 @@ private float GetDirectionAngle(DrillDirection direction, bool positive)
             }
 
             target.localScale = origScale; // 최종적으로 원래 크기 보장
+            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

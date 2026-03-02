@@ -33,6 +33,12 @@ namespace JewelsHexaPuzzle.Managers
         private int turnCreationCount = 0;
         private int turnEnemyKillCount = 0;
 
+        // 갱신 전 이전 기록 (카운트업 애니메이션용)
+        private int previousLevelBest = 0;
+        private int previousPersonalBest = 0;
+        public int PreviousLevelBest => previousLevelBest;
+        public int PreviousPersonalBest => previousPersonalBest;
+
         // 이벤트
         public event Action<int> OnScoreChanged;
         public event Action<int> OnComboChanged;
@@ -480,6 +486,10 @@ namespace JewelsHexaPuzzle.Managers
             int prevPersonalBest = GetPersonalLevelBest(stageNumber);
             bool isNewLevelHigh = currentScore > prevLevelHigh;
             bool isNewPersonalBest = currentScore > prevPersonalBest;
+
+            // 갱신 전 이전 기록 저장 (UI 카운트업 애니메이션용)
+            previousLevelBest = prevLevelHigh;
+            previousPersonalBest = prevPersonalBest;
 
             // 레벨 최고 점수 갱신 (모든 유저 통합)
             if (isNewLevelHigh)

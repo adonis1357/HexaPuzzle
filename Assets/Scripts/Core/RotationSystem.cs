@@ -2,7 +2,6 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
-using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -23,6 +22,8 @@ namespace JewelsHexaPuzzle.Core
 
         public event System.Action<bool> OnRotationComplete;
         public event System.Action OnRotationStarted;
+        /// <summary>매칭 감지 시 발생 — int: 매칭된 총 블록 수 (GameSoundController에서 구독)</summary>
+        public event System.Action<int> OnMatchDetected;
 
         public bool IsRotating => isRotating;
         public bool IsClockwise => clockwiseRotation && !oneTimeCounterClockwise;
@@ -64,6 +65,16 @@ namespace JewelsHexaPuzzle.Core
         {
             oneTimeCounterClockwise = true;
             Debug.Log("[RotationSystem] 1회성 반시계 회전 활성화");
+        }
+
+        /// <summary>
+        /// 1회성 반시계 회전 해제 (아이템 비활성화 시 호출).
+        /// 역회전 아이템을 사용하지 않고 비활성화할 때 플래그를 초기화합니다.
+        /// </summary>
+        public void ClearOneTimeCounterClockwise()
+        {
+            oneTimeCounterClockwise = false;
+            Debug.Log("[RotationSystem] 1회성 반시계 회전 해제");
         }
 
 /// <summary>
@@ -187,9 +198,7 @@ namespace JewelsHexaPuzzle.Core
             if (EnemySystem.Instance != null)
                 lastRotationCost = EnemySystem.Instance.GetRotationCost(block1, block2, block3);
 
-            // 회전 시작 사운드
-            if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayRotateSound();
+            // 회전 시작 사운드 → GameSoundController에서 OnRotationStarted 이벤트로 처리
 
             HexBlock[] blocks = { block1, block2, block3 };
 
@@ -238,12 +247,10 @@ namespace JewelsHexaPuzzle.Core
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 120°! ({matches.Count} groups)");
-                if (AudioManager.Instance != null)
-                {
-                    int totalBlocks = 0;
-                    foreach (var m in matches) totalBlocks += m.blocks.Count;
-                    AudioManager.Instance.PlayMatchSound(totalBlocks);
-                }
+                // 매칭 사운드 → GameSoundController에서 OnMatchDetected 이벤트로 처리
+                int totalBlocks = 0;
+                foreach (var m in matches) totalBlocks += m.blocks.Count;
+                OnMatchDetected?.Invoke(totalBlocks);
                 oneTimeCounterClockwise = false; // 1회성 역회전 리셋
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
@@ -263,12 +270,10 @@ namespace JewelsHexaPuzzle.Core
             if (matches.Count > 0)
             {
                 Debug.Log($"[Rotation] Match at 240°! ({matches.Count} groups)");
-                if (AudioManager.Instance != null)
-                {
-                    int totalBlocks = 0;
-                    foreach (var m in matches) totalBlocks += m.blocks.Count;
-                    AudioManager.Instance.PlayMatchSound(totalBlocks);
-                }
+                // 매칭 사운드 → GameSoundController에서 OnMatchDetected 이벤트로 처리
+                int totalBlocks = 0;
+                foreach (var m in matches) totalBlocks += m.blocks.Count;
+                OnMatchDetected?.Invoke(totalBlocks);
                 oneTimeCounterClockwise = false; // 1회성 역회전 리셋
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
@@ -285,8 +290,7 @@ namespace JewelsHexaPuzzle.Core
                 blocks[i].SetBlockData(originalData[i]);
 
             Debug.Log("[Rotation] No match, reverted");
-            if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayFailSound();
+            // 실패 사운드 → GameSoundController에서 OnRotationComplete(false) 이벤트로 처리
             oneTimeCounterClockwise = false; // 1회성 역회전 리셋
             isRotating = false;
             OnRotationComplete?.Invoke(false);

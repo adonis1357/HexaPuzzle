@@ -61,6 +61,9 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>블록 제거 시스템. 낙하 및 캐스케이드 처리 위임.</summary>
         private BlockRemovalSystem blockRemovalSystem;
 
+        /// <summary>스테이지 매니저. 미션 타겟 정보 조회.</summary>
+        private StageManager stageManager;
+
         /// <summary>이펙트 오브젝트들의 부모 Transform. Canvas 내부에 별도 레이어로 생성.</summary>
         private Transform effectParent;
 
@@ -103,6 +106,7 @@ namespace JewelsHexaPuzzle.Core
             xBlockSystem = FindObjectOfType<XBlockSystem>();
             droneSystem = FindObjectOfType<DroneBlockSystem>();
             blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+            stageManager = FindObjectOfType<StageManager>();
 
             if (drillSystem == null) Debug.LogWarning("[ComboSystem] DrillBlockSystem not found!");
             if (bombSystem == null) Debug.LogWarning("[ComboSystem] BombBlockSystem not found!");
@@ -1313,11 +1317,11 @@ namespace JewelsHexaPuzzle.Core
             int strikes = 5;
             HashSet<HexBlock> alreadyStruck = new HashSet<HexBlock>();
 
-            // 1) 타겟 5개 미리 선정
+            // 1) 타겟 5개 미리 선정 (미션 블록 우선)
             List<HexBlock> targets = new List<HexBlock>();
             for (int i = 0; i < strikes; i++)
             {
-                HexBlock target = FindBestTarget(pos, alreadyStruck);
+                HexBlock target = FindBestDroneComboTarget(pos, alreadyStruck);
                 if (target == null)
                 {
                     Debug.Log($"[ComboSystem] DroneDrone: 타겟 {i + 1} - 타겟 없음");
@@ -1341,17 +1345,18 @@ namespace JewelsHexaPuzzle.Core
                 yield break;
             }
 
-            // 2) 5개 드론 동시 비행 시작 (각 드론 약간의 시간차로 발사)
+            // 2) 5개 드론 동시 비행 시작 (DroneBlockSystem의 정식 비행 이펙트 사용)
             List<Coroutine> flyCoroutines = new List<Coroutine>();
             for (int i = 0; i < targets.Count; i++)
             {
                 Vector3 targetPos = targets[i].transform.position;
-                float delay = i * 0.06f; // 각 드론 0.06초 간격으로 발사 (동시 느낌 유지)
-                flyCoroutines.Add(StartCoroutine(ComboDroneFlyWithDelay(worldPos, targetPos, comboColor, delay, i)));
+                float delay = i * 0.06f;
+                if (droneSystem != null)
+                    flyCoroutines.Add(StartCoroutine(droneSystem.PlayDroneFlyEffectWithDelay(worldPos, targetPos, comboColor, delay)));
             }
 
-            // 3) 모든 드론 비행 완료 대기 (가장 늦은 드론: delay + 비행시간)
-            float maxWait = (targets.Count - 1) * 0.06f + 0.35f;
+            // 3) 모든 드론 비행 완료 대기 (이륙0.264 + 호버0.198 + 비행0.396 + 딜레이)
+            float maxWait = (targets.Count - 1) * 0.06f + 0.86f;
             yield return new WaitForSeconds(maxWait);
 
             // 4) 모든 타겟에 동시 타격 적용
@@ -1411,8 +1416,8 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDroneSound();
 
-            // 타겟 선택
-            HexBlock target = FindBestTarget(pos, new HashSet<HexBlock>());
+            // 미션 최적화 타겟 선택: 드릴 라인에 미션 블록이 가장 많은 위치
+            HexBlock target = FindBestDrillComboTarget(pos, drillDir);
             HexCoord drillPos = pos;
             Vector3 drillWorldPos = worldPos;
 
@@ -1421,8 +1426,11 @@ namespace JewelsHexaPuzzle.Core
                 drillPos = target.Coord;
                 drillWorldPos = target.transform.position;
 
-                // 드론 비행 이펙트
-                yield return StartCoroutine(ComboDroneFly(worldPos, drillWorldPos, comboColor));
+                // 드론 비행 이펙트 (정식 이륙→호버→급강하)
+                if (droneSystem != null)
+                    yield return StartCoroutine(droneSystem.PlayDroneFlyEffect(worldPos, drillWorldPos, comboColor));
+                else
+                    yield return new WaitForSeconds(0.4f);
 
                 // 타겟 블록 파괴 (1데미지)
                 if (target.Data != null)
@@ -1518,8 +1526,8 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDroneSound();
 
-            // 타겟 선택
-            HexBlock target = FindBestTarget(pos, new HashSet<HexBlock>());
+            // 미션 최적화 타겟 선택: 폭발 범위에 미션 블록이 가장 많은 위치
+            HexBlock target = FindBestBombComboTarget(pos);
             HexCoord bombPos = pos;
             Vector3 bombWorldPos = worldPos;
 
@@ -1528,8 +1536,11 @@ namespace JewelsHexaPuzzle.Core
                 bombPos = target.Coord;
                 bombWorldPos = target.transform.position;
 
-                // 드론 비행 이펙트
-                yield return StartCoroutine(ComboDroneFly(worldPos, bombWorldPos, comboColor));
+                // 드론 비행 이펙트 (정식 이륙→호버→급강하)
+                if (droneSystem != null)
+                    yield return StartCoroutine(droneSystem.PlayDroneFlyEffect(worldPos, bombWorldPos, comboColor));
+                else
+                    yield return new WaitForSeconds(0.4f);
 
                 // 타겟 블록 파괴
                 if (target.Data != null)
@@ -1779,11 +1790,15 @@ namespace JewelsHexaPuzzle.Core
 
             if (candidates.Count == 0) return null;
 
+            // 미션 타겟 정보 수집
+            HashSet<GemType> missionGemTargets = GetComboMissionTargetGemTypes();
+            bool hasObstacleMission = HasComboObstacleMission();
+
             HexCoord origin = new HexCoord(0, 0);
             candidates.Sort((a, b) =>
             {
-                int prioA = GetComboTargetPriority(a);
-                int prioB = GetComboTargetPriority(b);
+                int prioA = GetComboTargetPriority(a, missionGemTargets, hasObstacleMission);
+                int prioB = GetComboTargetPriority(b, missionGemTargets, hasObstacleMission);
                 if (prioA != prioB) return prioB.CompareTo(prioA);
                 int distA = a.Coord.DistanceTo(origin);
                 int distB = b.Coord.DistanceTo(origin);
@@ -1791,51 +1806,140 @@ namespace JewelsHexaPuzzle.Core
                 return b.Coord.r.CompareTo(a.Coord.r);
             });
 
-            // 최상위 우선순위가 기본 블록(50)이면 기본 블록들 중 랜덤 선택
-            int topPriority = GetComboTargetPriority(candidates[0]);
-            if (topPriority == 50)
+            // 최상위 우선순위가 미션 기본 블록(100) 또는 일반 기본 블록(50)이면
+            // 같은 우선순위 블록들 중 랜덤 선택
+            int topPriority = GetComboTargetPriority(candidates[0], missionGemTargets, hasObstacleMission);
+            if (topPriority == 100 || topPriority == 50)
             {
-                List<HexBlock> basics = new List<HexBlock>();
+                List<HexBlock> sameGroup = new List<HexBlock>();
                 foreach (var c in candidates)
                 {
-                    if (GetComboTargetPriority(c) == 50)
-                        basics.Add(c);
+                    if (GetComboTargetPriority(c, missionGemTargets, hasObstacleMission) == topPriority)
+                        sameGroup.Add(c);
                 }
-                return basics[Random.Range(0, basics.Count)];
+                return sameGroup[Random.Range(0, sameGroup.Count)];
             }
 
             return candidates[0];
         }
 
         /// <summary>
-        /// 합성용 타겟 우선순위 (DroneBlockSystem.GetTargetPriority와 동일)
-        /// 1순위: 장애물 > 2순위: 높은 티어 > 3순위: 기본 블록 > 4순위: 특수 블록(희귀도 낮은 순)
+        /// 미션 타겟 GemType 수집 (합성 시스템용)
+        /// 무한모드(MissionSystem) + 스테이지모드(StageManager) 모두 지원
         /// </summary>
-        private int GetComboTargetPriority(HexBlock block)
+        private HashSet<GemType> GetComboMissionTargetGemTypes()
+        {
+            HashSet<GemType> targets = new HashSet<GemType>();
+
+            // ── 1) 무한모드: MissionSystem (우선 확인) ──
+            if (MissionSystem.Instance != null)
+            {
+                var sm = MissionSystem.Instance.CurrentMission;
+                if (sm != null && !sm.IsComplete)
+                {
+                    Debug.Log($"[ComboSystem] 미션 감지: type={sm.type}, target1={sm.targetGemType}, target2={sm.targetGemType2}");
+                    switch (sm.type)
+                    {
+                        case SurvivalMissionType.CollectGem:
+                            if (sm.targetGemType != GemType.None)
+                                targets.Add(sm.targetGemType);
+                            break;
+                        case SurvivalMissionType.ProcessGem:
+                            if (sm.targetGemType != GemType.None)
+                                targets.Add(sm.targetGemType);
+                            break;
+                        case SurvivalMissionType.CollectMulti:
+                            if (sm.targetGemType != GemType.None) targets.Add(sm.targetGemType);
+                            if (sm.targetGemType2 != GemType.None) targets.Add(sm.targetGemType2);
+                            break;
+                    }
+                }
+            }
+
+            // ── 2) 스테이지모드: StageManager ──
+            if (stageManager != null)
+            {
+                MissionProgress[] progress = stageManager.GetMissionProgress();
+                if (progress != null)
+                {
+                    foreach (var mp in progress)
+                    {
+                        if (mp == null || mp.isComplete || mp.mission == null) continue;
+                        if (mp.mission.type == MissionType.CollectGem && mp.mission.targetGemType != GemType.None)
+                            targets.Add(mp.mission.targetGemType);
+                        else if (mp.mission.type == MissionType.ProcessGem && mp.mission.targetGemType != GemType.None)
+                            targets.Add(mp.mission.targetGemType);
+                        else if (mp.mission.type == MissionType.CollectMultiGem)
+                        {
+                            if (mp.mission.targetGemType != GemType.None) targets.Add(mp.mission.targetGemType);
+                            if (mp.mission.secondaryGemType != GemType.None) targets.Add(mp.mission.secondaryGemType);
+                        }
+                    }
+                }
+            }
+
+            if (targets.Count > 0)
+                Debug.Log($"[ComboSystem] ★ 미션 타겟 색상: {string.Join(", ", targets)}");
+
+            return targets;
+        }
+
+        /// <summary>
+        /// 장애물 관련 미션 존재 여부 (합성 시스템용)
+        /// </summary>
+        private bool HasComboObstacleMission()
+        {
+            if (stageManager != null)
+            {
+                MissionProgress[] progress = stageManager.GetMissionProgress();
+                if (progress != null)
+                {
+                    foreach (var mp in progress)
+                    {
+                        if (mp == null || mp.isComplete || mp.mission == null) continue;
+                        if (mp.mission.type == MissionType.RemoveVinyl ||
+                            mp.mission.type == MissionType.RemoveDoubleVinyl ||
+                            mp.mission.type == MissionType.RemoveEnemy)
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 합성용 타겟 우선순위 (미션 연동)
+        /// 0순위: 미션 타겟 > 1순위: 장애물 > 2순위: 높은 티어 > 3순위: 기본 블록 > 4순위: 특수 블록
+        /// </summary>
+        private int GetComboTargetPriority(HexBlock block, HashSet<GemType> missionGemTargets, bool hasObstacleMission)
         {
             var data = block.Data;
             if (data == null) return 0;
 
-            // 1순위: 장애물
-            if (data.specialType == SpecialBlockType.FixedBlock) return 200;
+            // 1순위: 장애물 (미션 부스트)
+            if (data.specialType == SpecialBlockType.FixedBlock) return hasObstacleMission ? 210 : 200;
             if (data.specialType == SpecialBlockType.TimeBomb) return 190;
-            if (data.vinylLayer > 0) return 180;
+            if (data.vinylLayer > 0) return hasObstacleMission ? 185 : 180;
             if (data.hasChain) return 170;
-            if (data.enemyType != EnemyType.None) return 160;
+            if (data.enemyType != EnemyType.None) return hasObstacleMission ? 165 : 160;
 
-            // 2순위: 높은 티어 블록
-            if (data.tier >= BlockTier.ProcessedGem) return 140;
-            if (data.tier >= BlockTier.Tier3) return 130;
-            if (data.tier >= BlockTier.Tier2) return 120;
-            if (data.tier >= BlockTier.Tier1) return 110;
+            // 2순위: 높은 티어 블록 (미션 색상 부스트)
+            bool isMissionColor = missionGemTargets.Count > 0 && missionGemTargets.Contains(data.gemType);
 
-            // 3순위: 기본 블록 (Normal 티어 + 특수 아님)
+            if (data.tier >= BlockTier.ProcessedGem) return isMissionColor ? 145 : 140;
+            if (data.tier >= BlockTier.Tier3) return isMissionColor ? 135 : 130;
+            if (data.tier >= BlockTier.Tier2) return isMissionColor ? 125 : 120;
+            if (data.tier >= BlockTier.Tier1) return isMissionColor ? 115 : 110;
+
+            // 3순위: 미션 색상 기본 블록 — 최우선 타겟!
+            if (data.specialType == SpecialBlockType.None && isMissionColor) return 100;
+
+            // 4순위: 일반 기본 블록
             if (data.specialType == SpecialBlockType.None) return 50;
 
-            // 4순위: 특수 블록 (희귀도 낮은 순, 기본 블록 없을 때만 타겟)
+            // 5순위: 특수 블록 (희귀도 낮은 순, 기본 블록 없을 때만 타겟)
             if (data.specialType == SpecialBlockType.Drill) return 14;
             if (data.specialType == SpecialBlockType.Bomb) return 12;
-            if (data.specialType == SpecialBlockType.Laser) return 10;
             if (data.specialType == SpecialBlockType.Rainbow) return 8;
             if (data.specialType == SpecialBlockType.XBlock) return 6;
 
@@ -1859,127 +1963,235 @@ namespace JewelsHexaPuzzle.Core
             target.SetBlockData(data);
         }
 
+        // ============================================================
+        // 미션 최적화 타겟 선정 메서드 (콤보 효과 범위 시뮬레이션)
+        // ============================================================
+
         /// <summary>
-        /// 합성 드론 비행 이펙트: 시작 위치에서 타겟까지 포물선 비행
+        /// 드론+드릴 콤보 최적 타겟: 드릴 라인(양방향)에 미션 블록이 가장 많은 위치 선정
         /// </summary>
-        private IEnumerator ComboDroneFly(Vector3 startPos, Vector3 targetPos, Color color)
+        private HexBlock FindBestDrillComboTarget(HexCoord fromPos, DrillDirection drillDir)
         {
-            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
+            if (hexGrid == null || drillSystem == null) return FindBestTarget(fromPos, new HashSet<HexBlock>());
 
-            // 드론 비행체 생성
-            GameObject droneObj = new GameObject("ComboDroneFlyer");
-            droneObj.transform.SetParent(parent, false);
-            droneObj.transform.position = startPos;
+            HashSet<GemType> missionGemTargets = GetComboMissionTargetGemTypes();
+            bool hasObstacleMission = HasComboObstacleMission();
 
-            var droneImg = droneObj.AddComponent<Image>();
-            droneImg.sprite = DroneBlockSystem.GetDroneIconSprite();
-            droneImg.type = Image.Type.Simple;
-            droneImg.preserveAspect = true;
-            droneImg.color = Color.white;
-            droneImg.raycastTarget = false;
+            // 미션 타겟이 없으면 기존 로직 사용
+            if (missionGemTargets.Count == 0 && !hasObstacleMission)
+                return FindBestTarget(fromPos, new HashSet<HexBlock>());
 
-            RectTransform droneRt = droneObj.GetComponent<RectTransform>();
-            droneRt.sizeDelta = new Vector2(100f, 100f);
-
-            // 비행 (단독 드론과 동일한 속도)
-            float duration = 0.396f;
-            float elapsed = 0f;
-            float arcHeight = 50f;
-
-            while (elapsed < duration)
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = t * t * (3f - 2f * t); // SmoothStep
-
-                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased);
-                pos.y += arcHeight * 4f * t * (1f - t);
-                droneObj.transform.position = pos;
-
-                yield return null;
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+                candidates.Add(block);
             }
 
-            Destroy(droneObj);
-        }
+            if (candidates.Count == 0) return null;
 
-        /// <summary>
-        /// 동시 발사용 드론 비행: 딜레이 후 포물선 비행 (각 드론마다 다른 arc로 시각적 구분)
-        /// </summary>
-        private IEnumerator ComboDroneFlyWithDelay(Vector3 startPos, Vector3 targetPos, Color color, float delay, int droneIndex)
-        {
-            // 발사 딜레이
-            if (delay > 0f)
-                yield return new WaitForSeconds(delay);
+            HexBlock bestTarget = null;
+            int bestScore = -1;
 
-            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : transform);
-
-            // 드론 비행체 생성
-            GameObject droneObj = new GameObject($"ComboDroneFlyer_{droneIndex}");
-            droneObj.transform.SetParent(parent, false);
-            droneObj.transform.position = startPos;
-
-            var droneImg = droneObj.AddComponent<Image>();
-            droneImg.sprite = DroneBlockSystem.GetDroneIconSprite();
-            droneImg.type = Image.Type.Simple;
-            droneImg.preserveAspect = true;
-            droneImg.color = Color.white;
-            droneImg.raycastTarget = false;
-
-            RectTransform droneRt = droneObj.GetComponent<RectTransform>();
-            droneRt.sizeDelta = new Vector2(100f, 100f);
-
-            // 비행 (단독 드론과 동일한 속도, 각 드론마다 다른 arc 높이)
-            float duration = 0.396f;
-            float elapsed = 0f;
-            float[] arcHeights = { 60f, 40f, 75f, 30f, 55f };
-            float arcHeight = arcHeights[droneIndex % arcHeights.Length];
-
-            Vector3 prevPos = startPos;
-
-            while (elapsed < duration)
+            foreach (var candidate in candidates)
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = t * t * (3f - 2f * t); // SmoothStep
+                HexCoord pos = candidate.Coord;
+                int missionHitCount = 0;
 
-                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased);
-                pos.y += arcHeight * 4f * t * (1f - t);
+                // 후보 블록 자체가 미션 블록인지
+                if (IsMissionRelevantBlock(candidate, missionGemTargets, hasObstacleMission))
+                    missionHitCount++;
 
-                // 약간의 좌우 오프셋으로 드론들이 겹치지 않게
-                float sideOffset = (droneIndex - 2) * 8f * (1f - t);
-                pos.x += sideOffset * Mathf.Sin(t * Mathf.PI);
-
-                droneObj.transform.position = pos;
-
-                // 드론 회전 (비행 방향으로)
-                if (t > 0.05f)
+                // 양쪽 드릴 라인 시뮬레이션
+                bool[] sides = { true, false };
+                foreach (bool positive in sides)
                 {
-                    Vector3 dir = (pos - prevPos).normalized;
-                    if (dir.sqrMagnitude > 0.001f)
+                    List<HexBlock> lineBlocks = drillSystem.GetBlocksInDirectionPublic(pos, drillDir, positive);
+                    foreach (var lb in lineBlocks)
                     {
-                        float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                        droneRt.localRotation = Quaternion.Euler(0, 0, angle - 90f);
+                        if (lb == null || lb.Data == null) continue;
+                        if (IsMissionRelevantBlock(lb, missionGemTargets, hasObstacleMission))
+                            missionHitCount++;
                     }
                 }
 
-                prevPos = pos;
-                yield return null;
+                // 미션 히트 수가 같으면 기존 우선순위로 타이브레이크
+                int priorityScore = GetComboTargetPriority(candidate, missionGemTargets, hasObstacleMission);
+                int combinedScore = missionHitCount * 10000 + priorityScore;
+
+                if (combinedScore > bestScore)
+                {
+                    bestScore = combinedScore;
+                    bestTarget = candidate;
+                }
             }
 
-            // 착탄 시 작은 임팩트 링
-            GameObject impactObj = new GameObject($"DroneImpact_{droneIndex}");
-            impactObj.transform.SetParent(parent, false);
-            impactObj.transform.position = targetPos;
-            var impactImg = impactObj.AddComponent<Image>();
-            impactImg.color = new Color(color.r, color.g, color.b, 0.7f);
-            impactImg.raycastTarget = false;
-            RectTransform impactRt = impactObj.GetComponent<RectTransform>();
-            impactRt.sizeDelta = new Vector2(20f, 20f);
+            if (bestTarget != null)
+            {
+                // 시뮬레이션 결과 로그
+                int finalHits = bestScore / 10000;
+                Debug.Log($"[ComboSystem] DrillCombo 최적 타겟: {bestTarget.Coord} (드릴방향={drillDir}, 미션블록 {finalHits}개 적중 예상)");
+            }
 
-            // 임팩트 확장 애니메이션 (비동기)
-            StartCoroutine(ExpandAndFade(impactObj, 0.15f, 50f));
+            return bestTarget ?? FindBestTarget(fromPos, new HashSet<HexBlock>());
+        }
 
-            Destroy(droneObj);
+        /// <summary>
+        /// 드론+폭탄 콤보 최적 타겟: Ring1+Ring2 폭발 범위에 미션 블록이 가장 많은 위치 선정
+        /// </summary>
+        private HexBlock FindBestBombComboTarget(HexCoord fromPos)
+        {
+            if (hexGrid == null) return FindBestTarget(fromPos, new HashSet<HexBlock>());
+
+            HashSet<GemType> missionGemTargets = GetComboMissionTargetGemTypes();
+            bool hasObstacleMission = HasComboObstacleMission();
+
+            // 미션 타겟이 없으면 기존 로직 사용
+            if (missionGemTargets.Count == 0 && !hasObstacleMission)
+                return FindBestTarget(fromPos, new HashSet<HexBlock>());
+
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+                candidates.Add(block);
+            }
+
+            if (candidates.Count == 0) return null;
+
+            HexBlock bestTarget = null;
+            int bestScore = -1;
+
+            foreach (var candidate in candidates)
+            {
+                HexCoord pos = candidate.Coord;
+                int missionHitCount = 0;
+
+                // 후보 블록 자체
+                if (IsMissionRelevantBlock(candidate, missionGemTargets, hasObstacleMission))
+                    missionHitCount++;
+
+                // Ring1 + Ring2 범위 시뮬레이션 (반경 2)
+                var hexesInRange = HexCoord.GetHexesInRadius(pos, 2);
+                foreach (var coord in hexesInRange)
+                {
+                    if (coord == pos) continue; // 중심 제외 (이미 카운트)
+                    if (!hexGrid.IsValidCoord(coord)) continue;
+                    HexBlock block = hexGrid.GetBlock(coord);
+                    if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+                    if (IsMissionRelevantBlock(block, missionGemTargets, hasObstacleMission))
+                        missionHitCount++;
+                }
+
+                int priorityScore = GetComboTargetPriority(candidate, missionGemTargets, hasObstacleMission);
+                int combinedScore = missionHitCount * 10000 + priorityScore;
+
+                if (combinedScore > bestScore)
+                {
+                    bestScore = combinedScore;
+                    bestTarget = candidate;
+                }
+            }
+
+            if (bestTarget != null)
+            {
+                int finalHits = bestScore / 10000;
+                Debug.Log($"[ComboSystem] BombCombo 최적 타겟: {bestTarget.Coord} (폭발 범위 미션블록 {finalHits}개 적중 예상)");
+            }
+
+            return bestTarget ?? FindBestTarget(fromPos, new HashSet<HexBlock>());
+        }
+
+        /// <summary>
+        /// 드론+드론 콤보 최적 타겟: 미션 블록을 우선 타겟 (기존 FindBestTarget에서 미션 우선순위 강화)
+        /// </summary>
+        private HexBlock FindBestDroneComboTarget(HexCoord fromPos, HashSet<HexBlock> excludeBlocks)
+        {
+            if (hexGrid == null) return null;
+
+            HashSet<GemType> missionGemTargets = GetComboMissionTargetGemTypes();
+            bool hasObstacleMission = HasComboObstacleMission();
+
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (excludeBlocks.Contains(block)) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+                candidates.Add(block);
+            }
+
+            if (candidates.Count == 0) return null;
+
+            // 미션 관련 블록 우선 분리
+            List<HexBlock> missionBlocks = new List<HexBlock>();
+            List<HexBlock> otherBlocks = new List<HexBlock>();
+
+            foreach (var c in candidates)
+            {
+                if (missionGemTargets.Count > 0 && IsMissionRelevantBlock(c, missionGemTargets, hasObstacleMission))
+                    missionBlocks.Add(c);
+                else
+                    otherBlocks.Add(c);
+            }
+
+            // 미션 블록이 있으면 미션 블록 중에서 선택
+            if (missionBlocks.Count > 0)
+            {
+                HexCoord origin = new HexCoord(0, 0);
+                missionBlocks.Sort((a, b) =>
+                {
+                    int prioA = GetComboTargetPriority(a, missionGemTargets, hasObstacleMission);
+                    int prioB = GetComboTargetPriority(b, missionGemTargets, hasObstacleMission);
+                    if (prioA != prioB) return prioB.CompareTo(prioA);
+                    int distA = a.Coord.DistanceTo(origin);
+                    int distB = b.Coord.DistanceTo(origin);
+                    if (distA != distB) return distB.CompareTo(distA);
+                    return b.Coord.r.CompareTo(a.Coord.r);
+                });
+
+                // 같은 최고 우선순위 중 랜덤 선택
+                int topPrio = GetComboTargetPriority(missionBlocks[0], missionGemTargets, hasObstacleMission);
+                List<HexBlock> topGroup = new List<HexBlock>();
+                foreach (var m in missionBlocks)
+                {
+                    if (GetComboTargetPriority(m, missionGemTargets, hasObstacleMission) == topPrio)
+                        topGroup.Add(m);
+                }
+                return topGroup[Random.Range(0, topGroup.Count)];
+            }
+
+            // 미션 블록 없으면 기존 로직
+            return FindBestTarget(fromPos, excludeBlocks);
+        }
+
+        /// <summary>
+        /// 블록이 미션과 관련있는지 판단 (미션 색상 매칭 또는 장애물 미션 대상)
+        /// </summary>
+        private bool IsMissionRelevantBlock(HexBlock block, HashSet<GemType> missionGemTargets, bool hasObstacleMission)
+        {
+            if (block == null || block.Data == null) return false;
+            var data = block.Data;
+
+            // 미션 색상 매칭 (기본 블록 + 티어 블록)
+            if (missionGemTargets.Count > 0 && missionGemTargets.Contains(data.gemType)
+                && (data.specialType == SpecialBlockType.None || data.specialType == SpecialBlockType.FixedBlock))
+                return true;
+
+            // 장애물 미션 대상
+            if (hasObstacleMission)
+            {
+                if (data.specialType == SpecialBlockType.FixedBlock) return true;
+                if (data.vinylLayer > 0) return true;
+                if (data.enemyType != EnemyType.None) return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1999,6 +2211,7 @@ namespace JewelsHexaPuzzle.Core
 
             while (elapsed < duration)
             {
+                if (obj == null || rt == null || img == null) yield break;
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
                 rt.sizeDelta = Vector2.Lerp(startSize, endSize, t);
@@ -2006,7 +2219,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            Destroy(obj);
+            if (obj != null) Destroy(obj);
         }
 
         // ============================================================
@@ -2084,6 +2297,10 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
+            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
 
             if (shakeCount == 0)
@@ -2109,6 +2326,7 @@ namespace JewelsHexaPuzzle.Core
                 shakeCount = 0;
                 target.localPosition = shakeOriginalPos;
             }
+            VisualConstants.EndScreenShake();
         }
 
         /// <summary>
@@ -2139,6 +2357,10 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private IEnumerator ZoomPunch(float targetScale)
         {
+            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginZoomPunch();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             Vector3 origScale = target.localScale;
             Vector3 punchScale = origScale * targetScale;
@@ -2164,6 +2386,7 @@ namespace JewelsHexaPuzzle.Core
             }
 
             target.localScale = origScale;
+            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

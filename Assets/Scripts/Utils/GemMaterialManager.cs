@@ -92,12 +92,7 @@ namespace JewelsHexaPuzzle.Utils
                         mat.SetFloat("_EnergyPulse", 0.18f);
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
-                    case SpecialBlockType.Laser:
-                        mat.SetFloat("_ShimmerSpeed", 1.8f);
-                        mat.SetFloat("_ShimmerIntensity", 0.10f);
-                        mat.SetFloat("_EnergyPulse", 0.12f);
-                        mat.SetFloat("_RainbowStrength", 0f);
-                        break;
+
                     case SpecialBlockType.XBlock:
                         mat.SetFloat("_ShimmerSpeed", 1.0f);
                         mat.SetFloat("_ShimmerIntensity", 0.08f);

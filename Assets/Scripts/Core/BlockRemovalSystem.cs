@@ -24,7 +24,7 @@
 // - 중력 기반 낙하 물리 (가속도, 바운스 포함)
 // - 새 블록 생성 및 위에서 떨어지는 연출
 // - 연쇄 반응(캐스케이드) 루프 관리
-// - 특수 블록(드릴, 폭탄, 레이저 등) 발동 조율
+// - 특수 블록(드릴, 폭탄 등) 발동 조율
 // - 빅뱅(전체 리셋), 게임 시작 낙하 연출
 // - 미션 시스템에 제거/생성 이벤트 알림
 // =====================================================================================
@@ -54,7 +54,6 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private BombBlockSystem bombSystem;         // 폭탄 특수 블록 시스템 (주변 폭발)
         [SerializeField] private DonutBlockSystem donutSystem;       // 무지개(도넛) 특수 블록 시스템 (같은 색 전체 파괴)
         [SerializeField] private XBlockSystem xBlockSystem;          // X블록 특수 블록 시스템 (링 색상 파괴)
-        [SerializeField] private LaserBlockSystem laserSystem;       // 레이저 특수 블록 시스템 (3축 빔 파괴)
         [SerializeField] private DroneBlockSystem droneSystem;       // 드론 특수 블록 시스템 (우선순위 단일 타격)
         private SpecialBlockComboSystem comboSystem;                  // 특수 블록 합성 시스템 (즉시 합성용)
 
@@ -249,8 +248,6 @@ namespace JewelsHexaPuzzle.Core
                 donutSystem = FindObjectOfType<DonutBlockSystem>();
             if (xBlockSystem == null)
                 xBlockSystem = FindObjectOfType<XBlockSystem>();
-            if (laserSystem == null)
-                laserSystem = FindObjectOfType<LaserBlockSystem>();
             if (droneSystem == null)
                 droneSystem = FindObjectOfType<DroneBlockSystem>();
             comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
@@ -408,7 +405,7 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// [특수 블록 발동 + 완료 대기] 특수 블록(드릴, 폭탄, 레이저 등)을 발동시키고 완료될 때까지 기다립니다.
+        /// [특수 블록 발동 + 완료 대기] 특수 블록(드릴, 폭탄 등)을 발동시키고 완료될 때까지 기다립니다.
         /// 비유하자면, "폭죽에 불을 붙이고 터질 때까지 기다리는" 역할입니다.
         /// 각 특수 블록 타입별로 해당 시스템의 발동 메서드를 호출하고,
         /// 최대 5초간 완료를 기다립니다 (타임아웃 시 강제 리셋).
@@ -429,7 +426,11 @@ namespace JewelsHexaPuzzle.Core
             // 발동 직전 데이터 재검증 (동시 발동 중 다른 특수 블록이 이 블록을 파괴했을 수 있음)
             if (block.Data == null || block.Data.gemType == GemType.None || block.Data.specialType == SpecialBlockType.None)
             {
-                Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: block data invalidated before activation (cachedType={cachedType})");
+                Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: block data invalidated before activation (cachedType={cachedType}). Cleaning up.");
+                // 잔존 pending 상태 정리 (깜빡임 정지 + 블록 제거)
+                block.StopWarningBlink();
+                if (block.Data != null && block.Data.gemType != GemType.None)
+                    block.ClearData();
                 yield break;
             }
 
@@ -506,18 +507,11 @@ namespace JewelsHexaPuzzle.Core
                     }
                     break;
 
-                case SpecialBlockType.Laser:
-                    // 레이저 제거됨 — 기존 Laser 블록이 남아있을 경우 Bomb으로 대체 발동
-                    if (bombSystem != null)
-                    {
-                        if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
-                        block.Data.specialType = SpecialBlockType.Bomb;
-                        bombSystem.ActivateBomb(block);
-                        yield return new WaitForSeconds(0.1f);
-                        waited = 0f;
-                        while (bombSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (bombSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Laser→Bomb fallback timeout! ForceReset"); bombSystem.ForceReset(); }
-                    }
+                default:
+                    // 발동 로직이 없는 타입(TimeBomb, MoveBlock 등)이 pending으로 잘못 진입한 경우
+                    // 블록을 파괴하여 캐스케이드가 멈추지 않도록 함
+                    Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: non-activatable type {cachedType} at {block.Coord} — clearing data");
+                    block.ClearData();
                     break;
             }
         }
@@ -679,10 +673,6 @@ namespace JewelsHexaPuzzle.Core
                 case SpecialBlockType.XBlock:
                     if (xBlockSystem != null)
                         xBlockSystem.CreateXBlock(block, gemType);
-                    break;
-                case SpecialBlockType.Laser:
-                    if (laserSystem != null)
-                        laserSystem.CreateLaserBlock(block, gemType);
                     break;
                 case SpecialBlockType.Drone:
                     if (droneSystem != null)
@@ -1365,6 +1355,11 @@ private IEnumerator CascadeWithPendingLoop()
                     foreach (var sp in validPending)
                         cos.Add(StartCoroutine(ActivateSpecialAndWaitLocal(sp)));
                     foreach (var co in cos) yield return co;
+
+                    // ★ pending 특수 블록 발동 후 즉시 낙하 — 블록 안착 후 다음 반복 진행
+                    SnapClearedBlocksToSlots();
+                    yield return StartCoroutine(ProcessFalling());
+                    yield return new WaitForSeconds(cascadeDelay);
                     continue;
                 }
             }
@@ -1373,6 +1368,19 @@ private IEnumerator CascadeWithPendingLoop()
                 Debug.LogError($"[BRS] CascadeWithPendingLoop hit max iterations ({maxIterations})! Breaking.");
 
             // === 항상 도달하는 최종 정리 ===
+            // 안전망: 루프 종료 후에도 남아있는 pending 블록의 깜빡임 정리
+            if (hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block != null && block.Data != null && block.Data.pendingActivation)
+                    {
+                        Debug.LogWarning($"[BRS] Leftover pending block at {block.Coord} type={block.Data.specialType} — clearing pending state");
+                        block.StopWarningBlink();
+                        block.Data.pendingActivation = false;
+                    }
+                }
+            }
             currentCascadeDepth = 0;
             isProcessing = false;
             OnCascadeComplete?.Invoke();
@@ -2202,8 +2210,10 @@ public void TriggerBigBang()
                 // Phase A: 특수 블록 생성 그룹 먼저 처리
                 yield return StartCoroutine(ProcessMatchesInline(specialMatches, pendingSpecials));
 
-                // 0.5초 시간차
-                yield return new WaitForSeconds(0.5f);
+                // ★ Phase A 특수 블록 파괴 후 낙하 처리 — 블록 안착 후 Phase B 진행
+                SnapClearedBlocksToSlots();
+                yield return StartCoroutine(ProcessFalling());
+                yield return new WaitForSeconds(cascadeDelay);
 
                 // Phase B: 일반 매칭 그룹 처리 (pending은 이미 Phase A에서 처리했으므로 null)
                 yield return StartCoroutine(ProcessMatchesInline(normalMatches, null));
@@ -2565,6 +2575,11 @@ public void TriggerBigBang()
                 }
                 foreach (var co in activationCoroutines)
                     yield return co;
+
+                // ★ 특수 블록 발동 후 낙하 처리 — 파괴된 빈 자리에 블록 안착 보장
+                SnapClearedBlocksToSlots();
+                yield return StartCoroutine(ProcessFalling());
+                yield return new WaitForSeconds(cascadeDelay);
             }
         }
 }

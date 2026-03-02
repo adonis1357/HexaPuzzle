@@ -37,8 +37,8 @@ namespace JewelsHexaPuzzle.Items
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 
-        // 버튼 기본 색상
-        private static readonly Color BtnDefaultColor = new Color(0.25f, 0.25f, 0.35f, 0.9f);
+        // 버튼 기본 색상 (Start()에서 실제 버튼 색상으로 캡처)
+        private Color btnOriginalColor = new Color(0.0f, 0.70f, 0.70f, 0.92f);
         private static readonly Color BtnActiveColor = new Color(1f, 0.85f, 0.2f, 1f);
         private void Start()
         {
@@ -49,6 +49,12 @@ namespace JewelsHexaPuzzle.Items
             {
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
+            }
+            // 버튼 원래 색상 캡처
+            if (hammerButton != null)
+            {
+                var img = hammerButton.GetComponent<Image>();
+                if (img != null) btnOriginalColor = img.color;
             }
         }
 
@@ -319,13 +325,13 @@ namespace JewelsHexaPuzzle.Items
 
                 // 색상 보간
                 if (btnImg != null)
-                    btnImg.color = Color.Lerp(startColor, BtnDefaultColor, VisualConstants.EaseOutCubic(t));
+                    btnImg.color = Color.Lerp(startColor, btnOriginalColor, VisualConstants.EaseOutCubic(t));
 
                 yield return null;
             }
 
             btnTransform.localScale = Vector3.one;
-            if (btnImg != null) btnImg.color = BtnDefaultColor;
+            if (btnImg != null) btnImg.color = btnOriginalColor;
         }
 
         /// <summary>오버레이 알파 페이드</summary>
@@ -585,6 +591,9 @@ namespace JewelsHexaPuzzle.Items
 
         private IEnumerator ZoomPunch(float targetScale)
         {
+            bool isOwner = VisualConstants.TryBeginZoomPunch();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             Vector3 origScale = target.localScale;
             Vector3 punchScale = origScale * targetScale;
@@ -608,6 +617,7 @@ namespace JewelsHexaPuzzle.Items
             }
 
             target.localScale = origScale;
+            VisualConstants.EndZoomPunch();
         }
 
         // ============================================================
@@ -773,6 +783,9 @@ namespace JewelsHexaPuzzle.Items
 
         private IEnumerator ScreenShake(float intensity, float duration)
         {
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
 
             if (shakeCount == 0)
@@ -797,6 +810,7 @@ namespace JewelsHexaPuzzle.Items
                 shakeCount = 0;
                 target.localPosition = shakeOriginalPos;
             }
+            VisualConstants.EndScreenShake();
         }
 
         // ============================================================

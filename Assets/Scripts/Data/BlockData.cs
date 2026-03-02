@@ -9,7 +9,7 @@ using UnityEngine;
 //
 // 주요 내용:
 // - GemType: 보석(블록) 색상 종류 (빨강, 파랑, 초록 등)
-// - SpecialBlockType: 특수 블록 종류 (드릴, 폭탄, 레이저 등)
+// - SpecialBlockType: 특수 블록 종류 (드릴, 폭탄 등)
 // - BlockTier: 블록 등급 (매칭할수록 등급이 올라감)
 // - EnemyType: 적군 종류 (색상도둑, 사슬 등)
 // - BlockData: 한 블록이 가진 모든 정보를 담는 데이터 클래스
@@ -65,7 +65,6 @@ namespace JewelsHexaPuzzle.Data
         Bomb,       // 폭탄 (5개 이상 매칭 시 생성, 주변 블록을 원형으로 폭파)
         Rainbow,    // 무지개/도넛 (7개 이상 매칭 시 생성, 같은 색상 블록 전체 파괴)
         XBlock,     // X블록 (링 모양 매칭 시 생성, 같은 색상 전체 파괴)
-        Laser,      // 레이저 (정확히 6개 매칭 시 생성, 3방향 빔으로 직선 파괴)
         Drone       // 드론 (5개 직선 매칭 시 생성, 우선순위 기반 단일 타격)
     }
 
@@ -150,7 +149,7 @@ namespace JewelsHexaPuzzle.Data
     {
         Match,          // 일반 매칭으로 제거 (같은 색 3개 맞추기)
         SpecialBasic,   // 기본 특수 블록으로 제거 (드릴)
-        SpecialAdvanced,// 고급 특수 블록으로 제거 (폭탄, 레이저)
+        SpecialAdvanced,// 고급 특수 블록으로 제거 (폭탄)
         Donut,          // 도넛(무지개) 블록으로 제거 (같은 색 전체 삭제)
         Cascade         // 캐스케이드 연쇄로 제거 (자동 연쇄 반응)
     }
@@ -336,7 +335,7 @@ namespace JewelsHexaPuzzle.Data
         }
 
         /// <summary>
-        /// 이 블록이 특수 블록인지 확인합니다. (드릴, 폭탄, 레이저 등)
+        /// 이 블록이 특수 블록인지 확인합니다. (드릴, 폭탄 등)
         /// </summary>
         public bool IsSpecial()
         {
@@ -359,12 +358,6 @@ namespace JewelsHexaPuzzle.Data
         public bool IsXBlock()
         {
             return specialType == SpecialBlockType.XBlock;
-        }
-
-        /// <summary>레이저 블록인지 확인</summary>
-        public bool IsLaser()
-        {
-            return specialType == SpecialBlockType.Laser;
         }
 
         /// <summary>폭탄 블록인지 확인</summary>

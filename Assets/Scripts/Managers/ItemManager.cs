@@ -94,11 +94,14 @@ namespace JewelsHexaPuzzle.Managers
         {
             if (Instance == null)
                 Instance = this;
+
+            // Awake에서 먼저 로드 (GameManager.Start보다 앞서 데이터 준비)
+            LoadItemCounts();
+            Debug.Log($"[ItemManager] Awake: 아이템 수량 로드 완료 (PlayerPrefs)");
         }
 
         private void Start()
         {
-            LoadItemCounts();
             InitializeItems();
 
             if (blockRemovalSystem == null)
@@ -401,9 +404,9 @@ namespace JewelsHexaPuzzle.Managers
                     break;
             }
 
-            // 아이템 소모
-            itemCounts[type]--;
-            SaveItemCounts();
+            // 아이템 소모는 개별 아이템 스크립트의 ConsumeItem()에서 처리
+            // (여기서 중복 차감하면 2번 빠지는 버그 발생)
+            // 혹시 개별 스크립트가 ConsumeItem을 안 한 경우 대비 보정
             UpdateItemUI();
 
             // 상태 초기화

@@ -16,6 +16,7 @@ namespace JewelsHexaPuzzle.Core
         [Header("References")]
         [SerializeField] private HexGrid hexGrid;
         [SerializeField] private BlockRemovalSystem removalSystem;
+        private StageManager stageManager;
 
         public event System.Action<int> OnDroneComplete;
 
@@ -70,6 +71,8 @@ namespace JewelsHexaPuzzle.Core
             }
             if (removalSystem == null)
                 removalSystem = FindObjectOfType<BlockRemovalSystem>();
+            if (stageManager == null)
+                stageManager = FindObjectOfType<StageManager>();
 
             SetupEffectParent();
         }
@@ -172,11 +175,111 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 우선순위 기반 타겟 선택
-        /// 1. 장애물 우선 (FixedBlock > TimeBomb > 비닐 > 사슬 > 적군)
+        /// 현재 활성 미션에서 수집 대상 GemType 목록 추출
+        /// 무한모드(MissionSystem) + 스테이지모드(StageManager) 모두 지원
+        /// </summary>
+        private HashSet<GemType> GetMissionTargetGemTypes()
+        {
+            HashSet<GemType> targets = new HashSet<GemType>();
+
+            // ── 1) 무한모드: MissionSystem (우선 확인) ──
+            if (MissionSystem.Instance != null)
+            {
+                var sm = MissionSystem.Instance.CurrentMission;
+                if (sm != null && !sm.IsComplete)
+                {
+                    Debug.Log($"[DroneBlockSystem] 미션 감지: type={sm.type}, target1={sm.targetGemType}, target2={sm.targetGemType2}, progress={sm.currentCount}/{sm.targetCount}");
+                    switch (sm.type)
+                    {
+                        case SurvivalMissionType.CollectGem:
+                            if (sm.targetGemType != GemType.None)
+                                targets.Add(sm.targetGemType);
+                            break;
+                        case SurvivalMissionType.ProcessGem:
+                            if (sm.targetGemType != GemType.None)
+                                targets.Add(sm.targetGemType);
+                            break;
+                        case SurvivalMissionType.CollectMulti:
+                            if (sm.targetGemType != GemType.None) targets.Add(sm.targetGemType);
+                            if (sm.targetGemType2 != GemType.None) targets.Add(sm.targetGemType2);
+                            break;
+                        default:
+                            Debug.Log($"[DroneBlockSystem] 색상 타겟 없는 미션 타입: {sm.type}");
+                            break;
+                    }
+                }
+                else
+                {
+                    Debug.Log($"[DroneBlockSystem] MissionSystem: CurrentMission={sm != null}, IsComplete={sm?.IsComplete}");
+                }
+            }
+            else
+            {
+                Debug.Log("[DroneBlockSystem] MissionSystem.Instance == null");
+            }
+
+            // ── 2) 스테이지모드: StageManager ──
+            if (stageManager != null)
+            {
+                MissionProgress[] progress = stageManager.GetMissionProgress();
+                if (progress != null)
+                {
+                    foreach (var mp in progress)
+                    {
+                        if (mp == null || mp.isComplete || mp.mission == null) continue;
+
+                        if (mp.mission.type == MissionType.CollectGem && mp.mission.targetGemType != GemType.None)
+                            targets.Add(mp.mission.targetGemType);
+                        else if (mp.mission.type == MissionType.ProcessGem && mp.mission.targetGemType != GemType.None)
+                            targets.Add(mp.mission.targetGemType);
+                        else if (mp.mission.type == MissionType.CollectMultiGem)
+                        {
+                            if (mp.mission.targetGemType != GemType.None) targets.Add(mp.mission.targetGemType);
+                            if (mp.mission.secondaryGemType != GemType.None) targets.Add(mp.mission.secondaryGemType);
+                        }
+                    }
+                }
+            }
+
+            if (targets.Count > 0)
+                Debug.Log($"[DroneBlockSystem] ★ 미션 타겟 색상: {string.Join(", ", targets)}");
+            else
+                Debug.Log("[DroneBlockSystem] ⚠ 미션 타겟 색상 없음 (비색상 미션이거나 미션 미활성)");
+
+            return targets;
+        }
+
+        /// <summary>
+        /// 현재 활성 미션에서 비닐/적군/시한폭탄 관련 미션이 있는지 확인
+        /// </summary>
+        private bool HasObstacleMission()
+        {
+            // 스테이지모드
+            if (stageManager != null)
+            {
+                MissionProgress[] progress = stageManager.GetMissionProgress();
+                if (progress != null)
+                {
+                    foreach (var mp in progress)
+                    {
+                        if (mp == null || mp.isComplete || mp.mission == null) continue;
+                        if (mp.mission.type == MissionType.RemoveVinyl ||
+                            mp.mission.type == MissionType.RemoveDoubleVinyl ||
+                            mp.mission.type == MissionType.RemoveEnemy)
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 우선순위 기반 타겟 선택 (미션 연동)
+        /// 0. 미션 타겟 최우선 (미션에서 요구하는 색상/장애물)
+        /// 1. 장애물 (FixedBlock > TimeBomb > 비닐 > 사슬 > 적군)
         /// 2. 높은 티어 블록
-        /// 3. 기본 블록 (Normal 티어, 특수 아님) — 랜덤 선택
-        /// 4. 기본 블록이 없을 때만 특수 블록 타겟 (희귀도 낮은 순: Drill→Bomb→Laser→Rainbow/XBlock)
+        /// 3. 기본 블록 (Normal 티어, 특수 아님) — 미션 색상 > 랜덤
+        /// 4. 특수 블록 (희귀도 낮은 순)
         /// </summary>
         private HexBlock FindTargetBlock(HexBlock droneBlock)
         {
@@ -193,12 +296,16 @@ namespace JewelsHexaPuzzle.Core
 
             if (candidates.Count == 0) return null;
 
+            // 미션 타겟 정보 수집
+            HashSet<GemType> missionGemTargets = GetMissionTargetGemTypes();
+            bool hasObstacleMission = HasObstacleMission();
+
             HexCoord origin = new HexCoord(0, 0);
 
             candidates.Sort((a, b) =>
             {
-                int scoreA = GetTargetPriority(a);
-                int scoreB = GetTargetPriority(b);
+                int scoreA = GetTargetPriority(a, missionGemTargets, hasObstacleMission);
+                int scoreB = GetTargetPriority(b, missionGemTargets, hasObstacleMission);
                 if (scoreA != scoreB) return scoreB.CompareTo(scoreA);
 
                 // 동일 우선순위: 외곽 우선
@@ -210,48 +317,68 @@ namespace JewelsHexaPuzzle.Core
                 return b.Coord.r.CompareTo(a.Coord.r);
             });
 
-            // 최상위 우선순위가 기본 블록(50)이면 기본 블록들 중 랜덤 선택
-            int topPriority = GetTargetPriority(candidates[0]);
-            if (topPriority == 50)
+            // 최상위 우선순위가 미션 기본 블록(100) 또는 일반 기본 블록(50)이면
+            // 같은 우선순위 블록들 중 랜덤 선택
+            int topPriority = GetTargetPriority(candidates[0], missionGemTargets, hasObstacleMission);
+
+            // 상위 3개 후보 로그 (디버깅용)
+            int logCount = Mathf.Min(3, candidates.Count);
+            for (int i = 0; i < logCount; i++)
             {
-                List<HexBlock> basics = new List<HexBlock>();
-                foreach (var c in candidates)
-                {
-                    if (GetTargetPriority(c) == 50)
-                        basics.Add(c);
-                }
-                return basics[Random.Range(0, basics.Count)];
+                var c = candidates[i];
+                int p = GetTargetPriority(c, missionGemTargets, hasObstacleMission);
+                Debug.Log($"[DroneBlockSystem] 후보[{i}] {c.Coord} gem={c.Data.gemType} tier={c.Data.tier} special={c.Data.specialType} → priority={p}");
             }
 
+            if (topPriority == 100 || topPriority == 50)
+            {
+                List<HexBlock> sameGroup = new List<HexBlock>();
+                foreach (var c in candidates)
+                {
+                    if (GetTargetPriority(c, missionGemTargets, hasObstacleMission) == topPriority)
+                        sameGroup.Add(c);
+                }
+                HexBlock chosen = sameGroup[Random.Range(0, sameGroup.Count)];
+                Debug.Log($"[DroneBlockSystem] ★ 타겟 선택 (priority={topPriority}, 후보={sameGroup.Count}개): {chosen.Coord} ({chosen.Data.gemType})");
+                return chosen;
+            }
+
+            Debug.Log($"[DroneBlockSystem] ★ 타겟 선택 (priority={topPriority}): {candidates[0].Coord} ({candidates[0].Data.gemType}, special={candidates[0].Data.specialType})");
             return candidates[0];
         }
 
-        private int GetTargetPriority(HexBlock block)
+        /// <summary>
+        /// 미션 연동 우선순위 점수 계산
+        /// </summary>
+        private int GetTargetPriority(HexBlock block, HashSet<GemType> missionGemTargets, bool hasObstacleMission)
         {
             var data = block.Data;
             if (data == null) return 0;
 
-            // 1순위: 장애물 (가장 높은 우선순위)
-            if (data.specialType == SpecialBlockType.FixedBlock) return 200;
+            // === 1순위: 장애물 (미션에서 요구하면 추가 부스트) ===
+            if (data.specialType == SpecialBlockType.FixedBlock) return hasObstacleMission ? 210 : 200;
             if (data.specialType == SpecialBlockType.TimeBomb) return 190;
-            if (data.vinylLayer > 0) return 180;
+            if (data.vinylLayer > 0) return hasObstacleMission ? 185 : 180;
             if (data.hasChain) return 170;
-            if (data.enemyType != EnemyType.None) return 160;
+            if (data.enemyType != EnemyType.None) return hasObstacleMission ? 165 : 160;
 
-            // 2순위: 높은 티어 블록
-            if (data.tier >= BlockTier.ProcessedGem) return 140;
-            if (data.tier >= BlockTier.Tier3) return 130;
-            if (data.tier >= BlockTier.Tier2) return 120;
-            if (data.tier >= BlockTier.Tier1) return 110;
+            // === 2순위: 높은 티어 블록 (미션 색상이면 부스트) ===
+            bool isMissionColor = missionGemTargets.Count > 0 && missionGemTargets.Contains(data.gemType);
 
-            // 3순위: 기본 블록 (Normal 티어 + 특수 아님) — 가장 흔한 타겟
+            if (data.tier >= BlockTier.ProcessedGem) return isMissionColor ? 145 : 140;
+            if (data.tier >= BlockTier.Tier3) return isMissionColor ? 135 : 130;
+            if (data.tier >= BlockTier.Tier2) return isMissionColor ? 125 : 120;
+            if (data.tier >= BlockTier.Tier1) return isMissionColor ? 115 : 110;
+
+            // === 3순위: 미션 색상 기본 블록 (Normal 티어, 특수 아님) — 최우선 타겟! ===
+            if (data.specialType == SpecialBlockType.None && isMissionColor) return 100;
+
+            // === 4순위: 일반 기본 블록 (Normal 티어, 특수 아님) ===
             if (data.specialType == SpecialBlockType.None) return 50;
 
-            // 4순위: 특수 블록 (희귀도 낮은 순, 기본 블록 없을 때만 타겟됨)
-            // 드릴(4매칭) < 폭탄(5매칭) < 레이저(6매칭) < 레인보우/X블록(7+매칭)
+            // === 5순위: 특수 블록 (희귀도 낮은 순, 기본 블록 없을 때만 타겟됨) ===
             if (data.specialType == SpecialBlockType.Drill) return 14;
             if (data.specialType == SpecialBlockType.Bomb) return 12;
-            if (data.specialType == SpecialBlockType.Laser) return 10;
             if (data.specialType == SpecialBlockType.Rainbow) return 8;
             if (data.specialType == SpecialBlockType.XBlock) return 6;
 
@@ -520,6 +647,31 @@ namespace JewelsHexaPuzzle.Core
 
             Destroy(shadowObj);
             Destroy(droneObj);
+        }
+
+        // ============================================================
+        // 공개 비행 이펙트 (합성 시스템 등 외부에서 호출)
+        // ============================================================
+
+        /// <summary>
+        /// 외부에서 호출 가능한 드론 비행 이펙트 (이륙→호버→급강하 전체)
+        /// SpecialBlockComboSystem 등에서 합성 드론 비행에 사용
+        /// </summary>
+        public IEnumerator PlayDroneFlyEffect(Vector3 startPos, Vector3 targetPos, Color color)
+        {
+            SetupEffectParent();
+            yield return StartCoroutine(DroneFlyEffect(startPos, targetPos, color));
+        }
+
+        /// <summary>
+        /// 딜레이 후 드론 비행 이펙트 (동시 발사 시 시간차용)
+        /// </summary>
+        public IEnumerator PlayDroneFlyEffectWithDelay(Vector3 startPos, Vector3 targetPos, Color color, float delay)
+        {
+            if (delay > 0f)
+                yield return new WaitForSeconds(delay);
+            SetupEffectParent();
+            yield return StartCoroutine(DroneFlyEffect(startPos, targetPos, color));
         }
 
         /// <summary>트레일 파티클 생성 (transform.position 기반)</summary>
@@ -802,7 +954,11 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>화면 흔들림</summary>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            if (hexGrid == null) yield break;
+            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
+            if (hexGrid == null) { VisualConstants.EndScreenShake(); yield break; }
             Transform gridTrans = hexGrid.transform;
             Vector3 origPos = gridTrans.localPosition;
             float t = 0f;
@@ -817,6 +973,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
             gridTrans.localPosition = origPos;
+            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -826,7 +983,7 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetDroneIconSprite()
         {
             if (droneIconSprite == null)
-                droneIconSprite = CreateDroneSprite(128);
+                droneIconSprite = CreateDroneSprite(256);
             return droneIconSprite;
         }
 

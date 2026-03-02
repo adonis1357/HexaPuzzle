@@ -292,7 +292,7 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetDonutIconSprite()
         {
             if (donutIconSprite == null)
-                donutIconSprite = CreateDonutSprite(128);
+                donutIconSprite = CreateDonutSprite(256);
             return donutIconSprite;
         }
 
@@ -542,10 +542,9 @@ namespace JewelsHexaPuzzle.Core
                 if (target.Data.specialType == SpecialBlockType.FixedBlock)
                     continue;
 
-                // 다른 특수 블록(폭탄, 드릴 등)을 만나면 바로 파괴하지 않고 "대기열"에 추가
-                // 나중에 BlockRemovalSystem이 이 대기열을 확인하여 연쇄 발동시킴
-                // 비유: 도넛이 폭탄을 발견하면 "이건 내가 처리하지 말고 폭탄 전문가한테 넘기자"
-                if (target.Data.specialType != SpecialBlockType.None)
+                // 연쇄 발동 가능한 특수 블록(드릴, 폭탄 등)은 바로 파괴하지 않고 "대기열"에 추가
+                // TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로 일반 블록처럼 파괴
+                if (IsChainActivatable(target.Data.specialType))
                 {
                     Debug.Log($"[DonutBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
                     if (!pendingSpecialBlocks.Contains(target))
@@ -605,29 +604,8 @@ namespace JewelsHexaPuzzle.Core
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
 
-            // [10단계] 미션 시스템에 파괴 결과 전달 (기본 블록만)
-            // 미션 진행도 업데이트를 위해, 파괴된 기본 블록 목록을 전달함
-            // 특수 블록은 미션 카운트에서 제외 (별도 처리됨)
-            List<HexBlock> basicBlocksOnly = new List<HexBlock>();
-            foreach (var target in targets)
-            {
-                if (target != null && target.Data != null && target.Data.gemType != GemType.None)
-                {
-                    // 기본 블록만 포함: 특수블록 제외 (FixedBlock은 파괴 안 됐지만 안전하게 포함)
-                    if (target.Data.specialType == SpecialBlockType.None || target.Data.specialType == SpecialBlockType.FixedBlock)
-                    {
-                        basicBlocksOnly.Add(target);
-                        Debug.Log($"[DonutBlockSystem]   BasicBlock: {target.Coord}, gemType={target.Data.gemType}");
-                    }
-                }
-            }
+            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
 
-            Debug.Log($"[DonutBlockSystem] Passing {basicBlocksOnly.Count} basic blocks to MissionSystem (from {targets.Count} total targets)");
-
-            // 미션 시스템에 알림 (예: "빨간 블록 10개 수집" 미션 진행도 갱신)
-            MissionSystem ms = Object.FindObjectOfType<MissionSystem>();
-            if (ms != null)
-                ms.OnSpecialBlockDestroyedBlocks(basicBlocksOnly);
 
             // 완료 이벤트 발생 (점수 매니저 등 구독자에게 점수 전달)
             OnDonutComplete?.Invoke(totalScore);
@@ -635,6 +613,20 @@ namespace JewelsHexaPuzzle.Core
             // --- 상태 해제: "작업 끝났습니다" ---
             activeBlocks.Remove(donutBlock);
             activeDonutCount--;
+        }
+
+        /// <summary>
+        /// 연쇄 발동 가능한 특수 블록인지 판별.
+        /// TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로
+        /// 일반 블록처럼 파괴해야 함 (pending 마킹 금지).
+        /// </summary>
+        private static bool IsChainActivatable(SpecialBlockType type)
+        {
+            return type == SpecialBlockType.Drill ||
+                   type == SpecialBlockType.Bomb ||
+                   type == SpecialBlockType.Rainbow ||
+                   type == SpecialBlockType.XBlock ||
+                   type == SpecialBlockType.Drone;
         }
 
         // ============================================================
@@ -1101,6 +1093,10 @@ namespace JewelsHexaPuzzle.Core
         /// <param name="duration">흔들림 지속 시간 (초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
+            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             // 첫 번째 흔들림일 때만 원래 위치 저장 (중첩 시 원래 위치 보존)
             if (shakeCount == 0)
@@ -1128,6 +1124,7 @@ namespace JewelsHexaPuzzle.Core
                 shakeCount = 0;
                 target.localPosition = shakeOriginalPos;
             }
+            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1233,6 +1230,10 @@ namespace JewelsHexaPuzzle.Core
         /// <param name="targetScale">최대 확대 배율 (예: 1.05 = 5% 확대)</param>
         private IEnumerator ZoomPunch(float targetScale)
         {
+            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginZoomPunch();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             Vector3 origScale = target.localScale;        // 원래 크기 저장
             Vector3 punchScale = origScale * targetScale;  // 확대 목표 크기
@@ -1258,6 +1259,7 @@ namespace JewelsHexaPuzzle.Core
             }
 
             target.localScale = origScale;  // 원래 크기 확실히 복원
+            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

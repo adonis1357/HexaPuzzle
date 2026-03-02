@@ -33,7 +33,7 @@ InputSystem → RotationSystem → MatchingSystem → BlockRemovalSystem → Gam
 | 열거형 | 값 |
 |--------|-----|
 | GemType | None, Red, Blue, Green, Yellow, Purple, Orange + Ruby, Emerald, Sapphire, Amber, Amethyst |
-| SpecialBlockType | None, MoveBlock, FixedBlock, TimeBomb, Drill, Bomb, Rainbow, XBlock, Laser |
+| SpecialBlockType | None, MoveBlock, FixedBlock, TimeBomb, Drill, Bomb, Rainbow, XBlock, Drone |
 | BlockTier | Normal(0) → Tier1(1) → Tier2(2) → Tier3(3) → ProcessedGem(4) |
 | DrillDirection | Vertical, Slash, BackSlash |
 | MissionType | CollectGem, CollectMultiGem, ProcessGem, CreateSpecialGem |
@@ -45,7 +45,7 @@ InputSystem → RotationSystem → MatchingSystem → BlockRemovalSystem → Gam
 |------|----------|------|-------------|
 | Drill | 4매칭 직선 | 한 방향 라인 파괴 | DrillBlockSystem |
 | Bomb | 5+매칭 | 중심 + 인접 6칸 폭발 | BombBlockSystem |
-| Laser | 정확히 6매칭 | q,r,s 3축 빔 | LaserBlockSystem |
+
 | Rainbow(Donut) | 7+매칭 또는 링 | 해당 색상 전체 파괴 | DonutBlockSystem |
 | XBlock | 링 매칭 | 링 색상 전체 파괴 | XBlockSystem |
 
@@ -63,7 +63,7 @@ InputSystem → RotationSystem → MatchingSystem → BlockRemovalSystem → Gam
 | BlockRemovalSystem.cs | 캐스케이드 루프, 블록 삭제 애니메이션, 낙하 바운스 물리, 스폰 애니메이션 |
 | DrillBlockSystem.cs | 드릴 투사체, 라인 파괴, 발사 이펙트 |
 | BombBlockSystem.cs | 폭발 이펙트, 방사형 파괴 |
-| LaserBlockSystem.cs | 3축 빔, 라인 파괴 |
+
 | DonutBlockSystem.cs | 무지개 이펙트, 색상별 전체 파괴 |
 | XBlockSystem.cs | X패턴 이펙트, 링 색상 파괴 |
 

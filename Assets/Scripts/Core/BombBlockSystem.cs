@@ -105,24 +105,23 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetBombIconSprite()
         {
             if (bombIconSprite == null)
-                bombIconSprite = CreateBombSprite(128);
+                bombIconSprite = CreateBombSprite(256);
             return bombIconSprite;
         }
 
         /// <summary>
-        /// 폭탄 아이콘 프로시저럴 생성 - 원형 본체 + 도화선
+        /// 폭탄 아이콘 프로시저럴 생성 - 메탈릭 구체 + 곡선 도화선 + 불꽃
         /// </summary>
         private static Sprite CreateBombSprite(int size)
         {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
 
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = Color.clear;
-
-            Vector2 center = new Vector2(size * 0.48f, size * 0.4f);
+            Vector2 center = new Vector2(size * 0.48f, size * 0.38f);
             float bodyRadius = size * 0.3f;
+            Vector2 lightPos = new Vector2(center.x - bodyRadius * 0.4f, center.y + bodyRadius * 0.4f);
 
             for (int y = 0; y < size; y++)
             {
@@ -131,47 +130,95 @@ namespace JewelsHexaPuzzle.Core
                     Vector2 p = new Vector2(x, y);
                     float dist = Vector2.Distance(p, center);
 
-                    // 원형 본체 (파스텔 코랄 핑크)
-                    if (dist < bodyRadius)
+                    // --- 본체: 메탈릭 구체 ---
+                    if (dist < bodyRadius + 1.5f)
                     {
-                        float edge = dist / bodyRadius;
-                        float highlight = Mathf.Pow(1f - edge, 3f) * 0.3f;
-                        Color c = new Color(0.92f + highlight * 0.05f, 0.68f + highlight * 0.05f, 0.70f + highlight * 0.05f, 1f);
-                        // 하이라이트 (좌상단 빛)
-                        Vector2 lightDir = (p - center).normalized;
-                        float lightDot = Vector2.Dot(lightDir, new Vector2(-0.5f, 0.5f));
-                        if (lightDot > 0)
-                            c = Color.Lerp(c, new Color(0.98f, 0.85f, 0.86f, 1f), lightDot * 0.4f * (1f - edge));
-                        // 안티앨리어싱
-                        float aa = Mathf.Clamp01((bodyRadius - dist) * 2f);
-                        c.a = aa;
+                        float t = dist / bodyRadius;
+                        float aa = Mathf.Clamp01((bodyRadius + 1.5f - dist) * 1.5f);
+
+                        // 베이스: 다크 그레이 → 슬레이트
+                        float baseR = Mathf.Lerp(0.35f, 0.18f, t * t);
+                        float baseG = Mathf.Lerp(0.32f, 0.16f, t * t);
+                        float baseB = Mathf.Lerp(0.38f, 0.22f, t * t);
+
+                        // 스페큘러 하이라이트 (좌상단 광원)
+                        float lightDist = Vector2.Distance(p, lightPos) / bodyRadius;
+                        float specular = Mathf.Pow(Mathf.Clamp01(1f - lightDist), 6f) * 0.9f;
+
+                        // 림 라이트 (가장자리 빛)
+                        float rim = Mathf.Pow(t, 4f) * 0.4f;
+                        Vector2 rimDir = (p - center).normalized;
+                        float rimDot = Vector2.Dot(rimDir, new Vector2(0.5f, -0.3f));
+                        rim *= Mathf.Clamp01(rimDot + 0.3f);
+
+                        Color c = new Color(
+                            Mathf.Clamp01(baseR + specular * 0.95f + rim * 0.6f),
+                            Mathf.Clamp01(baseG + specular * 0.93f + rim * 0.55f),
+                            Mathf.Clamp01(baseB + specular * 0.98f + rim * 0.7f),
+                            aa
+                        );
                         pixels[y * size + x] = c;
                     }
 
-                    // 도화선 (크림 브라운)
-                    float fuseX = center.x + (y - (center.y + bodyRadius * 0.7f)) * 0.4f;
-                    float fuseY = y;
-                    if (fuseY > center.y + bodyRadius * 0.6f && fuseY < center.y + bodyRadius * 1.6f)
+                    // --- 상단 밴드 (폭탄 꼭지) ---
+                    float bandCenterY = center.y + bodyRadius * 0.78f;
+                    float bandHalfW = bodyRadius * 0.28f;
+                    float bandHalfH = size * 0.045f;
+                    float bx = Mathf.Abs(x - center.x);
+                    float by = Mathf.Abs(y - bandCenterY);
+                    if (bx < bandHalfW && by < bandHalfH && dist < bodyRadius * 1.05f)
                     {
-                        float fuseDist = Mathf.Abs(x - fuseX);
-                        if (fuseDist < 2f)
+                        float bandAA = Mathf.Clamp01((bandHalfH - by) * 2f) * Mathf.Clamp01((bandHalfW - bx) * 2f);
+                        Color bandC = new Color(0.55f, 0.52f, 0.58f, bandAA * 0.9f);
+                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], bandC, bandAA * 0.8f);
+                    }
+
+                    // --- 곡선 도화선 ---
+                    float fuseStartY = center.y + bodyRadius * 0.85f;
+                    float fuseEndY = center.y + bodyRadius * 1.7f;
+                    if (y > fuseStartY && y < fuseEndY)
+                    {
+                        float fuseT = (y - fuseStartY) / (fuseEndY - fuseStartY);
+                        float fuseCurveX = center.x + Mathf.Sin(fuseT * 2.5f) * size * 0.08f + fuseT * size * 0.06f;
+                        float fuseDist = Mathf.Abs(x - fuseCurveX);
+                        float fuseWidth = Mathf.Lerp(2.5f, 1.5f, fuseT);
+                        if (fuseDist < fuseWidth + 1f)
                         {
-                            float fa = Mathf.Clamp01((2f - fuseDist) * 0.8f);
-                            Color fuseColor = new Color(0.82f, 0.70f, 0.58f, fa);
-                            if (pixels[y * size + x].a < fa)
-                                pixels[y * size + x] = fuseColor;
+                            float fa = Mathf.Clamp01((fuseWidth + 1f - fuseDist) * 0.8f);
+                            float fuseShade = Mathf.Lerp(0.7f, 0.5f, fuseDist / fuseWidth);
+                            Color fuseColor = new Color(fuseShade, fuseShade * 0.85f, fuseShade * 0.7f, fa);
+                            pixels[y * size + x] = Color.Lerp(pixels[y * size + x], fuseColor, fa);
                         }
                     }
 
-                    // 스파크 (파스텔 옐로)
-                    float sparkCenterX = center.x + (center.y + bodyRadius * 1.5f - (center.y + bodyRadius * 0.7f)) * 0.4f;
-                    float sparkCenterY = center.y + bodyRadius * 1.5f;
-                    float sparkDist = Vector2.Distance(p, new Vector2(sparkCenterX, sparkCenterY));
-                    if (sparkDist < size * 0.08f)
+                    // --- 불꽃 (다중 레이어) ---
+                    float fuseEndT = 1f;
+                    float flameBaseX = center.x + Mathf.Sin(fuseEndT * 2.5f) * size * 0.08f + fuseEndT * size * 0.06f;
+                    float flameBaseY = center.y + bodyRadius * 1.7f;
+                    Vector2 flameCenter = new Vector2(flameBaseX, flameBaseY + size * 0.04f);
+
+                    // 외부 글로우 (주황)
+                    float flameDist = Vector2.Distance(p, flameCenter);
+                    float outerFlameR = size * 0.12f;
+                    if (flameDist < outerFlameR)
                     {
-                        float sa = Mathf.Clamp01((size * 0.08f - sparkDist) / (size * 0.08f));
-                        Color sparkColor = new Color(1f, 0.92f, 0.70f, sa * 0.9f);
-                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], sparkColor, sa);
+                        float ft = 1f - flameDist / outerFlameR;
+                        // 위쪽으로 갈수록 밝게 (불꽃 형태)
+                        float flameShape = Mathf.Clamp01(1f - Mathf.Abs(x - flameCenter.x) / (outerFlameR * 0.7f));
+                        float upBias = Mathf.Clamp01((y - flameCenter.y + outerFlameR * 0.3f) / (outerFlameR * 0.8f));
+                        float fa = ft * flameShape * Mathf.Lerp(0.6f, 1f, upBias);
+                        Color outerFlame = new Color(1f, 0.55f, 0.1f, fa * 0.7f);
+                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], outerFlame, fa * 0.7f);
+                    }
+                    // 내부 코어 (밝은 노랑-흰)
+                    float innerFlameR = size * 0.055f;
+                    if (flameDist < innerFlameR)
+                    {
+                        float ft = 1f - flameDist / innerFlameR;
+                        float fa = Mathf.Pow(ft, 1.5f);
+                        Color innerFlame = Color.Lerp(new Color(1f, 0.9f, 0.3f, 1f), new Color(1f, 1f, 0.9f, 1f), ft);
+                        innerFlame.a = fa;
+                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], innerFlame, fa);
                     }
                 }
             }
@@ -299,8 +346,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
                     continue;
 
-                if (target.Data.specialType != SpecialBlockType.None &&
-                    target.Data.specialType != SpecialBlockType.FixedBlock)
+                if (IsChainActivatable(target.Data.specialType))
                 {
                     if (!pendingSpecialBlocks.Contains(target))
                     {
@@ -357,8 +403,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(target))
                     continue;
 
-                if (target.Data.specialType != SpecialBlockType.None &&
-                    target.Data.specialType != SpecialBlockType.FixedBlock)
+                if (IsChainActivatable(target.Data.specialType))
                 {
                     if (!pendingSpecialBlocks.Contains(target))
                     {
@@ -410,33 +455,26 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             int totalScore = 200 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
 
-            // 미션 시스템에 파괴된 블록들 알림 (기본 블록만)
-            List<HexBlock> basicBlocksOnly = new List<HexBlock>();
-            List<HexBlock> allBombTargets = new List<HexBlock>(ring1Targets);
-            allBombTargets.AddRange(ring2Targets);
+            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
 
-            foreach (var target in allBombTargets)
-            {
-                if (target != null && target.Data != null && target.Data.gemType != GemType.None)
-                {
-                    // 기본 블록만 포함: 특수블록 제외
-                    if (target.Data.specialType == SpecialBlockType.None || target.Data.specialType == SpecialBlockType.FixedBlock)
-                    {
-                        basicBlocksOnly.Add(target);
-                        Debug.Log($"[BombBlockSystem]   BasicBlock: {target.Coord}, gemType={target.Data.gemType}");
-                    }
-                }
-            }
-
-            Debug.Log($"[BombBlockSystem] Passing {basicBlocksOnly.Count} basic blocks to MissionSystem (from {allBombTargets.Count} total targets)");
-
-            MissionSystem ms = Object.FindObjectOfType<MissionSystem>();
-            if (ms != null)
-                ms.OnSpecialBlockDestroyedBlocks(basicBlocksOnly);
 
             OnBombComplete?.Invoke(totalScore);
             activeBlocks.Remove(bombBlock);
             activeBombCount--;
+        }
+
+        /// <summary>
+        /// 연쇄 발동 가능한 특수 블록인지 판별.
+        /// TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로
+        /// 일반 블록처럼 파괴해야 함 (pending 마킹 금지).
+        /// </summary>
+        private static bool IsChainActivatable(SpecialBlockType type)
+        {
+            return type == SpecialBlockType.Drill ||
+                   type == SpecialBlockType.Bomb ||
+                   type == SpecialBlockType.Rainbow ||
+                   type == SpecialBlockType.XBlock ||
+                   type == SpecialBlockType.Drone;
         }
 
         // ============================================================
@@ -774,6 +812,10 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
         private IEnumerator ScreenShake(float intensity, float duration)
         {
+            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             if (shakeCount == 0)
                 shakeOriginalPos = target.localPosition;
@@ -798,6 +840,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 shakeCount = 0;
                 target.localPosition = shakeOriginalPos;
             }
+            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -856,6 +899,10 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
         private IEnumerator ZoomPunch(float targetScale)
         {
+            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginZoomPunch();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             Vector3 origScale = target.localScale;
             Vector3 punchScale = origScale * targetScale;
@@ -879,6 +926,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             }
 
             target.localScale = origScale;
+            VisualConstants.EndZoomPunch();
         }
 
         private IEnumerator DestroyFlashOverlay(HexBlock block)

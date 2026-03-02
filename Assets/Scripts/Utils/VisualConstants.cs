@@ -137,7 +137,7 @@ namespace JewelsHexaPuzzle.Core
         public const float ShakeMediumIntensity = 8f;
         public const float ShakeMediumDuration = 0.12f;
 
-        // Large (Bomb / Laser)
+        // Large (Bomb)
         public const float ShakeLargeIntensity = 12f;
         public const float ShakeLargeDuration = 0.2f;
 
@@ -152,7 +152,7 @@ namespace JewelsHexaPuzzle.Core
         // System-specific flash colors (pastel)
         public static readonly Color FlashColorDrill = new Color(1f, 0.96f, 0.92f);
         public static readonly Color FlashColorBomb = new Color(1f, 0.94f, 0.90f);
-        public static readonly Color FlashColorLaser = new Color(0.92f, 0.94f, 1f);
+
 
         // === Background / Border color constants (hardcoding 제거용) ===
         public static readonly Color SlotBackgroundColor = new Color(0.96f, 0.93f, 0.90f, 0.28f);
@@ -199,18 +199,6 @@ namespace JewelsHexaPuzzle.Core
             );
         }
 
-        /// <summary>
-        /// Laser-specific cool brighten (gentle cool shift)
-        /// </summary>
-        public static Color LaserBrighten(Color c)
-        {
-            return new Color(
-                Mathf.Min(1f, c.r + 0.15f),
-                Mathf.Min(1f, c.g + 0.15f),
-                Mathf.Min(1f, c.b + 0.2f),
-                c.a
-            );
-        }
 
         /// <summary>
         /// Drill-specific brighten (gentle warm tint)
@@ -264,7 +252,7 @@ namespace JewelsHexaPuzzle.Core
         // Hit Stop (특수 블록 발동 시 타임스케일 조작)
         // ============================================================
 
-        public const float HitStopDurationLarge = 0.06f;   // Bomb, Laser
+        public const float HitStopDurationLarge = 0.06f;   // Bomb
         public const float HitStopDurationMedium = 0.045f;  // Donut, XBlock
         public const float HitStopDurationSmall = 0.03f;   // Drill
         public const float HitStopSlowMoDuration = 0.08f;
@@ -280,6 +268,48 @@ namespace JewelsHexaPuzzle.Core
         public static void RecordHitStop()
         {
             lastHitStopTime = Time.unscaledTime;
+        }
+
+        // ============================================================
+        // 필드 바운스 중복 방지 (ScreenShake / ZoomPunch 동시 실행 차단)
+        // 다수 특수 블록 동시 발동 시 하나만 실행
+        // ============================================================
+
+        private static int activeShakeCount = 0;
+        private static int activeZoomPunchCount = 0;
+
+        /// <summary>ScreenShake 시작 가능 여부 (첫 번째만 허용)</summary>
+        public static bool TryBeginScreenShake()
+        {
+            activeShakeCount++;
+            return activeShakeCount == 1; // 첫 번째만 true
+        }
+        /// <summary>ScreenShake 종료 알림</summary>
+        public static void EndScreenShake()
+        {
+            activeShakeCount = Mathf.Max(0, activeShakeCount - 1);
+        }
+        /// <summary>모든 ScreenShake 카운터 리셋 (안전장치)</summary>
+        public static void ResetScreenShake()
+        {
+            activeShakeCount = 0;
+        }
+
+        /// <summary>ZoomPunch 시작 가능 여부 (첫 번째만 허용)</summary>
+        public static bool TryBeginZoomPunch()
+        {
+            activeZoomPunchCount++;
+            return activeZoomPunchCount == 1; // 첫 번째만 true
+        }
+        /// <summary>ZoomPunch 종료 알림</summary>
+        public static void EndZoomPunch()
+        {
+            activeZoomPunchCount = Mathf.Max(0, activeZoomPunchCount - 1);
+        }
+        /// <summary>모든 ZoomPunch 카운터 리셋 (안전장치)</summary>
+        public static void ResetZoomPunch()
+        {
+            activeZoomPunchCount = 0;
         }
 
         // ============================================================
@@ -310,7 +340,7 @@ namespace JewelsHexaPuzzle.Core
         // Zoom Punch (특수 블록 발동 시 보드 줌)
         // ============================================================
 
-        public const float ZoomPunchScaleLarge = 1.04f;    // Bomb, Laser
+        public const float ZoomPunchScaleLarge = 1.04f;    // Bomb
         public const float ZoomPunchScaleSmall = 1.025f;    // Donut, XBlock, Drill
         public const float ZoomPunchInDuration = 0.04f;
         public const float ZoomPunchOutDuration = 0.12f;

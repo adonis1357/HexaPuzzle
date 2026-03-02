@@ -330,7 +330,6 @@ namespace JewelsHexaPuzzle.Managers
                     }
                     break;
                 case SpecialBlockType.Bomb:    targetMissionType = MissionType.CreateBomb; break;
-                case SpecialBlockType.Laser:   targetMissionType = MissionType.CreateLaser; break;
                 case SpecialBlockType.Rainbow: targetMissionType = MissionType.CreateRainbow; break;
             }
 
@@ -535,7 +534,6 @@ namespace JewelsHexaPuzzle.Managers
         CreateDrillSlash = 21,      // 드릴 생성 (슬래시 /)
         CreateDrillBackSlash = 22,  // 드릴 생성 (백슬래시 \)
         CreateBomb = 23,            // 폭탄 생성
-        CreateLaser = 24,           // 레이저 생성
         CreateRainbow = 25          // 레인보우(도넛) 생성
     }
     
@@ -619,15 +617,40 @@ namespace JewelsHexaPuzzle.Managers
     /// </summary>
     public enum TutorialFlag
     {
+        // 적군 소개
         ShowEnemyType_Chromophage,
         ShowEnemyType_ChainAnchor,
+        ShowEnemyType_Thorn,
+        ShowEnemyType_Divider,
+        ShowEnemyType_GravityWarper,
+        ShowEnemyType_ReflectionShield,
+        ShowEnemyType_TimeFreezer,
+        ShowEnemyType_ResonanceTwin,
+        ShowEnemyType_ShadowSpore,
+        ShowEnemyType_ChaosOverlord,
+
+        // 특수 블록 소개
         ShowSpecialBlock_Drill,
         ShowSpecialBlock_Bomb,
-        ShowSpecialBlock_Laser,
         ShowSpecialBlock_Rainbow,
+        ShowSpecialBlock_Drone,
+        ShowSpecialBlock_XBlock,
+
+        // 아이템 소개
+        ShowItem_Hammer,
+        ShowItem_ReverseRotation,
+
+        // 미션 소개
+        ShowMission_CollectGem,
+        ShowMission_CreateSpecial,
+
+        // 시스템 설명
         ExplainMatchingRestriction,
         ExplainCascadeChaining,
-        ExplainTierSystem
+        ExplainTierSystem,
+        ExplainRotationDirection,
+        ExplainFreePlay,
+        ExplainBasicRotation
     }
 
     /// <summary>

@@ -50,8 +50,8 @@ namespace JewelsHexaPuzzle.Items
         private GameObject selectedHighlight;
         private GameObject targetHighlight;
 
-        // 버튼 기본 색상
-        private static readonly Color BtnDefaultColor = new Color(0.25f, 0.25f, 0.35f, 0.9f);
+        // 버튼 기본 색상 (Start()에서 실제 버튼 색상으로 캡처)
+        private Color btnOriginalColor = new Color(0.85f, 0.35f, 0.65f, 0.92f);
         private static readonly Color BtnActiveColor = new Color(0.4f, 0.7f, 1f, 1f);
 
         private void Start()
@@ -63,6 +63,12 @@ namespace JewelsHexaPuzzle.Items
             {
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
+            }
+            // 버튼 원래 색상 캡처
+            if (swapButton != null)
+            {
+                var img = swapButton.GetComponent<Image>();
+                if (img != null) btnOriginalColor = img.color;
             }
         }
 
@@ -731,13 +737,13 @@ namespace JewelsHexaPuzzle.Items
                 btnTransform.localScale = Vector3.one * scale;
 
                 if (btnImg != null)
-                    btnImg.color = Color.Lerp(startColor, BtnDefaultColor, VisualConstants.EaseOutCubic(t));
+                    btnImg.color = Color.Lerp(startColor, btnOriginalColor, VisualConstants.EaseOutCubic(t));
 
                 yield return null;
             }
 
             btnTransform.localScale = Vector3.one;
-            if (btnImg != null) btnImg.color = BtnDefaultColor;
+            if (btnImg != null) btnImg.color = btnOriginalColor;
         }
 
         // ============================================================

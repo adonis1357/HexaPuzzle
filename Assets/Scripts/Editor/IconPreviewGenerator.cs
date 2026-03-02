@@ -36,12 +36,6 @@ namespace JewelsHexaPuzzle.Editor
             SaveIcon(GenerateX_SnowCrystal(), "XBlock_4_SnowCrystal");
             SaveIcon(GenerateX_FlowerPinwheel(), "XBlock_5_FlowerPinwheel");
 
-            // Laser variants
-            SaveIcon(GenerateLaser_SparkleStar(), "Laser_1_SparkleStar");
-            SaveIcon(GenerateLaser_CreamSunburst(), "Laser_2_CreamSunburst");
-            SaveIcon(GenerateLaser_MagicWand(), "Laser_3_MagicWand");
-            SaveIcon(GenerateLaser_DiamondPrism(), "Laser_4_DiamondPrism");
-            SaveIcon(GenerateLaser_SnowflakeLaser(), "Laser_5_SnowflakeLaser");
 
             // Drill variants
             SaveIcon(GenerateDrill_LollipopArrow(), "Drill_1_LollipopArrow");
@@ -51,9 +45,9 @@ namespace JewelsHexaPuzzle.Editor
             SaveIcon(GenerateDrill_PeperoStick(), "Drill_5_PeperoStick");
 
             AssetDatabase.Refresh();
-            Debug.Log($"[IconPreviewGenerator] 25 icon previews saved to {OUTPUT_DIR}/");
+            Debug.Log($"[IconPreviewGenerator] 20 icon previews saved to {OUTPUT_DIR}/");
             EditorUtility.DisplayDialog("Icon Preview Generator",
-                $"25 icons generated!\nCheck {OUTPUT_DIR}/ folder.", "OK");
+                $"20 icons generated!\nCheck {OUTPUT_DIR}/ folder.", "OK");
         }
 
         private static void SaveIcon(Texture2D tex, string name)
@@ -740,199 +734,6 @@ namespace JewelsHexaPuzzle.Editor
             return Finalize(px);
         }
 
-        // ==================================================================
-        // LASER VARIANTS
-        // ==================================================================
-
-        // 1. Sparkle Star - 6-pointed star with sparkles
-        private static Texture2D GenerateLaser_SparkleStar()
-        {
-            Color[] px = InitPixels();
-            Vector2 c = Center;
-            Color star = new Color(0.70f, 0.85f, 0.98f); // soft sky blue
-
-            // 6-pointed star
-            for (int y = 0; y < SIZE; y++)
-                for (int x = 0; x < SIZE; x++)
-                {
-                    Vector2 p = new Vector2(x, y) - c;
-                    float maxR = 0;
-                    for (int i = 0; i < 6; i++)
-                    {
-                        float angle = i * 60f * Mathf.Deg2Rad;
-                        Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
-                        float dot = Vector2.Dot(p.normalized, dir);
-                        maxR = Mathf.Max(maxR, dot);
-                    }
-                    float radius = Mathf.Lerp(18f, 40f, Mathf.Pow(maxR, 3f));
-                    float d = p.magnitude;
-                    if (d < radius)
-                    {
-                        float t = d / radius;
-                        float a = SmoothEdge(d, radius, 2f);
-                        float hl = Mathf.Pow(1f - t, 2f) * 0.2f;
-                        px[y * SIZE + x] = BlendOver(px[y * SIZE + x], WithAlpha(Lighten(star, hl), a));
-                    }
-                }
-            // Sparkle dots at tips
-            for (int i = 0; i < 6; i++)
-            {
-                float angle = i * 60f * Mathf.Deg2Rad;
-                Vector2 tip = c + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 38f;
-                DrawCircle(px, tip, 4, WithAlpha(Color.white, 0.6f));
-            }
-            // Center glow
-            DrawCircle(px, c, 10, WithAlpha(Color.white, 0.4f));
-            return Finalize(px);
-        }
-
-        // 2. Cream Sunburst - soft rays from center
-        private static Texture2D GenerateLaser_CreamSunburst()
-        {
-            Color[] px = InitPixels();
-            Vector2 c = Center;
-            Color ray = new Color(1f, 0.92f, 0.75f);     // warm cream
-            Color center = new Color(1f, 0.85f, 0.65f);   // golden center
-
-            // 3 axis rays (like laser: vertical, 30, -30)
-            float[] rayAngles = { 90, 30, -30 };
-            foreach (float aDeg in rayAngles)
-            {
-                float aRad = aDeg * Mathf.Deg2Rad;
-                Vector2 dir = new Vector2(Mathf.Cos(aRad), Mathf.Sin(aRad));
-                // Both directions
-                DrawLine(px, c - dir * 48, c + dir * 48, 6f, WithAlpha(ray, 0.7f));
-                DrawLine(px, c - dir * 48, c + dir * 48, 3f, WithAlpha(Lighten(ray, 0.15f), 0.8f));
-            }
-            // Center circle
-            DrawCircle(px, c, 14, center);
-            DrawCircle(px, c, 10, Lighten(center, 0.15f));
-            DrawCircle(px, c + new Vector2(-3, 4), 4, WithAlpha(Color.white, 0.4f));
-            return Finalize(px);
-        }
-
-        // 3. Magic Wand Star - wand with star tip
-        private static Texture2D GenerateLaser_MagicWand()
-        {
-            Color[] px = InitPixels();
-            Vector2 c = Center;
-            Color wand = new Color(0.90f, 0.82f, 0.95f); // lavender wand
-            Color star = new Color(1f, 0.92f, 0.65f);     // golden star
-
-            // Wand stick (diagonal)
-            DrawLine(px, c + new Vector2(-24, -32), c + new Vector2(8, 0), 3.5f, wand);
-            DrawLine(px, c + new Vector2(-24, -32), c + new Vector2(8, 0), 1.5f, Lighten(wand, 0.15f));
-
-            // Star at top
-            Vector2 starC = c + new Vector2(12, 8);
-            for (int y = 0; y < SIZE; y++)
-                for (int x = 0; x < SIZE; x++)
-                {
-                    Vector2 p = new Vector2(x, y) - starC;
-                    float maxR = 0;
-                    for (int i = 0; i < 5; i++)
-                    {
-                        float angle = (i * 72f + 90f) * Mathf.Deg2Rad;
-                        Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
-                        float dot = Vector2.Dot(p.normalized, dir);
-                        maxR = Mathf.Max(maxR, dot);
-                    }
-                    float radius = Mathf.Lerp(10f, 26f, Mathf.Pow(maxR, 3f));
-                    float d = p.magnitude;
-                    if (d < radius)
-                    {
-                        float a = SmoothEdge(d, radius, 2f);
-                        float hl = Mathf.Pow(1f - d / radius, 2f) * 0.2f;
-                        px[y * SIZE + x] = BlendOver(px[y * SIZE + x], WithAlpha(Lighten(star, hl), a));
-                    }
-                }
-            // Sparkles around star
-            DrawCircle(px, starC + new Vector2(20, 12), 3, WithAlpha(star, 0.6f));
-            DrawCircle(px, starC + new Vector2(-10, 18), 2, WithAlpha(star, 0.5f));
-            DrawCircle(px, starC + new Vector2(14, -14), 2.5f, WithAlpha(star, 0.55f));
-            return Finalize(px);
-        }
-
-        // 4. Diamond Prism - hexagonal diamond
-        private static Texture2D GenerateLaser_DiamondPrism()
-        {
-            Color[] px = InitPixels();
-            Vector2 c = Center;
-            Color prism = new Color(0.75f, 0.88f, 0.98f); // ice blue
-
-            // Hexagonal prism shape
-            for (int y = 0; y < SIZE; y++)
-                for (int x = 0; x < SIZE; x++)
-                {
-                    Vector2 p = new Vector2(x, y) - c;
-                    // Hex distance
-                    float hexD = 0;
-                    for (int i = 0; i < 3; i++)
-                    {
-                        float angle = i * 60f * Mathf.Deg2Rad;
-                        Vector2 axis = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
-                        hexD = Mathf.Max(hexD, Mathf.Abs(Vector2.Dot(p, axis)));
-                    }
-                    float radius = 36;
-                    if (hexD < radius)
-                    {
-                        float t = hexD / radius;
-                        float a = SmoothEdge(hexD, radius, 2f);
-                        // Faceted look - different brightness per facet
-                        float facetAngle = Mathf.Atan2(p.y, p.x);
-                        float facetBright = (Mathf.Sin(facetAngle * 3f) * 0.5f + 0.5f) * 0.12f;
-                        float hl = Mathf.Pow(1f - t, 1.5f) * 0.15f + facetBright;
-                        px[y * SIZE + x] = BlendOver(px[y * SIZE + x], WithAlpha(Lighten(prism, hl), a));
-                    }
-                }
-            // Light rays from prism
-            float[] rayAngles = { 90, 30, -30 };
-            foreach (float aDeg in rayAngles)
-            {
-                float aRad = aDeg * Mathf.Deg2Rad;
-                Vector2 dir = new Vector2(Mathf.Cos(aRad), Mathf.Sin(aRad));
-                DrawLine(px, c + dir * 36, c + dir * 52, 2f, WithAlpha(Lighten(prism, 0.15f), 0.6f));
-                DrawLine(px, c - dir * 36, c - dir * 52, 2f, WithAlpha(Lighten(prism, 0.15f), 0.6f));
-            }
-            // Center highlight
-            DrawCircle(px, c + new Vector2(-6, 8), 8, WithAlpha(Color.white, 0.3f));
-            return Finalize(px);
-        }
-
-        // 5. Snowflake Laser - snowflake with laser beams
-        private static Texture2D GenerateLaser_SnowflakeLaser()
-        {
-            Color[] px = InitPixels();
-            Vector2 c = Center;
-            Color beam = new Color(0.65f, 0.82f, 0.98f);
-            Color ice = new Color(0.85f, 0.92f, 0.98f);
-
-            // 3 laser beams (matching hex axes)
-            float[] angles = { 90, 30, -30 };
-            foreach (float aDeg in angles)
-            {
-                float aRad = aDeg * Mathf.Deg2Rad;
-                Vector2 dir = new Vector2(Mathf.Cos(aRad), Mathf.Sin(aRad));
-                DrawLine(px, c - dir * 50, c + dir * 50, 4f, WithAlpha(beam, 0.6f));
-                DrawLine(px, c - dir * 50, c + dir * 50, 1.5f, WithAlpha(Color.white, 0.5f));
-            }
-            // Snowflake center
-            for (int i = 0; i < 6; i++)
-            {
-                float angle = i * 60f * Mathf.Deg2Rad;
-                Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
-                DrawLine(px, c, c + dir * 20, 2.5f, ice);
-                // Side branches
-                Vector2 mid = c + dir * 14;
-                float ba1 = angle + 60f * Mathf.Deg2Rad;
-                float ba2 = angle - 60f * Mathf.Deg2Rad;
-                DrawLine(px, mid, mid + new Vector2(Mathf.Cos(ba1), Mathf.Sin(ba1)) * 8, 1.5f, ice);
-                DrawLine(px, mid, mid + new Vector2(Mathf.Cos(ba2), Mathf.Sin(ba2)) * 8, 1.5f, ice);
-            }
-            DrawCircle(px, c, 6, Lighten(ice, 0.1f));
-            DrawCircle(px, c, 3, WithAlpha(Color.white, 0.6f));
-            return Finalize(px);
-        }
 
         // ==================================================================
         // DRILL VARIANTS

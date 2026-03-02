@@ -38,7 +38,6 @@ namespace JewelsHexaPuzzle.Core
                 private static Sprite bombIconSprite;
         private static Sprite donutIconSprite;
         private static Sprite xBlockIconSprite;
-        private static Sprite laserIconSprite;
         private static Sprite droneIconSprite;
         private static Sprite chainOverlaySprite;
         private static Sprite thornOverlaySprite;
@@ -308,9 +307,9 @@ namespace JewelsHexaPuzzle.Core
                 hexGemSprite = CreateAAInnerHexSprite(TEX_SIZE, INNER_BORDER_WIDTH * scale);
             if (drillVerticalSprite == null)
             {
-                drillVerticalSprite = CreateArrowSprite(128, 0);      // r축: 화면 세로 ↕
-                drillSlashSprite = CreateArrowSprite(128, -60);     // s축: 화면 / 방향 (세로에서 시계 60°)
-                drillBackSlashSprite = CreateArrowSprite(128, 60);  // q축: 화면 \\ 방향 (세로에서 시계 120°)
+                drillVerticalSprite = CreateArrowSprite(256, 0);      // r축: 화면 세로 ↕
+                drillSlashSprite = CreateArrowSprite(256, -60);     // s축: 화면 / 방향 (세로에서 시계 60°)
+                drillBackSlashSprite = CreateArrowSprite(256, 60);  // q축: 화면 \\ 방향 (세로에서 시계 120°)
             }
         }
 
@@ -475,41 +474,168 @@ namespace JewelsHexaPuzzle.Core
 
         private Sprite CreateArrowSprite(int size, float rotation)
         {
+            return CreateDrillSprite_Refined(size, rotation);
+        }
+
+        /// <summary>
+        /// 세련된 드릴 아이콘 - 양방향 화살표 + 메탈릭 그라데이션 + 글로우
+        /// </summary>
+        private static Sprite CreateDrillSprite_Refined(int size, float rotation)
+        {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
-
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = Color.clear;
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
 
             Vector2 center = new Vector2(size / 2f, size / 2f);
-            float arrowLength = size * 0.4f;
-            float arrowWidth = size * 0.15f;
             float rad = rotation * Mathf.Deg2Rad;
+
+            // === 드릴 비트 형태 파라미터 ===
+            float bodyLen = size * 0.22f;        // 몸통 길이 (중심~비트 시작)
+            float bodyHalfW = size * 0.065f;     // 몸통 반폭
+            float bitLen = size * 0.22f;         // 드릴 비트 길이 (나선 구간)
+            float bitBaseW = size * 0.09f;       // 비트 시작 반폭
+            float collarHalfW = size * 0.085f;   // 중앙 칼라 반폭
+            float collarHalfH = size * 0.035f;   // 중앙 칼라 반높이
+            float spiralFreq = 8.0f;             // 나선 홈 빈도
+            float spiralDepth = 0.35f;           // 나선 홈 깊이 (셰이딩 비율)
+            float glowR = size * 0.045f;         // 글로우 반경
+
+            float totalLen = bodyLen + bitLen;
 
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
+                    // 회전 변환
                     Vector2 p = new Vector2(x - center.x, y - center.y);
                     float rx = p.x * Mathf.Cos(-rad) - p.y * Mathf.Sin(-rad);
                     float ry = p.x * Mathf.Sin(-rad) + p.y * Mathf.Cos(-rad);
+                    float absRx = Mathf.Abs(rx);
+                    float absRy = Mathf.Abs(ry);
 
-                    bool inArrow = false;
-                    if (Mathf.Abs(rx) < arrowWidth / 2f && Mathf.Abs(ry) < arrowLength)
-                        inArrow = true;
-                    if (ry > arrowLength * 0.5f && ry < arrowLength)
+                    float alpha = 0f;
+                    float shade = 0f;
+                    bool isCollar = false;
+                    bool isBit = false;
+
+                    // --- 중앙 칼라 (척 고리) ---
+                    if (absRy < collarHalfH + 1f && absRx < collarHalfW + 1f)
                     {
-                        float arrowHead = (arrowLength - ry) / (arrowLength * 0.5f) * arrowWidth;
-                        if (Mathf.Abs(rx) < arrowHead) inArrow = true;
-                    }
-                    if (ry < -arrowLength * 0.5f && ry > -arrowLength)
-                    {
-                        float arrowHead = (arrowLength + ry) / (arrowLength * 0.5f) * arrowWidth;
-                        if (Mathf.Abs(rx) < arrowHead) inArrow = true;
+                        float edgeX = collarHalfW - absRx;
+                        float edgeY = collarHalfH - absRy;
+                        float edge = Mathf.Min(edgeX, edgeY);
+                        float aa = Mathf.Clamp01(edge * 2f + 0.5f);
+                        // 칼라 그라데이션: 위쪽 밝고 아래쪽 어둡게 (입체감)
+                        shade = 0.85f - absRy / collarHalfH * 0.2f;
+                        // 가장자리 어둡게
+                        shade *= 1f - Mathf.Pow(absRx / collarHalfW, 3f) * 0.3f;
+                        alpha = aa;
+                        isCollar = true;
                     }
 
-                    if (inArrow) pixels[y * size + x] = new Color(0.98f, 0.95f, 0.90f, 1f); // 크림 아이보리
+                    // --- 몸통 (원통, 칼라~비트 시작) ---
+                    if (!isCollar && absRy >= collarHalfH && absRy < bodyLen + 1.5f && absRx < bodyHalfW + 1.5f)
+                    {
+                        float edgeD = bodyHalfW - absRx;
+                        float aa = Mathf.Clamp01(edgeD * 1.5f + 0.5f);
+                        // 원통형 셰이딩
+                        shade = 1f - Mathf.Pow(absRx / bodyHalfW, 2f) * 0.45f;
+                        // 축 방향 약간 어두워짐
+                        float axialT = (absRy - collarHalfH) / (bodyLen - collarHalfH);
+                        shade *= Mathf.Lerp(0.95f, 0.8f, axialT);
+                        // 나선 홈 패턴 (몸통에도 약간)
+                        float spiralPhase = Mathf.Sin(absRy * spiralFreq / size * Mathf.PI * 2f + rx / bodyHalfW * 1.5f);
+                        shade *= 1f - spiralPhase * spiralDepth * 0.3f;
+                        alpha = Mathf.Max(alpha, aa);
+                    }
+
+                    // --- 드릴 비트 (나선 홈이 있는 테이퍼 구간) ---
+                    if (absRy >= bodyLen && absRy < bodyLen + bitLen + 1.5f)
+                    {
+                        float bitT = (absRy - bodyLen) / bitLen; // 0=시작 1=끝
+                        // 테이퍼: 시작은 넓고 끝은 뾰족하게
+                        float bitW = Mathf.Lerp(bitBaseW, 0f, Mathf.Pow(bitT, 1.3f));
+                        float edgeD = bitW - absRx;
+                        if (edgeD > -1.5f)
+                        {
+                            float aa = Mathf.Clamp01(edgeD * 1.5f + 0.5f);
+                            float tipAA = Mathf.Clamp01((bodyLen + bitLen + 1.5f - absRy) * 1.5f);
+
+                            // 나선 홈 (Spiral flute) — 드릴의 핵심 디테일
+                            float normalizedX = rx / Mathf.Max(bitW, 0.01f); // -1 ~ +1
+                            float spiralAngle = absRy * spiralFreq / size * Mathf.PI * 2f;
+                            float spiralVal = Mathf.Sin(spiralAngle + normalizedX * Mathf.PI);
+
+                            // 기본 원통 셰이딩
+                            float baseShade = 1f - Mathf.Pow(absRx / Mathf.Max(bitW, 0.1f), 2f) * 0.4f;
+                            // 나선 홈 적용 (어두운 홈 + 밝은 능선)
+                            float fluteShade = spiralVal * spiralDepth;
+                            shade = baseShade * (1f - fluteShade);
+                            // 끝으로 갈수록 약간 밝게 (날카로운 금속 느낌)
+                            shade *= Mathf.Lerp(0.85f, 1.1f, bitT);
+                            shade = Mathf.Clamp01(shade);
+
+                            alpha = Mathf.Max(alpha, aa * tipAA);
+                            isBit = true;
+                        }
+                    }
+
+                    // --- 색상 적용 ---
+                    if (alpha > 0.01f)
+                    {
+                        float cr, cg, cb;
+                        if (isCollar)
+                        {
+                            // 칼라: 약간 금색 틴트의 메탈릭
+                            cr = Mathf.Lerp(0.45f, 0.85f, shade);
+                            cg = Mathf.Lerp(0.42f, 0.80f, shade);
+                            cb = Mathf.Lerp(0.35f, 0.65f, shade);
+                        }
+                        else if (isBit)
+                        {
+                            // 비트: 밝은 스틸 실버 (하이라이트 강조)
+                            cr = Mathf.Lerp(0.42f, 1f, shade);
+                            cg = Mathf.Lerp(0.44f, 0.98f, shade);
+                            cb = Mathf.Lerp(0.50f, 1f, shade);
+                        }
+                        else
+                        {
+                            // 몸통: 중간톤 스틸
+                            cr = Mathf.Lerp(0.48f, 0.92f, shade);
+                            cg = Mathf.Lerp(0.48f, 0.90f, shade);
+                            cb = Mathf.Lerp(0.52f, 0.95f, shade);
+                        }
+
+                        // 스페큘러 하이라이트 (왼쪽 광원)
+                        float specRegion = Mathf.Clamp01(1f - absRx / Mathf.Max(bodyHalfW, bitBaseW));
+                        float specT = specRegion * Mathf.Clamp01(1f - absRy / totalLen);
+                        float spec = Mathf.Pow(specT, 4f) * 0.4f;
+                        if (rx < 0) spec *= 1.6f;
+
+                        pixels[y * size + x] = new Color(
+                            Mathf.Clamp01(cr + spec),
+                            Mathf.Clamp01(cg + spec),
+                            Mathf.Clamp01(cb + spec * 0.7f),
+                            alpha
+                        );
+                    }
+
+                    // --- 글로우 (외곽 발광) ---
+                    float shapeW = absRy < bodyLen ? bodyHalfW : Mathf.Lerp(bitBaseW, 0f, Mathf.Clamp01((absRy - bodyLen) / bitLen));
+                    bool nearShape = absRx < shapeW + glowR && absRy < totalLen + glowR;
+                    if (nearShape && alpha < 0.5f)
+                    {
+                        float dBody = Mathf.Max(absRx - shapeW, 0f);
+                        float dTip = Mathf.Max(absRy - totalLen, 0f);
+                        float dMin = Mathf.Sqrt(dBody * dBody + dTip * dTip);
+                        if (dMin < glowR)
+                        {
+                            float ga = Mathf.Pow(1f - dMin / glowR, 2f) * 0.3f;
+                            Color gc = new Color(0.8f, 0.88f, 1f, ga);
+                            pixels[y * size + x] = Color.Lerp(pixels[y * size + x], gc, ga);
+                        }
+                    }
                 }
             }
 
@@ -704,7 +830,7 @@ namespace JewelsHexaPuzzle.Core
                 RectTransform rt = drillObj.GetComponent<RectTransform>();
                 rt.anchorMin = new Vector2(0.5f, 0.5f);
                 rt.anchorMax = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(40f, 40f);
+                rt.sizeDelta = new Vector2(70f, 70f); // 초기값, Initialize()에서 hexSize 기반 재계산
                 rt.anchoredPosition = Vector2.zero;
             }
             drillIndicator.raycastTarget = false;
@@ -717,7 +843,14 @@ namespace JewelsHexaPuzzle.Core
             this.parentGrid = grid;
             this.blockData = new BlockData();
 
-            // ��������Ʈ ��Ȯ�� (Initialize�� Awake �Ŀ� ȣ��ǹǷ�)
+            // 특수 블록 아이콘 크기: 블록 높이(√3 × hexSize)의 80%
+            if (drillIndicator != null && grid != null)
+            {
+                float iconSize = grid.HexSize * Mathf.Sqrt(3f) * 0.8f;
+                drillIndicator.rectTransform.sizeDelta = new Vector2(iconSize, iconSize);
+            }
+
+            // 스프라이트 확보 (Initialize는 Awake 이후 호출되므로)
             EnsureSpritesCreated();
 
             if (backgroundImage != null)
@@ -896,12 +1029,6 @@ private void UpdateSpecialIndicator()
                     ShowSpecialIcon(xBlockIconSprite);
                     break;
 
-                case SpecialBlockType.Laser:
-                    if (laserIconSprite == null)
-                        laserIconSprite = LaserBlockSystem.GetLaserIconSprite();
-                    ShowSpecialIcon(laserIconSprite);
-                    break;
-
                 case SpecialBlockType.Drone:
                     if (droneIconSprite == null)
                         droneIconSprite = DroneBlockSystem.GetDroneIconSprite();
@@ -983,9 +1110,9 @@ private void UpdateSpecialIndicator()
             // 스프라이트가 아직 생성되지 않았으면 생성
             if (drillVerticalSprite == null)
             {
-                drillVerticalSprite = CreateArrowSprite_Static(128, 0);
-                drillSlashSprite = CreateArrowSprite_Static(128, -60);
-                drillBackSlashSprite = CreateArrowSprite_Static(128, 60);
+                drillVerticalSprite = CreateArrowSprite_Static(256, 0);
+                drillSlashSprite = CreateArrowSprite_Static(256, -60);
+                drillBackSlashSprite = CreateArrowSprite_Static(256, 60);
             }
             switch (direction)
             {
@@ -1001,47 +1128,7 @@ private void UpdateSpecialIndicator()
         /// </summary>
         private static Sprite CreateArrowSprite_Static(int size, float rotation)
         {
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            Color[] pixels = new Color[size * size];
-
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = Color.clear;
-
-            Vector2 center = new Vector2(size / 2f, size / 2f);
-            float arrowLength = size * 0.4f;
-            float arrowWidth = size * 0.15f;
-            float rad = rotation * Mathf.Deg2Rad;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    Vector2 p = new Vector2(x - center.x, y - center.y);
-                    float rx = p.x * Mathf.Cos(-rad) - p.y * Mathf.Sin(-rad);
-                    float ry = p.x * Mathf.Sin(-rad) + p.y * Mathf.Cos(-rad);
-
-                    bool inArrow = false;
-                    if (Mathf.Abs(rx) < arrowWidth / 2f && Mathf.Abs(ry) < arrowLength)
-                        inArrow = true;
-                    if (ry > arrowLength * 0.5f && ry < arrowLength)
-                    {
-                        float arrowHead = (arrowLength - ry) / (arrowLength * 0.5f) * arrowWidth;
-                        if (Mathf.Abs(rx) < arrowHead) inArrow = true;
-                    }
-                    if (ry < -arrowLength * 0.5f && ry > -arrowLength)
-                    {
-                        float arrowHead = (arrowLength + ry) / (arrowLength * 0.5f) * arrowWidth;
-                        if (Mathf.Abs(rx) < arrowHead) inArrow = true;
-                    }
-
-                    if (inArrow) pixels[y * size + x] = new Color(0.98f, 0.95f, 0.90f, 1f);
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            return CreateDrillSprite_Refined(size, rotation);
         }
 
 /// <summary>
@@ -1443,6 +1530,91 @@ public void ShowDroneIndicator()
             isMatched = matched;
             if (borderImage != null)
                 borderImage.color = matched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
+        }
+
+        // ============================================================
+        // 튜토리얼 디밍/글로우 (TutorialManager에서 사용)
+        // ============================================================
+        private bool isTutorialDimmed = false;
+        private bool isTutorialGlowing = false;
+        private Coroutine tutorialGlowCoroutine;
+        private CanvasGroup tutorialCanvasGroup;
+
+        /// <summary>
+        /// 블록을 어둡게 처리 (튜토리얼에서 비활성 블록 표시)
+        /// </summary>
+        public void SetTutorialDimmed(bool dimmed)
+        {
+            isTutorialDimmed = dimmed;
+            EnsureTutorialCanvasGroup();
+            if (tutorialCanvasGroup != null)
+                tutorialCanvasGroup.alpha = dimmed ? 0.25f : 1f;
+        }
+
+        /// <summary>
+        /// 블록에 글로우 펄스 효과 (튜토리얼에서 활성 블록 강조)
+        /// </summary>
+        public void SetTutorialGlow(bool glow)
+        {
+            isTutorialGlowing = glow;
+            if (glow)
+            {
+                EnsureTutorialCanvasGroup();
+                if (tutorialCanvasGroup != null)
+                    tutorialCanvasGroup.alpha = 1f;
+                if (borderImage != null)
+                    borderImage.color = new Color(1f, 0.95f, 0.5f, 1f); // 밝은 노란 테두리
+                if (tutorialGlowCoroutine != null) StopCoroutine(tutorialGlowCoroutine);
+                tutorialGlowCoroutine = StartCoroutine(TutorialGlowPulse());
+            }
+            else
+            {
+                if (tutorialGlowCoroutine != null)
+                {
+                    StopCoroutine(tutorialGlowCoroutine);
+                    tutorialGlowCoroutine = null;
+                }
+                if (borderImage != null && !isMatched && !isHighlighted)
+                    borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);
+                transform.localScale = Vector3.one;
+            }
+        }
+
+        /// <summary>
+        /// 튜토리얼 비주얼 전체 초기화
+        /// </summary>
+        public void ClearTutorialVisuals()
+        {
+            SetTutorialGlow(false);
+            SetTutorialDimmed(false);
+        }
+
+        private void EnsureTutorialCanvasGroup()
+        {
+            if (tutorialCanvasGroup == null)
+            {
+                tutorialCanvasGroup = GetComponent<CanvasGroup>();
+                if (tutorialCanvasGroup == null)
+                    tutorialCanvasGroup = gameObject.AddComponent<CanvasGroup>();
+            }
+        }
+
+        private IEnumerator TutorialGlowPulse()
+        {
+            float speed = 3f;
+            while (isTutorialGlowing)
+            {
+                float t = (Mathf.Sin(Time.unscaledTime * speed) + 1f) / 2f; // 0~1
+                float scale = 1f + t * 0.08f; // 1.0 ~ 1.08
+                transform.localScale = Vector3.one * scale;
+
+                if (borderImage != null)
+                {
+                    float alpha = 0.7f + t * 0.3f;
+                    borderImage.color = new Color(1f, 0.95f, 0.5f, alpha);
+                }
+                yield return null;
+            }
         }
 
 // === 빨간색 테두리 점멸 (특수 블록 연쇄 발동 예고) ===

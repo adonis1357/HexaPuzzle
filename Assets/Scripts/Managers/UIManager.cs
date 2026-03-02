@@ -785,11 +785,20 @@ namespace JewelsHexaPuzzle.Managers
             ScoreManager sm = FindObjectOfType<ScoreManager>();
             if (sm == null) yield break;
 
+            // 기존 HighScoreContainer 제거 (팝업 재사용 시 중첩 방지)
+            Transform existingHs = parent.Find("HighScoreContainer");
+            if (existingHs != null)
+                Destroy(existingHs.gameObject);
+
             int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
             int levelBest = sm.GetLevelHighScore(stage);
             int personalBest = sm.GetPersonalLevelBest(stage);
-            bool isNewLevelBest = currentScore >= levelBest && currentScore > 0;
-            bool isNewPersonalBest = currentScore >= personalBest && currentScore > 0;
+            // TryUpdateLevelHighScore에서 저장해둔 갱신 전 이전 기록 사용
+            int prevLevelBest = sm.PreviousLevelBest;
+            int prevPersonalBest = sm.PreviousPersonalBest;
+            // 이미 저장 후이므로 levelBest == currentScore이면 신기록
+            bool isNewLevelBest = currentScore > prevLevelBest && currentScore > 0;
+            bool isNewPersonalBest = currentScore > prevPersonalBest && currentScore > 0;
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
@@ -813,8 +822,10 @@ namespace JewelsHexaPuzzle.Managers
             lbText.alignment = TextAnchor.MiddleCenter;
             lbText.raycastTarget = false;
             lbText.color = isNewLevelBest ? new Color(1f, 1f, 0.3f) : new Color(1f, 0.85f, 0.3f, 0.9f);
-            string levelBestStr = isNewLevelBest ? "NEW RECORD!" : string.Format("{0:N0}", levelBest);
-            lbText.text = string.Format("BEST: {0}", levelBestStr);
+            // 초기 텍스트: 갱신 시 이전 기록 표시, 아니면 현재 기록 표시
+            lbText.text = isNewLevelBest
+                ? string.Format("BEST: {0:N0}", prevLevelBest)
+                : string.Format("BEST: {0:N0}", levelBest);
             Outline lbOutline = levelBestObj.AddComponent<Outline>();
             lbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
             lbOutline.effectDistance = new Vector2(1, 1);
@@ -831,8 +842,9 @@ namespace JewelsHexaPuzzle.Managers
             pbText.alignment = TextAnchor.MiddleCenter;
             pbText.raycastTarget = false;
             pbText.color = isNewPersonalBest ? new Color(0.5f, 1f, 0.5f) : new Color(0.7f, 0.9f, 1f, 0.9f);
-            string personalBestStr = isNewPersonalBest ? "NEW RECORD!" : string.Format("{0:N0}", personalBest);
-            pbText.text = string.Format("MY BEST: {0}", personalBestStr);
+            pbText.text = isNewPersonalBest
+                ? string.Format("MY BEST: {0:N0}", prevPersonalBest)
+                : string.Format("MY BEST: {0:N0}", personalBest);
             Outline pbOutline = personalBestObj.AddComponent<Outline>();
             pbOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
             pbOutline.effectDistance = new Vector2(1, 1);
@@ -842,19 +854,132 @@ namespace JewelsHexaPuzzle.Managers
             cg.alpha = 0f;
             float startY = hsRt.anchoredPosition.y - 20f;
             float targetY = hsRt.anchoredPosition.y;
-            float duration = 0.4f;
-            float elapsed = 0f;
+            float fadeDuration = 0.4f;
+            float fadeElapsed = 0f;
 
-            while (elapsed < duration)
+            while (fadeElapsed < fadeDuration)
             {
-                elapsed += Time.unscaledDeltaTime;
-                float t = VisualConstants.EaseOutQuart(elapsed / duration);
+                fadeElapsed += Time.unscaledDeltaTime;
+                float t = VisualConstants.EaseOutQuart(fadeElapsed / fadeDuration);
                 cg.alpha = t;
                 hsRt.anchoredPosition = new Vector2(0f, Mathf.Lerp(startY, targetY, t));
                 yield return null;
             }
             cg.alpha = 1f;
             hsRt.anchoredPosition = new Vector2(0f, targetY);
+
+            // 신기록 갱신 시 카운트업 애니메이션: 이전 점수 → 새 점수
+            if (isNewLevelBest || isNewPersonalBest)
+            {
+                yield return new WaitForSecondsRealtime(0.3f);
+
+                float countUpDuration = 0.8f;
+                float countElapsed = 0f;
+
+                while (countElapsed < countUpDuration)
+                {
+                    countElapsed += Time.unscaledDeltaTime;
+                    float t = VisualConstants.EaseOutQuart(countElapsed / countUpDuration);
+
+                    if (isNewLevelBest)
+                    {
+                        int displayVal = (int)Mathf.Lerp(prevLevelBest, currentScore, t);
+                        lbText.text = string.Format("BEST: {0:N0}", displayVal);
+                    }
+                    if (isNewPersonalBest)
+                    {
+                        int displayVal = (int)Mathf.Lerp(prevPersonalBest, currentScore, t);
+                        pbText.text = string.Format("MY BEST: {0:N0}", displayVal);
+                    }
+
+                    yield return null;
+                }
+
+                // 최종 값 확정
+                if (isNewLevelBest)
+                    lbText.text = string.Format("BEST: {0:N0}", currentScore);
+                if (isNewPersonalBest)
+                    pbText.text = string.Format("MY BEST: {0:N0}", currentScore);
+
+                // "NEW RECORD!" 뱃지 팝 애니메이션
+                yield return new WaitForSecondsRealtime(0.15f);
+                yield return StartCoroutine(ShowNewRecordBadge(hsContainer.transform, isNewLevelBest, isNewPersonalBest));
+            }
+        }
+
+        /// <summary>
+        /// 신기록 달성 시 "NEW RECORD!" 뱃지 팝 애니메이션
+        /// </summary>
+        private IEnumerator ShowNewRecordBadge(Transform container, bool showLevelBadge, bool showPersonalBadge)
+        {
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            List<RectTransform> badges = new List<RectTransform>();
+
+            if (showLevelBadge)
+            {
+                GameObject badge = new GameObject("LevelNewRecordBadge");
+                badge.transform.SetParent(container, false);
+                RectTransform brt = badge.AddComponent<RectTransform>();
+                brt.anchoredPosition = new Vector2(155f, 25f);
+                brt.sizeDelta = new Vector2(120f, 24f);
+                brt.localScale = Vector3.zero;
+                Text bt = badge.AddComponent<Text>();
+                bt.font = font;
+                bt.fontSize = 13;
+                bt.fontStyle = FontStyle.Bold;
+                bt.alignment = TextAnchor.MiddleCenter;
+                bt.raycastTarget = false;
+                bt.color = new Color(1f, 0.95f, 0.2f);
+                bt.text = "★ NEW!";
+                Outline bo = badge.AddComponent<Outline>();
+                bo.effectColor = new Color(0.6f, 0.3f, 0f, 0.9f);
+                bo.effectDistance = new Vector2(1, 1);
+                badges.Add(brt);
+            }
+
+            if (showPersonalBadge)
+            {
+                GameObject badge = new GameObject("PersonalNewRecordBadge");
+                badge.transform.SetParent(container, false);
+                RectTransform brt = badge.AddComponent<RectTransform>();
+                brt.anchoredPosition = new Vector2(155f, -25f);
+                brt.sizeDelta = new Vector2(120f, 24f);
+                brt.localScale = Vector3.zero;
+                Text bt = badge.AddComponent<Text>();
+                bt.font = font;
+                bt.fontSize = 13;
+                bt.fontStyle = FontStyle.Bold;
+                bt.alignment = TextAnchor.MiddleCenter;
+                bt.raycastTarget = false;
+                bt.color = new Color(0.4f, 1f, 0.4f);
+                bt.text = "★ NEW!";
+                Outline bo = badge.AddComponent<Outline>();
+                bo.effectColor = new Color(0f, 0.3f, 0f, 0.9f);
+                bo.effectDistance = new Vector2(1, 1);
+                badges.Add(brt);
+            }
+
+            // 뱃지 팝 애니메이션 (EaseOutBack으로 튀어나오는 느낌)
+            float popDuration = 0.3f;
+            float popElapsed = 0f;
+            while (popElapsed < popDuration)
+            {
+                popElapsed += Time.unscaledDeltaTime;
+                float t = popElapsed / popDuration;
+                float scale = VisualConstants.EaseOutBack(t);
+                foreach (var brt in badges)
+                {
+                    if (brt != null)
+                        brt.localScale = Vector3.one * scale;
+                }
+                yield return null;
+            }
+            foreach (var brt in badges)
+            {
+                if (brt != null)
+                    brt.localScale = Vector3.one;
+            }
         }
 
         /// <summary>
@@ -2007,6 +2132,11 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 미션 UI 등장 애니메이션 (왼쪽에서 슬라이드인 + 스케일 펀치)
+        /// </summary>
+        // 미션 등장 애니메이션은 GameManager.AnimateMissionEntranceCoroutine에서 처리
+
+        /// <summary>
         /// 미션 타입에 따라 적절한 아이콘을 Image에 적용
         /// </summary>
         private void SetMissionIconForType(Image iconImage, MissionData mission)
@@ -2058,7 +2188,6 @@ namespace JewelsHexaPuzzle.Managers
                      mType == MissionType.CreateDrillSlash ||
                      mType == MissionType.CreateDrillBackSlash ||
                      mType == MissionType.CreateBomb ||
-                     mType == MissionType.CreateLaser ||
                      mType == MissionType.CreateRainbow)
             {
                 // 배경: 6색 육각형 기본 블록
@@ -2077,8 +2206,6 @@ namespace JewelsHexaPuzzle.Managers
                         overlaySprite = HexBlock.GetDrillIconSprite(DrillDirection.BackSlash); break;
                     case MissionType.CreateBomb:
                         overlaySprite = BombBlockSystem.GetBombIconSprite(); break;
-                    case MissionType.CreateLaser:
-                        overlaySprite = LaserBlockSystem.GetLaserIconSprite(); break;
                     case MissionType.CreateRainbow:
                         overlaySprite = DonutBlockSystem.GetDonutIconSprite(); break;
                 }

@@ -30,7 +30,6 @@ namespace JewelsHexaPuzzle.Managers
         // 특수 블록 생성 가산점
         private const int CreationBonusDrill = 150;
         private const int CreationBonusBomb = 300;
-        private const int CreationBonusLaser = 500;
         private const int CreationBonusDonut = 800;
 
         // 복수 생성 보너스
@@ -138,7 +137,6 @@ namespace JewelsHexaPuzzle.Managers
             {
                 case SpecialBlockType.Drill: return CreationBonusDrill;
                 case SpecialBlockType.Bomb: return CreationBonusBomb;
-                case SpecialBlockType.Laser: return CreationBonusLaser;
                 case SpecialBlockType.Rainbow:
                 case SpecialBlockType.XBlock: return CreationBonusDonut;
                 default: return 0;

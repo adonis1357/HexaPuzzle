@@ -381,10 +381,22 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
             return true;
         }
 
+        /// <summary>
+        /// 폭탄 패턴 체크:
+        /// - 중심(인접 수 최대) + 방향 순서(0→5)로 첫 4개 인접 이웃 = 총 5블록만 소비
+        /// - 6개, 7개 이상 매칭 시 나머지 블록은 보드에 유지 (제거하지 않음)
+        /// - 일관된 형태 보장: 같은 배치에서 항상 같은 5블록이 선택됨
+        /// </summary>
         private bool CheckForBombPattern(MatchGroup group)
         {
             if (group.blocks.Count < 5) return false;
 
+            // 그룹 좌표 검색 구조 구축
+            HashSet<HexCoord> groupCoords = new HashSet<HexCoord>();
+            foreach (var block in group.blocks)
+                groupCoords.Add(block.Coord);
+
+            // 중심 블록 후보: 그룹 내 인접 수가 가장 많은 블록
             HexBlock centerBlock = null;
             int maxNeighborCount = 0;
 
@@ -392,10 +404,14 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
             {
                 if (block.Data == null || block.Data.specialType != SpecialBlockType.None) continue;
 
+                // 고정 방향 순서로 인접 수 계산
+                HexCoord[] allNeighbors = block.Coord.GetAllNeighbors();
                 int neighborCount = 0;
-                foreach (var other in group.blocks)
-                    if (block != other && AreNeighbors(block.Coord, other.Coord))
+                for (int i = 0; i < 6; i++)
+                {
+                    if (groupCoords.Contains(allNeighbors[i]))
                         neighborCount++;
+                }
 
                 if (neighborCount > maxNeighborCount)
                 {
@@ -404,6 +420,7 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 }
                 else if (neighborCount == maxNeighborCount && centerBlock != null)
                 {
+                    // 동률 시: 화면 Y 좌표가 더 낮은(아래쪽) 블록 우선
                     Vector2 pos = GetBlockScreenPosition(block);
                     Vector2 currentPos = GetBlockScreenPosition(centerBlock);
                     if (pos.y < currentPos.y) centerBlock = block;
@@ -419,56 +436,39 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 return false;
             }
 
+            // ★ 폭탄 패턴 블록 선정: 중심 + 방향 순서(0→5)대로 첫 4개 인접 이웃 = 총 5블록
+            //   → 항상 같은 방향 우선순위로 선택하여 일관된 형태 보장
+            HexCoord center = centerBlock.Coord;
+            HexCoord[] directedNeighbors = center.GetAllNeighbors(); // [0]~[5] 고정 방향 순서
+
+            HashSet<HexCoord> bombPatternCoords = new HashSet<HexCoord>();
+            bombPatternCoords.Add(center);
+
+            int pickedCount = 0;
+            for (int i = 0; i < 6 && pickedCount < 4; i++)
+            {
+                if (groupCoords.Contains(directedNeighbors[i]))
+                {
+                    bombPatternCoords.Add(directedNeighbors[i]);
+                    pickedCount++;
+                }
+            }
+
+            // 중심 + 4이웃 = 5블록 미만이면 폭탄 불가
+            if (bombPatternCoords.Count < 5) return false;
+
+            // ★ 그룹에서 폭탄 패턴에 해당하는 블록만 남기고 나머지 제거
+            //   → 나머지 블록은 보드에 그대로 유지됨 (제거하지 않음)
+            int originalCount = group.blocks.Count;
+            group.blocks.RemoveAll(b => !bombPatternCoords.Contains(b.Coord));
+
             group.createdSpecialType = SpecialBlockType.Bomb;
             group.specialSpawnBlock = centerBlock;
-            Debug.Log($"[MatchingSystem] BOMB: Count={group.blocks.Count}, Center=({centerBlock.Coord}), NeighborCount={maxNeighborCount}");
+            Debug.Log($"[MatchingSystem] BOMB: OriginalCount={originalCount}, PatternBlocks={group.blocks.Count}, " +
+                      $"Center=({centerBlock.Coord}), NeighborCount={maxNeighborCount}, " +
+                      $"Preserved={originalCount - group.blocks.Count}블록 보드 유지");
             return true;
         }
-
-private void CheckForLaserPattern(MatchGroup group)
-        {
-            if (group.blocks.Count != 6) return;
-
-            // 레이저: 폭탄과 동일한 중앙 부록 선택 로직 (이웃 수 최대인 블록)
-            HexBlock centerBlock = null;
-            int maxNeighborCount = 0;
-
-            foreach (var block in group.blocks)
-            {
-                if (block.Data == null || block.Data.specialType != SpecialBlockType.None) continue;
-
-                int neighborCount = 0;
-                foreach (var other in group.blocks)
-                    if (block != other && AreNeighbors(block.Coord, other.Coord))
-                        neighborCount++;
-
-                if (neighborCount > maxNeighborCount)
-                {
-                    maxNeighborCount = neighborCount;
-                    centerBlock = block;
-                }
-                else if (neighborCount == maxNeighborCount && centerBlock != null)
-                {
-                    Vector2 pos = GetBlockScreenPosition(block);
-                    Vector2 currentPos = GetBlockScreenPosition(centerBlock);
-                    if (pos.y < currentPos.y) centerBlock = block;
-                }
-            }
-
-            if (centerBlock == null) return;
-
-            // 뭉친 형태 검증: 중심 블록이 그룹 내 5개와 인접해야 함
-            if (maxNeighborCount < 5)
-            {
-                Debug.Log($"[MatchingSystem] LASER REJECTED: Count={group.blocks.Count}, MaxNeighbor={maxNeighborCount} < 5 (비정형)");
-                return;
-            }
-
-            group.createdSpecialType = SpecialBlockType.Laser;
-            group.specialSpawnBlock = centerBlock;
-            Debug.Log($"[MatchingSystem] LASER: Count={group.blocks.Count}, Center=({centerBlock.Coord}), NeighborCount={maxNeighborCount}");
-        }
-
 
         /// <summary>
         /// 드론 패턴 체크: 5개 이상의 블록이 3축(q,r,s) 중 하나의 방향으로 직선을 이루는지 확인.
@@ -582,9 +582,21 @@ private void CheckForLaserPattern(MatchGroup group)
                         group.createdSpecialType = SpecialBlockType.Drone;
                         group.specialSpawnBlock = block;
 
+                        // 패턴에 필요한 블록만 남기고 나머지 제거 (중심 + 4이웃)
+                        // → 여분 블록이 불필요하게 삭제되는 것을 방지
+                        HashSet<HexCoord> dronePatternCoords = new HashSet<HexCoord>();
+                        dronePatternCoords.Add(center);
+                        dronePatternCoords.Add(neighbors[pairA.a]);
+                        dronePatternCoords.Add(neighbors[pairA.b]);
+                        dronePatternCoords.Add(neighbors[pairB.a]);
+                        dronePatternCoords.Add(neighbors[pairB.b]);
+
+                        group.blocks.RemoveAll(b => !dronePatternCoords.Contains(b.Coord));
+
                         Debug.Log($"[MatchingSystem] DRONE (butterfly): Center=({center}), " +
                                   $"PairA=({neighbors[pairA.a]},{neighbors[pairA.b]}), " +
-                                  $"PairB=({neighbors[pairB.a]},{neighbors[pairB.b]})");
+                                  $"PairB=({neighbors[pairB.a]},{neighbors[pairB.b]}), " +
+                                  $"keptBlocks={group.blocks.Count}");
                         return true;
                     }
                 }
@@ -706,6 +718,48 @@ private void CheckForLaserPattern(MatchGroup group)
         /// 모든 삼각형 클러스터를 순회하며 CW/CCW 가상 회전 후 매칭 여부 확인
         /// SetBlockDataSilent로 비주얼 업데이트 없이 데이터만 교체하여 성능 최적화
         /// </summary>
+        /// <summary>
+        /// 매칭 가능한 첫 번째 클러스터를 반환 (튜토리얼 힌트용)
+        /// CW/CCW 어느 방향이든 회전 시 매칭이 되는 클러스터를 찾아 반환
+        /// </summary>
+        public HexBlock[] FindMatchableCluster()
+        {
+            if (hexGrid == null) return null;
+
+            var clusters = GetAllClusters();
+
+            foreach (var cluster in clusters)
+            {
+                BlockData d0 = cluster[0].Data;
+                BlockData d1 = cluster[1].Data;
+                BlockData d2 = cluster[2].Data;
+
+                // CW 회전 시뮬레이션
+                cluster[0].SetBlockDataSilent(d2);
+                cluster[1].SetBlockDataSilent(d0);
+                cluster[2].SetBlockDataSilent(d1);
+                bool hasCWMatch = HasAnyTriangleMatch();
+                // 원복
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+                if (hasCWMatch) return cluster;
+
+                // CCW 회전 시뮬레이션
+                cluster[0].SetBlockDataSilent(d1);
+                cluster[1].SetBlockDataSilent(d2);
+                cluster[2].SetBlockDataSilent(d0);
+                bool hasCCWMatch = HasAnyTriangleMatch();
+                // 원복
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+                if (hasCCWMatch) return cluster;
+            }
+
+            return null;
+        }
+
         public bool HasPossibleMoves()
         {
             if (hexGrid == null) return false;

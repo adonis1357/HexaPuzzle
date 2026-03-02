@@ -5,7 +5,9 @@
       "Bash(dotnet build:*)",
       "Bash(wmic:*)",
       "Bash(powershell -Command:*)",
-      "Bash(robocopy:*)"
+      "Bash(robocopy:*)",
+      "Bash(du:*)",
+      "Bash(ls:*)"
     ]
   }
 }

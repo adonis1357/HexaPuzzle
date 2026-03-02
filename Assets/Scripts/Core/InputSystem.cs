@@ -19,7 +19,6 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private DrillBlockSystem drillSystem;
         [SerializeField] private BombBlockSystem bombSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
-        [SerializeField] private LaserBlockSystem laserSystem;
         [SerializeField] private DroneBlockSystem droneSystem;
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
 
@@ -46,6 +45,10 @@ namespace JewelsHexaPuzzle.Core
         private HexBlock[] currentCluster = new HexBlock[3];
         private bool hasValidCluster = false;
 
+        // 튜토리얼 제한 모드 (특정 좌표만 터치 허용)
+        private bool restrictedMode = false;
+        private HashSet<HexCoord> allowedCoords = new HashSet<HexCoord>();
+
         // 드래그 취소 감지
         private bool isPointerDown = false;
         private Vector2 pointerDownPosition;
@@ -69,12 +72,21 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 1회성 반시계 회전 설정 (아이템 사용 시 GameManager에서 호출)
+        /// 1회성 반시계 회전 설정 (아이템 사용 시 호출)
         /// </summary>
         public void SetOneTimeCounterClockwise()
         {
             if (rotationSystem != null)
                 rotationSystem.SetOneTimeCounterClockwise();
+        }
+
+        /// <summary>
+        /// 1회성 반시계 회전 해제 (아이템 비활성화 시 호출)
+        /// </summary>
+        public void ClearOneTimeCounterClockwise()
+        {
+            if (rotationSystem != null)
+                rotationSystem.ClearOneTimeCounterClockwise();
         }
 
         private void Awake()
@@ -122,13 +134,6 @@ namespace JewelsHexaPuzzle.Core
                     Debug.Log("[InputSystem] XBlockSystem auto-found: " + xBlockSystem.name);
             }
 
-            if (laserSystem == null)
-            {
-                laserSystem = FindObjectOfType<LaserBlockSystem>();
-                if (laserSystem != null)
-                    Debug.Log("[InputSystem] LaserBlockSystem auto-found: " + laserSystem.name);
-            }
-
             if (droneSystem == null)
             {
                 droneSystem = FindObjectOfType<DroneBlockSystem>();
@@ -165,7 +170,6 @@ private void Update()
             if (drillSystem != null && drillSystem.IsDrilling) return;
             if (bombSystem != null && bombSystem.IsBombing) return;
             if (xBlockSystem != null && xBlockSystem.IsActivating) return;
-            if (laserSystem != null && laserSystem.IsActivating) return;
             if (droneSystem != null && droneSystem.IsActivating) return;
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
             if (comboSystem != null && comboSystem.IsComboActive) return;
@@ -364,6 +368,10 @@ private void Update()
             if (clickedBlock == null || clickedBlock.Data == null)
                 return false;
 
+            // ★ 튜토리얼 제한 모드: 허용 좌표가 아니면 발동 차단
+            if (restrictedMode && allowedCoords.Count > 0 && !allowedCoords.Contains(clickedBlock.Coord))
+                return false;
+
             var specialType = clickedBlock.Data.specialType;
 
             // 드릴은 일반 클릭 범위
@@ -408,23 +416,6 @@ private void Update()
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
                     xBlockSystem.ActivateXBlock(clickedBlock);
-                    ClearHighlight();
-                    hasValidCluster = false;
-                    return true;
-                }
-                return false;
-            }
-
-            // 레이저도 좁은 클릭 범위
-            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Laser && laserSystem != null)
-            {
-                HexBlock tightBlock = GetBlockAtPositionTight(localPos);
-                if (tightBlock != null && tightBlock == clickedBlock)
-                {
-                    Debug.Log($"[InputSystem] Laser block clicked at {clickedBlock.Coord}");
-                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
-                    if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
-                    laserSystem.ActivateLaser(clickedBlock);
                     ClearHighlight();
                     hasValidCluster = false;
                     return true;
@@ -517,6 +508,20 @@ private void Update()
 
             if (cluster.HasValue)
             {
+                // ★ 튜토리얼 제한 모드: 클러스터의 모든 블록이 허용 좌표에 포함되어야 함
+                if (restrictedMode && allowedCoords.Count > 0)
+                {
+                    HexBlock b0 = cluster.Value.Item1, b1 = cluster.Value.Item2, b2 = cluster.Value.Item3;
+                    bool allAllowed = (b0 != null && allowedCoords.Contains(b0.Coord)) &&
+                                     (b1 != null && allowedCoords.Contains(b1.Coord)) &&
+                                     (b2 != null && allowedCoords.Contains(b2.Coord));
+                    if (!allAllowed)
+                    {
+                        hasValidCluster = false;
+                        return;
+                    }
+                }
+
                 currentCluster[0] = cluster.Value.Item1;
                 currentCluster[1] = cluster.Value.Item2;
                 currentCluster[2] = cluster.Value.Item3;
@@ -749,17 +754,6 @@ private void Update()
                 return true;
             }
 
-            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Laser && laserSystem != null)
-            {
-                Debug.Log($"[InputSystem] Laser 단독 발동: {block.Coord}");
-                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
-                if (AudioManager.Instance != null) AudioManager.Instance.PlayLaserSound();
-                laserSystem.ActivateLaser(block);
-                ClearHighlight();
-                hasValidCluster = false;
-                return true;
-            }
-
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drone && droneSystem != null)
             {
                 Debug.Log($"[InputSystem] Drone 단독 발동: {block.Coord}");
@@ -952,5 +946,24 @@ private void Update()
         }
 
         public bool IsEnabled => isEnabled;
+
+        // ============================================================
+        // 튜토리얼 제한 모드 (TutorialManager에서 호출)
+        // ============================================================
+
+        /// <summary>
+        /// 제한 모드 설정: enabled=true이면 allowedCoords에 포함된 좌표만 터치 허용
+        /// </summary>
+        public void SetRestrictedMode(bool enabled, HashSet<HexCoord> coords = null)
+        {
+            restrictedMode = enabled;
+            allowedCoords = coords ?? new HashSet<HexCoord>();
+            Debug.Log($"[InputSystem] 제한 모드: {(enabled ? "ON" : "OFF")} (허용 좌표 {allowedCoords.Count}개)");
+        }
+
+        /// <summary>
+        /// 현재 제한 모드 여부
+        /// </summary>
+        public bool IsRestrictedMode => restrictedMode;
     }
 }

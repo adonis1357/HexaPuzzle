@@ -38,7 +38,6 @@ namespace JewelsHexaPuzzle.Managers
         [Header("Special Block SFX")]
         [SerializeField] private AudioClip drillSound;
         [SerializeField] private AudioClip bombSound;
-        [SerializeField] private AudioClip laserSound;
         [SerializeField] private AudioClip donutSound;
         [SerializeField] private AudioClip xBlockSound;
         [SerializeField] private AudioClip blockDestroySound;
@@ -53,6 +52,12 @@ namespace JewelsHexaPuzzle.Managers
 
         private bool isMuted = false;
         public bool IsMuted => isMuted;
+
+        // SFX/BGM 개별 음소거
+        private bool isSfxMuted = false;
+        private bool isBgmMuted = false;
+        public bool IsSfxMuted => isSfxMuted;
+        public bool IsBgmMuted => isBgmMuted;
 
         private List<AudioSource> sfxPool = new List<AudioSource>();
 
@@ -69,7 +74,6 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralBlockLand;
         private AudioClip proceduralDrill;
         private AudioClip proceduralBomb;
-        private AudioClip proceduralLaser;
         private AudioClip proceduralDonut;
         private AudioClip proceduralXBlock;
         private AudioClip proceduralStageClear;
@@ -93,6 +97,10 @@ namespace JewelsHexaPuzzle.Managers
         // 캐스케이드 펜타토닉 음계 (C5, D5, E5, G5, A5, C6)
         private AudioClip[] proceduralCascadeNotes;
 
+        // AudioListener 주기적 체크 간격
+        private float audioListenerCheckTimer = 0f;
+        private const float LISTENER_CHECK_INTERVAL = 3f;
+
         private void Awake()
         {
             if (Instance == null)
@@ -101,13 +109,73 @@ namespace JewelsHexaPuzzle.Managers
                 if (transform.parent != null)
                     transform.SetParent(null);
                 DontDestroyOnLoad(gameObject);
+                EnsureAudioListener();
+                EnsureAudioSources();
                 InitializeAudioPool();
                 LoadVolumeSettings();
                 GenerateProceduralClips();
+
+                #if UNITY_EDITOR
+                // 에디터: 모든 오디오 소스 강제 음소거 해제 (PlayerPrefs 오염 완전 차단)
+                foreach (var source in sfxPool)
+                {
+                    if (source != null) source.mute = false;
+                }
+                if (bgmSource != null) bgmSource.mute = false;
+                isMuted = false;
+                Debug.Log("[AudioManager] 에디터: 오디오 시스템 강제 초기화 완료 - 모든 소스 음소거 해제");
+
+                // 시작 시 테스트 사운드 재생 (진단용 - 이 소리가 들리면 오디오 시스템 정상)
+                StartCoroutine(PlayStartupTestSound());
+                #endif
+
+                LogAudioHealth();
             }
             else
             {
                 Destroy(gameObject);
+            }
+        }
+
+        private void Update()
+        {
+            // AudioListener가 사라진 경우를 대비한 주기적 체크
+            audioListenerCheckTimer += Time.unscaledDeltaTime;
+            if (audioListenerCheckTimer >= LISTENER_CHECK_INTERVAL)
+            {
+                audioListenerCheckTimer = 0f;
+                EnsureAudioListener();
+            }
+        }
+
+        /// <summary>
+        /// 씬에 AudioListener가 없으면 AudioManager에 추가
+        /// AudioListener가 없으면 모든 오디오가 재생되지 않음
+        /// </summary>
+        private void EnsureAudioListener()
+        {
+            AudioListener listener = FindObjectOfType<AudioListener>();
+            if (listener == null)
+            {
+                gameObject.AddComponent<AudioListener>();
+                Debug.Log("[AudioManager] AudioListener가 씬에 없어서 자동 생성했습니다.");
+            }
+        }
+
+        /// <summary>
+        /// bgmSource가 Inspector에서 할당되지 않은 경우 자동 생성
+        /// </summary>
+        private void EnsureAudioSources()
+        {
+            if (bgmSource == null)
+            {
+                GameObject bgmObj = new GameObject("BGM_Source");
+                bgmObj.transform.SetParent(transform);
+                bgmSource = bgmObj.AddComponent<AudioSource>();
+                bgmSource.playOnAwake = false;
+                bgmSource.loop = true;
+                bgmSource.volume = bgmVolume;
+                Debug.Log("[AudioManager] bgmSource가 미할당되어 자동 생성했습니다.");
             }
         }
 
@@ -119,6 +187,9 @@ namespace JewelsHexaPuzzle.Managers
                 sfxObj.transform.SetParent(transform);
                 AudioSource source = sfxObj.AddComponent<AudioSource>();
                 source.playOnAwake = false;
+                source.mute = false;
+                // HitStop(timeScale=0) 중에도 SFX 재생 가능
+                source.ignoreListenerPause = true;
                 sfxPool.Add(source);
             }
         }
@@ -127,100 +198,109 @@ namespace JewelsHexaPuzzle.Managers
         {
             bgmVolume = PlayerPrefs.GetFloat("BGMVolume", 0.7f);
             sfxVolume = PlayerPrefs.GetFloat("SFXVolume", 1f);
+
+            #if UNITY_EDITOR
+            // 에디터에서는 항상 음소거 해제 (개발 중 PlayerPrefs 오염으로 인한 무음 방지)
+            isMuted = false;
+            isSfxMuted = false;
+            isBgmMuted = false;
+            PlayerPrefs.SetInt("AudioMuted", 0);
+            PlayerPrefs.SetInt("SFXMuted", 0);
+            PlayerPrefs.SetInt("BGMMuted", 0);
+            PlayerPrefs.Save();
+            #else
             isMuted = PlayerPrefs.GetInt("AudioMuted", 0) == 1;
+            isSfxMuted = PlayerPrefs.GetInt("SFXMuted", 0) == 1;
+            isBgmMuted = PlayerPrefs.GetInt("BGMMuted", 0) == 1;
+            #endif
+
             if (bgmSource != null) bgmSource.volume = bgmVolume;
-            if (isMuted) MuteAll(true);
+
+            // 개별 음소거 상태 적용
+            if (isMuted)
+                MuteAll(true);
+            else
+            {
+                if (isSfxMuted) MuteSFX(true);
+                if (isBgmMuted) MuteBGM(true);
+            }
         }
 
         /// <summary>
         /// 프로시저럴 AudioClip 생성 및 캐싱
         /// Inspector에서 AudioClip이 할당되지 않은 경우 프로시저럴 클립으로 폴백
+        /// 각 클립 생성을 개별 try-catch로 보호 — 하나 실패해도 나머지 정상 생성
         /// </summary>
         private void GenerateProceduralClips()
         {
-            // 회전음: 노이즈 밴드패스 스윕 (0.23s)
-            proceduralRotate = ProceduralAudio.CreateRotateSound(0.23f);
+            int successCount = 0;
+            int failCount = 0;
 
-            // 3매치: C6→E6→G6 아르페지오 (0.3s)
-            proceduralMatch = ProceduralAudio.CreateMatchArpeggio3(0.3f);
-
-            // 4매치: C6→E6→G6→C7 아르페지오 (0.35s)
-            proceduralMatch4 = ProceduralAudio.CreateMatchArpeggio4(0.35f);
-
-            // 5매치: C6→E6→G6→C7→E7 아르페지오 (0.5s)
-            proceduralMatch5 = ProceduralAudio.CreateMatchArpeggio5(0.5f);
-
-            // 실패음: E5→C5 하행 2음 (0.35s)
-            proceduralFail = ProceduralAudio.CreateFailSound(0.35f);
-
-            // 콤보: 기본 캐스케이드 노트 (하위 호환)
-            proceduralCombo = ProceduralAudio.CreateComboRise(0.15f);
-
-            // UI 클릭: Sine 880Hz +200Hz slide (0.11s)
-            proceduralButtonClick = ProceduralAudio.CreateClick(0.11f);
-
-            // 팝업 열기: Sine+Tri 440→880Hz (0.3s)
-            proceduralPopupOpen = ProceduralAudio.CreatePopupSound(0.3f);
-
-            // 블록 파괴: Sine 1200Hz -800Hz 급하강 (0.07s)
-            proceduralBlockDestroy = ProceduralAudio.CreateNoiseBurst(0.07f);
-
-            // 블록 착지: Sine+Noise 180Hz -60Hz (0.12s)
-            proceduralBlockLand = ProceduralAudio.CreateBounce(0.12f);
-
-            // 드릴: 오르골 태엽 + 부드러운 윙윙 (0.5s)
-            proceduralDrill = ProceduralAudio.CreateDrillSound(0.5f);
-
-            // 폭탄: 부드러운 "퐁" 꽃가루 캐논 (0.3s)
-            proceduralBomb = ProceduralAudio.CreateExplosion(0.3f);
-
-            // 레이저: 요정 지팡이 쉬머 빔 (0.5s)
-            proceduralLaser = ProceduralAudio.CreateLaserSound(0.5f);
-
-            // 도넛: 레인보우 쉬머 확장 물결 (0.8s)
-            proceduralDonut = ProceduralAudio.CreateRainbowSound(0.8f);
-
-            // X블록: 이중 크리스탈 띵 + 스파클 (0.6s)
-            proceduralXBlock = ProceduralAudio.CreateXBlockSound(0.6f);
-
-            // 스테이지 클리어: 오르골 팡파레 (2.0s)
-            proceduralStageClear = ProceduralAudio.CreateVictoryFanfare(2.0f);
-
-            // 게임 오버: 오르골 와인딩 다운 (1.5s)
-            proceduralGameOver = ProceduralAudio.CreateGameOverSound(1.5f);
-
-            // 경고 비프: Sine+Sq(5%) A5 2회 반복 (0.25s)
-            proceduralWarningBeep = ProceduralAudio.CreateWarningBeep(0.25f);
-
-            // 특수 젬 생성: 크리스탈 쉬머 + 띵글링 (0.5s)
-            proceduralSpecialGem = ProceduralAudio.CreateSpecialGemSound(0.5f);
-
-            // 특수 블록 임팩트: 노이즈 + 서브베이스 펀치
-            proceduralSpecialImpact = ProceduralAudio.CreateImpact(0.1f);
-            proceduralEnemySpawn = ProceduralAudio.CreateEnemySpawnSound(0.25f);
-
-            // 색상도둑 제거: 슬라임 분해음 (저음 노이즈 버스트 0.15s)
-            proceduralChromophageRemoval = ProceduralAudio.CreateNoiseBurst(0.15f);
-
-            // 특수 블록 변환 틱 사운드 (XBlock 합성용)
-            proceduralTransformTick = ProceduralAudio.CreateTransformTick(0.08f);
-
-            // 드론: 프로펠러 윙윙 + 급하강 타격 (0.5s)
-            proceduralDroneSound = ProceduralAudio.CreateDroneSound(0.5f);
+            // SFX 클립 생성 (개별 보호)
+            proceduralRotate = SafeCreateClip("Rotate", () => ProceduralAudio.CreateRotateSound(0.23f), ref successCount, ref failCount);
+            proceduralMatch = SafeCreateClip("Match3", () => ProceduralAudio.CreateMatchArpeggio3(0.3f), ref successCount, ref failCount);
+            proceduralMatch4 = SafeCreateClip("Match4", () => ProceduralAudio.CreateMatchArpeggio4(0.35f), ref successCount, ref failCount);
+            proceduralMatch5 = SafeCreateClip("Match5", () => ProceduralAudio.CreateMatchArpeggio5(0.5f), ref successCount, ref failCount);
+            proceduralFail = SafeCreateClip("Fail", () => ProceduralAudio.CreateFailSound(0.35f), ref successCount, ref failCount);
+            proceduralCombo = SafeCreateClip("Combo", () => ProceduralAudio.CreateComboRise(0.15f), ref successCount, ref failCount);
+            proceduralButtonClick = SafeCreateClip("Click", () => ProceduralAudio.CreateClick(0.11f), ref successCount, ref failCount);
+            proceduralPopupOpen = SafeCreateClip("Popup", () => ProceduralAudio.CreatePopupSound(0.3f), ref successCount, ref failCount);
+            proceduralBlockDestroy = SafeCreateClip("BlockDestroy", () => ProceduralAudio.CreateNoiseBurst(0.07f), ref successCount, ref failCount);
+            proceduralBlockLand = SafeCreateClip("BlockLand", () => ProceduralAudio.CreateBounce(0.12f), ref successCount, ref failCount);
+            proceduralDrill = SafeCreateClip("Drill", () => ProceduralAudio.CreateDrillSound(0.5f), ref successCount, ref failCount);
+            proceduralBomb = SafeCreateClip("Bomb", () => ProceduralAudio.CreateExplosion(0.3f), ref successCount, ref failCount);
+            proceduralDonut = SafeCreateClip("Donut", () => ProceduralAudio.CreateRainbowSound(0.8f), ref successCount, ref failCount);
+            proceduralXBlock = SafeCreateClip("XBlock", () => ProceduralAudio.CreateXBlockSound(0.6f), ref successCount, ref failCount);
+            proceduralStageClear = SafeCreateClip("StageClear", () => ProceduralAudio.CreateVictoryFanfare(2.0f), ref successCount, ref failCount);
+            proceduralGameOver = SafeCreateClip("GameOver", () => ProceduralAudio.CreateGameOverSound(1.5f), ref successCount, ref failCount);
+            proceduralWarningBeep = SafeCreateClip("Warning", () => ProceduralAudio.CreateWarningBeep(0.25f), ref successCount, ref failCount);
+            proceduralSpecialGem = SafeCreateClip("SpecialGem", () => ProceduralAudio.CreateSpecialGemSound(0.5f), ref successCount, ref failCount);
+            proceduralSpecialImpact = SafeCreateClip("Impact", () => ProceduralAudio.CreateImpact(0.1f), ref successCount, ref failCount);
+            proceduralEnemySpawn = SafeCreateClip("EnemySpawn", () => ProceduralAudio.CreateEnemySpawnSound(0.25f), ref successCount, ref failCount);
+            proceduralChromophageRemoval = SafeCreateClip("ChromophageRemoval", () => ProceduralAudio.CreateNoiseBurst(0.15f), ref successCount, ref failCount);
+            proceduralTransformTick = SafeCreateClip("TransformTick", () => ProceduralAudio.CreateTransformTick(0.08f), ref successCount, ref failCount);
+            proceduralDroneSound = SafeCreateClip("Drone", () => ProceduralAudio.CreateDroneSound(0.5f), ref successCount, ref failCount);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
             proceduralCascadeNotes = new AudioClip[cascadeFreqs.Length];
             for (int i = 0; i < cascadeFreqs.Length; i++)
-                proceduralCascadeNotes[i] = ProceduralAudio.CreateCascadeNote(cascadeFreqs[i], 0.15f);
+                proceduralCascadeNotes[i] = SafeCreateClip($"Cascade_{i}", () => ProceduralAudio.CreateCascadeNote(cascadeFreqs[i], 0.15f), ref successCount, ref failCount);
 
-            // 배경음악 생성 (로비 3개 + 인게임 3개)
-            proceduralLobbySereneBGM = ProceduralAudio.CreateLobbySereneBGM(120f);
-            proceduralLobbyBrightBGM = ProceduralAudio.CreateLobbyBrightBGM(120f);
-            proceduralLobbyDreamyBGM = ProceduralAudio.CreateLobbyDreamyBGM(120f);
-            proceduralGameplayTenseBGM = ProceduralAudio.CreateGameplayTenseBGM(90f);
-            proceduralGameplayEnergeticBGM = ProceduralAudio.CreateGameplayEnergeticBGM(90f);
-            proceduralGameplayEpicBGM = ProceduralAudio.CreateGameplayEpicBGM(120f);
+            // BGM 클립 생성 (30초 루프)
+            proceduralLobbySereneBGM = SafeCreateClip("LobbySerene", () => ProceduralAudio.CreateLobbySereneBGM(30f), ref successCount, ref failCount);
+            proceduralLobbyBrightBGM = SafeCreateClip("LobbyBright", () => ProceduralAudio.CreateLobbyBrightBGM(30f), ref successCount, ref failCount);
+            proceduralLobbyDreamyBGM = SafeCreateClip("LobbyDreamy", () => ProceduralAudio.CreateLobbyDreamyBGM(30f), ref successCount, ref failCount);
+            proceduralGameplayTenseBGM = SafeCreateClip("GameTense", () => ProceduralAudio.CreateGameplayTenseBGM(30f), ref successCount, ref failCount);
+            proceduralGameplayEnergeticBGM = SafeCreateClip("GameEnergetic", () => ProceduralAudio.CreateGameplayEnergeticBGM(30f), ref successCount, ref failCount);
+            proceduralGameplayEpicBGM = SafeCreateClip("GameEpic", () => ProceduralAudio.CreateGameplayEpicBGM(30f), ref successCount, ref failCount);
+
+            Debug.Log($"[AudioManager] 프로시저럴 클립 생성 완료: 성공={successCount}, 실패={failCount}");
+        }
+
+        /// <summary>
+        /// 개별 클립 생성 — 예외 발생 시 null 반환, 나머지 클립 생성에 영향 없음
+        /// </summary>
+        private AudioClip SafeCreateClip(string name, System.Func<AudioClip> creator, ref int success, ref int fail)
+        {
+            try
+            {
+                AudioClip clip = creator();
+                if (clip != null)
+                {
+                    success++;
+                    return clip;
+                }
+                Debug.LogWarning($"[AudioManager] 클립 생성 결과 null: {name}");
+                fail++;
+                return null;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[AudioManager] 클립 생성 실패 [{name}]: {e.Message}");
+                fail++;
+                return null;
+            }
         }
 
         // ============================================================
@@ -236,8 +316,12 @@ namespace JewelsHexaPuzzle.Managers
             bgmSource.Play();
         }
 
-        public void PlayMainBGM() => PlayBGM(mainBGM);
-        public void PlayGameBGM() => PlayBGM(gameBGM);
+        /// <summary>메인 BGM (Inspector 할당 → 프로시저럴 로비 폴백)</summary>
+        public void PlayMainBGM() => PlayBGM(mainBGM != null ? mainBGM : proceduralLobbySereneBGM);
+
+        /// <summary>게임 BGM (Inspector 할당 → 프로시저럴 게임플레이 폴백)</summary>
+        public void PlayGameBGM() => PlayBGM(gameBGM != null ? gameBGM : proceduralGameplayEnergeticBGM);
+
         public void StopBGM() { if (bgmSource != null) bgmSource.Stop(); }
 
         // 로비 배경음악
@@ -245,10 +329,26 @@ namespace JewelsHexaPuzzle.Managers
         public void PlayLobbyBrightBGM() => PlayBGM(proceduralLobbyBrightBGM);
         public void PlayLobbyDreamyBGM() => PlayBGM(proceduralLobbyDreamyBGM);
 
+        /// <summary>로비 BGM 랜덤 재생 (3곡 중 1곡)</summary>
+        public void PlayRandomLobbyBGM()
+        {
+            AudioClip[] lobbyClips = { proceduralLobbySereneBGM, proceduralLobbyBrightBGM, proceduralLobbyDreamyBGM };
+            AudioClip pick = lobbyClips[Random.Range(0, lobbyClips.Length)];
+            PlayBGM(pick);
+        }
+
         // 인게임 배경음악
         public void PlayGameplayTenseBGM() => PlayBGM(proceduralGameplayTenseBGM);
         public void PlayGameplayEnergeticBGM() => PlayBGM(proceduralGameplayEnergeticBGM);
         public void PlayGameplayEpicBGM() => PlayBGM(proceduralGameplayEpicBGM);
+
+        /// <summary>인게임 BGM 랜덤 재생 (3곡 중 1곡)</summary>
+        public void PlayRandomGameplayBGM()
+        {
+            AudioClip[] gameClips = { proceduralGameplayTenseBGM, proceduralGameplayEnergeticBGM, proceduralGameplayEpicBGM };
+            AudioClip pick = gameClips[Random.Range(0, gameClips.Length)];
+            PlayBGM(pick);
+        }
 
         // ============================================================
         // SFX 재생 (기본)
@@ -256,7 +356,11 @@ namespace JewelsHexaPuzzle.Managers
 
         public void PlaySFX(AudioClip clip, float volumeMultiplier = 1f)
         {
-            if (clip == null) return;
+            if (clip == null)
+            {
+                Debug.LogWarning("[AudioManager] PlaySFX 호출됨 - clip이 null!");
+                return;
+            }
             AudioSource source = GetAvailableSource();
             if (source != null)
             {
@@ -264,6 +368,11 @@ namespace JewelsHexaPuzzle.Managers
                 source.clip = clip;
                 source.volume = sfxVolume * volumeMultiplier;
                 source.Play();
+                Debug.Log($"[AudioManager] PlaySFX: {clip.name}, vol={source.volume:F2}, mute={source.mute}, isPlaying={source.isPlaying}");
+            }
+            else
+            {
+                Debug.LogError("[AudioManager] PlaySFX: GetAvailableSource가 null 반환!");
             }
         }
 
@@ -294,7 +403,7 @@ namespace JewelsHexaPuzzle.Managers
             int playingCount = 0;
             foreach (var source in sfxPool)
             {
-                if (source.isPlaying && source.clip == clip)
+                if (source != null && source.isPlaying && source.clip == clip)
                     playingCount++;
             }
 
@@ -313,7 +422,7 @@ namespace JewelsHexaPuzzle.Managers
             int playingCount = 0;
             foreach (var source in sfxPool)
             {
-                if (source.isPlaying && source.clip == clip)
+                if (source != null && source.isPlaying && source.clip == clip)
                     playingCount++;
             }
 
@@ -352,7 +461,7 @@ namespace JewelsHexaPuzzle.Managers
             int playingCount = 0;
             foreach (var source in sfxPool)
             {
-                if (source.isPlaying && source.clip == clip)
+                if (source != null && source.isPlaying && source.clip == clip)
                     playingCount++;
             }
 
@@ -363,14 +472,23 @@ namespace JewelsHexaPuzzle.Managers
 
         private AudioSource GetAvailableSource()
         {
-            foreach (var source in sfxPool)
+            // 기존 풀에서 사용 가능한 소스 탐색 (null 안전)
+            for (int i = sfxPool.Count - 1; i >= 0; i--)
             {
-                if (!source.isPlaying) return source;
+                if (sfxPool[i] == null)
+                {
+                    sfxPool.RemoveAt(i);
+                    continue;
+                }
+                if (!sfxPool[i].isPlaying) return sfxPool[i];
             }
+            // 풀 확장 (mute 상태 상속, ignoreListenerPause 적용)
             GameObject sfxObj = new GameObject($"SFX_Pool_{sfxPool.Count}");
             sfxObj.transform.SetParent(transform);
             AudioSource newSource = sfxObj.AddComponent<AudioSource>();
             newSource.playOnAwake = false;
+            newSource.mute = isMuted;
+            newSource.ignoreListenerPause = true;
             sfxPool.Add(newSource);
             return newSource;
         }
@@ -435,7 +553,6 @@ namespace JewelsHexaPuzzle.Managers
         // 특수 블록 사운드
         public void PlayDrillSound() => PlaySFX(Resolve(drillSound, proceduralDrill), 0.7f);
         public void PlayBombSound() => PlaySFX(Resolve(bombSound, proceduralBomb), 0.7f);
-        public void PlayLaserSound() => PlaySFX(Resolve(laserSound, proceduralLaser), 0.7f);
         public void PlayDonutSound() => PlaySFX(Resolve(donutSound, proceduralDonut), 0.7f);
         public void PlayXBlockSound() => PlaySFX(Resolve(xBlockSound, proceduralXBlock), 0.7f);
         public void PlayDroneSound() => PlaySFX(proceduralDroneSound, 0.7f);
@@ -486,15 +603,205 @@ namespace JewelsHexaPuzzle.Managers
         public void MuteAll(bool mute)
         {
             isMuted = mute;
+            isSfxMuted = mute;
+            isBgmMuted = mute;
             if (bgmSource != null) bgmSource.mute = mute;
-            foreach (var source in sfxPool) source.mute = mute;
+            foreach (var source in sfxPool)
+            {
+                if (source != null) source.mute = mute;
+            }
             PlayerPrefs.SetInt("AudioMuted", mute ? 1 : 0);
+            PlayerPrefs.SetInt("SFXMuted", mute ? 1 : 0);
+            PlayerPrefs.SetInt("BGMMuted", mute ? 1 : 0);
         }
 
         public bool ToggleMute()
         {
             MuteAll(!isMuted);
             return isMuted;
+        }
+
+        // ── SFX 개별 음소거 ──
+
+        public void MuteSFX(bool mute)
+        {
+            isSfxMuted = mute;
+            foreach (var source in sfxPool)
+            {
+                if (source != null) source.mute = mute;
+            }
+            PlayerPrefs.SetInt("SFXMuted", mute ? 1 : 0);
+            // 전체 음소거 상태 동기화
+            isMuted = isSfxMuted && isBgmMuted;
+            PlayerPrefs.SetInt("AudioMuted", isMuted ? 1 : 0);
+        }
+
+        public bool ToggleSFXMute()
+        {
+            MuteSFX(!isSfxMuted);
+            return isSfxMuted;
+        }
+
+        // ── BGM 개별 음소거 ──
+
+        public void MuteBGM(bool mute)
+        {
+            isBgmMuted = mute;
+            if (bgmSource != null) bgmSource.mute = mute;
+            PlayerPrefs.SetInt("BGMMuted", mute ? 1 : 0);
+            // 전체 음소거 상태 동기화
+            isMuted = isSfxMuted && isBgmMuted;
+            PlayerPrefs.SetInt("AudioMuted", isMuted ? 1 : 0);
+        }
+
+        public bool ToggleBGMMute()
+        {
+            MuteBGM(!isBgmMuted);
+            return isBgmMuted;
+        }
+
+        // ============================================================
+        // 오디오 건강 체크 & 강제 복구
+        // ============================================================
+
+        /// <summary>
+        /// 프로시저럴 클립이 생성되었는지 확인, 없으면 재생성
+        /// 초기화 실패나 예외로 클립이 null인 경우 복구
+        /// </summary>
+        public void EnsureClipsGenerated()
+        {
+            if (proceduralRotate == null || proceduralMatch == null || proceduralBlockDestroy == null)
+            {
+                Debug.LogWarning("[AudioManager] 프로시저럴 클립이 null! 재생성 시작...");
+                GenerateProceduralClips();
+                LogAudioHealth();
+            }
+        }
+
+        /// <summary>
+        /// 오디오 시스템 상태 로그 출력 (디버그용)
+        /// </summary>
+        private void LogAudioHealth()
+        {
+            int nullClips = 0;
+            int totalClips = 0;
+            System.Action<AudioClip, string> check = (clip, name) =>
+            {
+                totalClips++;
+                if (clip == null) { nullClips++; Debug.LogWarning($"  [NULL] {name}"); }
+            };
+            check(proceduralRotate, "Rotate");
+            check(proceduralMatch, "Match3");
+            check(proceduralMatch4, "Match4");
+            check(proceduralMatch5, "Match5");
+            check(proceduralFail, "Fail");
+            check(proceduralButtonClick, "Click");
+            check(proceduralPopupOpen, "Popup");
+            check(proceduralBlockDestroy, "BlockDestroy");
+            check(proceduralBlockLand, "BlockLand");
+            check(proceduralDrill, "Drill");
+            check(proceduralBomb, "Bomb");
+            check(proceduralDonut, "Donut");
+            check(proceduralXBlock, "XBlock");
+            check(proceduralStageClear, "StageClear");
+            check(proceduralGameOver, "GameOver");
+            check(proceduralDroneSound, "Drone");
+
+            AudioListener listener = FindObjectOfType<AudioListener>();
+            Debug.Log($"[AudioManager] ══ 오디오 건강 체크 ══\n" +
+                      $"  isMuted={isMuted}, sfxVolume={sfxVolume}, bgmVolume={bgmVolume}\n" +
+                      $"  poolSize={sfxPool.Count}, nullClips={nullClips}/{totalClips}\n" +
+                      $"  AudioListener존재={listener != null}, AudioListener.volume={AudioListener.volume}\n" +
+                      $"  AudioListener.pause={AudioListener.pause}\n" +
+                      $"  bgmSource null={bgmSource == null}");
+        }
+
+        /// <summary>
+        /// 오디오 시스템 강제 리셋 (문제 발생 시 호출)
+        /// mute 해제, 볼륨 복원, AudioListener 확보, 프로시저럴 클립 재생성
+        /// </summary>
+        public void ForceResetAudio()
+        {
+            Debug.Log("[AudioManager] 오디오 시스템 강제 리셋 시작...");
+
+            // mute 해제
+            isMuted = false;
+            PlayerPrefs.SetInt("AudioMuted", 0);
+            if (bgmSource != null) bgmSource.mute = false;
+            foreach (var source in sfxPool)
+            {
+                if (source != null)
+                {
+                    source.mute = false;
+                    source.Stop();
+                }
+            }
+
+            // 볼륨 기본값 복원
+            sfxVolume = 1f;
+            bgmVolume = 0.7f;
+            PlayerPrefs.SetFloat("SFXVolume", sfxVolume);
+            PlayerPrefs.SetFloat("BGMVolume", bgmVolume);
+            if (bgmSource != null) bgmSource.volume = bgmVolume;
+
+            // AudioListener 확보
+            EnsureAudioListener();
+
+            // 프로시저럴 클립 재생성
+            GenerateProceduralClips();
+
+            LogAudioHealth();
+            Debug.Log("[AudioManager] 오디오 시스템 강제 리셋 완료");
+        }
+
+        /// <summary>
+        /// 에디터 전용: 시작 시 테스트 사운드를 재생하여 오디오 시스템이 정상인지 확인
+        /// 1초 후 버튼 클릭음을 재생합니다. 이 소리가 들리면 오디오 시스템은 정상입니다.
+        /// </summary>
+        private System.Collections.IEnumerator PlayStartupTestSound()
+        {
+            yield return new WaitForSeconds(1.0f);
+
+            Debug.Log("========================================");
+            Debug.Log("[AudioManager] ★ 시작 테스트 사운드 재생 시도 ★");
+            Debug.Log($"  isMuted={isMuted}, sfxVolume={sfxVolume}");
+            Debug.Log($"  proceduralButtonClick null? {proceduralButtonClick == null}");
+            Debug.Log($"  sfxPool.Count={sfxPool.Count}");
+
+            AudioListener listener = FindObjectOfType<AudioListener>();
+            Debug.Log($"  AudioListener 존재? {listener != null}");
+            if (listener != null)
+                Debug.Log($"  AudioListener 활성? {listener.enabled}, GO 활성? {listener.gameObject.activeInHierarchy}");
+
+            // AudioListener.volume 확인
+            Debug.Log($"  AudioListener.volume={AudioListener.volume}");
+            Debug.Log($"  AudioListener.pause={AudioListener.pause}");
+
+            if (proceduralButtonClick != null)
+            {
+                AudioSource testSource = GetAvailableSource();
+                if (testSource != null)
+                {
+                    Debug.Log($"  테스트 소스: mute={testSource.mute}, enabled={testSource.enabled}, GO활성={testSource.gameObject.activeInHierarchy}");
+                    testSource.pitch = 1f;
+                    testSource.clip = proceduralButtonClick;
+                    testSource.volume = 1f; // 최대 볼륨
+                    testSource.mute = false; // 강제 음소거 해제
+                    testSource.Play();
+                    Debug.Log($"  ★ 테스트 사운드 재생됨! isPlaying={testSource.isPlaying} ★");
+                    Debug.Log($"  → 이 소리가 들리면 오디오 시스템 정상");
+                    Debug.Log($"  → 안 들리면 Unity 에디터 Game 뷰의 Mute Audio 버튼 또는 시스템 볼륨 확인");
+                }
+                else
+                {
+                    Debug.LogError("  테스트 소스를 가져올 수 없습니다!");
+                }
+            }
+            else
+            {
+                Debug.LogError("  proceduralButtonClick이 null - GenerateProceduralClips 실패!");
+            }
+            Debug.Log("========================================");
         }
     }
 }

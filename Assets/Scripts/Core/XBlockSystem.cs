@@ -248,99 +248,133 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetXBlockIconSprite()
         {
             if (xBlockIconSprite == null)
-                xBlockIconSprite = CreateXSprite(128); // 128x128 픽셀 크기로 생성 (해상도 개선)
+                xBlockIconSprite = CreateXSprite(256); // 256x256 고해상도
             return xBlockIconSprite;
         }
 
         /// <summary>
-        /// X 아이콘을 프로시저럴(코드로 직접 그리기) 방식으로 생성.
-        /// 64x64 픽셀의 텍스처에 굵은 X 모양을 그리고, 가장자리에 글로우(빛남) 효과 추가.
-        /// 비유: 작은 도화지(64x64 점)에 파스텔 색연필로 X를 그리고, 주변을 살짝 번지게 하는 것.
+        /// X 아이콘 프로시저럴 생성 - 베벨된 메탈릭 X + 보석 중심 + 글로우
         /// </summary>
-        /// <param name="size">텍스처 크기 (가로=세로, 정사각형). 기본 64픽셀.</param>
         private static Sprite CreateXSprite(int size)
         {
-            // 빈 텍스처(도화지) 생성
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear; // 부드러운 보간 필터
+            tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
 
-            // 모든 픽셀을 투명하게 초기화 (깨끗한 도화지)
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = Color.clear;
+            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
+            float armLength = size * 0.36f;
+            float armWidth = size * 0.11f;
+            float glowRadius = size * 0.07f;
+            float inv1414 = 1f / 1.414f;
 
-            Vector2 center = new Vector2(size * 0.5f, size * 0.5f); // 텍스처 중심점
-            float armLength = size * 0.35f;   // X의 팔 길이 (중심에서 끝까지)
-            float armWidth = size * 0.1f;     // X의 팔 두께
-            float glowRadius = size * 0.06f;  // 글로우(빛남) 효과의 반경
-
-            // --- 1단계: X 모양 그리기 ---
-            // 모든 픽셀을 순회하며, 해당 위치가 X의 두 대각선에 가까운지 계산
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
-                    // 중심 기준으로 현재 픽셀의 상대 위치 계산
                     Vector2 p = new Vector2(x, y) - center;
-
-                    // X의 두 대각선까지의 거리 계산
-                    // 대각선 1: y = x (우상향 45도 선)
-                    float dist1 = Mathf.Abs(p.x - p.y) / 1.414f;
-                    // 대각선 2: y = -x (좌상향 135도 선)
-                    float dist2 = Mathf.Abs(p.x + p.y) / 1.414f;
-
-                    // 중심에서 너무 먼 픽셀은 건너뜀 (팔 길이 제한)
                     float fromCenter = p.magnitude;
-                    if (fromCenter > armLength + glowRadius) continue;
+                    if (fromCenter > armLength + glowRadius + 2f) continue;
 
-                    // 두 대각선 중 더 가까운 쪽까지의 거리
+                    // X의 두 대각선까지 거리
+                    float dist1 = Mathf.Abs(p.x - p.y) * inv1414;
+                    float dist2 = Mathf.Abs(p.x + p.y) * inv1414;
                     float minDist = Mathf.Min(dist1, dist2);
 
-                    // 코어 X 부분 (파스텔 라벤더 색상으로 채움)
-                    if (minDist < armWidth && fromCenter <= armLength)
+                    // --- 코어 X (메탈릭 라벤더 + 베벨) ---
+                    if (minDist < armWidth + 1.5f && fromCenter <= armLength + 1.5f)
                     {
-                        float edge = minDist / armWidth;
-                        float aa = Mathf.Clamp01(1f - (minDist - armWidth + 1.5f) / 1.5f);
+                        float edgeT = minDist / armWidth; // 0=중앙선 1=가장자리
+                        float lengthT = fromCenter / armLength; // 0=중심 1=끝
+                        float aa = Mathf.Clamp01((armWidth - minDist + 1.5f) * 1.2f)
+                                 * Mathf.Clamp01((armLength - fromCenter + 1.5f) * 1.2f);
 
-                        // 3D 느낌을 주기 위해 중앙이 밝고 가장자리가 어두운 그라데이션
-                        float highlight = Mathf.Pow(1f - edge, 2f) * 0.3f;
-                        Color c = new Color(0.88f + highlight * 0.05f, 0.80f + highlight * 0.05f, 0.96f, aa);
-                        pixels[y * size + x] = c;
+                        // 원통형 셰이딩 (중앙 밝음)
+                        float cylinderShade = 1f - edgeT * edgeT * 0.55f;
+                        // 끝으로 갈수록 약간 어둡게
+                        cylinderShade *= Mathf.Lerp(1f, 0.75f, lengthT * lengthT);
+
+                        // 좌상단 광원 스페큘러
+                        Vector2 lightDir = new Vector2(-0.5f, 0.5f).normalized;
+                        float specAngle = Vector2.Dot(p.normalized, lightDir);
+                        float specular = Mathf.Pow(Mathf.Clamp01(specAngle), 4f) * 0.3f * (1f - edgeT);
+
+                        // 라벤더-실버 그라데이션
+                        float r = Mathf.Lerp(0.50f, 0.92f, cylinderShade) + specular;
+                        float g = Mathf.Lerp(0.45f, 0.85f, cylinderShade) + specular * 0.9f;
+                        float b = Mathf.Lerp(0.60f, 1f, cylinderShade) + specular * 0.7f;
+
+                        // 가장자리 림 하이라이트
+                        if (edgeT > 0.7f)
+                        {
+                            float rimT = (edgeT - 0.7f) / 0.3f;
+                            float rim = rimT * 0.15f;
+                            r += rim * 0.6f; g += rim * 0.5f; b += rim * 0.8f;
+                        }
+
+                        pixels[y * size + x] = new Color(
+                            Mathf.Clamp01(r), Mathf.Clamp01(g), Mathf.Clamp01(b), aa
+                        );
                     }
-                    // 글로우 부분 (X 주변을 살짝 빛나게 - 파스텔 라벤더 빛)
+                    // --- 외곽 글로우 ---
                     else if (minDist < armWidth + glowRadius && fromCenter <= armLength + glowRadius)
                     {
                         float glowT = (minDist - armWidth) / glowRadius;
-                        float glowAlpha = Mathf.Clamp01(1f - glowT) * 0.4f;
-
-                        // 팔 끝쪽 가장자리는 자연스럽게 사라지도록 페이드
+                        float glowAlpha = Mathf.Pow(Mathf.Clamp01(1f - glowT), 2f) * 0.35f;
                         float edgeFade = Mathf.Clamp01((armLength + glowRadius - fromCenter) / glowRadius);
                         glowAlpha *= edgeFade;
-
-                        Color glowColor = new Color(0.82f, 0.76f, 0.95f, glowAlpha);
+                        Color glowC = new Color(0.7f, 0.6f, 0.95f, glowAlpha);
                         if (pixels[y * size + x].a < glowAlpha)
-                            pixels[y * size + x] = glowColor;
+                            pixels[y * size + x] = glowC;
                     }
                 }
             }
 
-            // --- 2단계: 중앙에 반짝이는 밝은 점 추가 ---
-            // X의 교차점 중앙에 작은 하이라이트를 넣어 보석 느낌을 줌
+            // --- 중앙 보석 (다이아몬드 형태) ---
+            float gemR = size * 0.1f;
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
-                    float centerDist = Vector2.Distance(new Vector2(x, y), center);
-                    if (centerDist < size * 0.1f)
+                    Vector2 p = new Vector2(x, y) - center;
+                    // 다이아몬드 거리 (맨해튼 거리)
+                    float diam = Mathf.Abs(p.x) + Mathf.Abs(p.y);
+                    if (diam < gemR + 2f)
                     {
-                        float sa = Mathf.Clamp01((size * 0.1f - centerDist) / (size * 0.1f));
-                        Color sparkColor = new Color(1f, 1f, 0.95f, sa * 0.8f); // 약간 노란빛 흰색
-                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], sparkColor, sa);
+                        float gemT = diam / gemR;
+                        float aa = Mathf.Clamp01((gemR + 2f - diam) * 1f);
+
+                        // 보석 그라데이션 (밝은 중심 → 라벤더 가장자리)
+                        float shine = Mathf.Pow(1f - gemT, 2f);
+                        Color gemC = Color.Lerp(
+                            new Color(0.75f, 0.65f, 0.95f, 1f),  // 외곽 라벤더
+                            new Color(1f, 0.98f, 1f, 1f),         // 중심 화이트
+                            shine
+                        );
+
+                        // 좌상단 하이라이트 점
+                        float hlDist = Vector2.Distance(p, new Vector2(-gemR * 0.3f, gemR * 0.3f));
+                        float hl = Mathf.Pow(Mathf.Clamp01(1f - hlDist / (gemR * 0.4f)), 3f) * 0.6f;
+                        gemC.r = Mathf.Clamp01(gemC.r + hl);
+                        gemC.g = Mathf.Clamp01(gemC.g + hl);
+                        gemC.b = Mathf.Clamp01(gemC.b + hl * 0.5f);
+                        gemC.a = aa;
+
+                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], gemC, aa);
+                    }
+
+                    // 보석 주변 광채
+                    float circDist = Vector2.Distance(new Vector2(x, y), center);
+                    if (circDist < gemR * 1.8f && circDist > gemR * 0.8f)
+                    {
+                        float ringT = Mathf.Abs(circDist - gemR * 1.2f) / (gemR * 0.6f);
+                        float ringA = Mathf.Pow(Mathf.Clamp01(1f - ringT), 2f) * 0.2f;
+                        Color ringC = new Color(0.85f, 0.8f, 1f, ringA);
+                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], ringC, ringA);
                     }
                 }
             }
 
-            // 완성된 픽셀 데이터를 텍스처에 적용하고 스프라이트로 변환
             tex.SetPixels(pixels);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
@@ -509,9 +543,9 @@ namespace JewelsHexaPuzzle.Core
                 if (target.Data.specialType == SpecialBlockType.FixedBlock)
                     continue;
 
-                // 대상이 특수 블록(드릴, 폭탄 등)이면 바로 파괴하지 않고 "대기열"에 넣음
-                // 나중에 BlockRemovalSystem이 이들을 차례로 연쇄 발동시킴
-                if (target.Data.specialType != SpecialBlockType.None)
+                // 연쇄 발동 가능한 특수 블록(드릴, 폭탄 등)은 바로 파괴하지 않고 "대기열"에 넣음
+                // TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로 일반 블록처럼 파괴
+                if (IsChainActivatable(target.Data.specialType))
                 {
                     Debug.Log($"[XBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
                     if (!pendingSpecialBlocks.Contains(target))
@@ -573,34 +607,27 @@ namespace JewelsHexaPuzzle.Core
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
 
-            // --- 11단계: 미션 시스템에 파괴 결과 알림 ---
-            // "빨간 블록 10개 모으기" 같은 미션 진행률을 업데이트하기 위해
-            // 파괴된 기본 블록만 골라서 미션 시스템에 전달 (특수 블록은 제외)
-            List<HexBlock> basicBlocksOnly = new List<HexBlock>();
-            foreach (var target in targets)
-            {
-                if (target != null && target.Data != null && target.Data.gemType != GemType.None)
-                {
-                    // 일반 블록 또는 고정 블록만 미션 카운트에 포함
-                    if (target.Data.specialType == SpecialBlockType.None || target.Data.specialType == SpecialBlockType.FixedBlock)
-                    {
-                        basicBlocksOnly.Add(target);
-                        Debug.Log($"[XBlockSystem]   BasicBlock: {target.Coord}, gemType={target.Data.gemType}");
-                    }
-                }
-            }
+            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
 
-            Debug.Log($"[XBlockSystem] Passing {basicBlocksOnly.Count} basic blocks to MissionSystem (from {targets.Count} total targets)");
-
-            // 미션 시스템에 알림 (미션 진행 업데이트)
-            MissionSystem ms = Object.FindObjectOfType<MissionSystem>();
-            if (ms != null)
-                ms.OnSpecialBlockDestroyedBlocks(basicBlocksOnly);
 
             // --- 12단계: 완료 이벤트 발생 및 상태 정리 ---
             OnXBlockComplete?.Invoke(totalScore); // 외부 시스템에 "끝났어요, 점수는 이만큼!" 알림
             activeBlocks.Remove(xBlock);
             activeXBlockCount--;
+        }
+
+        /// <summary>
+        /// 연쇄 발동 가능한 특수 블록인지 판별.
+        /// TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로
+        /// 일반 블록처럼 파괴해야 함 (pending 마킹 금지).
+        /// </summary>
+        private static bool IsChainActivatable(SpecialBlockType type)
+        {
+            return type == SpecialBlockType.Drill ||
+                   type == SpecialBlockType.Bomb ||
+                   type == SpecialBlockType.Rainbow ||
+                   type == SpecialBlockType.XBlock ||
+                   type == SpecialBlockType.Drone;
         }
 
         // ============================================================
@@ -1070,6 +1097,10 @@ namespace JewelsHexaPuzzle.Core
         /// <param name="duration">흔들림 지속 시간 (초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
+            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginScreenShake();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             // 첫 번째 흔들림일 때만 원래 위치를 저장 (중첩 흔들림 시 위치 안전 보장)
             if (shakeCount == 0)
@@ -1098,6 +1129,7 @@ namespace JewelsHexaPuzzle.Core
                 shakeCount = 0;
                 target.localPosition = shakeOriginalPos; // 원래 위치로 정확히 복원
             }
+            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1196,6 +1228,10 @@ namespace JewelsHexaPuzzle.Core
         /// <param name="targetScale">최대 확대 비율 (1.0보다 큰 값. 예: 1.02 = 2% 확대)</param>
         private IEnumerator ZoomPunch(float targetScale)
         {
+            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
+            bool isOwner = VisualConstants.TryBeginZoomPunch();
+            if (!isOwner) yield break;
+
             Transform target = hexGrid != null ? hexGrid.transform : transform;
             Vector3 origScale = target.localScale;
             Vector3 punchScale = origScale * targetScale; // 목표 확대 크기
@@ -1221,6 +1257,7 @@ namespace JewelsHexaPuzzle.Core
             }
 
             target.localScale = origScale; // 최종 안전 장치: 정확히 원래 크기로
+            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

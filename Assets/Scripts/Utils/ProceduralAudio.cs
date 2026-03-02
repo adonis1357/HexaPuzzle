@@ -120,12 +120,19 @@ namespace JewelsHexaPuzzle.Utils
             Normalize(data, 0.9f);
         }
 
+        /// <summary>
+        /// 양방향 피크 정규화: 피크가 목표보다 크면 줄이고, 작으면 키움
+        /// 모든 클립이 일관된 볼륨 수준을 갖도록 보장
+        /// </summary>
         private static void Normalize(float[] data, float targetPeak = 0.9f)
         {
             float max = 0f;
             for (int i = 0; i < data.Length; i++)
                 max = Mathf.Max(max, Mathf.Abs(data[i]));
-            if (max > targetPeak)
+            // 무음(0.001 미만)이면 정규화 건너뜀
+            if (max < 0.001f) return;
+            // 피크와 목표 차이가 1% 이상이면 스케일 조정 (상향+하향 모두)
+            if (Mathf.Abs(max - targetPeak) > 0.01f)
             {
                 float scale = targetPeak / max;
                 for (int i = 0; i < data.Length; i++)
@@ -581,35 +588,6 @@ namespace JewelsHexaPuzzle.Utils
         }
 
         /// <summary>
-        /// 레이저 - 요정 지팡이 쉬머 빔, 크리스탈 "띵" + 지속 쉬머
-        /// </summary>
-        public static AudioClip CreateLaserSound(float duration = 0.5f)
-        {
-            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
-            float[] data = new float[sampleCount];
-            for (int i = 0; i < sampleCount; i++)
-            {
-                float t = (float)i / SAMPLE_RATE;
-                float tNorm = (float)i / sampleCount;
-                float envelope = ADSR(tNorm, 0.01f, 0.1f, 0.55f, 0.35f);
-                float ting = Mathf.Sin(2f * Mathf.PI * 2093f * t) * 0.4f
-                           * Mathf.Max(0f, 1f - t * 8f);
-                float shimmerFreq = Mathf.Lerp(1200f, 1800f, tNorm);
-                float shimmer = Mathf.Sin(2f * Mathf.PI * shimmerFreq * t) * 0.25f;
-                float vibrato = 0.08f * Mathf.Sin(2f * Mathf.PI * 4f * t);
-                float harmonic = Mathf.Sin(2f * Mathf.PI * shimmerFreq * 1.5f * t) * 0.15f
-                               * (1f + vibrato);
-                data[i] = (ting + shimmer + harmonic) * envelope * 0.4f;
-            }
-            ApplyFades(data, 16, 128);
-            ApplyLowPass(data, 0.15f);
-            ApplyReverb(data, 35f, 0.3f, 4);
-            AudioClip clip = AudioClip.Create("Laser", sampleCount, 1, SAMPLE_RATE, false);
-            clip.SetData(data, 0);
-            return clip;
-        }
-
-        /// <summary>
         /// 도넛/레인보우 - 상승 차임 + 따뜻한 확장 쉬머 물결
         /// </summary>
         public static AudioClip CreateRainbowSound(float duration = 0.8f)
@@ -919,6 +897,7 @@ namespace JewelsHexaPuzzle.Utils
                 data[i] = (tone * 0.6f + click) * envelope * 0.4f;
             }
             ApplyFades(data, 4, 32);
+            Normalize(data, 0.85f);
             AudioClip clip = AudioClip.Create("TransformTick", sampleCount, 1, SAMPLE_RATE, false);
             clip.SetData(data, 0);
             return clip;
@@ -963,37 +942,273 @@ namespace JewelsHexaPuzzle.Utils
         }
 
         // ============================================================
-        // BGM 메서드
+        // BGM 메서드 — 프로시저럴 배경음악 생성
+        // 파스텔 오르골 톤, 펜타토닉 기반 루프 가능 멜로디
         // ============================================================
 
+        /// <summary>
+        /// 로비 세레나데 BGM — 잔잔한 오르골 아르페지오 (C장조 펜타토닉)
+        /// 부드러운 Sine+Triangle, 느린 템포, 따뜻한 패드
+        /// </summary>
         public static AudioClip CreateLobbySereneBGM(float duration = 120f)
         {
-            return AudioClip.Create("LobbySereneBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            // C 펜타토닉: C4, D4, E4, G4, A4, C5
+            float[] scale = { 261.63f, 293.66f, 329.63f, 392f, 440f, 523.25f };
+            float bpm = 72f;
+            float beatDur = 60f / bpm;
+            // 8마디 패턴 (32비트), 루프
+            int[] melody = { 0, 2, 4, 5, 4, 2, 3, 1, 0, 3, 5, 4, 2, 4, 3, 0,
+                             2, 4, 5, 3, 1, 0, 2, 4, 5, 4, 3, 2, 1, 0, 2, 3 };
+            float patternDuration = melody.Length * beatDur;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float patternT = t % patternDuration;
+                int noteIdx = (int)(patternT / beatDur) % melody.Length;
+                float noteTime = patternT - noteIdx * beatDur;
+                float freq = scale[melody[noteIdx]];
+
+                // 오르골 톤: Sine(70%) + Triangle(30%), 부드러운 어택
+                float env = NoteEnvelope(noteTime, 0.02f, beatDur * 0.4f, beatDur * 0.5f);
+                float phase = 2f * Mathf.PI * freq * noteTime;
+                float tone = Mathf.Sin(phase) * 0.7f + GenerateWaveform(Waveform.Triangle, phase) * 0.3f;
+
+                // 따뜻한 패드 (루트 옥타브 아래, 매우 조용)
+                float padPhase = 2f * Mathf.PI * (freq * 0.5f) * t;
+                float pad = Mathf.Sin(padPhase) * 0.06f;
+
+                data[i] = (tone * env * 0.18f) + pad;
+            }
+            ApplyLowPass(data, 0.12f);
+            ApplyReverb(data, 45f, 0.3f, 4);
+            Normalize(data, 0.5f);
+
+            AudioClip clip = AudioClip.Create("LobbySereneBGM", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
         }
 
+        /// <summary>
+        /// 로비 밝은 BGM — 경쾌한 오르골 (G장조 펜타토닉)
+        /// 약간 빠른 템포, 밝은 음색
+        /// </summary>
         public static AudioClip CreateLobbyBrightBGM(float duration = 120f)
         {
-            return AudioClip.Create("LobbyBrightBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            // G 펜타토닉: G4, A4, B4, D5, E5, G5
+            float[] scale = { 392f, 440f, 493.88f, 587.33f, 659.25f, 783.99f };
+            float bpm = 88f;
+            float beatDur = 60f / bpm;
+            int[] melody = { 0, 2, 4, 5, 3, 1, 2, 4, 5, 3, 4, 2, 0, 1, 3, 5,
+                             4, 2, 0, 3, 5, 4, 2, 1, 0, 2, 3, 5, 4, 3, 1, 0 };
+            float patternDuration = melody.Length * beatDur;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float patternT = t % patternDuration;
+                int noteIdx = (int)(patternT / beatDur) % melody.Length;
+                float noteTime = patternT - noteIdx * beatDur;
+                float freq = scale[melody[noteIdx]];
+
+                float env = NoteEnvelope(noteTime, 0.01f, beatDur * 0.35f, beatDur * 0.55f);
+                float phase = 2f * Mathf.PI * freq * noteTime;
+                float tone = Mathf.Sin(phase) * 0.65f + GenerateWaveform(Waveform.Triangle, phase) * 0.35f;
+
+                // 밝은 하모닉 (옥타브 위 쉬머)
+                float shimmer = Mathf.Sin(phase * 2f) * 0.04f * env;
+
+                data[i] = (tone * env * 0.18f) + shimmer;
+            }
+            ApplyLowPass(data, 0.1f);
+            ApplyReverb(data, 40f, 0.28f, 4);
+            Normalize(data, 0.5f);
+
+            AudioClip clip = AudioClip.Create("LobbyBrightBGM", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
         }
 
+        /// <summary>
+        /// 로비 몽환 BGM — 느리고 공간감 있는 오르골 (F장조)
+        /// 긴 리버브, 넓은 음역, 드리미한 패드
+        /// </summary>
         public static AudioClip CreateLobbyDreamyBGM(float duration = 120f)
         {
-            return AudioClip.Create("LobbyDreamyBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            // F 펜타토닉: F4, G4, A4, C5, D5, F5
+            float[] scale = { 349.23f, 392f, 440f, 523.25f, 587.33f, 698.46f };
+            float bpm = 60f;
+            float beatDur = 60f / bpm;
+            int[] melody = { 0, 4, 2, 5, 3, 1, 4, 0, 2, 5, 3, 0, 1, 4, 5, 2,
+                             3, 0, 5, 4, 1, 2, 0, 3, 5, 1, 4, 2, 0, 3, 1, 5 };
+            float patternDuration = melody.Length * beatDur;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float patternT = t % patternDuration;
+                int noteIdx = (int)(patternT / beatDur) % melody.Length;
+                float noteTime = patternT - noteIdx * beatDur;
+                float freq = scale[melody[noteIdx]];
+
+                float env = NoteEnvelope(noteTime, 0.04f, beatDur * 0.3f, beatDur * 0.6f);
+                float phase = 2f * Mathf.PI * freq * noteTime;
+                float tone = Mathf.Sin(phase) * 0.75f + GenerateWaveform(Waveform.Triangle, phase) * 0.25f;
+
+                // 몽환 패드 (5도 아래 은은하게)
+                float padFreq = freq * 0.667f; // 대략 5도 아래
+                float padPhase = 2f * Mathf.PI * padFreq * t;
+                float pad = Mathf.Sin(padPhase) * 0.05f;
+
+                data[i] = (tone * env * 0.16f) + pad;
+            }
+            ApplyLowPass(data, 0.08f);
+            ApplyReverb(data, 60f, 0.35f, 5);
+            Normalize(data, 0.45f);
+
+            AudioClip clip = AudioClip.Create("LobbyDreamyBGM", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
         }
 
+        /// <summary>
+        /// 게임플레이 긴장 BGM — 단조 펜타토닉, 약간의 긴장감
+        /// 빠른 템포, 짧은 노트, 미묘한 박동감
+        /// </summary>
         public static AudioClip CreateGameplayTenseBGM(float duration = 90f)
         {
-            return AudioClip.Create("GameplayTenseBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            // A 단조 펜타토닉: A4, C5, D5, E5, G5, A5
+            float[] scale = { 440f, 523.25f, 587.33f, 659.25f, 783.99f, 880f };
+            float bpm = 100f;
+            float beatDur = 60f / bpm;
+            int[] melody = { 0, 2, 1, 3, 0, 4, 2, 1, 3, 5, 4, 2, 0, 1, 3, 2,
+                             4, 0, 2, 5, 3, 1, 0, 4, 2, 3, 1, 5, 4, 0, 2, 1 };
+            float patternDuration = melody.Length * beatDur;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float patternT = t % patternDuration;
+                int noteIdx = (int)(patternT / beatDur) % melody.Length;
+                float noteTime = patternT - noteIdx * beatDur;
+                float freq = scale[melody[noteIdx]];
+
+                float env = NoteEnvelope(noteTime, 0.01f, beatDur * 0.25f, beatDur * 0.6f);
+                float phase = 2f * Mathf.PI * freq * noteTime;
+                float tone = Mathf.Sin(phase) * 0.6f + GenerateWaveform(Waveform.Triangle, phase) * 0.3f
+                           + GenerateWaveform(Waveform.Square, phase) * 0.1f;
+
+                // 심장박동 패드 (루트 저음, 리듬감)
+                float pulsePhase = 2f * Mathf.PI * 2.5f * t; // 2.5Hz 펄스
+                float pulse = Mathf.Sin(2f * Mathf.PI * 110f * t) * 0.04f
+                            * (0.5f + 0.5f * Mathf.Sin(pulsePhase));
+
+                data[i] = (tone * env * 0.17f) + pulse;
+            }
+            ApplyLowPass(data, 0.15f);
+            ApplyReverb(data, 35f, 0.25f, 3);
+            Normalize(data, 0.5f);
+
+            AudioClip clip = AudioClip.Create("GameplayTenseBGM", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
         }
 
+        /// <summary>
+        /// 게임플레이 에너제틱 BGM — 밝고 빠른 장조, 활기찬 느낌
+        /// </summary>
         public static AudioClip CreateGameplayEnergeticBGM(float duration = 90f)
         {
-            return AudioClip.Create("GameplayEnergeticBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            // C 장조 펜타토닉 (높은 옥타브): C5, D5, E5, G5, A5, C6
+            float[] scale = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
+            float bpm = 110f;
+            float beatDur = 60f / bpm;
+            int[] melody = { 0, 2, 4, 5, 3, 4, 2, 0, 1, 3, 5, 4, 2, 0, 3, 5,
+                             4, 2, 1, 3, 0, 4, 5, 3, 2, 0, 1, 4, 5, 3, 2, 4 };
+            float patternDuration = melody.Length * beatDur;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float patternT = t % patternDuration;
+                int noteIdx = (int)(patternT / beatDur) % melody.Length;
+                float noteTime = patternT - noteIdx * beatDur;
+                float freq = scale[melody[noteIdx]];
+
+                float env = NoteEnvelope(noteTime, 0.005f, beatDur * 0.3f, beatDur * 0.5f);
+                float phase = 2f * Mathf.PI * freq * noteTime;
+                float tone = Mathf.Sin(phase) * 0.65f + GenerateWaveform(Waveform.Triangle, phase) * 0.35f;
+
+                // 하모닉 쉬머 (밝은 느낌 강조)
+                float shimmer = Mathf.Sin(phase * 2f) * 0.03f * env;
+                float bass = Mathf.Sin(2f * Mathf.PI * 130.81f * t) * 0.04f; // C3 베이스
+
+                data[i] = (tone * env * 0.17f) + shimmer + bass;
+            }
+            ApplyLowPass(data, 0.12f);
+            ApplyReverb(data, 30f, 0.22f, 3);
+            Normalize(data, 0.5f);
+
+            AudioClip clip = AudioClip.Create("GameplayEnergeticBGM", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
         }
 
+        /// <summary>
+        /// 게임플레이 에픽 BGM — 웅장한 느낌, 두꺼운 하모닉, 드라마틱
+        /// </summary>
         public static AudioClip CreateGameplayEpicBGM(float duration = 120f)
         {
-            return AudioClip.Create("GameplayEpicBGM", Mathf.CeilToInt(44100 * duration), 1, 44100, false);
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            // D 단조 펜타토닉: D4, F4, G4, A4, C5, D5
+            float[] scale = { 293.66f, 349.23f, 392f, 440f, 523.25f, 587.33f };
+            float bpm = 96f;
+            float beatDur = 60f / bpm;
+            int[] melody = { 0, 3, 5, 4, 2, 0, 1, 3, 5, 4, 2, 3, 0, 1, 4, 5,
+                             3, 0, 2, 4, 5, 3, 1, 0, 4, 5, 3, 2, 0, 1, 3, 5 };
+            float patternDuration = melody.Length * beatDur;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float patternT = t % patternDuration;
+                int noteIdx = (int)(patternT / beatDur) % melody.Length;
+                float noteTime = patternT - noteIdx * beatDur;
+                float freq = scale[melody[noteIdx]];
+
+                float env = NoteEnvelope(noteTime, 0.02f, beatDur * 0.35f, beatDur * 0.55f);
+                float phase = 2f * Mathf.PI * freq * noteTime;
+                // 두꺼운 톤: Sine + Triangle + 약한 Sawtooth
+                float tone = Mathf.Sin(phase) * 0.55f
+                           + GenerateWaveform(Waveform.Triangle, phase) * 0.3f
+                           + GenerateWaveform(Waveform.Sawtooth, phase) * 0.15f;
+
+                // 옥타브 더블링 (웅장함)
+                float octave = Mathf.Sin(phase * 0.5f) * 0.08f * env;
+                // 드라마틱 패드 (5도 하모니)
+                float fifthPhase = 2f * Mathf.PI * (freq * 1.5f) * noteTime;
+                float fifth = Mathf.Sin(fifthPhase) * 0.05f * env;
+
+                data[i] = (tone * env * 0.16f) + octave + fifth;
+            }
+            ApplyLowPass(data, 0.15f);
+            ApplyReverb(data, 50f, 0.32f, 4);
+            Normalize(data, 0.5f);
+
+            AudioClip clip = AudioClip.Create("GameplayEpicBGM", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
         }
     }
 }
