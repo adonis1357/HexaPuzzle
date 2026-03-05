@@ -514,25 +514,6 @@ namespace JewelsHexaPuzzle.Core
             List<Coroutine> destroyCoroutines = new List<Coroutine>(); // 파괴 애니메이션 추적용
             int blockScoreSum = 0;      // 파괴된 블록들의 기본 점수 합계
             int basicBlockCount = 0;    // 기본 블록(일반 젬) 카운트
-            var gemCountsByColor = new Dictionary<GemType, int>(); // 색상별 미션 카운팅용
-
-            // 파괴 전에 색상별 미션 카운트를 사전 수집 (파도 루프 시작 전)
-            foreach (var preTarget in targets)
-            {
-                if (preTarget == null || preTarget.Data == null || preTarget.Data.gemType == GemType.None) continue;
-                if (preTarget.Data.specialType == SpecialBlockType.FixedBlock) continue;
-                if (preTarget.Data.specialType != SpecialBlockType.None) continue; // 특수 블록 제외
-                if ((int)preTarget.Data.gemType >= 1 && (int)preTarget.Data.gemType <= 5)
-                {
-                    if (gemCountsByColor.ContainsKey(preTarget.Data.gemType))
-                        gemCountsByColor[preTarget.Data.gemType]++;
-                    else
-                        gemCountsByColor[preTarget.Data.gemType] = 1;
-                }
-            }
-            // 색상별 미션 카운팅 — 파괴 애니메이션 시작 직후, 완료 대기 전에 호출
-            GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "XBlock");
-
             for (int i = 0; i < targets.Count; i++)
             {
                 HexBlock target = targets[i];
@@ -564,11 +545,11 @@ namespace JewelsHexaPuzzle.Core
                     if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
                     {
                         basicBlockCount++;
-                        if (gemCountsByColor.ContainsKey(target.Data.gemType))
-                            gemCountsByColor[target.Data.gemType]++;
-                        else
-                            gemCountsByColor[target.Data.gemType] = 1;
                     }
+
+                    // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
+                    if (target.Data.gemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
 
                     // 적군 점수 처리 (가시, 체인, 회색 블록 등의 방해 요소 제거 보너스)
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
@@ -603,11 +584,11 @@ namespace JewelsHexaPuzzle.Core
                 yield return co;
 
             // --- 10단계: 점수 계산 ---
-            // 기본 점수 500점 + 파괴된 블록들의 티어별 점수 합산
-            int totalScore = 500 + blockScoreSum;
-            Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:500 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
+            // 기본 점수 800점 + 파괴된 블록들의 티어별 점수 합산
+            int totalScore = 800 + blockScoreSum;
+            Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:800 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
 
-            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
+            // 미션 카운팅은 파괴 루프에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
 
             // --- 12단계: 완료 이벤트 발생 및 상태 정리 ---

@@ -128,7 +128,7 @@ namespace JewelsHexaPuzzle.Core
             if (target == null)
             {
                 Debug.Log("[DroneBlockSystem] 타겟 없음, 발동 종료");
-                OnDroneComplete?.Invoke(50);
+                OnDroneComplete?.Invoke(150);
                 activeBlocks.Remove(droneBlock);
                 activeDroneCount--;
                 yield break;
@@ -140,15 +140,22 @@ namespace JewelsHexaPuzzle.Core
 
             Debug.Log($"[DroneBlockSystem] 타겟 선택: {target.Coord} ({targetGemType}, tier={target.Data?.tier}, special={targetSpecialType})");
 
-            // 4. 드론 비행 이펙트
+            // 4. 드론 비행 이펙트 + 비행 사운드
             Vector3 targetWorldPos = target.transform.position;
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDroneSound();
             yield return StartCoroutine(DroneFlyEffect(droneWorldPos, targetWorldPos, droneColor));
 
             // 5. 화면 흔들림
             if (isFirst)
                 StartCoroutine(ScreenShake(3f, 0.15f));
 
-            // 6. 타격 이펙트
+            // 6. 비행 버즈 정지 + 타격 이펙트 + 충돌 파괴 사운드
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.StopDroneSound();
+                AudioManager.Instance.PlayDroneStrikeSound();
+            }
             yield return StartCoroutine(DroneStrikeEffect(target, droneColor));
 
             // 7. 타격 효과 적용 (1데미지)
@@ -158,13 +165,9 @@ namespace JewelsHexaPuzzle.Core
             int score = 150;
             OnDroneComplete?.Invoke(score);
 
-            // 9. 미션 알림 (캐싱된 정보 사용)
-            if (GameManager.Instance != null && targetGemType != GemType.None)
-            {
-                var colorDict = new Dictionary<GemType, int>();
-                colorDict[targetGemType] = 1;
-                GameManager.Instance.OnSpecialBlockDestroyedBlocksByColor(colorDict, "Drone");
-            }
+            // 9. 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
+            if (targetGemType != GemType.None)
+                GameManager.Instance?.OnSingleGemDestroyedForMission(targetGemType);
 
             activeBlocks.Remove(droneBlock);
             activeDroneCount--;
@@ -533,7 +536,7 @@ namespace JewelsHexaPuzzle.Core
             Vector3 riseOffset = new Vector3(0f, 60f, 0f);
             Vector3 riseEndPos = startPos + riseOffset;
 
-            // ---- Phase 1: 이륙 (0.264초) ----
+            // ---- Phase 1: 이륙 (0.264초) ---- 도플러: 1.0 → 1.1 (상승 가속)
             float riseDuration = 0.264f;
             float t = 0f;
             droneRt.localScale = Vector3.zero;
@@ -551,6 +554,10 @@ namespace JewelsHexaPuzzle.Core
                     : Mathf.Lerp(1.2f, 1f, (eased - 0.7f) / 0.3f);
                 droneRt.localScale = new Vector3(s, s, 1f);
 
+                // 도플러 피치: 이륙 가속 → 피치 상승
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.SetDronePitch(Mathf.Lerp(1.0f, 1.1f, eased));
+
                 // 프로펠러 회전
                 float propRot = t * 2400f;
                 propLRt.localRotation = Quaternion.Euler(0, 0, propRot);
@@ -565,7 +572,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            // ---- Phase 2: 호버링 (0.198초) ----
+            // ---- Phase 2: 호버링 (0.198초) ---- 도플러: 1.1 → 1.0 (감속 정지)
             float hoverDuration = 0.198f;
             t = 0f;
             Vector3 hoverCenter = riseEndPos;
@@ -578,6 +585,10 @@ namespace JewelsHexaPuzzle.Core
                 float wobbleY = Mathf.Sin(p * Mathf.PI * 6f) * 2f;
                 droneObj.transform.position = hoverCenter + new Vector3(wobbleX, wobbleY, 0f);
 
+                // 도플러 피치: 호버링 → 원래 피치로 복귀
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.SetDronePitch(Mathf.Lerp(1.1f, 1.0f, p));
+
                 float propRot = (riseDuration + t) * 2400f;
                 propLRt.localRotation = Quaternion.Euler(0, 0, propRot);
                 propRRt.localRotation = Quaternion.Euler(0, 0, -propRot);
@@ -587,7 +598,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            // ---- Phase 3: 급강하 비행 (0.396초) ----
+            // ---- Phase 3: 급강하 비행 (0.396초) ---- 도플러: 1.0 → 1.5 (급가속 접근)
             float flyDuration = 0.396f;
             t = 0f;
             Vector3 flyStart = droneObj.transform.position;
@@ -607,6 +618,13 @@ namespace JewelsHexaPuzzle.Core
                 float arc = 80f * 4f * p * (1f - p) * (1f - p);
                 pos.y += arc;
                 droneObj.transform.position = pos;
+
+                // 도플러 피치: 급강하 가속 → EaseInQuart와 동기화하여 피치 급상승
+                if (AudioManager.Instance != null)
+                {
+                    float dopplerPitch = Mathf.Lerp(1.0f, 1.5f, eased);
+                    AudioManager.Instance.SetDronePitch(dopplerPitch);
+                }
 
                 // 비행 방향 기울기
                 Vector3 moveDir = pos - prevWorldPos;

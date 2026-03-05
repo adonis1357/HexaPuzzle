@@ -457,6 +457,10 @@ namespace JewelsHexaPuzzle.Items
             }
             else
             {
+                // 미션 카운팅: 블록 파괴 시점에 개별 보고 (Stage/Infinite 모두 지원)
+                if (block.Data != null && block.Data.gemType != GemType.None)
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+
                 block.ClearData();
                 block.transform.localScale = Vector3.one;
             }

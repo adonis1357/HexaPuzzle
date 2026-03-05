@@ -12,9 +12,9 @@ namespace JewelsHexaPuzzle.Managers
     {
         [Header("Settings")]
         [SerializeField] private int comboMultiplierBase = 1;
-        [SerializeField] private float comboMultiplierIncrement = 0.5f;
-        [SerializeField] private float comboResetTime = 3f;
-        [SerializeField] private int maxCombo = 4;
+        [SerializeField] private float comboMultiplierIncrement = 0.3f;  // 캐스케이드 배율과 이중 적용이므로 완만하게
+        [SerializeField] private float comboResetTime = 4f;             // 캐스케이드 중 콤보 유지 용이
+        [SerializeField] private int maxCombo = 10;                     // 장기 콤보 보상 확장 (상한 4.0x)
 
         // 현재 점수
         private int currentScore = 0;
@@ -29,9 +29,10 @@ namespace JewelsHexaPuzzle.Managers
         private int stageBaseScore = 0;
         private int maxComboReached = 0;
 
-        // 턴 내 추적 (생성 가산 + 적군 멀티킬)
+        // 턴 내 추적 (생성 가산 + 적군 멀티킬 + 동시 매칭)
         private int turnCreationCount = 0;
         private int turnEnemyKillCount = 0;
+        private int turnMaxSimultaneousGroups = 0;  // 턴 내 최대 동시 매칭 그룹 수
 
         // 갱신 전 이전 기록 (카운트업 애니메이션용)
         private int previousLevelBest = 0;
@@ -107,8 +108,9 @@ namespace JewelsHexaPuzzle.Managers
 
         /// <summary>
         /// 매치 점수 추가 (블록 제거 시 호출)
+        /// matchGroupCount: 동시에 매칭된 그룹 수 (다색 동시 매칭 보너스용)
         /// </summary>
-        public void AddMatchScore(int blockCount, int cascadeDepth, Vector3 position)
+        public void AddMatchScore(int blockCount, int cascadeDepth, Vector3 position, int matchGroupCount = 1)
         {
             int baseScore = ScoreCalculator.CalculateMatchGroupScore(blockCount);
             float cascadeMultiplier = ScoreCalculator.GetCascadeScoreMultiplier(cascadeDepth);
@@ -120,6 +122,10 @@ namespace JewelsHexaPuzzle.Managers
             stageBaseScore += baseScore;
             currentScore += finalScore;
             totalGoldEarned += finalScore;
+
+            // 동시 다색 매칭 추적 (턴 내 최대값 기록)
+            if (matchGroupCount > turnMaxSimultaneousGroups)
+                turnMaxSimultaneousGroups = matchGroupCount;
 
             // 하이스코어 갱신
             if (currentScore > highScore)
@@ -135,7 +141,7 @@ namespace JewelsHexaPuzzle.Managers
             // 점수 팝업 비활성화
             // OnScorePopup?.Invoke(finalScore, position);
 
-            Debug.Log($"Score +{finalScore} (base: {baseScore}, cascade: x{cascadeMultiplier:F1}, combo: x{ComboMultiplier:F1}) Total: {currentScore}");
+            Debug.Log($"Score +{finalScore} (base: {baseScore}, cascade: x{cascadeMultiplier:F1}, combo: x{ComboMultiplier:F1}, groups: {matchGroupCount}) Total: {currentScore}");
         }
 
         /// <summary>
@@ -269,6 +275,7 @@ namespace JewelsHexaPuzzle.Managers
             maxComboReached = 0;
             turnCreationCount = 0;
             turnEnemyKillCount = 0;
+            turnMaxSimultaneousGroups = 0;
             OnScoreChanged?.Invoke(currentScore);
             OnComboChanged?.Invoke(currentCombo);
         }
@@ -446,6 +453,14 @@ namespace JewelsHexaPuzzle.Managers
                 Debug.Log($"Multi-kill bonus: +{killBonus} ({turnEnemyKillCount}마리)");
             }
 
+            // 동시 다색 매칭 보너스 (한 턴에서 최대 동시 매칭 그룹 수 기준)
+            if (turnMaxSimultaneousGroups >= 2)
+            {
+                int simultaneousBonus = ScoreCalculator.GetSimultaneousMatchBonus(turnMaxSimultaneousGroups);
+                bonus += simultaneousBonus;
+                Debug.Log($"Simultaneous match bonus: +{simultaneousBonus} ({turnMaxSimultaneousGroups}색 동시)");
+            }
+
             if (bonus > 0)
             {
                 currentScore += bonus;
@@ -457,6 +472,7 @@ namespace JewelsHexaPuzzle.Managers
             // 리셋
             turnCreationCount = 0;
             turnEnemyKillCount = 0;
+            turnMaxSimultaneousGroups = 0;
 
             return bonus;
         }

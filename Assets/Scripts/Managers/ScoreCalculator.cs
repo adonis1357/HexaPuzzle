@@ -8,33 +8,52 @@ namespace JewelsHexaPuzzle.Managers
     /// </summary>
     public static class ScoreCalculator
     {
-        // 블록 티어별 기본 점수
+        // ============================================================
+        // 블록 티어별 기본 점수 (2배 간격 스케일)
+        // Normal(50) → Tier1(100) → Tier2(200) → Tier3(400) → Processed(800)
+        // ============================================================
         private const int ScoreNormal = 50;
-        private const int ScoreTier1 = 75;
-        private const int ScoreTier2 = 100;
-        private const int ScoreTier3 = 150;
-        private const int ScoreProcessedGem = 200;
+        private const int ScoreTier1 = 100;
+        private const int ScoreTier2 = 200;
+        private const int ScoreTier3 = 400;
+        private const int ScoreProcessedGem = 800;
 
-        // 매치 크기 보너스
+        // ============================================================
+        // 매치 크기 보너스 (난이도 비례 보상)
+        // 3개(기본) → 4개(드릴) → 5개(폭탄) → 6개(희소) → 7+(도넛)
+        // ============================================================
         private const int Bonus3Match = 0;
-        private const int Bonus4Match = 100;
-        private const int Bonus5Match = 250;
-        private const int Bonus6Match = 400;
-        private const int Bonus7PlusMatch = 600;
+        private const int Bonus4Match = 200;
+        private const int Bonus5Match = 500;
+        private const int Bonus6Match = 800;
+        private const int Bonus7PlusMatch = 1500;
 
+        // ============================================================
         // 스테이지 클리어 보너스
-        private const int PointsPerRemainingTurn = 200;
-        private const int EfficiencyBonusPerfect = 2000;
-        private const int EfficiencyBonusGreat = 1000;
+        // ============================================================
+        private const int PointsPerRemainingTurn = 500;
+        private const int EfficiencyBonusPerfect = 5000;   // 턴 50% 미만 사용
+        private const int EfficiencyBonusGreat = 2500;     // 턴 50~70% 사용
 
-        // 특수 블록 생성 가산점
-        private const int CreationBonusDrill = 150;
-        private const int CreationBonusBomb = 300;
-        private const int CreationBonusDonut = 800;
+        // ============================================================
+        // 특수 블록 생성 가산점 (생성 난이도 반영)
+        // ============================================================
+        private const int CreationBonusDrill = 300;     // 4매칭 직선
+        private const int CreationBonusBomb = 600;      // 5+매칭
+        private const int CreationBonusDonut = 1500;    // 7+매칭 / 링
+        private const int CreationBonusDrone = 400;     // 5+ 나비형
 
-        // 복수 생성 보너스
-        private const int MultiCreation2 = 200;
-        private const int MultiCreation3Plus = 500;
+        // ============================================================
+        // 복수 생성 보너스 (한 턴에 여러 특수블록 생성)
+        // ============================================================
+        private const int MultiCreation2 = 500;
+        private const int MultiCreation3Plus = 1500;
+
+        // ============================================================
+        // 동시 다색 매칭 보너스 (한 캐스케이드에서 여러 색상 동시 매칭)
+        // ============================================================
+        private const int SimultaneousMatch2Colors = 300;
+        private const int SimultaneousMatch3PlusColors = 800;
 
         // 적군 기본 점수는 EnemyRegistry에서 중앙 관리
 
@@ -51,11 +70,11 @@ namespace JewelsHexaPuzzle.Managers
         private const int BonusShieldOneShot = 300;
         private const int BonusChaosOneShot = 1000;
 
-        // 멀티킬 보너스
-        private const int MultiKill2 = 200;
-        private const int MultiKill3 = 500;
-        private const int MultiKill4 = 1000;
-        private const int MultiKill5Plus = 2000;
+        // 멀티킬 보너스 (동시 적군 처치)
+        private const int MultiKill2 = 400;
+        private const int MultiKill3 = 1000;
+        private const int MultiKill4 = 2000;
+        private const int MultiKill5Plus = 4000;
 
         /// <summary>
         /// 블록 티어에 따른 기본 점수
@@ -95,13 +114,14 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
-        /// 캐스케이드 깊이에 따른 점수 배율
-        /// depth 0: 1.0x, 1: 1.2x, 2: 1.4x, 3: 1.6x, 4+: 1.8x
+        /// 캐스케이드 깊이에 따른 점수 배율 (낙하 자연매칭 강력 보상)
+        /// depth 0: 1.0x, 1: 1.8x, 2: 2.6x, 3: 3.4x, 4: 4.2x, 5+: 5.0x
+        /// 공식: 1.0 + depth × 0.8 (상한 5.0x)
         /// </summary>
         public static float GetCascadeScoreMultiplier(int depth)
         {
-            float multiplier = 1.0f + depth * 0.2f;
-            return multiplier > 1.8f ? 1.8f : multiplier;
+            float multiplier = 1.0f + depth * 0.8f;
+            return multiplier > 5.0f ? 5.0f : multiplier;
         }
 
         /// <summary>
@@ -139,6 +159,7 @@ namespace JewelsHexaPuzzle.Managers
                 case SpecialBlockType.Bomb: return CreationBonusBomb;
                 case SpecialBlockType.Rainbow:
                 case SpecialBlockType.XBlock: return CreationBonusDonut;
+                case SpecialBlockType.Drone: return CreationBonusDrone;
                 default: return 0;
             }
         }
@@ -150,6 +171,16 @@ namespace JewelsHexaPuzzle.Managers
         {
             if (count >= 3) return MultiCreation3Plus;
             if (count >= 2) return MultiCreation2;
+            return 0;
+        }
+
+        /// <summary>
+        /// 동시 다색 매칭 보너스 (한 캐스케이드에서 여러 색상 동시 매칭)
+        /// </summary>
+        public static int GetSimultaneousMatchBonus(int groupCount)
+        {
+            if (groupCount >= 3) return SimultaneousMatch3PlusColors;
+            if (groupCount >= 2) return SimultaneousMatch2Colors;
             return 0;
         }
 

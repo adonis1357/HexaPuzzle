@@ -85,6 +85,9 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralChromophageRemoval;
         private AudioClip proceduralTransformTick;
         private AudioClip proceduralDroneSound;
+        private AudioClip proceduralDroneStrike;
+        private AudioClip proceduralMissionEntrance;
+        private AudioClip proceduralMissionComplete;
 
         // 배경음악 캐시
         private AudioClip proceduralLobbySereneBGM;
@@ -259,7 +262,10 @@ namespace JewelsHexaPuzzle.Managers
             proceduralEnemySpawn = SafeCreateClip("EnemySpawn", () => ProceduralAudio.CreateEnemySpawnSound(0.25f), ref successCount, ref failCount);
             proceduralChromophageRemoval = SafeCreateClip("ChromophageRemoval", () => ProceduralAudio.CreateNoiseBurst(0.15f), ref successCount, ref failCount);
             proceduralTransformTick = SafeCreateClip("TransformTick", () => ProceduralAudio.CreateTransformTick(0.08f), ref successCount, ref failCount);
-            proceduralDroneSound = SafeCreateClip("Drone", () => ProceduralAudio.CreateDroneSound(0.5f), ref successCount, ref failCount);
+            proceduralDroneSound = SafeCreateClip("Drone", () => ProceduralAudio.CreateDroneSound(2.0f), ref successCount, ref failCount);
+            proceduralDroneStrike = SafeCreateClip("DroneStrike", () => ProceduralAudio.CreateDroneStrikeSound(0.2f), ref successCount, ref failCount);
+            proceduralMissionEntrance = SafeCreateClip("MissionEntrance", () => ProceduralAudio.CreateMissionEntranceSound(0.2f), ref successCount, ref failCount);
+            proceduralMissionComplete = SafeCreateClip("MissionComplete", () => ProceduralAudio.CreateMissionCompleteSound(0.4f), ref successCount, ref failCount);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
@@ -556,6 +562,40 @@ namespace JewelsHexaPuzzle.Managers
         public void PlayDonutSound() => PlaySFX(Resolve(donutSound, proceduralDonut), 0.7f);
         public void PlayXBlockSound() => PlaySFX(Resolve(xBlockSound, proceduralXBlock), 0.7f);
         public void PlayDroneSound() => PlaySFX(proceduralDroneSound, 0.7f);
+        public void PlayDroneStrikeSound() => PlaySFX(proceduralDroneStrike, 0.8f);
+
+        /// <summary>
+        /// 드론 비행 버즈 피치 실시간 조절 — 도플러 효과용
+        /// sfxPool에서 드론 클립 재생 중인 소스를 찾아 피치 변경
+        /// </summary>
+        public void SetDronePitch(float pitch)
+        {
+            if (proceduralDroneSound == null) return;
+            foreach (var source in sfxPool)
+            {
+                if (source != null && source.isPlaying && source.clip == proceduralDroneSound)
+                {
+                    source.pitch = pitch;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 드론 비행 버즈 사운드 정지 — 충돌 시점에 호출
+        /// sfxPool에서 드론 클립 재생 중인 소스를 찾아 정지
+        /// </summary>
+        public void StopDroneSound()
+        {
+            if (proceduralDroneSound == null) return;
+            foreach (var source in sfxPool)
+            {
+                if (source != null && source.isPlaying && source.clip == proceduralDroneSound)
+                {
+                    source.Stop();
+                    source.clip = null;
+                }
+            }
+        }
 
         // 블록 파괴/착지 (피치 변형 + 동시 재생 제한)
         public void PlayBlockDestroySound() => PlaySFXWithVariationAndLimit(Resolve(blockDestroySound, proceduralBlockDestroy), 0.08f, 3, 0.65f);
@@ -563,6 +603,18 @@ namespace JewelsHexaPuzzle.Managers
 
         // 경고 비프
         public void PlayWarningBeep() => PlaySFX(proceduralWarningBeep, 0.8f);
+
+        /// <summary>
+        /// 카운트업 틱 사운드 — progress(0~1)에 따라 피치가 올라감
+        /// </summary>
+        public void PlayCountUpTick(float progress)
+        {
+            // 피치: 800Hz → 1200Hz로 점진적 상승
+            float freq = Mathf.Lerp(800f, 1200f, progress);
+            AudioClip tick = ProceduralAudio.CreateTone(freq, 0.04f, 0.02f);
+            if (tick != null)
+                PlaySFX(tick, 0.5f);
+        }
 
         // 특수 블록 임팩트
         public void PlaySpecialImpactSound() => PlaySFX(proceduralSpecialImpact, 0.7f);
@@ -574,6 +626,21 @@ namespace JewelsHexaPuzzle.Managers
 
         // 매칭 감지 톤
         public void PlayMatchDetectTone() => PlaySFX(Resolve(matchSound, proceduralMatch), 0.4f);
+
+        /// <summary>
+        /// 미션 등장 사운드 — 복수 미션 시 순번에 따라 피치 상승
+        /// </summary>
+        public void PlayMissionEntranceSound(int index = 0, int total = 1)
+        {
+            float pitch = 1.0f + 0.15f * ((float)index / Mathf.Max(1, total - 1));
+            if (total <= 1) pitch = 1.0f;
+            PlaySFXWithPitch(proceduralMissionEntrance, pitch, 0.7f);
+        }
+
+        /// <summary>
+        /// 미션 완료 사운드 — C메이저 상승 아르페지오 차임
+        /// </summary>
+        public void PlayMissionCompleteSound() => PlaySFX(proceduralMissionComplete, 0.8f);
 
         // 특수 블록 변환 틱 사운드 (XBlock 합성 시 순차 변환용)
         // index: 변환 순번, total: 전체 블록 수 → 피치를 점진적으로 올림

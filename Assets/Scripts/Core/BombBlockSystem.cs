@@ -335,7 +335,6 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
             int basicBlockCount = 0;  // 기본 블록(GemType 1-5) 카운트
-            var gemCountsByColor = new Dictionary<GemType, int>(); // 색상별 미션 카운팅용
             var sm = GameManager.Instance?.GetComponent<ScoreManager>();
 
             foreach (var target in ring1Targets)
@@ -363,11 +362,11 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
                     {
                         basicBlockCount++;
-                        if (gemCountsByColor.ContainsKey(target.Data.gemType))
-                            gemCountsByColor[target.Data.gemType]++;
-                        else
-                            gemCountsByColor[target.Data.gemType] = 1;
                     }
+
+                    // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
+                    if (target.Data.gemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -420,11 +419,11 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
                     {
                         basicBlockCount++;
-                        if (gemCountsByColor.ContainsKey(target.Data.gemType))
-                            gemCountsByColor[target.Data.gemType]++;
-                        else
-                            gemCountsByColor[target.Data.gemType] = 1;
                     }
+
+                    // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
+                    if (target.Data.gemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -445,17 +444,14 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 }
             }
 
-            // 색상별 미션 카운팅 — 파괴 애니메이션 시작 직후, 완료 대기 전에 호출
-            GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Bomb");
-
             // 모든 파괴 애니메이션이 완료될 때까지 대기 (ClearData 보장)
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            int totalScore = 200 + blockScoreSum;
-            Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
+            int totalScore = 400 + blockScoreSum;
+            Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:400 + blockTierSum:{blockScoreSum})");
 
-            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
+            // 미션 카운팅은 파괴 루프에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
 
             OnBombComplete?.Invoke(totalScore);

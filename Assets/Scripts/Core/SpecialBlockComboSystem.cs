@@ -428,9 +428,7 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBombSound();
 
-            // 미션 시스템 보고
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 모든 투사체 코루틴 완료 대기
             foreach (var co in allCoroutines)
@@ -751,9 +749,7 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBombSound();
 
-            // 미션 시스템 보고
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 모든 파괴 애니메이션 완료 대기
             foreach (var co in allDestroyCoroutines)
@@ -909,9 +905,7 @@ namespace JewelsHexaPuzzle.Core
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
             StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
-            // 미션 시스템 보고
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 모든 드릴 완료 대기 (최대 5초 타임아웃)
             float timeout = 5f;
@@ -1029,9 +1023,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return new WaitForSeconds(0.1f);
             }
 
-            // 미션 시스템 보고
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 모든 파괴 애니메이션 완료 대기
             foreach (var co in allDestroyCoroutines)
@@ -1138,9 +1130,7 @@ namespace JewelsHexaPuzzle.Core
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
             StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
-            // 미션 시스템 보고
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 모든 폭탄 완료 대기 (최대 5초 타임아웃)
             float timeout = 5f;
@@ -1229,9 +1219,7 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
-            // 미션 시스템 보고 (파괴 전)
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // Ring별 순차 파괴
             for (int ring = 1; ring <= maxDistance; ring++)
@@ -1257,6 +1245,10 @@ namespace JewelsHexaPuzzle.Core
                     // 적군 방패 흡수
                     if (EnemySystem.Instance != null && EnemySystem.Instance.TryAbsorbSpecialHit(block))
                         continue;
+
+                    // 미션 카운팅: DualEasingDestroy(ClearData) 전에 개별 보고
+                    if (block.Data.gemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
 
                     // 플래시 + 파괴 애니메이션
                     Color blockColor = GemColors.GetColor(block.Data.gemType);
@@ -1385,9 +1377,7 @@ namespace JewelsHexaPuzzle.Core
 
             yield return new WaitForSeconds(0.1f);
 
-            // 미션 보고
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             int totalScore = 500 + blockScoreSum;
             Debug.Log($"[ComboSystem] DroneDrone complete. Targets={targets.Count}, Score={totalScore}");
@@ -1492,8 +1482,7 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDrillSound();
 
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             foreach (var co in allCoroutines)
                 yield return co;
@@ -1642,8 +1631,7 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             foreach (var co in allDestroyCoroutines)
                 yield return co;
@@ -1747,8 +1735,7 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDroneSound();
 
-            if (gemCountsByColor.Count > 0)
-                GameManager.Instance?.OnSpecialBlockDestroyedBlocksByColor(gemCountsByColor, "Combo");
+            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 드론 완료 대기 (최대 5초)
             float timeout = 5f;
@@ -1957,7 +1944,14 @@ namespace JewelsHexaPuzzle.Core
             if (data.vinylLayer > 0) { data.vinylLayer--; target.SetBlockData(data); return; }
             if (data.hasChain) { data.hasChain = false; target.SetBlockData(data); return; }
             if (data.enemyShieldCount > 0) { data.enemyShieldCount--; target.SetBlockData(data); return; }
-            if (data.tier == BlockTier.Normal) { target.ClearData(); return; }
+            if (data.tier == BlockTier.Normal)
+            {
+                // 미션 카운팅: ClearData 전에 개별 보고 (Stage/Infinite 모두 지원)
+                if (data.gemType != GemType.None)
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(data.gemType);
+                target.ClearData();
+                return;
+            }
 
             data.tier = (BlockTier)((int)data.tier - 1);
             target.SetBlockData(data);
@@ -2457,6 +2451,9 @@ namespace JewelsHexaPuzzle.Core
 
             while (elapsed < duration)
             {
+                // 외부에서 flash가 먼저 파괴된 경우 코루틴 종료
+                if (flash == null || img == null) yield break;
+
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
                 img.color = new Color(1f, 1f, 1f, VisualConstants.DestroyFlashAlpha * (1f - t));
@@ -2468,7 +2465,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            Destroy(flash);
+            if (flash != null) Destroy(flash);
         }
 
         /// <summary>
@@ -2815,13 +2812,16 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 블록의 젬 타입을 색상별 카운트 딕셔너리에 누적합니다.
-        /// 미션 시스템 보고용.
+        /// 블록의 젬 타입을 색상별 카운트 딕셔너리에 누적하고,
+        /// 미션 시스템에 개별 보고합니다 (Stage/Infinite 모두 지원).
         /// </summary>
         private void CollectGemCount(HexBlock block, Dictionary<GemType, int> gemCounts)
         {
             if (block == null || block.Data == null) return;
             if (block.Data.gemType == GemType.None) return;
+
+            // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
+            GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
 
             // 기본 블록(GemType 1~5: Red, Blue, Green, Yellow, Purple)만 카운트
             int gemValue = (int)block.Data.gemType;

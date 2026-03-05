@@ -617,12 +617,16 @@ namespace JewelsHexaPuzzle.Items
                 yield return new WaitForSeconds(0.03f);
             }
 
-            // 3. 블록 데이터 클리어 (비주얼 애니메이션 후)
+            // 3. 미션 보고 + 블록 데이터 클리어 (비주얼 애니메이션 후)
             yield return new WaitForSeconds(0.1f);
             foreach (var block in blocksToRemove)
             {
                 if (block != null)
                 {
+                    // 미션 카운팅: ClearData 전에 개별 보고 (Stage/Infinite 모두 지원)
+                    if (block.Data != null && block.Data.gemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+
                     block.ClearData();
                     block.transform.localScale = Vector3.one;
                 }

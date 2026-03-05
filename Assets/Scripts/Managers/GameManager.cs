@@ -66,6 +66,13 @@ namespace JewelsHexaPuzzle.Managers
 
         // 미션 진행도 UI 추적 (이벤트 핸들러용)
         private int[] lastDisplayedCounts;
+        private Coroutine[] stageMissionCountDownCos;    // 레벨 미션별 카운트다운 코루틴
+
+        // 무한도전 미션 순차 감소 추적
+        private int infiniteMissionDisplayed = -1;      // 현재 화면에 표시된 remaining 값
+        private int infiniteMissionTarget = -1;          // 목표 remaining 값
+        private bool infiniteMissionComplete = false;
+        private Coroutine infiniteMissionCountDownCo = null;
 
 
         // 프로퍼티
@@ -116,10 +123,13 @@ namespace JewelsHexaPuzzle.Managers
                 // HUD UI 생성 (이동횟수, 누적 점수)
                 CreateHUDElements(canvas);
 
-                // 사운드 토글 버튼 생성 (우하단)
+                // SFX 토글 버튼 생성 (우하단 상단)
                 CreateSoundToggleButton(canvas);
 
-                // 로비 복귀 버튼 생성 (사운드 버튼 아래)
+                // BGM 토글 버튼 생성 (좌측 대각선 — 삼각형 클러스터)
+                CreateBGMToggleButton(canvas);
+
+                // 로비 복귀 버튼 생성 (우하단 하단 — 삼각형 클러스터)
                 CreateLobbyExitButton(canvas);
 
                 // 회전 방향 토글 버튼 제거됨
@@ -183,27 +193,50 @@ namespace JewelsHexaPuzzle.Managers
         // HUD 직접 참조 (UIManager 연동 보장)
         private Text hudScoreText;
         private Text hudTurnText;
+        private Text hudMaxTurnText;   // 무한도전 "max20" 표시
         private Text lobbyGoldText;
         private Text hudLevelBestText;    // 레벨 최고 점수
         private Text hudPersonalBestText; // 개인 최고 점수
+        private GameObject sfxToggleBtnObj;   // SFX 토글 버튼 (로비/인게임 공용)
+        private GameObject bgmToggleBtnObj;   // BGM 토글 버튼 (로비/인게임 공용)
 
         private void CreateHUDElements(Canvas canvas)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // === 이동횟수 (우측 상단) ===
+            // === 이동횟수 (MY BEST 텍스트 아래, 중앙 정렬 + 프레임 UI) ===
+            // 프레임 컨테이너
+            GameObject turnFrameObj = new GameObject("HUD_TurnFrame");
+            turnFrameObj.transform.SetParent(canvas.transform, false);
+            RectTransform turnFrameRt = turnFrameObj.AddComponent<RectTransform>();
+            turnFrameRt.anchorMin = new Vector2(0.5f, 1f);
+            turnFrameRt.anchorMax = new Vector2(0.5f, 1f);
+            turnFrameRt.pivot = new Vector2(0.5f, 1f);
+            turnFrameRt.anchoredPosition = new Vector2(0f, -142f);
+            turnFrameRt.sizeDelta = new Vector2(130f, 70f);
+
+            // 프레임 배경 (반투명 어두운 패널)
+            Image frameBg = turnFrameObj.AddComponent<Image>();
+            frameBg.color = new Color(0.1f, 0.1f, 0.2f, 0.5f);
+            frameBg.raycastTarget = false;
+
+            // 프레임 테두리 (밝은 아웃라인)
+            Outline frameOutline = turnFrameObj.AddComponent<Outline>();
+            frameOutline.effectColor = new Color(1f, 1f, 1f, 0.4f);
+            frameOutline.effectDistance = new Vector2(2, 2);
+
+            // 이동횟수 숫자 (프레임 내부)
             GameObject turnObj = new GameObject("HUD_TurnText");
-            turnObj.transform.SetParent(canvas.transform, false);
+            turnObj.transform.SetParent(turnFrameObj.transform, false);
             RectTransform turnRt = turnObj.AddComponent<RectTransform>();
-            turnRt.anchorMin = new Vector2(1f, 1f);
-            turnRt.anchorMax = new Vector2(1f, 1f);
-            turnRt.pivot = new Vector2(1f, 1f);
-            turnRt.anchoredPosition = new Vector2(-30f, -20f);
-            turnRt.sizeDelta = new Vector2(160f, 50f);
+            turnRt.anchorMin = new Vector2(0, 0.3f);
+            turnRt.anchorMax = new Vector2(1, 1);
+            turnRt.offsetMin = new Vector2(5f, 0f);
+            turnRt.offsetMax = new Vector2(-5f, -4f);
             Text turnLabel = turnObj.AddComponent<Text>();
             turnLabel.font = font;
             turnLabel.fontSize = 32;
-            turnLabel.alignment = TextAnchor.MiddleRight;
+            turnLabel.alignment = TextAnchor.MiddleCenter;
             turnLabel.color = Color.white;
             turnLabel.raycastTarget = false;
             turnLabel.resizeTextForBestFit = true;
@@ -214,22 +247,41 @@ namespace JewelsHexaPuzzle.Managers
             turnLabel.text = currentGameMode == GameMode.Infinite ? "0" : initialTurns.ToString();
             hudTurnText = turnLabel;
 
-            // 이동횟수 라벨
+            // MOVES 라벨 (프레임 하단)
             GameObject turnLabelObj = new GameObject("HUD_TurnLabel");
-            turnLabelObj.transform.SetParent(canvas.transform, false);
+            turnLabelObj.transform.SetParent(turnFrameObj.transform, false);
             RectTransform turnLabelRt = turnLabelObj.AddComponent<RectTransform>();
-            turnLabelRt.anchorMin = new Vector2(1f, 1f);
-            turnLabelRt.anchorMax = new Vector2(1f, 1f);
-            turnLabelRt.pivot = new Vector2(1f, 1f);
-            turnLabelRt.anchoredPosition = new Vector2(-30f, -65f);
-            turnLabelRt.sizeDelta = new Vector2(160f, 24f);
+            turnLabelRt.anchorMin = new Vector2(0, 0);
+            turnLabelRt.anchorMax = new Vector2(1, 0.3f);
+            turnLabelRt.offsetMin = Vector2.zero;
+            turnLabelRt.offsetMax = Vector2.zero;
             Text turnLabelText = turnLabelObj.AddComponent<Text>();
             turnLabelText.font = font;
-            turnLabelText.fontSize = 16;
-            turnLabelText.alignment = TextAnchor.MiddleRight;
+            turnLabelText.fontSize = 14;
+            turnLabelText.alignment = TextAnchor.MiddleCenter;
             turnLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
             turnLabelText.raycastTarget = false;
             turnLabelText.text = "MOVES";
+
+            // 무한도전 "max20" 표시 (프레임 좌상단)
+            GameObject maxTurnObj = new GameObject("HUD_MaxTurnText");
+            maxTurnObj.transform.SetParent(turnFrameObj.transform, false);
+            RectTransform maxTurnRt = maxTurnObj.AddComponent<RectTransform>();
+            maxTurnRt.anchorMin = new Vector2(0, 1);
+            maxTurnRt.anchorMax = new Vector2(0, 1);
+            maxTurnRt.pivot = new Vector2(0, 1);
+            maxTurnRt.anchoredPosition = new Vector2(4f, -2f);
+            maxTurnRt.sizeDelta = new Vector2(50f, 18f);
+            Text maxTurnLabel = maxTurnObj.AddComponent<Text>();
+            maxTurnLabel.font = font;
+            maxTurnLabel.fontSize = 15;
+            maxTurnLabel.alignment = TextAnchor.UpperLeft;
+            maxTurnLabel.color = new Color(0.7f, 0.7f, 0.8f, 0.7f);
+            maxTurnLabel.raycastTarget = false;
+            maxTurnLabel.text = "max" + MAX_INFINITE_TURNS;
+            hudMaxTurnText = maxTurnLabel;
+            // Stage 모드에서는 숨김
+            maxTurnObj.SetActive(currentGameMode == GameMode.Infinite);
 
             // === 누적 점수 (중앙 상단) ===
             GameObject scoreObj = new GameObject("HUD_ScoreText");
@@ -318,27 +370,30 @@ namespace JewelsHexaPuzzle.Managers
             hudElements.Add(levelBestObj);
             hudElements.Add(personalBestObj);
 
-            // === 골드 (우측 상단, 이동횟수 아래) ===
+            // === 골드 (우측 상단) ===
             GameObject goldObj = new GameObject("HUD_GoldText");
             goldObj.transform.SetParent(canvas.transform, false);
             RectTransform goldRt = goldObj.AddComponent<RectTransform>();
             goldRt.anchorMin = new Vector2(1f, 1f);
             goldRt.anchorMax = new Vector2(1f, 1f);
             goldRt.pivot = new Vector2(1f, 1f);
-            goldRt.anchoredPosition = new Vector2(-30f, -130f);
-            goldRt.sizeDelta = new Vector2(160f, 50f);
+            goldRt.anchoredPosition = new Vector2(-30f, -20f);
+            goldRt.sizeDelta = new Vector2(120f, 40f);
             Text goldLabel = goldObj.AddComponent<Text>();
             goldLabel.font = font;
-            goldLabel.fontSize = 32;
+            goldLabel.fontSize = 28;
             goldLabel.alignment = TextAnchor.MiddleRight;
             goldLabel.color = new Color(1f, 0.84f, 0f); // 노란색
             goldLabel.raycastTarget = false;
             goldLabel.resizeTextForBestFit = true;
             goldLabel.resizeTextMinSize = 14;
-            goldLabel.resizeTextMaxSize = 32;
+            goldLabel.resizeTextMaxSize = 28;
             goldLabel.verticalOverflow = VerticalWrapMode.Overflow;
             goldLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             goldLabel.text = currentGold.ToString();
+            Outline goldOutline = goldObj.AddComponent<Outline>();
+            goldOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            goldOutline.effectDistance = new Vector2(1, 1);
 
             // 골드 라벨
             GameObject goldLabelObj = new GameObject("HUD_GoldLabel");
@@ -347,11 +402,11 @@ namespace JewelsHexaPuzzle.Managers
             goldLabelRt.anchorMin = new Vector2(1f, 1f);
             goldLabelRt.anchorMax = new Vector2(1f, 1f);
             goldLabelRt.pivot = new Vector2(1f, 1f);
-            goldLabelRt.anchoredPosition = new Vector2(-30f, -175f);
-            goldLabelRt.sizeDelta = new Vector2(160f, 24f);
+            goldLabelRt.anchoredPosition = new Vector2(-30f, -58f);
+            goldLabelRt.sizeDelta = new Vector2(120f, 20f);
             Text goldLabelText = goldLabelObj.AddComponent<Text>();
             goldLabelText.font = font;
-            goldLabelText.fontSize = 16;
+            goldLabelText.fontSize = 14;
             goldLabelText.alignment = TextAnchor.MiddleRight;
             goldLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
             goldLabelText.raycastTarget = false;
@@ -366,11 +421,11 @@ namespace JewelsHexaPuzzle.Managers
             }
 
             // HUD 요소 추적 (로비에서 숨기기 용)
-            hudElements.Add(turnObj);
-            hudElements.Add(turnLabelObj);
+            hudElements.Add(turnFrameObj);
             hudElements.Add(scoreObj);
             hudElements.Add(scoreLabelObj);
-            // 골드는 hudElements에 넣지 않음 → 로비/인게임 모두 항상 표시
+            hudElements.Add(goldObj);
+            hudElements.Add(goldLabelObj);
 
             Debug.Log("[GameManager] HUD 요소 생성 완료 (이동횟수 + 누적 점수 + 골드)");
         }
@@ -381,26 +436,26 @@ namespace JewelsHexaPuzzle.Managers
         private void CreateSoundToggleButton(Canvas canvas)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            bool startMuted = AudioManager.Instance != null && AudioManager.Instance.IsMuted;
+            bool startMuted = AudioManager.Instance != null && AudioManager.Instance.IsSfxMuted;
 
             // 우측 하단 고정 배치
             // 버튼 컨테이너
-            GameObject btnObj = new GameObject("SoundToggleButton");
-            btnObj.transform.SetParent(canvas.transform, false);
-            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            sfxToggleBtnObj = new GameObject("SoundToggleButton");
+            sfxToggleBtnObj.transform.SetParent(canvas.transform, false);
+            RectTransform btnRt = sfxToggleBtnObj.AddComponent<RectTransform>();
             btnRt.anchorMin = new Vector2(1f, 0f);
             btnRt.anchorMax = new Vector2(1f, 0f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
             btnRt.anchoredPosition = new Vector2(-72f, 160f);
             btnRt.sizeDelta = new Vector2(84f, 84f);
 
-            Image btnBg = btnObj.AddComponent<Image>();
+            Image btnBg = sfxToggleBtnObj.AddComponent<Image>();
             btnBg.sprite = HexBlock.GetHexFlashSprite();
             btnBg.type = Image.Type.Simple;
             btnBg.preserveAspect = true;
             btnBg.color = new Color(0.55f, 0.70f, 0.85f, 0.90f); // 밝은 하늘색
 
-            Button btn = btnObj.AddComponent<Button>();
+            Button btn = sfxToggleBtnObj.AddComponent<Button>();
             var btnColors = btn.colors;
             btnColors.highlightedColor = new Color(0.65f, 0.80f, 0.95f, 0.95f);
             btnColors.pressedColor = new Color(0.40f, 0.55f, 0.70f, 0.95f);
@@ -409,7 +464,7 @@ namespace JewelsHexaPuzzle.Managers
             // 스피커 아이콘 (프로시저럴)
             // 스피커 본체
             GameObject speakerBody = new GameObject("SpeakerBody");
-            speakerBody.transform.SetParent(btnObj.transform, false);
+            speakerBody.transform.SetParent(sfxToggleBtnObj.transform, false);
             Image bodyImg = speakerBody.AddComponent<Image>();
             bodyImg.color = Color.white;
             bodyImg.raycastTarget = false;
@@ -419,7 +474,7 @@ namespace JewelsHexaPuzzle.Managers
 
             // 스피커 콘
             GameObject speakerCone = new GameObject("SpeakerCone");
-            speakerCone.transform.SetParent(btnObj.transform, false);
+            speakerCone.transform.SetParent(sfxToggleBtnObj.transform, false);
             Image coneImg = speakerCone.AddComponent<Image>();
             coneImg.color = Color.white;
             coneImg.raycastTarget = false;
@@ -429,7 +484,7 @@ namespace JewelsHexaPuzzle.Managers
 
             // 음파 표시 (ON 상태)
             GameObject wave1 = new GameObject("SoundWave1");
-            wave1.transform.SetParent(btnObj.transform, false);
+            wave1.transform.SetParent(sfxToggleBtnObj.transform, false);
             Image wave1Img = wave1.AddComponent<Image>();
             wave1Img.color = new Color(1f, 1f, 1f, 0.6f);
             wave1Img.raycastTarget = false;
@@ -438,7 +493,7 @@ namespace JewelsHexaPuzzle.Managers
             wave1Rt.sizeDelta = new Vector2(4f, 14f);
 
             GameObject wave2 = new GameObject("SoundWave2");
-            wave2.transform.SetParent(btnObj.transform, false);
+            wave2.transform.SetParent(sfxToggleBtnObj.transform, false);
             Image wave2Img = wave2.AddComponent<Image>();
             wave2Img.color = new Color(1f, 1f, 1f, 0.4f);
             wave2Img.raycastTarget = false;
@@ -448,7 +503,7 @@ namespace JewelsHexaPuzzle.Managers
 
             // X 표시 (OFF 상태)
             GameObject muteX = new GameObject("MuteX");
-            muteX.transform.SetParent(btnObj.transform, false);
+            muteX.transform.SetParent(sfxToggleBtnObj.transform, false);
             Text muteText = muteX.AddComponent<Text>();
             muteText.font = font;
             muteText.fontSize = 30;
@@ -476,7 +531,7 @@ namespace JewelsHexaPuzzle.Managers
             btn.onClick.AddListener(() =>
             {
                 if (AudioManager.Instance == null) return;
-                bool muted = AudioManager.Instance.ToggleMute();
+                bool muted = AudioManager.Instance.ToggleSFXMute();
 
                 wave1.SetActive(!muted);
                 wave2.SetActive(!muted);
@@ -485,8 +540,8 @@ namespace JewelsHexaPuzzle.Managers
                 coneImg.color = muted ? new Color(0.5f, 0.5f, 0.5f) : Color.white;
             });
 
-            hudElements.Add(btnObj);
-            Debug.Log("[GameManager] 사운드 토글 버튼 생성 완료 (우하단)");
+            // hudElements에 추가하지 않음 → 로비/인게임 모두 표시
+            Debug.Log("[GameManager] SFX 토글 버튼 생성 완료 (우하단)");
         }
 
         // 로비 복귀 버튼 참조 (로비에서 숨기기 용)
@@ -498,16 +553,17 @@ namespace JewelsHexaPuzzle.Managers
         private void CreateLobbyExitButton(Canvas canvas)
         {
             float btnSize = 84f;
-            float sndBtnHexH = btnSize * Mathf.Sqrt(3f) / 2f; // 육각형 높이 ≈ 72.7
+            float hexHeight = btnSize * Mathf.Sqrt(3f) / 2f; // 육각형 높이 ≈ 72.75
 
-            // 우측 하단 고정 배치 — 사운드 버튼 바로 아래
+            // 우측 하단 고정 배치 — 사운드 버튼과 5px 여백 (삼각형 클러스터)
+            float gap = 5f;
             lobbyExitBtnObj = new GameObject("LobbyExitButton");
             lobbyExitBtnObj.transform.SetParent(canvas.transform, false);
             RectTransform btnRt = lobbyExitBtnObj.AddComponent<RectTransform>();
             btnRt.anchorMin = new Vector2(1f, 0f);
             btnRt.anchorMax = new Vector2(1f, 0f);
             btnRt.pivot = new Vector2(0.5f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(-72f, 160f - sndBtnHexH - 8f);
+            btnRt.anchoredPosition = new Vector2(-72f, 160f - hexHeight - gap);
             btnRt.sizeDelta = new Vector2(btnSize, btnSize);
 
             Image btnBg = lobbyExitBtnObj.AddComponent<Image>();
@@ -578,6 +634,148 @@ namespace JewelsHexaPuzzle.Managers
             lobbyExitBtnObj.transform.SetAsLastSibling();
             hudElements.Add(lobbyExitBtnObj);
             Debug.Log("[GameManager] 로비 복귀 버튼 생성 완료 (사운드 버튼 아래)");
+        }
+
+        /// <summary>
+        /// BGM 토글 버튼 생성 (사운드/나가기 버튼 왼쪽 대각선 — 삼각형 클러스터 배치)
+        /// 음표(♪) 프로시저럴 아이콘 사용
+        /// </summary>
+        private void CreateBGMToggleButton(Canvas canvas)
+        {
+            float btnSize = 84f;
+            float hexRadius = btnSize / 2f; // 42
+            float hexHeight = btnSize * Mathf.Sqrt(3f) / 2f; // ≈72.75
+
+            // 삼각형 클러스터 배치: SFX(-72,160) 과 EXIT 사이 왼쪽 대각선
+            // 면 간 5px 여백 적용
+            float gap = 5f;
+            float sfxBtnX = -72f;
+            float sfxBtnY = 160f;
+            float diagScale = (hexHeight + gap) / hexHeight; // 간격 보정 비율
+            float bgmX = sfxBtnX - 1.5f * hexRadius * diagScale;
+            float bgmY = sfxBtnY - (hexHeight / 2f) * diagScale;
+
+            bool startMuted = AudioManager.Instance != null && AudioManager.Instance.IsBgmMuted;
+
+            // 버튼 컨테이너
+            bgmToggleBtnObj = new GameObject("BGMToggleButton");
+            bgmToggleBtnObj.transform.SetParent(canvas.transform, false);
+            RectTransform btnRt = bgmToggleBtnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(1f, 0f);
+            btnRt.anchorMax = new Vector2(1f, 0f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(bgmX, bgmY);
+            btnRt.sizeDelta = new Vector2(btnSize, btnSize);
+
+            // 육각형 배경 (밝은 보라/라벤더 계열)
+            Image btnBg = bgmToggleBtnObj.AddComponent<Image>();
+            btnBg.sprite = HexBlock.GetHexFlashSprite();
+            btnBg.type = Image.Type.Simple;
+            btnBg.preserveAspect = true;
+            btnBg.color = new Color(0.70f, 0.55f, 0.85f, 0.90f);
+
+            Button btn = bgmToggleBtnObj.AddComponent<Button>();
+            var btnColors = btn.colors;
+            btnColors.highlightedColor = new Color(0.80f, 0.65f, 0.95f, 0.95f);
+            btnColors.pressedColor = new Color(0.50f, 0.40f, 0.65f, 0.95f);
+            btn.colors = btnColors;
+
+            // === 음표(♪) 프로시저럴 아이콘 ===
+
+            // 음표 머리 (타원형)
+            GameObject noteHead = new GameObject("NoteHead");
+            noteHead.transform.SetParent(bgmToggleBtnObj.transform, false);
+            Image noteHeadImg = noteHead.AddComponent<Image>();
+            noteHeadImg.color = Color.white;
+            noteHeadImg.raycastTarget = false;
+            RectTransform noteHeadRt = noteHead.GetComponent<RectTransform>();
+            noteHeadRt.anchoredPosition = new Vector2(-4f, -8f);
+            noteHeadRt.sizeDelta = new Vector2(14f, 10f);
+            noteHeadRt.localEulerAngles = new Vector3(0f, 0f, -20f); // 약간 기울임
+
+            // 음표 줄기 (세로 막대)
+            GameObject noteStem = new GameObject("NoteStem");
+            noteStem.transform.SetParent(bgmToggleBtnObj.transform, false);
+            Image noteStemImg = noteStem.AddComponent<Image>();
+            noteStemImg.color = Color.white;
+            noteStemImg.raycastTarget = false;
+            RectTransform noteStemRt = noteStem.GetComponent<RectTransform>();
+            noteStemRt.anchoredPosition = new Vector2(4f, 6f);
+            noteStemRt.sizeDelta = new Vector2(3f, 28f);
+
+            // 음표 깃발 (상단 꼬리)
+            GameObject noteFlag = new GameObject("NoteFlag");
+            noteFlag.transform.SetParent(bgmToggleBtnObj.transform, false);
+            Image noteFlagImg = noteFlag.AddComponent<Image>();
+            noteFlagImg.color = new Color(1f, 1f, 1f, 0.8f);
+            noteFlagImg.raycastTarget = false;
+            RectTransform noteFlagRt = noteFlag.GetComponent<RectTransform>();
+            noteFlagRt.anchoredPosition = new Vector2(10f, 16f);
+            noteFlagRt.sizeDelta = new Vector2(8f, 12f);
+
+            // 음파 표시 (ON 상태)
+            GameObject wave1 = new GameObject("BGMWave1");
+            wave1.transform.SetParent(bgmToggleBtnObj.transform, false);
+            Image wave1Img = wave1.AddComponent<Image>();
+            wave1Img.color = new Color(1f, 1f, 1f, 0.5f);
+            wave1Img.raycastTarget = false;
+            RectTransform wave1Rt = wave1.GetComponent<RectTransform>();
+            wave1Rt.anchoredPosition = new Vector2(-16f, 10f);
+            wave1Rt.sizeDelta = new Vector2(4f, 10f);
+
+            GameObject wave2 = new GameObject("BGMWave2");
+            wave2.transform.SetParent(bgmToggleBtnObj.transform, false);
+            Image wave2Img = wave2.AddComponent<Image>();
+            wave2Img.color = new Color(1f, 1f, 1f, 0.35f);
+            wave2Img.raycastTarget = false;
+            RectTransform wave2Rt = wave2.GetComponent<RectTransform>();
+            wave2Rt.anchoredPosition = new Vector2(-22f, 10f);
+            wave2Rt.sizeDelta = new Vector2(4f, 16f);
+
+            // X 표시 (OFF 상태)
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject muteX = new GameObject("BGMMuteX");
+            muteX.transform.SetParent(bgmToggleBtnObj.transform, false);
+            Text muteText = muteX.AddComponent<Text>();
+            muteText.font = font;
+            muteText.fontSize = 30;
+            muteText.alignment = TextAnchor.MiddleCenter;
+            muteText.color = new Color(1f, 0.3f, 0.3f, 0.9f);
+            muteText.raycastTarget = false;
+            muteText.text = "X";
+            RectTransform muteRt = muteX.GetComponent<RectTransform>();
+            muteRt.anchorMin = Vector2.zero;
+            muteRt.anchorMax = Vector2.one;
+            muteRt.offsetMin = Vector2.zero;
+            muteRt.offsetMax = Vector2.zero;
+
+            // 초기 상태 반영
+            wave1.SetActive(!startMuted);
+            wave2.SetActive(!startMuted);
+            muteX.SetActive(startMuted);
+            if (startMuted)
+            {
+                noteHeadImg.color = new Color(0.5f, 0.5f, 0.5f);
+                noteStemImg.color = new Color(0.5f, 0.5f, 0.5f);
+                noteFlagImg.color = new Color(0.5f, 0.5f, 0.5f, 0.6f);
+            }
+
+            // 클릭 이벤트: BGM만 토글
+            btn.onClick.AddListener(() =>
+            {
+                if (AudioManager.Instance == null) return;
+                bool muted = AudioManager.Instance.ToggleBGMMute();
+
+                wave1.SetActive(!muted);
+                wave2.SetActive(!muted);
+                muteX.SetActive(muted);
+                noteHeadImg.color = muted ? new Color(0.5f, 0.5f, 0.5f) : Color.white;
+                noteStemImg.color = muted ? new Color(0.5f, 0.5f, 0.5f) : Color.white;
+                noteFlagImg.color = muted ? new Color(0.5f, 0.5f, 0.5f, 0.6f) : new Color(1f, 1f, 1f, 0.8f);
+            });
+
+            // hudElements에 추가하지 않음 → 로비/인게임 모두 표시
+            Debug.Log($"[GameManager] BGM 토글 버튼 생성 완료 — 위치:({bgmX}, {bgmY})");
         }
 
         /// <summary>
@@ -659,6 +857,7 @@ namespace JewelsHexaPuzzle.Managers
         // 게임오버 팝업 참조 (동적 생성)
         private GameObject gameOverPopupObj;
         private Text gameOverScoreText;
+        private Text gameOverTitleText; // 타이틀 텍스트 참조 (GAME OVER / GAME END 변경용)
 
         // 로비 UI 참조
         private GameObject lobbyContainer;
@@ -714,13 +913,13 @@ namespace JewelsHexaPuzzle.Managers
             titleRt.pivot = new Vector2(0.5f, 1f);
             titleRt.anchoredPosition = new Vector2(0f, -30f);
             titleRt.sizeDelta = new Vector2(400f, 60f);
-            Text titleText = titleObj.AddComponent<Text>();
-            titleText.font = font;
-            titleText.fontSize = 42;
-            titleText.alignment = TextAnchor.MiddleCenter;
-            titleText.color = new Color(1f, 0.3f, 0.3f);
-            titleText.raycastTarget = false;
-            titleText.text = "GAME OVER";
+            gameOverTitleText = titleObj.AddComponent<Text>();
+            gameOverTitleText.font = font;
+            gameOverTitleText.fontSize = 42;
+            gameOverTitleText.alignment = TextAnchor.MiddleCenter;
+            gameOverTitleText.color = new Color(1f, 0.3f, 0.3f);
+            gameOverTitleText.raycastTarget = false;
+            gameOverTitleText.text = "GAME OVER";
 
             // === 점수 표시 ===
             GameObject scoreObj = new GameObject("ScoreLabel");
@@ -910,6 +1109,103 @@ namespace JewelsHexaPuzzle.Managers
             }
 
             // 최고 점수 정보 표시
+            yield return new WaitForSecondsRealtime(0.3f);
+            ShowGameOverHighScore(finalScore);
+        }
+
+        /// <summary>
+        /// 게임오버 타이틀 텍스트/색상 변경 (무한도전: GAME END / 스테이지: GAME OVER)
+        /// </summary>
+        private void UpdateGameOverTitle(string title, Color color)
+        {
+            if (gameOverTitleText != null)
+            {
+                gameOverTitleText.text = title;
+                gameOverTitleText.color = color;
+            }
+        }
+
+        /// <summary>
+        /// 무한도전 전용 게임 종료 팝업 애니메이션
+        /// 실제 점수를 카운팅하고 베스트 스코어를 표시
+        /// </summary>
+        private IEnumerator AnimateGameOverPopupInfinite(int finalScore)
+        {
+            // 팝업 등장 대기
+            yield return new WaitForSecondsRealtime(0.5f);
+
+            int finalMoves = rotationCount;
+
+            // 이동 횟수 카운팅 (0.4초)
+            if (gameOverMovesText != null)
+            {
+                float movesDuration = 0.4f;
+                float movesElapsed = 0f;
+                while (movesElapsed < movesDuration)
+                {
+                    movesElapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(movesElapsed / movesDuration);
+                    float eased = t * t * (3f - 2f * t);
+                    int currentMoves = Mathf.RoundToInt(Mathf.Lerp(0, finalMoves, eased));
+                    gameOverMovesText.text = $"MOVES: {currentMoves}";
+                    yield return null;
+                }
+                gameOverMovesText.text = $"MOVES: {finalMoves}";
+            }
+
+            yield return new WaitForSecondsRealtime(0.2f);
+
+            // 점수 카운팅 (1.0초, EaseOutQuart)
+            if (gameOverScoreText != null && finalScore > 0)
+            {
+                float scoreDuration = 1.0f;
+                float scoreElapsed = 0f;
+                Color normalColor = new Color(1f, 0.84f, 0f); // 금색
+                Color flashColor = Color.white;
+
+                while (scoreElapsed < scoreDuration)
+                {
+                    scoreElapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(scoreElapsed / scoreDuration);
+                    float eased = 1f - Mathf.Pow(1f - t, 4f);
+                    int currentScore = Mathf.RoundToInt(Mathf.Lerp(0, finalScore, eased));
+                    gameOverScoreText.text = string.Format("{0:N0}", currentScore);
+
+                    // 카운팅 중 색상 플래시
+                    float colorT = Mathf.PingPong(scoreElapsed * 6f, 1f);
+                    gameOverScoreText.color = Color.Lerp(normalColor, flashColor, colorT * 0.3f);
+
+                    yield return null;
+                }
+
+                gameOverScoreText.text = string.Format("{0:N0}", finalScore);
+                gameOverScoreText.color = normalColor;
+
+                // 최종 스케일 펀치
+                RectTransform scoreRt = gameOverScoreText.GetComponent<RectTransform>();
+                if (scoreRt != null)
+                {
+                    float punchDuration = 0.25f;
+                    float punchElapsed = 0f;
+                    while (punchElapsed < punchDuration)
+                    {
+                        punchElapsed += Time.unscaledDeltaTime;
+                        float pt = Mathf.Clamp01(punchElapsed / punchDuration);
+                        float scale = pt < 0.3f
+                            ? Mathf.Lerp(1f, 1.3f, pt / 0.3f)
+                            : Mathf.Lerp(1.3f, 1f, (pt - 0.3f) / 0.7f);
+                        scoreRt.localScale = Vector3.one * scale;
+                        yield return null;
+                    }
+                    scoreRt.localScale = Vector3.one;
+                }
+            }
+            else if (gameOverScoreText != null)
+            {
+                gameOverScoreText.text = "0";
+            }
+
+            // 베스트 스코어 표시
             yield return new WaitForSecondsRealtime(0.3f);
             ShowGameOverHighScore(finalScore);
         }
@@ -1376,7 +1672,7 @@ private void InitializeSystems()
             {
                 if (blockRemovalSystem != null)
                 {
-                    blockRemovalSystem.OnGemsRemovedDetailed += missionSystem.OnGemsRemoved;
+                    // OnGemsRemovedDetailed 구독 제거됨 — OnSingleGemDestroyedForMission으로 통일
                     blockRemovalSystem.OnSpecialBlockCreated += missionSystem.OnSpecialBlockCreated;
                     blockRemovalSystem.OnSpecialBlockUsed += missionSystem.OnSpecialBlockUsed;
                     // 보석 날아가기 연출 → UIManager
@@ -2473,6 +2769,10 @@ private void InitializeSystems()
         {
             SetGameState(GameState.Loading);
 
+            // HUD 텍스트 즉시 0 초기화 (이전 게임 값이 보이는 것 방지)
+            if (hudTurnText != null) hudTurnText.text = "0";
+            if (hudScoreText != null) hudScoreText.text = "0";
+
             // 이전 게임 이벤트 정리 (중복 구독 방지)
             CleanupGameEvents();
 
@@ -2490,6 +2790,9 @@ private void InitializeSystems()
                     uiManager.SetInfiniteMode(false);
                     uiManager.SetMaxTurns(infiniteMoves);
                 }
+                // 무한도전 최대 이동 횟수 표시
+                if (hudMaxTurnText != null)
+                    hudMaxTurnText.gameObject.SetActive(true);
             }
             else
             {
@@ -2518,6 +2821,9 @@ private void InitializeSystems()
                     uiManager.SetInfiniteMode(false);
                     uiManager.SetMaxTurns(initialTurns);
                 }
+                // Stage 모드: 최대 이동 횟수 표시 숨김
+                if (hudMaxTurnText != null)
+                    hudMaxTurnText.gameObject.SetActive(false);
             }
 
             // 스테이지 전환 시 슬롯 캐시 무효화
@@ -2551,9 +2857,10 @@ private void InitializeSystems()
 
             UpdateUI();
 
-            // 직접 참조 강제 동기화
+            // 직접 참조 강제 동기화 — 무브수는 0부터 시작 (카운트업 예정)
+            int targetTurns = currentTurns;
             if (hudScoreText != null) hudScoreText.text = "0";
-            if (hudTurnText != null) hudTurnText.text = currentTurns.ToString();
+            if (hudTurnText != null) hudTurnText.text = "0";
 
             // 골드 UI 동기화 (현재 보유 골드 표시)
             if (uiManager != null)
@@ -2566,9 +2873,9 @@ private void InitializeSystems()
             if (currentGameMode == GameMode.Stage && stageManager != null && blockRemovalSystem != null)
             {
                 Debug.Log($"[GameManager] Stage mode conditions met, subscribing...");
-                blockRemovalSystem.OnGemsRemovedDetailed += HandleStageGemsRemoved;
+                // OnGemsRemovedDetailed 구독 제거됨 — OnSingleGemDestroyedForMission으로 통일
                 blockRemovalSystem.OnSpecialBlockCreated += HandleSpecialBlockCreatedForStage;
-                Debug.Log($"[GameManager] Stage mode: OnGemsRemovedDetailed + OnSpecialBlockCreated subscription SUCCESS!");
+                Debug.Log($"[GameManager] Stage mode: OnSpecialBlockCreated subscription SUCCESS!");
             }
             else
             {
@@ -2578,16 +2885,16 @@ private void InitializeSystems()
                     Debug.Log($"[GameManager] Non-stage mode ({currentGameMode}), skipping stage subscription.");
             }
 
-            // 게임 중 미션 UI 표시
-            if (uiManager != null && stageManager != null && stageManager.CurrentStageData != null)
+            // 게임 중 미션 UI 표시 (Stage 모드 전용 — 무한도전은 OnSurvivalMissionAssigned에서 처리)
+            if (currentGameMode == GameMode.Stage && uiManager != null && stageManager != null && stageManager.CurrentStageData != null)
             {
                 Canvas canvas = FindObjectOfType<Canvas>();
                 if (canvas != null && stageManager.CurrentStageData.missions.Length > 0)
                 {
                     var missions = stageManager.CurrentStageData.missions;
 
-                    // 복수 미션이면 배열 오버로드 사용, 단일이면 기존 방식
-                    uiManager.CreateGameMissionUI(canvas, missions);
+                    // 미션 등장 애니메이션 (무한도전과 동일한 슬라이드인)
+                    yield return StartCoroutine(SetupAndAnimateStageMission(missions));
 
                     // 각 미션별 마지막 표시 카운트 추적 (인스턴스 필드에 저장)
                     lastDisplayedCounts = new int[missions.Length];
@@ -2606,6 +2913,8 @@ private void InitializeSystems()
             // 무한모드: 생존 모드 시작 (미션 UI는 OnSurvivalMissionAssigned 콜백에서 생성)
             if (currentGameMode == GameMode.Infinite && missionSystem != null)
             {
+                // 이전 레벨 미션 UI 잔존 방지 — 확실히 정리
+                if (uiManager != null) uiManager.CleanupGameMissionUI();
                 // InfiniteConfig가 있으면 커스텀 설정으로 시작
                 if (selectedLevelData?.infiniteConfig != null)
                     missionSystem.StartSurvival(selectedLevelData.infiniteConfig);
@@ -2613,8 +2922,75 @@ private void InitializeSystems()
                     missionSystem.StartSurvival();
             }
 
+            // 무브수 카운트업 애니메이션 (0 → targetTurns)
+            yield return StartCoroutine(AnimateTurnCountUp(targetTurns));
+
             SetGameState(GameState.Playing);
             Debug.Log("Game Started! State: Playing");
+        }
+
+        /// <summary>
+        /// 무브수 카운트업 애니메이션 (0 → target)
+        /// 1단위로 올라가며 피치 상승 틱 사운드 재생
+        /// </summary>
+        private IEnumerator AnimateTurnCountUp(int target)
+        {
+            if (hudTurnText == null || target <= 0) yield break;
+
+            // 총 소요 시간: 0.6~1.2초 (무브수에 따라 가변)
+            float totalDuration = Mathf.Clamp(target * 0.04f, 0.6f, 1.2f);
+            float interval = totalDuration / target;
+
+            for (int i = 1; i <= target; i++)
+            {
+                hudTurnText.text = i.ToString();
+
+                // 피치 상승 틱 사운드
+                float progress = (float)i / target;
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayCountUpTick(progress);
+
+                // 스케일 펀치 (작은 바운스)
+                if (hudTurnText.transform != null)
+                    StartCoroutine(TurnCountPulse(hudTurnText.transform));
+
+                yield return new WaitForSeconds(interval);
+            }
+
+            // 최종값 확정
+            hudTurnText.text = target.ToString();
+        }
+
+        /// <summary>
+        /// 카운트업 시 숫자 펄스 애니메이션 (1.15 → 1.0 바운스)
+        /// </summary>
+        private IEnumerator TurnCountPulse(Transform target)
+        {
+            float duration = 0.08f;
+            float elapsed = 0f;
+            Vector3 originalScale = Vector3.one;
+            Vector3 punchScale = new Vector3(1.15f, 1.15f, 1f);
+
+            // 확대
+            while (elapsed < duration * 0.4f)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / (duration * 0.4f);
+                target.localScale = Vector3.Lerp(originalScale, punchScale, t);
+                yield return null;
+            }
+
+            // 축소 복원
+            elapsed = 0f;
+            while (elapsed < duration * 0.6f)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / (duration * 0.6f);
+                target.localScale = Vector3.Lerp(punchScale, originalScale, t);
+                yield return null;
+            }
+
+            target.localScale = originalScale;
         }
 
         /// 초기 매칭 제거 (게임 시작 시) - 최대 10회 제한
@@ -2771,7 +3147,9 @@ private void OnRotationComplete(bool matchFound)
 
             if (scoreManager != null)
             {
-                scoreManager.AddMatchScore(blockCount, cascadeDepth, avgPosition);
+                // 동시 매칭 그룹 수 전달 (동시 다색 매칭 보너스 계산용)
+                int matchGroupCount = blockRemovalSystem != null ? blockRemovalSystem.CurrentMatchGroupCount : 1;
+                scoreManager.AddMatchScore(blockCount, cascadeDepth, avgPosition, matchGroupCount);
 
                 // 실시간 점수 표시 업데이트
                 if (uiManager != null)
@@ -2812,27 +3190,35 @@ private void OnRotationComplete(bool matchFound)
                 var progress = progressArray[idx];
                 int remaining = Mathf.Max(0, progress.mission.targetCount - progress.currentCount);
 
-                // 복수 미션 UI 카운트 업데이트
+                // 변경 없으면 스킵
+                if (lastDisplayedCounts == null || idx >= lastDisplayedCounts.Length) continue;
+                if (remaining == lastDisplayedCounts[idx]) continue;
+
+                // 타겟 텍스트 결정
+                Text countText = null;
                 if (UIManager.gameMissionCountTexts.Count > idx)
-                {
-                    Text countText = UIManager.gameMissionCountTexts[idx];
-                    if (countText != null && lastDisplayedCounts != null && idx < lastDisplayedCounts.Length && remaining != lastDisplayedCounts[idx])
-                    {
-                        Debug.Log($"[GameManager] Mission[{idx}] count update: {lastDisplayedCounts[idx]} → {remaining}");
-                        StartCoroutine(CountDownCoroutine(countText, remaining, lastDisplayedCounts[idx]));
-                        lastDisplayedCounts[idx] = remaining;
-                    }
-                }
-                else if (idx == 0 && UIManager.gameMissionCountText != null)
-                {
-                    // 단일 미션 하위호환
-                    if (lastDisplayedCounts != null && remaining != lastDisplayedCounts[0])
-                    {
-                        Debug.Log($"[GameManager] Mission count update: {lastDisplayedCounts[0]} → {remaining}");
-                        StartCoroutine(CountDownCoroutine(UIManager.gameMissionCountText, remaining, lastDisplayedCounts[0]));
-                        lastDisplayedCounts[0] = remaining;
-                    }
-                }
+                    countText = UIManager.gameMissionCountTexts[idx];
+                else if (idx == 0)
+                    countText = UIManager.gameMissionCountText;
+
+                if (countText == null) continue;
+
+                Debug.Log($"[GameManager] Mission[{idx}] count update: {lastDisplayedCounts[idx]} → {remaining}");
+
+                // 코루틴 배열 초기화 (필요 시)
+                if (stageMissionCountDownCos == null || stageMissionCountDownCos.Length != lastDisplayedCounts.Length)
+                    stageMissionCountDownCos = new Coroutine[lastDisplayedCounts.Length];
+
+                // 기존 코루틴 정지 후 새로 시작
+                if (stageMissionCountDownCos[idx] != null)
+                    StopCoroutine(stageMissionCountDownCos[idx]);
+
+                int from = lastDisplayedCounts[idx];
+                lastDisplayedCounts[idx] = remaining;
+                bool isComplete = progress.currentCount >= progress.mission.targetCount;
+
+                stageMissionCountDownCos[idx] = StartCoroutine(
+                    StageMissionSequentialCountDown(idx, countText, from, remaining, isComplete));
             }
 
             // 블록 수집 이펙트 (컨테이너 위치로)
@@ -2878,7 +3264,7 @@ private void OnRotationComplete(bool matchFound)
             }
             if (blockRemovalSystem != null)
             {
-                blockRemovalSystem.OnGemsRemovedDetailed -= HandleStageGemsRemoved;
+                // OnGemsRemovedDetailed 구독 제거됨 — OnSingleGemDestroyedForMission으로 통일
                 blockRemovalSystem.OnSpecialBlockCreated -= HandleSpecialBlockCreatedForStage;
             }
         }
@@ -2917,7 +3303,6 @@ private void OnRotationComplete(bool matchFound)
         /// </summary>
         public void OnSpecialBlockDestroyedBlocksByColor(Dictionary<GemType, int> gemCounts, string specialBlockType)
         {
-            if (currentGameMode != GameMode.Stage) return;
             if (gemCounts == null || gemCounts.Count == 0) return;
 
             int total = 0;
@@ -2926,7 +3311,8 @@ private void OnRotationComplete(bool matchFound)
 
             Debug.Log($"[GameManager] 💣 특수블록 파괴(색상별): {specialBlockType}로 총 {total}개 제거");
 
-            if (stageManager != null)
+            // Stage 모드: stageManager에 보고
+            if (currentGameMode == GameMode.Stage && stageManager != null)
             {
                 foreach (var kvp in gemCounts)
                 {
@@ -2936,6 +3322,12 @@ private void OnRotationComplete(bool matchFound)
                         stageManager.OnGemCollected(kvp.Key, kvp.Value);
                     }
                 }
+            }
+
+            // 무한도전 모드: missionSystem에 보고
+            if (currentGameMode == GameMode.Infinite && missionSystem != null)
+            {
+                missionSystem.OnSpecialBlockDestroyedByColor(gemCounts);
             }
         }
 
@@ -2954,9 +3346,16 @@ private void OnRotationComplete(bool matchFound)
             }
 
             // 무한도전 모드: missionSystem에 보고
-            if (currentGameMode == GameMode.Infinite && missionSystem != null)
+            if (currentGameMode == GameMode.Infinite)
             {
-                missionSystem.OnGemsRemoved(1, gemType, 0);
+                if (missionSystem != null)
+                {
+                    missionSystem.OnGemsRemoved(1, gemType, 0);
+                }
+                else
+                {
+                    Debug.LogWarning($"[GameManager] OnSingleGemDestroyedForMission: missionSystem is null! gemType={gemType}");
+                }
             }
         }
 
@@ -3001,8 +3400,12 @@ private void OnCascadeComplete()
             CheckTimeBombs();
 
             // 적군 턴 종료 처리 (쌍둥이 재생, 포자 확산, 카오스 리롤)
+            // try-catch로 보호: 적군 처리 예외 시 미션 처리가 스킵되는 것 방지
             if (enemySystem != null)
-                enemySystem.OnTurnEnd();
+            {
+                try { enemySystem.OnTurnEnd(); }
+                catch (System.Exception e) { Debug.LogError($"[GameManager] enemySystem.OnTurnEnd 예외: {e.Message}\n{e.StackTrace}"); }
+            }
 
             // 무한모드: 미션 턴 종료 → 게임오버 체크 → 적군 스폰
             if (currentGameMode == GameMode.Infinite)
@@ -3304,9 +3707,12 @@ private IEnumerator ProcessSpecialBlockAftermath()
 
             CheckTimeBombs();
 
-            // 적군 턴 종료 처리
+            // 적군 턴 종료 처리 (예외 보호)
             if (enemySystem != null)
-                enemySystem.OnTurnEnd();
+            {
+                try { enemySystem.OnTurnEnd(); }
+                catch (System.Exception e) { Debug.LogError($"[GameManager] Aftermath enemySystem.OnTurnEnd 예외: {e.Message}\n{e.StackTrace}"); }
+            }
 
             // 무한모드: 미션 턴 종료 → 게임오버 체크 → 적군 스폰
             if (currentGameMode == GameMode.Infinite)
@@ -4213,19 +4619,10 @@ private void OnBigBang()
 
         private void OnSurvivalMissionCompleted(SurvivalMission mission, int reward)
         {
+            // AddTurns 내부에서 MAX_INFINITE_TURNS 제한 적용됨
             AddTurns(reward);
 
-            // 무한도전: 최대 20턴 제한
-            if (currentTurns > MAX_INFINITE_TURNS)
-            {
-                currentTurns = MAX_INFINITE_TURNS;
-                OnTurnChanged?.Invoke(currentTurns);
-                UpdateUI();
-            }
-
-            // 무브 수치 증가와 동시에 다음 미션 배정
-            if (missionSystem != null)
-                missionSystem.AssignNextMission();
+            // 다음 미션 배정은 MissionSystem.OnTurnEnd()에서 직접 처리
         }
 
         private Coroutine missionEntranceCoroutine;
@@ -4233,6 +4630,16 @@ private void OnBigBang()
         private void OnSurvivalMissionAssigned(SurvivalMission mission)
         {
             if (uiManager == null) return;
+
+            // 무한도전 미션 순차 감소 필드 리셋
+            infiniteMissionDisplayed = mission.targetCount;
+            infiniteMissionTarget = mission.targetCount;
+            infiniteMissionComplete = false;
+            if (infiniteMissionCountDownCo != null)
+            {
+                StopCoroutine(infiniteMissionCountDownCo);
+                infiniteMissionCountDownCo = null;
+            }
 
             // 이전 등장 애니메이션 중단
             if (missionEntranceCoroutine != null)
@@ -4248,17 +4655,149 @@ private void OnBigBang()
         /// </summary>
         private IEnumerator SetupAndAnimateMission(SurvivalMission mission)
         {
-            // 이전 미션 UI 정리
-            uiManager.CleanupGameMissionUI();
-
             Canvas canvas = FindObjectOfType<Canvas>();
             if (canvas == null) yield break;
 
+            // === 기존 UI 참조 캡처 ===
+            RectTransform oldPreviewRt = UIManager.nextMissionPreviewRect;
+            RectTransform oldCurrentRt = UIManager.gameMissionIconRect;
+            bool hasOldPreview = (oldPreviewRt != null);
+            bool hasOldCurrent = (oldCurrentRt != null);
+
+            // 다음 미션 미리보기 위치/크기 (슬라이드 시작점)
+            Vector2 previewPos = new Vector2(20f, -20f);
+            Vector2 previewSize = new Vector2(196f, 77f);
+
+            // 현재 미션 최종 위치/크기
+            Vector2 currentMissionPos = new Vector2(40f, -102f);
+            Vector2 currentMissionSize = new Vector2(280f, 110f);
+
+            if (hasOldPreview)
+            {
+                // --- Phase 1: 완료 미션 하강+페이드아웃 + 미리보기→현재 미션 슬라이드 (동시 진행) ---
+
+                // 완료 미션 하강 준비
+                CanvasGroup oldCurrentCg = null;
+                Vector2 oldCurrentStartPos = Vector2.zero;
+                if (hasOldCurrent)
+                {
+                    oldCurrentCg = oldCurrentRt.GetComponent<CanvasGroup>();
+                    if (oldCurrentCg == null)
+                        oldCurrentCg = oldCurrentRt.gameObject.AddComponent<CanvasGroup>();
+                    oldCurrentStartPos = oldCurrentRt.anchoredPosition;
+                    // 완료된 미션임을 표시 — 배경색 살짝 녹색 틴트
+                    Image oldBg = oldCurrentRt.GetComponent<Image>();
+                    if (oldBg != null)
+                        oldBg.color = new Color(0.4f, 0.85f, 0.5f, 0.92f);
+                }
+
+                // 미리보기 전환 준비
+                CanvasGroup previewCg = oldPreviewRt.GetComponent<CanvasGroup>();
+                if (previewCg == null)
+                    previewCg = oldPreviewRt.gameObject.AddComponent<CanvasGroup>();
+
+                // "NEXT" 라벨 페이드아웃 대상
+                Transform nextLabel = oldPreviewRt.Find("NextLabel");
+
+                float transitionDuration = 0.5f;
+                float elapsed = 0f;
+
+                // 미션 전환 효과음
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayMissionEntranceSound();
+
+                Debug.Log($"[MissionEntrance] 미리보기→현재 미션 전환 시작 (완료 미션 하강 동시 진행)");
+
+                while (elapsed < transitionDuration)
+                {
+                    if (oldPreviewRt == null) break;
+                    elapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(elapsed / transitionDuration);
+                    float eased = VisualConstants.EaseOutBack(t);
+
+                    // === 미리보기 → 현재 미션 위치 이동 ===
+                    oldPreviewRt.anchoredPosition = Vector2.LerpUnclamped(previewPos, currentMissionPos, eased);
+                    oldPreviewRt.sizeDelta = Vector2.LerpUnclamped(previewSize, currentMissionSize, eased);
+
+                    // 배경 불투명도 강화: 0.55 → 0.92
+                    Image bgImg = oldPreviewRt.GetComponent<Image>();
+                    if (bgImg != null)
+                    {
+                        Color c = bgImg.color;
+                        c.a = Mathf.Lerp(0.55f, 0.92f, t);
+                        bgImg.color = c;
+                    }
+
+                    // "NEXT" 라벨 페이드아웃
+                    if (nextLabel != null)
+                    {
+                        CanvasGroup labelCg = nextLabel.GetComponent<CanvasGroup>();
+                        if (labelCg == null)
+                            labelCg = nextLabel.gameObject.AddComponent<CanvasGroup>();
+                        labelCg.alpha = 1f - t;
+                    }
+
+                    // === 완료 미션: 아래로 밀려남 + 축소 + 페이드아웃 ===
+                    if (hasOldCurrent && oldCurrentRt != null)
+                    {
+                        // 아래로 130px 밀림
+                        float slideDown = Mathf.Lerp(0f, 130f, t);
+                        oldCurrentRt.anchoredPosition = oldCurrentStartPos + new Vector2(0f, -slideDown);
+
+                        // 축소: 1.0 → 0.65
+                        float shrink = Mathf.Lerp(1f, 0.65f, t);
+                        oldCurrentRt.localScale = Vector3.one * shrink;
+
+                        // 페이드아웃: 1.0 → 0.0
+                        oldCurrentCg.alpha = 1f - t;
+                    }
+
+                    yield return null;
+                }
+
+                // Phase 1 완료: 완료 미션 UI 파괴
+                if (hasOldCurrent && oldCurrentRt != null)
+                    Destroy(oldCurrentRt.gameObject);
+                UIManager.gameMissionIconRect = null;
+                UIManager.gameMissionCountText = null;
+
+                // 미리보기 UI 파괴
+                if (oldPreviewRt != null)
+                    Destroy(oldPreviewRt.gameObject);
+                UIManager.nextMissionPreviewRect = null;
+            }
+            else
+            {
+                // 기존 미션 UI 정리 (미리보기가 없는 첫 시작 등)
+                uiManager.CleanupGameMissionUI();
+            }
+
+            // === Phase 2: 실제 현재 미션 UI 생성 ===
+
+            // 다음 미션 미리보기 UI 생성 (좌상단, 70% 크기)
+            if (missionSystem != null)
+            {
+                SurvivalMission nextMission = missionSystem.NextPreviewMission;
+                if (nextMission != null)
+                {
+                    MissionData nextMd = ConvertSurvivalToMissionData(nextMission);
+                    uiManager.CreateNextMissionPreviewUI(canvas, nextMd, nextMission.reward);
+                }
+            }
+
+            // 잔여 미션 UI 안전 정리
+            GameObject oldMissionUI = GameObject.Find("GameMissionUI");
+            if (oldMissionUI != null) Destroy(oldMissionUI);
+            GameObject oldMultiUI = GameObject.Find("GameMissionUI_Multi");
+            if (oldMultiUI != null) Destroy(oldMultiUI);
+            GameObject oldLevel1UI = GameObject.Find("GameMissionUI_Level1");
+            if (oldLevel1UI != null) Destroy(oldLevel1UI);
+
+            // 현재 미션 UI 생성
             MissionData md = ConvertSurvivalToMissionData(mission);
             uiManager.CreateGameMissionUI(canvas, md);
             uiManager.SetMissionRewardText(mission.reward);
 
-            // gameMissionIconRect 참조 확인
             RectTransform missionRt = UIManager.gameMissionIconRect;
             if (missionRt == null)
             {
@@ -4266,76 +4805,326 @@ private void OnBigBang()
                 yield break;
             }
 
-            // CreateGameMissionUI에서 설정한 최종 목표 위치 (하드코딩으로 레이아웃 간섭 차단)
-            Vector2 targetPos = new Vector2(20f, -20f);
-            Vector2 startPos = new Vector2(targetPos.x - 420f, targetPos.y);
+            bool hasNextPreview = UIManager.nextMissionPreviewRect != null;
+            Vector2 targetPos = hasNextPreview
+                ? new Vector2(40f, -102f)
+                : new Vector2(20f, -20f);
 
-            // 시작 상태 설정: 화면 밖 + 축소 + 투명
-            missionRt.anchoredPosition = startPos;
-            missionRt.localScale = Vector3.one * 0.6f;
-
-            CanvasGroup cg = missionRt.GetComponent<CanvasGroup>();
-            if (cg == null)
-                cg = missionRt.gameObject.AddComponent<CanvasGroup>();
-            cg.alpha = 0f;
-
-            // 2프레임 대기: Canvas 레이아웃 완전 settle 보장
-            yield return null;
-            yield return null;
-
-            // 레이아웃 강제 갱신 후 시작 위치 재설정 (Canvas가 position을 override했을 수 있음)
-            missionRt.anchoredPosition = startPos;
-
-            Debug.Log($"[MissionEntrance] 애니메이션 시작 — start:{startPos} → target:{targetPos}");
-
-            // 슬라이드 + 페이드인 (EaseOutBack, unscaledDeltaTime으로 HitStop 중에도 동작)
-            float slideDuration = 0.4f;
-            float elapsed = 0f;
-
-            while (elapsed < slideDuration)
+            if (hasOldPreview)
             {
-                if (missionRt == null) yield break;
-                elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / slideDuration);
-                float eased = VisualConstants.EaseOutBack(t);
-                missionRt.anchoredPosition = Vector2.LerpUnclamped(startPos, targetPos, eased);
-                missionRt.localScale = Vector3.one * Mathf.LerpUnclamped(0.6f, 1f, eased);
-                cg.alpha = Mathf.Clamp01(t * 2.5f);
-                yield return null;
-            }
-
-            // 최종 값 확정
-            if (missionRt != null)
-            {
+                // 미리보기 전환이 있었으면: 현재 미션 위치에 바로 배치 + 팝 효과
                 missionRt.anchoredPosition = targetPos;
-                missionRt.localScale = Vector3.one;
+                missionRt.localScale = Vector3.one * 1.1f;
+
+                CanvasGroup cg = missionRt.GetComponent<CanvasGroup>();
+                if (cg == null)
+                    cg = missionRt.gameObject.AddComponent<CanvasGroup>();
+                cg.alpha = 0f;
+
+                yield return null;
+
+                // 짧은 팝인 (페이드+스케일)
+                float popDuration = 0.2f;
+                float popElapsed = 0f;
+                while (popElapsed < popDuration)
+                {
+                    if (missionRt == null) yield break;
+                    popElapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(popElapsed / popDuration);
+                    missionRt.localScale = Vector3.one * Mathf.Lerp(1.1f, 1f, t);
+                    cg.alpha = t;
+                    yield return null;
+                }
+                if (missionRt != null) missionRt.localScale = Vector3.one;
+                if (cg != null) cg.alpha = 1f;
+
+                // 새 다음 미션 미리보기 페이드인
+                RectTransform newPreviewRt = UIManager.nextMissionPreviewRect;
+                if (newPreviewRt != null)
+                {
+                    CanvasGroup previewCg = newPreviewRt.GetComponent<CanvasGroup>();
+                    if (previewCg == null)
+                        previewCg = newPreviewRt.gameObject.AddComponent<CanvasGroup>();
+                    previewCg.alpha = 0f;
+
+                    float fadeDuration = 0.3f;
+                    float fadeElapsed = 0f;
+                    while (fadeElapsed < fadeDuration)
+                    {
+                        if (newPreviewRt == null) break;
+                        fadeElapsed += Time.unscaledDeltaTime;
+                        previewCg.alpha = Mathf.Clamp01(fadeElapsed / fadeDuration);
+                        yield return null;
+                    }
+                    if (previewCg != null) previewCg.alpha = 1f;
+                }
             }
-            if (cg != null)
-                cg.alpha = 1f;
+            else
+            {
+                // 첫 미션: 기존 왼쪽 슬라이드인 애니메이션
+                Vector2 startPos = new Vector2(targetPos.x - 420f, targetPos.y);
+                missionRt.anchoredPosition = startPos;
+                missionRt.localScale = Vector3.one * 0.6f;
+
+                CanvasGroup cg = missionRt.GetComponent<CanvasGroup>();
+                if (cg == null)
+                    cg = missionRt.gameObject.AddComponent<CanvasGroup>();
+                cg.alpha = 0f;
+
+                yield return null;
+                yield return null;
+                missionRt.anchoredPosition = startPos;
+
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayMissionEntranceSound();
+
+                float slideDuration = 0.4f;
+                float elapsed = 0f;
+                while (elapsed < slideDuration)
+                {
+                    if (missionRt == null) yield break;
+                    elapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(elapsed / slideDuration);
+                    float eased = VisualConstants.EaseOutBack(t);
+                    missionRt.anchoredPosition = Vector2.LerpUnclamped(startPos, targetPos, eased);
+                    missionRt.localScale = Vector3.one * Mathf.LerpUnclamped(0.6f, 1f, eased);
+                    cg.alpha = Mathf.Clamp01(t * 2.5f);
+                    yield return null;
+                }
+                if (missionRt != null)
+                {
+                    missionRt.anchoredPosition = targetPos;
+                    missionRt.localScale = Vector3.one;
+                }
+                if (cg != null) cg.alpha = 1f;
+            }
 
             Debug.Log("[MissionEntrance] 애니메이션 완료");
             missionEntranceCoroutine = null;
         }
 
-        private void OnSurvivalMissionProgressChanged(SurvivalMission mission)
+        /// <summary>
+        /// 레벨 모드 미션 UI 등장 (무한도전과 동일한 위치/연출).
+        /// 다음 미션 자리를 빈 플레이스홀더로 확보하고, 현재 미션을 좌측에서 슬라이드인.
+        /// 복수 미션일 경우 하나씩 순차 등장.
+        /// </summary>
+        private IEnumerator SetupAndAnimateStageMission(MissionData[] missions)
         {
-            // 스테이지 스타일 UI: 남은 개수 업데이트
-            if (UIManager.gameMissionCountText != null)
-            {
-                int remaining = mission.targetCount - mission.currentCount;
-                if (remaining < 0) remaining = 0;
+            // 이전 미션 UI 정리
+            uiManager.CleanupGameMissionUI();
 
-                // 미션 완료 시 체크마크 아이콘 표시 (레벨 미션과 동일)
-                if (mission.IsComplete)
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (canvas == null || missions == null || missions.Length == 0) yield break;
+
+            // 다음 미션 자리 비워두기 (무한도전과 동일한 레이아웃 확보)
+            uiManager.CreateEmptyNextMissionPlaceholder(canvas);
+
+            // 2프레임 대기: Canvas 레이아웃 settle 보장
+            yield return null;
+            yield return null;
+
+            if (missions.Length == 1)
+            {
+                // === 단일 미션: SetupAndAnimateMission과 동일한 슬라이드인 ===
+                uiManager.CreateGameMissionUI(canvas, missions[0]);
+
+                RectTransform missionRt = UIManager.gameMissionIconRect;
+                if (missionRt == null) yield break;
+
+                // 플레이스홀더 아래 위치 (무한도전과 동일: 40, -102)
+                Vector2 targetPos = new Vector2(40f, -102f);
+                Vector2 startPos = new Vector2(targetPos.x - 420f, targetPos.y);
+
+                missionRt.anchoredPosition = startPos;
+                missionRt.localScale = Vector3.one * 0.6f;
+
+                CanvasGroup cg = missionRt.GetComponent<CanvasGroup>();
+                if (cg == null) cg = missionRt.gameObject.AddComponent<CanvasGroup>();
+                cg.alpha = 0f;
+
+                yield return null;
+                missionRt.anchoredPosition = startPos;
+
+                Debug.Log($"[StageMission] 단일 미션 슬라이드인 — start:{startPos} → target:{targetPos}");
+
+                // 미션 등장 효과음
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayMissionEntranceSound();
+
+                yield return StartCoroutine(AnimateMissionSlideIn(missionRt, targetPos));
+            }
+            else
+            {
+                // === 복수 미션: 개별 행으로 하나씩 순차 등장 ===
+                float rowSpacing = 95f; // 90px 높이 + 5px 간격
+
+                for (int i = 0; i < missions.Length; i++)
                 {
-                    UIManager.gameMissionCountText.text = "";
-                    ShowCheckMarkOnText(UIManager.gameMissionCountText);
-                }
-                else
-                {
-                    UIManager.gameMissionCountText.text = remaining.ToString();
+                    RectTransform rowRt = uiManager.CreateIndividualMissionRow(canvas, missions[i], i);
+                    if (rowRt == null) continue;
+
+                    // 각 행의 최종 위치: 플레이스홀더 아래 + 행 간격
+                    float targetY = -102f - (i * rowSpacing);
+                    Vector2 targetPos = new Vector2(40f, targetY);
+                    Vector2 startPos = new Vector2(targetPos.x - 420f, targetY);
+
+                    // 시작 상태: 화면 밖 + 축소 + 투명
+                    rowRt.anchoredPosition = startPos;
+                    rowRt.localScale = Vector3.one * 0.6f;
+
+                    CanvasGroup cg = rowRt.GetComponent<CanvasGroup>();
+                    if (cg == null) cg = rowRt.gameObject.AddComponent<CanvasGroup>();
+                    cg.alpha = 0f;
+
+                    yield return null;
+                    rowRt.anchoredPosition = startPos;
+
+                    Debug.Log($"[StageMission] 미션[{i}] 순차 슬라이드인 — start:{startPos} → target:{targetPos}");
+
+                    // 미션 등장 효과음 (순번에 따라 피치 상승)
+                    if (AudioManager.Instance != null)
+                        AudioManager.Instance.PlayMissionEntranceSound(i, missions.Length);
+
+                    // 순차 등장 애니메이션
+                    yield return StartCoroutine(AnimateMissionSlideIn(rowRt, targetPos));
+
+                    // 다음 미션 등장 전 약간의 딜레이
+                    if (i < missions.Length - 1)
+                        yield return new WaitForSeconds(0.12f);
                 }
             }
+
+            Debug.Log($"[StageMission] 전체 미션 등장 완료 ({missions.Length}개)");
+        }
+
+        /// <summary>
+        /// 미션 행 슬라이드인 애니메이션 (EaseOutBack + 페이드인 + 스케일).
+        /// SetupAndAnimateMission / SetupAndAnimateStageMission 공용.
+        /// </summary>
+        private IEnumerator AnimateMissionSlideIn(RectTransform rt, Vector2 targetPos)
+        {
+            if (rt == null) yield break;
+
+            Vector2 startPos = rt.anchoredPosition;
+            CanvasGroup cg = rt.GetComponent<CanvasGroup>();
+
+            float slideDuration = 0.4f;
+            float elapsed = 0f;
+
+            while (elapsed < slideDuration)
+            {
+                if (rt == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / slideDuration);
+                float eased = VisualConstants.EaseOutBack(t);
+
+                rt.anchoredPosition = Vector2.LerpUnclamped(startPos, targetPos, eased);
+                rt.localScale = Vector3.one * Mathf.LerpUnclamped(0.6f, 1f, eased);
+                if (cg != null) cg.alpha = Mathf.Clamp01(t * 2.5f);
+
+                yield return null;
+            }
+
+            // 최종 값 확정
+            if (rt != null)
+            {
+                rt.anchoredPosition = targetPos;
+                rt.localScale = Vector3.one;
+            }
+            if (cg != null) cg.alpha = 1f;
+        }
+
+        private void OnSurvivalMissionProgressChanged(SurvivalMission mission)
+        {
+            if (UIManager.gameMissionCountText == null) return;
+
+            int remaining = Mathf.Max(0, mission.targetCount - mission.currentCount);
+
+            // 초기값 설정 (처음 호출 시)
+            if (infiniteMissionDisplayed < 0)
+                infiniteMissionDisplayed = mission.targetCount;
+
+            // 타겟 업데이트
+            infiniteMissionTarget = remaining;
+            infiniteMissionComplete = mission.IsComplete;
+
+            // 카운트다운 코루틴이 없으면 시작 (이미 실행 중이면 타겟만 업데이트됨)
+            if (infiniteMissionCountDownCo == null && infiniteMissionDisplayed != infiniteMissionTarget)
+            {
+                infiniteMissionCountDownCo = StartCoroutine(InfiniteMissionSequentialCountDown());
+            }
+        }
+
+        /// <summary>
+        /// 무한도전 미션 순차 감소 코루틴.
+        /// 타겟이 변경되어도 1단위씩 계속 감소하며, 타겟에 도달하면 종료.
+        /// </summary>
+        private IEnumerator InfiniteMissionSequentialCountDown()
+        {
+            Text countText = UIManager.gameMissionCountText;
+            float interval = 0.08f;
+
+            while (infiniteMissionDisplayed != infiniteMissionTarget && countText != null)
+            {
+                // 1단위 증감
+                if (infiniteMissionDisplayed > infiniteMissionTarget)
+                    infiniteMissionDisplayed--;
+                else
+                    infiniteMissionDisplayed++;
+
+                countText.text = infiniteMissionDisplayed.ToString();
+
+                // 펄스 애니메이션
+                StartCoroutine(MissionCountPulse(countText.transform));
+
+                // 틱 사운드 (낮아질수록 높은 피치)
+                if (AudioManager.Instance != null)
+                {
+                    float progress = 1f - (float)infiniteMissionDisplayed / Mathf.Max(1f, infiniteMissionDisplayed + 3f);
+                    AudioManager.Instance.PlayCountUpTick(progress);
+                }
+
+                yield return new WaitForSeconds(interval);
+            }
+
+            // 완료 시 체크마크 표시 + 미션 완료 사운드
+            if (infiniteMissionComplete && infiniteMissionTarget <= 0 && countText != null)
+            {
+                countText.text = "";
+                ShowCheckMarkOnText(countText);
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayMissionCompleteSound();
+            }
+
+            infiniteMissionCountDownCo = null;
+        }
+
+        /// <summary>
+        /// 미션 카운트 숫자 펄스 애니메이션 (1.0 → 1.2 → 1.0 스케일 바운스)
+        /// </summary>
+        private IEnumerator MissionCountPulse(Transform target)
+        {
+            if (target == null) yield break;
+
+            float duration = 0.1f;
+            float elapsed = 0f;
+            Vector3 originalScale = Vector3.one;
+
+            while (elapsed < duration)
+            {
+                if (target == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = elapsed / duration;
+                // 0→0.4: 확대 (1.0→1.2), 0.4→1.0: 축소 (1.2→1.0)
+                float scale = t < 0.4f
+                    ? Mathf.Lerp(1f, 1.2f, t / 0.4f)
+                    : Mathf.Lerp(1.2f, 1f, (t - 0.4f) / 0.6f);
+                target.localScale = originalScale * scale;
+                yield return null;
+            }
+
+            if (target != null)
+                target.localScale = originalScale;
         }
 
         /// <summary>
@@ -4384,14 +5173,12 @@ private void OnBigBang()
         }
 
         /// <summary>
-        /// 게임 오버
+        /// 게임 오버 (무한도전: 게임 종료 컨셉 — 점수 획득 + 베스트 스코어 저장)
         /// </summary>
         private void GameOver()
         {
             SetGameState(GameState.GameOver);
             OnGameOver?.Invoke();
-
-            // 게임오버 시 점수는 0으로 처리 — 최고 점수 갱신 및 랭킹 저장 하지 않음
 
             // BGM 정지 + 게임 오버 사운드
             if (AudioManager.Instance != null)
@@ -4400,18 +5187,48 @@ private void OnBigBang()
                 AudioManager.Instance.PlayGameOver();
             }
 
-            Debug.Log("Game Over! (점수 0 처리)");
+            bool isInfinite = currentGameMode == GameMode.Infinite;
 
-            // 게임오버 팝업 표시 + 카운팅 애니메이션
-            if (gameOverScoreText != null)
-                gameOverScoreText.text = "0";
-            if (gameOverMovesText != null)
-                gameOverMovesText.text = "MOVES: 0";
+            if (isInfinite)
+            {
+                // 무한도전: 점수를 그대로 인정하고 베스트 스코어 갱신
+                int finalScore = scoreManager != null ? scoreManager.CurrentScore : 0;
+                Debug.Log($"Game End! (무한도전 종료, 점수: {finalScore})");
 
-            if (uiManager != null)
-                uiManager.ShowGameOverPopup();
+                // 베스트 스코어 갱신 시도
+                if (scoreManager != null)
+                    scoreManager.TryUpdateLevelHighScore(selectedStage);
 
-            StartCoroutine(AnimateGameOverPopup());
+                // 타이틀 변경: "GAME OVER" → "GAME END"
+                UpdateGameOverTitle("GAME END", new Color(0.4f, 0.8f, 1f));
+
+                if (gameOverScoreText != null)
+                    gameOverScoreText.text = "0";
+                if (gameOverMovesText != null)
+                    gameOverMovesText.text = "MOVES: 0";
+
+                if (uiManager != null)
+                    uiManager.ShowGameOverPopup();
+
+                StartCoroutine(AnimateGameOverPopupInfinite(finalScore));
+            }
+            else
+            {
+                // 스테이지 모드: 기존 로직 (점수 0 처리)
+                Debug.Log("Game Over! (점수 0 처리)");
+
+                UpdateGameOverTitle("GAME OVER", new Color(1f, 0.3f, 0.3f));
+
+                if (gameOverScoreText != null)
+                    gameOverScoreText.text = "0";
+                if (gameOverMovesText != null)
+                    gameOverMovesText.text = "MOVES: 0";
+
+                if (uiManager != null)
+                    uiManager.ShowGameOverPopup();
+
+                StartCoroutine(AnimateGameOverPopup());
+            }
         }
 
         /// <summary>
@@ -4481,6 +5298,11 @@ private void OnBigBang()
         public void AddTurns(int amount)
         {
             currentTurns += amount;
+
+            // 무한도전: 최대 이동 횟수 제한
+            if (currentGameMode == GameMode.Infinite && currentTurns > MAX_INFINITE_TURNS)
+                currentTurns = MAX_INFINITE_TURNS;
+
             OnTurnChanged?.Invoke(currentTurns);
             UpdateUI();
 
@@ -4548,15 +5370,15 @@ private void OnBigBang()
             titleText.raycastTarget = false;
             titleText.text = "HEXA PUZZLE";
 
-            // === 보유 골드 표시 (우측 상단) ===
+            // === 보유 골드 표시 (우측 상단 — 인게임과 동일한 위치) ===
             GameObject lobbyGoldObj = new GameObject("LobbyGold");
             lobbyGoldObj.transform.SetParent(lobbyContainer.transform, false);
             RectTransform lobbyGoldRt = lobbyGoldObj.AddComponent<RectTransform>();
             lobbyGoldRt.anchorMin = new Vector2(1f, 1f);
             lobbyGoldRt.anchorMax = new Vector2(1f, 1f);
             lobbyGoldRt.pivot = new Vector2(1f, 1f);
-            lobbyGoldRt.anchoredPosition = new Vector2(-30f, -40f);
-            lobbyGoldRt.sizeDelta = new Vector2(250f, 40f);
+            lobbyGoldRt.anchoredPosition = new Vector2(-30f, -20f); // 인게임과 동일
+            lobbyGoldRt.sizeDelta = new Vector2(120f, 40f);         // 인게임과 동일
 
             lobbyGoldText = lobbyGoldObj.AddComponent<Text>();
             lobbyGoldText.font = font;
@@ -4564,11 +5386,33 @@ private void OnBigBang()
             lobbyGoldText.alignment = TextAnchor.MiddleRight;
             lobbyGoldText.color = new Color(1f, 0.84f, 0f);
             lobbyGoldText.raycastTarget = false;
-            lobbyGoldText.text = $"\ud83d\udcb0 {currentGold:N0}";
+            lobbyGoldText.resizeTextForBestFit = true;
+            lobbyGoldText.resizeTextMinSize = 14;
+            lobbyGoldText.resizeTextMaxSize = 28;
+            lobbyGoldText.verticalOverflow = VerticalWrapMode.Overflow;
+            lobbyGoldText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            lobbyGoldText.text = currentGold.ToString();
 
             Outline lobbyGoldOutline = lobbyGoldObj.AddComponent<Outline>();
-            lobbyGoldOutline.effectColor = new Color(0, 0, 0, 0.8f);
+            lobbyGoldOutline.effectColor = new Color(0f, 0f, 0f, 0.7f); // 인게임과 동일
             lobbyGoldOutline.effectDistance = new Vector2(1, 1);
+
+            // GOLD 라벨 (인게임과 동일 위치)
+            GameObject lobbyGoldLabelObj = new GameObject("LobbyGoldLabel");
+            lobbyGoldLabelObj.transform.SetParent(lobbyContainer.transform, false);
+            RectTransform lobbyGoldLabelRt = lobbyGoldLabelObj.AddComponent<RectTransform>();
+            lobbyGoldLabelRt.anchorMin = new Vector2(1f, 1f);
+            lobbyGoldLabelRt.anchorMax = new Vector2(1f, 1f);
+            lobbyGoldLabelRt.pivot = new Vector2(1f, 1f);
+            lobbyGoldLabelRt.anchoredPosition = new Vector2(-30f, -58f); // 인게임과 동일
+            lobbyGoldLabelRt.sizeDelta = new Vector2(120f, 20f);
+            Text lobbyGoldLabelText = lobbyGoldLabelObj.AddComponent<Text>();
+            lobbyGoldLabelText.font = font;
+            lobbyGoldLabelText.fontSize = 14;
+            lobbyGoldLabelText.alignment = TextAnchor.MiddleRight;
+            lobbyGoldLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
+            lobbyGoldLabelText.raycastTarget = false;
+            lobbyGoldLabelText.text = "GOLD";
 
             // === 스크롤 영역 (레벨 버튼 그리드) ===
             GameObject scrollObj = new GameObject("LevelScrollView");
@@ -4870,9 +5714,13 @@ private void OnBigBang()
                 lobbyContainer.transform.SetAsLastSibling();
             }
 
-            // 로비 골드 표시 갱신
+            // SFX/BGM 버튼을 lobbyContainer 위로 올려 로비에서도 보이게 함
+            if (sfxToggleBtnObj != null) sfxToggleBtnObj.transform.SetAsLastSibling();
+            if (bgmToggleBtnObj != null) bgmToggleBtnObj.transform.SetAsLastSibling();
+
+            // 로비 골드 표시 갱신 (인게임과 동일 형식: 숫자만)
             if (lobbyGoldText != null)
-                lobbyGoldText.text = $"\ud83d\udcb0 {currentGold:N0}";
+                lobbyGoldText.text = currentGold.ToString();
 
             // 로비 레벨 버튼 최고 점수 갱신
             RefreshLobbyHighScores();
@@ -5386,30 +6234,53 @@ private void OnBigBang()
         /// <summary>
         /// 미션 카운트다운 애니메이션
         /// </summary>
-        private IEnumerator CountDownCoroutine(Text countText, int to, int from)
+        /// <summary>
+        /// 레벨 모드 미션 순차 감소 코루틴 (1단위씩 감소 + 펄스 + 사운드).
+        /// </summary>
+        private IEnumerator StageMissionSequentialCountDown(int idx, Text countText, int from, int to, bool isComplete)
         {
-            float duration = 0.3f;
-            float elapsed = 0f;
+            if (countText == null) yield break;
 
-            while (elapsed < duration)
+            float interval = 0.08f;
+            int step = from > to ? -1 : 1;
+
+            for (int v = from + step; step > 0 ? v <= to : v >= to; v += step)
             {
-                elapsed += Time.deltaTime;
-                float progress = elapsed / duration;
-                int current = Mathf.RoundToInt(Mathf.Lerp(from, to, progress));
-                countText.text = current.ToString();
-                yield return null;
+                if (countText == null) yield break;
+                countText.text = v.ToString();
+
+                // 펄스 애니메이션
+                StartCoroutine(MissionCountPulse(countText.transform));
+
+                // 틱 사운드
+                if (AudioManager.Instance != null)
+                {
+                    float progress = 1f - (float)Mathf.Abs(v) / Mathf.Max(1f, Mathf.Abs(from));
+                    AudioManager.Instance.PlayCountUpTick(progress);
+                }
+
+                yield return new WaitForSeconds(interval);
             }
 
-            // 미션 완료 (remaining == 0): 숫자 대신 초록색 체크 아이콘 표시
-            if (to <= 0)
+            // 미션 완료 시 체크마크 표시 + 미션 완료 사운드
+            if (isComplete || to <= 0)
             {
-                countText.text = ""; // 텍스트 숨김
-                ShowCheckMarkOnText(countText);
+                if (countText != null)
+                {
+                    countText.text = "";
+                    ShowCheckMarkOnText(countText);
+                    if (AudioManager.Instance != null)
+                        AudioManager.Instance.PlayMissionCompleteSound();
+                }
             }
-            else
+            else if (countText != null)
             {
                 countText.text = to.ToString();
             }
+
+            // 코루틴 참조 해제
+            if (stageMissionCountDownCos != null && idx < stageMissionCountDownCos.Length)
+                stageMissionCountDownCos[idx] = null;
         }
 
         /// <summary>
@@ -5548,7 +6419,6 @@ private void OnDestroy()
                 blockRemovalSystem.OnBlocksRemoved -= OnBlocksRemoved;
                 blockRemovalSystem.OnCascadeComplete -= OnCascadeComplete;
                 blockRemovalSystem.OnBigBang -= OnBigBang;
-                blockRemovalSystem.OnGemsRemovedDetailed -= HandleStageGemsRemoved;
             }
 
             if (drillSystem != null)

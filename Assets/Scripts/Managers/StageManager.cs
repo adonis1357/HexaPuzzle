@@ -331,6 +331,8 @@ namespace JewelsHexaPuzzle.Managers
                     break;
                 case SpecialBlockType.Bomb:    targetMissionType = MissionType.CreateBomb; break;
                 case SpecialBlockType.Rainbow: targetMissionType = MissionType.CreateRainbow; break;
+                case SpecialBlockType.XBlock:  targetMissionType = MissionType.CreateXBlock; break;
+                case SpecialBlockType.Drone:   targetMissionType = MissionType.CreateDrone; break;
             }
 
             for (int i = 0; i < missionProgress.Count; i++)
@@ -340,6 +342,13 @@ namespace JewelsHexaPuzzle.Managers
 
                 // 정확히 일치하는 미션 타입만 카운트
                 if (progress.mission.type == targetMissionType)
+                {
+                    progress.currentCount++;
+                    CheckMissionCompletion(i);
+                }
+                // CreateDrillAny: 어떤 방향의 드릴이든 카운트
+                else if (progress.mission.type == MissionType.CreateDrillAny &&
+                         specialType == SpecialBlockType.Drill)
                 {
                     progress.currentCount++;
                     CheckMissionCompletion(i);
@@ -533,8 +542,11 @@ namespace JewelsHexaPuzzle.Managers
         CreateDrillVertical = 20,   // 드릴 생성 (세로 ↕)
         CreateDrillSlash = 21,      // 드릴 생성 (슬래시 /)
         CreateDrillBackSlash = 22,  // 드릴 생성 (백슬래시 \)
+        CreateDrillAny = 24,        // 드릴 생성 (아무 방향 — 3방향 모두 표시)
         CreateBomb = 23,            // 폭탄 생성
-        CreateRainbow = 25          // 레인보우(도넛) 생성
+        CreateRainbow = 25,         // 레인보우(도넛) 생성
+        CreateXBlock = 26,          // XBlock 생성
+        CreateDrone = 27            // 드론 생성
     }
     
     /// <summary>

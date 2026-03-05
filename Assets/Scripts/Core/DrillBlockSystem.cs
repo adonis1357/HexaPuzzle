@@ -376,11 +376,11 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             yield return drill1;
             yield return drill2;
 
-            // [8단계] 최종 점수 계산 (드릴 기본 100점 + 파괴한 블록들의 점수 합)
-            int totalScore = 100 + blockScoreSum;
-            Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:100 + blockTierSum:{blockScoreSum})");
+            // [8단계] 최종 점수 계산 (드릴 기본 200점 + 파괴한 블록들의 점수 합)
+            int totalScore = 200 + blockScoreSum;
+            Debug.Log($"[DrillBlockSystem] === DRILL COMPLETE === Score={totalScore} (base:200 + blockTierSum:{blockScoreSum})");
 
-            // 미션 카운팅은 GameManager.OnSpecialBlockDestroyedBlocksByColor()에서 통합 처리
+            // 미션 카운팅은 파괴 루프에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
 
             // 드릴 완료 이벤트 발생 → 점수 반영

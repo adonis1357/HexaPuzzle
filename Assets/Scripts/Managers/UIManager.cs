@@ -89,6 +89,9 @@ namespace JewelsHexaPuzzle.Managers
         public static List<Text> gameMissionCountTexts = new List<Text>();
         public static RectTransform gameMissionContainerRect;
 
+        // 다음 미션 미리보기
+        public static RectTransform nextMissionPreviewRect;
+
         public void SetTurnText(Text text) { turnText = text; }
         public void SetScoreText(Text text)
         {
@@ -1895,7 +1898,8 @@ namespace JewelsHexaPuzzle.Managers
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // 미션 컨테이너
+            // 미션 컨테이너 (레벨 모드와 동일한 컴팩트 레이아웃)
+            float rowHeight = 90f;
             GameObject missionObj = new GameObject("GameMissionUI");
             missionObj.transform.SetParent(canvas.transform, false);
             RectTransform missionRt = missionObj.AddComponent<RectTransform>();
@@ -1903,27 +1907,28 @@ namespace JewelsHexaPuzzle.Managers
             missionRt.anchorMax = new Vector2(0, 1);
             missionRt.pivot = new Vector2(0, 1);
             missionRt.anchoredPosition = new Vector2(20, -20);
-            missionRt.sizeDelta = new Vector2(400, 200);
+            missionRt.sizeDelta = new Vector2(280, rowHeight + 20f);
 
             // 배경 패널 (밝은 라벤더 톤)
             Image bgImage = missionObj.AddComponent<Image>();
             bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
             bgImage.raycastTarget = false;
 
-            // 미션 아이콘 (다색 육각형) - 2배 확대
+            // 미션 아이콘 (레벨 모드와 동일 크기: 70x70)
             GameObject iconObj = new GameObject("MissionIcon");
             iconObj.transform.SetParent(missionObj.transform, false);
             RectTransform iconRt = iconObj.AddComponent<RectTransform>();
             iconRt.anchorMin = new Vector2(0, 0.5f);
             iconRt.anchorMax = new Vector2(0, 0.5f);
             iconRt.pivot = new Vector2(0, 0.5f);
-            iconRt.anchoredPosition = new Vector2(30, 0);
-            iconRt.sizeDelta = new Vector2(140, 140);
+            iconRt.anchoredPosition = new Vector2(15, 0);
+            iconRt.sizeDelta = new Vector2(70, 70);
 
             Image iconImage = iconObj.AddComponent<Image>();
             SetMissionIconForType(iconImage, mission);
             iconImage.type = Image.Type.Simple;
             iconImage.raycastTarget = false;
+
             Outline iconOutline = iconObj.AddComponent<Outline>();
             iconOutline.effectColor = Color.white;
             iconOutline.effectDistance = new Vector2(2, 2);
@@ -1935,12 +1940,12 @@ namespace JewelsHexaPuzzle.Managers
             countRt.anchorMin = new Vector2(0, 0.5f);
             countRt.anchorMax = new Vector2(0, 0.5f);
             countRt.pivot = new Vector2(0, 0.5f);
-            countRt.anchoredPosition = new Vector2(180, 0);
-            countRt.sizeDelta = new Vector2(180, 140);
+            countRt.anchoredPosition = new Vector2(95, 0);
+            countRt.sizeDelta = new Vector2(160, 70);
 
             Text countText = countObj.AddComponent<Text>();
             countText.font = font;
-            countText.fontSize = 56;
+            countText.fontSize = 48;
             countText.fontStyle = FontStyle.Bold;
             countText.alignment = TextAnchor.MiddleLeft;
             countText.color = Color.white;
@@ -2032,6 +2037,7 @@ namespace JewelsHexaPuzzle.Managers
                 iconImage.raycastTarget = false;
 
                 SetMissionIconForType(iconImage, mission);
+
                 Outline iconOutline = iconObj.AddComponent<Outline>();
                 iconOutline.effectColor = Color.white;
                 iconOutline.effectDistance = new Vector2(2, 2);
@@ -2073,6 +2079,232 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 레벨 모드용 빈 다음 미션 플레이스홀더 생성 (위치만 확보, 내용 없음).
+        /// 무한도전과 동일한 레이아웃을 위해 다음 미션 영역을 비워둔다.
+        /// </summary>
+        public void CreateEmptyNextMissionPlaceholder(Canvas canvas)
+        {
+            // 기존 플레이스홀더 제거
+            GameObject existing = GameObject.Find("NextMissionPlaceholder");
+            if (existing != null) Destroy(existing);
+
+            // NextMissionPreview와 동일한 크기/위치 (196×77, 좌상단)
+            GameObject placeholderObj = new GameObject("NextMissionPlaceholder");
+            placeholderObj.transform.SetParent(canvas.transform, false);
+            RectTransform rt = placeholderObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0, 1);
+            rt.anchorMax = new Vector2(0, 1);
+            rt.pivot = new Vector2(0, 1);
+            rt.anchoredPosition = new Vector2(20, -20);
+            rt.sizeDelta = new Vector2(196, 77);
+
+            // 배경 (반투명 라벤더 — 다음 미션 없음을 시각적으로 표시)
+            Image bgImage = placeholderObj.AddComponent<Image>();
+            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.25f);
+            bgImage.raycastTarget = false;
+
+            // nextMissionPreviewRect 설정 (위치 계산에 사용)
+            nextMissionPreviewRect = rt;
+        }
+
+        /// <summary>
+        /// 개별 미션 행 생성 (순차 등장용, 자체 배경 포함).
+        /// 복수 미션을 하나씩 등장시킬 때 각 행을 독립적으로 생성.
+        /// </summary>
+        public RectTransform CreateIndividualMissionRow(Canvas canvas, MissionData mission, int index)
+        {
+            if (mission == null) return null;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            float rowHeight = 90f;
+            GameObject rowObj = new GameObject($"GameMissionUI_Row_{index}");
+            rowObj.transform.SetParent(canvas.transform, false);
+            RectTransform rowRt = rowObj.AddComponent<RectTransform>();
+            rowRt.anchorMin = new Vector2(0, 1);
+            rowRt.anchorMax = new Vector2(0, 1);
+            rowRt.pivot = new Vector2(0, 1);
+            rowRt.anchoredPosition = new Vector2(40, -102); // 애니메이션에서 오버라이드됨
+            rowRt.sizeDelta = new Vector2(280, rowHeight + 20f);
+
+            // 배경 패널 (밝은 라벤더 톤)
+            Image bgImage = rowObj.AddComponent<Image>();
+            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
+            bgImage.raycastTarget = false;
+
+            // 미션 아이콘 (70×70)
+            GameObject iconObj = new GameObject("MissionIcon");
+            iconObj.transform.SetParent(rowObj.transform, false);
+            RectTransform iconRt = iconObj.AddComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0, 0.5f);
+            iconRt.anchorMax = new Vector2(0, 0.5f);
+            iconRt.pivot = new Vector2(0, 0.5f);
+            iconRt.anchoredPosition = new Vector2(15, 0);
+            iconRt.sizeDelta = new Vector2(70, 70);
+
+            Image iconImage = iconObj.AddComponent<Image>();
+            SetMissionIconForType(iconImage, mission);
+            iconImage.type = Image.Type.Simple;
+            iconImage.raycastTarget = false;
+
+            Outline iconOutline = iconObj.AddComponent<Outline>();
+            iconOutline.effectColor = Color.white;
+            iconOutline.effectDistance = new Vector2(2, 2);
+
+            // 미션 진행도 숫자 (아이콘 옆)
+            GameObject countObj = new GameObject("Count");
+            countObj.transform.SetParent(rowObj.transform, false);
+            RectTransform countRt = countObj.AddComponent<RectTransform>();
+            countRt.anchorMin = new Vector2(0, 0.5f);
+            countRt.anchorMax = new Vector2(0, 0.5f);
+            countRt.pivot = new Vector2(0, 0.5f);
+            countRt.anchoredPosition = new Vector2(95, 0);
+            countRt.sizeDelta = new Vector2(160, 70);
+
+            Text countText = countObj.AddComponent<Text>();
+            countText.font = font;
+            countText.fontSize = 48;
+            countText.fontStyle = FontStyle.Bold;
+            countText.alignment = TextAnchor.MiddleLeft;
+            countText.color = Color.white;
+            countText.raycastTarget = false;
+            countText.text = mission.targetCount.ToString();
+
+            // 검은색 아웃라인 (2겹으로 두꺼운 효과)
+            Outline countOutline = countObj.AddComponent<Outline>();
+            countOutline.effectColor = Color.black;
+            countOutline.effectDistance = new Vector2(2, 2);
+            Shadow countShadow = countObj.AddComponent<Shadow>();
+            countShadow.effectColor = Color.black;
+            countShadow.effectDistance = new Vector2(-2, -2);
+
+            // 카운트 텍스트 리스트에 추가
+            gameMissionCountTexts.Add(countText);
+
+            // 첫 번째 행: 단일 미션 호환용 static 필드에도 저장
+            if (index == 0)
+            {
+                gameMissionCountText = countText;
+                gameMissionIconRect = rowRt;
+            }
+
+            return rowRt;
+        }
+
+        /// <summary>
+        /// 다음 미션 미리보기 UI 생성 (현재 미션 대비 70% 크기, 좌상단)
+        /// </summary>
+        public void CreateNextMissionPreviewUI(Canvas canvas, MissionData nextMission, int reward)
+        {
+            if (nextMission == null) return;
+
+            // 기존 미리보기 제거
+            GameObject existing = GameObject.Find("NextMissionPreview");
+            if (existing != null) Destroy(existing);
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // 컨테이너 (현재 미션 280×110의 70% = 196×77)
+            GameObject previewObj = new GameObject("NextMissionPreview");
+            previewObj.transform.SetParent(canvas.transform, false);
+            RectTransform previewRt = previewObj.AddComponent<RectTransform>();
+            previewRt.anchorMin = new Vector2(0, 1);
+            previewRt.anchorMax = new Vector2(0, 1);
+            previewRt.pivot = new Vector2(0, 1);
+            previewRt.anchoredPosition = new Vector2(20, -20);
+            previewRt.sizeDelta = new Vector2(196, 77);
+
+            // 배경 (반투명 라벤더)
+            Image bgImage = previewObj.AddComponent<Image>();
+            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.55f);
+            bgImage.raycastTarget = false;
+
+            // "NEXT" 라벨 (좌상단)
+            GameObject labelObj = new GameObject("NextLabel");
+            labelObj.transform.SetParent(previewObj.transform, false);
+            RectTransform labelRt = labelObj.AddComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0, 1);
+            labelRt.anchorMax = new Vector2(0, 1);
+            labelRt.pivot = new Vector2(0, 1);
+            labelRt.anchoredPosition = new Vector2(4, -2);
+            labelRt.sizeDelta = new Vector2(50, 16);
+            Text labelText = labelObj.AddComponent<Text>();
+            labelText.font = font;
+            labelText.fontSize = 12;
+            labelText.fontStyle = FontStyle.Bold;
+            labelText.alignment = TextAnchor.UpperLeft;
+            labelText.color = new Color(1f, 1f, 1f, 0.7f);
+            labelText.raycastTarget = false;
+            labelText.text = "NEXT";
+            Outline labelOutline = labelObj.AddComponent<Outline>();
+            labelOutline.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            labelOutline.effectDistance = new Vector2(1, 1);
+
+            // 미션 아이콘 (70% = 49×49)
+            GameObject iconObj = new GameObject("NextMissionIcon");
+            iconObj.transform.SetParent(previewObj.transform, false);
+            RectTransform iconRt = iconObj.AddComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0, 0.5f);
+            iconRt.anchorMax = new Vector2(0, 0.5f);
+            iconRt.pivot = new Vector2(0, 0.5f);
+            iconRt.anchoredPosition = new Vector2(10, 0);
+            iconRt.sizeDelta = new Vector2(49, 49);
+
+            Image iconImage = iconObj.AddComponent<Image>();
+            SetMissionIconForType(iconImage, nextMission);
+            iconImage.type = Image.Type.Simple;
+            iconImage.raycastTarget = false;
+            Outline iconOutline = iconObj.AddComponent<Outline>();
+            iconOutline.effectColor = Color.white;
+            iconOutline.effectDistance = new Vector2(1, 1);
+
+            // 카운트 텍스트 (70% fontSize = 34)
+            GameObject countObj = new GameObject("NextCount");
+            countObj.transform.SetParent(previewObj.transform, false);
+            RectTransform countRt = countObj.AddComponent<RectTransform>();
+            countRt.anchorMin = new Vector2(0, 0.5f);
+            countRt.anchorMax = new Vector2(0, 0.5f);
+            countRt.pivot = new Vector2(0, 0.5f);
+            countRt.anchoredPosition = new Vector2(67, 0);
+            countRt.sizeDelta = new Vector2(110, 49);
+            Text countText = countObj.AddComponent<Text>();
+            countText.font = font;
+            countText.fontSize = 34;
+            countText.fontStyle = FontStyle.Bold;
+            countText.alignment = TextAnchor.MiddleLeft;
+            countText.color = new Color(1f, 1f, 1f, 0.8f);
+            countText.raycastTarget = false;
+            countText.text = nextMission.targetCount.ToString();
+            Outline countOutline = countObj.AddComponent<Outline>();
+            countOutline.effectColor = Color.black;
+            countOutline.effectDistance = new Vector2(1, 1);
+
+            // 보상 텍스트 "moves +n" (우하단, 작은 크기)
+            GameObject rewardObj = new GameObject("NextRewardText");
+            rewardObj.transform.SetParent(previewObj.transform, false);
+            RectTransform rewardRt = rewardObj.AddComponent<RectTransform>();
+            rewardRt.anchorMin = new Vector2(1, 0);
+            rewardRt.anchorMax = new Vector2(1, 0);
+            rewardRt.pivot = new Vector2(1, 0);
+            rewardRt.anchoredPosition = new Vector2(-5f, 4f);
+            rewardRt.sizeDelta = new Vector2(90, 16f);
+            Text rewardText = rewardObj.AddComponent<Text>();
+            rewardText.font = font;
+            rewardText.fontSize = 13;
+            rewardText.fontStyle = FontStyle.Bold;
+            rewardText.alignment = TextAnchor.LowerRight;
+            rewardText.color = new Color(0.2f, 1f, 0.4f, 0.7f);
+            rewardText.raycastTarget = false;
+            rewardText.text = $"moves +{reward}";
+            Outline rewardOutline = rewardObj.AddComponent<Outline>();
+            rewardOutline.effectColor = new Color(0f, 0f, 0f, 0.4f);
+            rewardOutline.effectDistance = new Vector2(1, 1);
+
+            nextMissionPreviewRect = previewRt;
+            Debug.Log($"[UIManager] 다음 미션 미리보기 UI 생성: {nextMission.targetCount}개");
+        }
+
+        /// <summary>
         /// 무한도전 미션 보상 텍스트 표시 ("+N" 형태)
         /// </summary>
         public void SetMissionRewardText(int reward)
@@ -2085,23 +2317,24 @@ namespace JewelsHexaPuzzle.Managers
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
+            // 프레임 오른쪽 하단에 "moves +n" 표시
             GameObject rewardObj = new GameObject("RewardText");
             rewardObj.transform.SetParent(gameMissionIconRect, false);
             RectTransform rewardRt = rewardObj.AddComponent<RectTransform>();
-            rewardRt.anchorMin = new Vector2(0, 0);
+            rewardRt.anchorMin = new Vector2(1, 0);
             rewardRt.anchorMax = new Vector2(1, 0);
-            rewardRt.pivot = new Vector2(0.5f, 0);
-            rewardRt.anchoredPosition = new Vector2(0, 8f);
-            rewardRt.sizeDelta = new Vector2(0, 28f);
+            rewardRt.pivot = new Vector2(1, 0);
+            rewardRt.anchoredPosition = new Vector2(-8f, 6f);
+            rewardRt.sizeDelta = new Vector2(120, 22f);
 
             gameMissionRewardText = rewardObj.AddComponent<Text>();
             gameMissionRewardText.font = font;
-            gameMissionRewardText.fontSize = 22;
+            gameMissionRewardText.fontSize = 18;
             gameMissionRewardText.fontStyle = FontStyle.Bold;
-            gameMissionRewardText.alignment = TextAnchor.MiddleCenter;
+            gameMissionRewardText.alignment = TextAnchor.LowerRight;
             gameMissionRewardText.color = new Color(0.2f, 1f, 0.4f, 1f); // 밝은 녹색
             gameMissionRewardText.raycastTarget = false;
-            gameMissionRewardText.text = $"+{reward}";
+            gameMissionRewardText.text = $"moves +{reward}";
 
             Outline outline = rewardObj.AddComponent<Outline>();
             outline.effectColor = Color.black;
@@ -2123,12 +2356,31 @@ namespace JewelsHexaPuzzle.Managers
             if (multiMissionUI != null)
                 Destroy(multiMissionUI);
 
+            // 개별 미션 행 제거 (순차 등장 모드)
+            for (int i = 0; i < 10; i++)
+            {
+                GameObject row = GameObject.Find($"GameMissionUI_Row_{i}");
+                if (row != null) Destroy(row);
+                else break;
+            }
+
+            // 다음 미션 미리보기 UI 제거
+            GameObject nextPreview = GameObject.Find("NextMissionPreview");
+            if (nextPreview != null)
+                Destroy(nextPreview);
+
+            // 다음 미션 빈 플레이스홀더 제거
+            GameObject placeholder = GameObject.Find("NextMissionPlaceholder");
+            if (placeholder != null)
+                Destroy(placeholder);
+
             // static 필드 초기화
             gameMissionCountText = null;
             gameMissionIconRect = null;
             gameMissionRewardText = null;
             gameMissionCountTexts.Clear();
             gameMissionContainerRect = null;
+            nextMissionPreviewRect = null;
         }
 
         /// <summary>
@@ -2187,8 +2439,11 @@ namespace JewelsHexaPuzzle.Managers
             else if (mType == MissionType.CreateDrillVertical ||
                      mType == MissionType.CreateDrillSlash ||
                      mType == MissionType.CreateDrillBackSlash ||
+                     mType == MissionType.CreateDrillAny ||
                      mType == MissionType.CreateBomb ||
-                     mType == MissionType.CreateRainbow)
+                     mType == MissionType.CreateRainbow ||
+                     mType == MissionType.CreateXBlock ||
+                     mType == MissionType.CreateDrone)
             {
                 // 배경: 6색 육각형 기본 블록
                 iconImage.sprite = MissionUIHelper.CreateMultiColorHexagonSprite();
@@ -2204,10 +2459,16 @@ namespace JewelsHexaPuzzle.Managers
                         overlaySprite = HexBlock.GetDrillIconSprite(DrillDirection.Slash); break;
                     case MissionType.CreateDrillBackSlash:
                         overlaySprite = HexBlock.GetDrillIconSprite(DrillDirection.BackSlash); break;
+                    case MissionType.CreateDrillAny:
+                        overlaySprite = HexBlock.GetDrillAnyIconSprite(); break;
                     case MissionType.CreateBomb:
                         overlaySprite = BombBlockSystem.GetBombIconSprite(); break;
                     case MissionType.CreateRainbow:
                         overlaySprite = DonutBlockSystem.GetDonutIconSprite(); break;
+                    case MissionType.CreateXBlock:
+                        overlaySprite = XBlockSystem.GetXBlockIconSprite(); break;
+                    case MissionType.CreateDrone:
+                        overlaySprite = DroneBlockSystem.GetDroneIconSprite(); break;
                 }
 
                 if (overlaySprite != null)

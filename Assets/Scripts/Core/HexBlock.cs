@@ -1131,6 +1131,62 @@ private void UpdateSpecialIndicator()
             return CreateDrillSprite_Refined(size, rotation);
         }
 
+        private static Sprite _drillAnySprite;
+
+        /// <summary>
+        /// 3방향 드릴 아이콘 스프라이트 (↕ / \ 겹침) — "아무 방향" 드릴 미션용
+        /// 세 방향 드릴을 반투명으로 겹쳐 한 아이콘에 표시
+        /// </summary>
+        public static Sprite GetDrillAnyIconSprite()
+        {
+            if (_drillAnySprite != null) return _drillAnySprite;
+
+            const int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+
+            // 3방향 드릴 개별 텍스처 생성
+            Sprite vSprite = CreateDrillSprite_Refined(size, 0);
+            Sprite sSprite = CreateDrillSprite_Refined(size, -60);
+            Sprite bSprite = CreateDrillSprite_Refined(size, 60);
+
+            Color[] vPx = vSprite.texture.GetPixels();
+            Color[] sPx = sSprite.texture.GetPixels();
+            Color[] bPx = bSprite.texture.GetPixels();
+            Color[] result = new Color[size * size];
+
+            for (int i = 0; i < result.Length; i++)
+            {
+                // 각 방향의 알파를 합산 (겹치는 부분은 밝아짐)
+                float aV = vPx[i].a;
+                float aS = sPx[i].a;
+                float aB = bPx[i].a;
+                float totalA = Mathf.Clamp01(aV + aS + aB);
+
+                if (totalA < 0.01f)
+                {
+                    result[i] = Color.clear;
+                    continue;
+                }
+
+                // 가중 평균 색상 (알파 기반 블렌딩)
+                Color blended = (vPx[i] * aV + sPx[i] * aS + bPx[i] * aB);
+                if (totalA > 0.01f)
+                {
+                    blended.r /= totalA;
+                    blended.g /= totalA;
+                    blended.b /= totalA;
+                }
+                blended.a = totalA;
+                result[i] = blended;
+            }
+
+            tex.SetPixels(result);
+            tex.Apply();
+            _drillAnySprite = Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+            return _drillAnySprite;
+        }
+
 /// <summary>
         /// 외부에서 직접 특수 블록 아이콘 표시 (드릴 생성 시 등)
         /// SetBlockData → UpdateVisuals에서 자동 처리되므로 보통은 호출 불필요

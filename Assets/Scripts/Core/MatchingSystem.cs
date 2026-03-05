@@ -112,8 +112,19 @@ public List<MatchGroup> FindMatches()
             // 4) 링 매칭 추가
             allMatches.AddRange(ringMatches);
 
+            // ★ 디버그: 각 매칭 그룹 상세 정보
             if (allMatches.Count > 0)
+            {
+                for (int i = 0; i < allMatches.Count; i++)
+                {
+                    var mg = allMatches[i];
+                    string blockCoords = string.Join(", ", mg.blocks.Select(b => $"({b.Coord.q},{b.Coord.r})"));
+                    Debug.Log($"[MatchingSystem] ★ 그룹[{i}]: color={mg.gemType}, count={mg.blocks.Count}, " +
+                        $"specialType={mg.createdSpecialType}, spawnBlock={mg.specialSpawnBlock?.Coord}, " +
+                        $"blocks=[{blockCoords}]");
+                }
                 OnMatchFound?.Invoke(allMatches);
+            }
 
             return allMatches;
         }
@@ -242,6 +253,13 @@ private List<MatchGroup> FindRingMatches()
 
 private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
         {
+            Debug.Log($"[MatchingSystem] ▶ MergeAdjacentMatches 진입: 입력 삼각형 {matches.Count}개");
+            for (int dbg = 0; dbg < matches.Count; dbg++)
+            {
+                string coords = string.Join(", ", matches[dbg].blocks.Select(b => $"({b.Coord.q},{b.Coord.r})"));
+                Debug.Log($"[MatchingSystem] ▶ 삼각형[{dbg}]: color={matches[dbg].gemType}, blocks=[{coords}]");
+            }
+
             if (matches.Count <= 1) return matches;
 
             List<MatchGroup> mergedMatches = new List<MatchGroup>();
@@ -268,8 +286,9 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                         if (usedIndices.Contains(j)) continue;
                         if (matches[j].gemType != merged.gemType) continue;
 
-                        bool isAdjacent = matches[j].blocks.Any(b => merged.blocks.Contains(b)) ||
-                                         matches[j].blocks.Any(b => merged.blocks.Any(mb => AreNeighbors(b.Coord, mb.Coord)));
+                        // 블록 공유(겹침)만으로 병합 — 단순 이웃은 병합하지 않음
+                        // (이웃 기반 병합 시 독립적인 3매칭이 특수 블록 그룹에 흡수되는 버그 방지)
+                        bool isAdjacent = matches[j].blocks.Any(b => merged.blocks.Contains(b));
                         if (isAdjacent)
                         {
                             foreach (var block in matches[j].blocks)
@@ -304,8 +323,11 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                     CheckForDrillPattern(merged);
                 }
 
+                Debug.Log($"[MatchingSystem] ▶ 병합 결과: count={merged.blocks.Count}, color={merged.gemType}, " +
+                    $"specialType={merged.createdSpecialType}, spawnBlock={merged.specialSpawnBlock?.Coord}");
                 mergedMatches.Add(merged);
             }
+            Debug.Log($"[MatchingSystem] ▶ MergeAdjacentMatches 출력: {mergedMatches.Count}그룹");
             return mergedMatches;
         }
 

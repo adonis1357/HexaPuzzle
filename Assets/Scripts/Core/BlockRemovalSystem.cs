@@ -88,6 +88,11 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>현재 연쇄(캐스케이드) 깊이를 외부에서 읽을 수 있는 속성</summary>
         public int CurrentCascadeDepth => currentCascadeDepth;
 
+        // 현재 처리 중인 매칭 그룹 수 (동시 다색 매칭 보너스 계산용)
+        private int currentMatchGroupCount = 0;
+        /// <summary>현재 처리 중인 매칭 그룹 수 (동시 다색 매칭 보너스용)</summary>
+        public int CurrentMatchGroupCount => currentMatchGroupCount;
+
         // 각 블록의 "원래 자리(슬롯 위치)"를 캐싱 (매번 계산하지 않고 한 번 저장해두고 재사용)
         // - 블록이 낙하 후 정확한 위치로 돌아가야 하므로 원래 좌표를 기억해두는 것
         private Dictionary<HexBlock, Vector2> slotPositions = new Dictionary<HexBlock, Vector2>();
@@ -2172,6 +2177,12 @@ public void TriggerBigBang()
         /// </summary>
         private IEnumerator ProcessMatchesInline(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
         {
+            // 매칭 그룹 수 기록 (동시 다색 매칭 보너스 계산용)
+            currentMatchGroupCount = matches?.Count ?? 0;
+
+            // ★ 디버그: 진입 로그
+            Debug.Log($"[BRS] ▶ ProcessMatchesInline 진입: matches={matches?.Count ?? 0}, pending={pendingSpecials?.Count ?? 0}");
+
             if (matches == null || matches.Count == 0)
             {
                 // 매칭 없이 pending만 있는 경우: pending 발동만 처리
@@ -2191,6 +2202,15 @@ public void TriggerBigBang()
                 yield break;
             }
 
+            // ★ 디버그: 각 매칭 그룹 상세
+            for (int dbg = 0; dbg < matches.Count; dbg++)
+            {
+                var mg = matches[dbg];
+                string coords = string.Join(", ", mg.blocks.Select(b => b != null ? $"({b.Coord.q},{b.Coord.r})" : "null"));
+                Debug.Log($"[BRS] ▶ 입력 그룹[{dbg}]: color={mg.gemType}, count={mg.blocks.Count}, " +
+                    $"specialType={mg.createdSpecialType}, spawnBlock={mg.specialSpawnBlock?.Coord}, blocks=[{coords}]");
+            }
+
             // 0. 특수 블록 생성 그룹과 일반 매칭 그룹 분리
             // 특수 블록 생성 매칭(4개 이상)을 먼저 처리하고 0.5초 후 일반 매칭(3개) 처리
             List<MatchingSystem.MatchGroup> specialMatches = new List<MatchingSystem.MatchGroup>();
@@ -2204,19 +2224,30 @@ public void TriggerBigBang()
                     normalMatches.Add(match);
             }
 
+            Debug.Log($"[BRS] ▶ 분리 결과: specialMatches={specialMatches.Count}, normalMatches={normalMatches.Count}");
+
             // 특수 블록 생성 그룹이 있고 일반 그룹도 있으면 → 2단계로 분리 처리
             if (specialMatches.Count > 0 && normalMatches.Count > 0)
             {
-                // Phase A: 특수 블록 생성 그룹 먼저 처리
-                yield return StartCoroutine(ProcessMatchesInline(specialMatches, pendingSpecials));
+                Debug.Log($"[BRS] ★★★ Phase A/B 분리 처리 시작: 특수={specialMatches.Count}그룹, 일반={normalMatches.Count}그룹");
 
-                // ★ Phase A 특수 블록 파괴 후 낙하 처리 — 블록 안착 후 Phase B 진행
+                // Phase A: 특수 블록 생성 그룹 먼저 처리
+                Debug.Log("[BRS] ★ Phase A 시작");
+                yield return StartCoroutine(ProcessMatchesInline(specialMatches, pendingSpecials));
+                Debug.Log("[BRS] ★ Phase A 완료");
+
+                // ★ 버그 수정: Phase A↔B 사이에 ProcessFalling을 실행하면
+                // normalMatches에 저장된 HexBlock 참조의 Data가 컬럼 재배치로 변경되어
+                // Phase B에서 일반 매칭이 처리되지 않는 버그가 발생.
+                // ProcessFalling은 CascadeWithPendingLoop에서 자동 실행되므로 여기서 제거.
+                // 제거된 블록의 비주얼만 슬롯으로 복귀시켜 Phase B 애니메이션과 겹치지 않도록 처리.
                 SnapClearedBlocksToSlots();
-                yield return StartCoroutine(ProcessFalling());
                 yield return new WaitForSeconds(cascadeDelay);
 
                 // Phase B: 일반 매칭 그룹 처리 (pending은 이미 Phase A에서 처리했으므로 null)
+                Debug.Log($"[BRS] ★★★ Phase B 시작: 일반 매칭 {normalMatches.Count}그룹 처리");
                 yield return StartCoroutine(ProcessMatchesInline(normalMatches, null));
+                Debug.Log("[BRS] ★★★ Phase B 완료");
                 yield break;
             }
 
@@ -2427,6 +2458,16 @@ public void TriggerBigBang()
             //     }
             // }
 
+            // 5d. 미션 시스템 보고: 각 기본 블록 파괴 시 개별 보고 (Stage/Infinite 모두 지원)
+            // ClearData() 전에 호출해야 gemType이 유효함
+            foreach (var block in blocksToRemove)
+            {
+                if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                {
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                }
+            }
+
             // 6. 삭제 애니메이션 (축소하며 사라짐) + 파괴 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBlockDestroySound();
@@ -2455,40 +2496,10 @@ public void TriggerBigBang()
                 }
             }
 
-            // 점수 팝업 비활성화
-            // OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
+            // 매칭 점수 이벤트 발동 (ScoreManager가 처리)
+            OnBlocksRemoved?.Invoke(blocksToRemove.Count, currentCascadeDepth, avgPosition);
 
-            // 미션 시스템용: 매칭 그룹별 GemType 상세 이벤트
-            // ✅ 특수 블록 생성 시에도 매칭된 모든 기본 블록을 카운트해야 함
-            foreach (var match in matches)
-            {
-                int removedInGroup = 0;
-                int totalBlocksInMatch = match.blocks.Count;
-                int specialBlockCount = 0;
-
-                // match.blocks의 모든 기본 블록을 카운트 (이미 특수 블록인 경우 제외)
-                foreach (var b in match.blocks)
-                {
-                    if (b == null || b.Data == null) continue;
-
-                    // 기본 블록만 카운트 (특수 블록 제외)
-                    if (b.Data.specialType == SpecialBlockType.None)
-                    {
-                        removedInGroup++;
-                    }
-                    else
-                    {
-                        specialBlockCount++;
-                    }
-                }
-
-                if (removedInGroup > 0)
-                {
-                    Debug.Log($"[BlockRemovalSystem] 🎯 미션 카운팅: basicCount={removedInGroup}, specialCount={specialBlockCount}, " +
-                        $"totalInMatch={totalBlocksInMatch}, gemType={match.gemType}, cascadeDepth={currentCascadeDepth}");
-                    OnGemsRemovedDetailed?.Invoke(removedInGroup, match.gemType, currentCascadeDepth);
-                }
-            }
+            // (미션 카운팅은 5d에서 OnSingleGemDestroyedForMission으로 처리됨)
 
             // 7b. Divider 분열 처리 (매칭 제거 시)
             if (EnemySystem.Instance != null)
@@ -2535,8 +2546,8 @@ public void TriggerBigBang()
                     }
                 }
 
-                // 점수 팝업 비활성화
-                // OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
+                // 회색 블록(적군) 제거 점수 이벤트 발동
+                OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
             }
 
             // 6. 매칭 특수블록 + pending 특수블록 동시 발동
