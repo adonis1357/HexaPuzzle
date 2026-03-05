@@ -252,6 +252,22 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 특정 좌표의 블록 데이터를 사전 배치 (튜토리얼용).
+        /// PopulateWithNoMatches() 이후 호출하여 원하는 좌표만 덮어쓴다.
+        /// </summary>
+        public void SetPresetBlocks(Dictionary<HexCoord, GemType> presets)
+        {
+            foreach (var kvp in presets)
+            {
+                if (blocks.TryGetValue(kvp.Key, out var block))
+                {
+                    block.SetBlockData(new BlockData(kvp.Value));
+                }
+            }
+            Debug.Log($"[HexGrid] SetPresetBlocks: {presets.Count}개 블록 사전 배치 완료");
+        }
+
+        /// <summary>
         /// [링 방지 - 중심] 이 좌표를 중심으로 이웃 6칸이 모두 같은 색이면 그 색 금지.
         /// 아직 배치되지 않은 이웃이 있으면 링이 완성 불가능하므로 무시.
         /// </summary>

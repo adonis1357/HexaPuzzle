@@ -2838,6 +2838,10 @@ private void InitializeSystems()
                 // 매칭 없는 블록으로 배치
                 hexGrid.PopulateWithNoMatches();
 
+                // 튜토리얼 보드 사전 배치 + 시퀀스 트리거
+                if (TutorialManager.Instance != null)
+                    TutorialManager.Instance.OnStageStart(selectedStage);
+
                 if (blockRemovalSystem != null)
                 {
                     blockRemovalSystem.TriggerStartDrop();
@@ -3984,6 +3988,10 @@ private void OnBigBang()
             SetGameState(GameState.StageClear);
             processingStartTime = Time.time; // StageClear 워치독 타이머 시작
             OnStageClear?.Invoke();
+
+            // 드릴 튜토리얼 완료 마킹 (stage 11 클리어 시)
+            if (selectedStage == 11 && TutorialManager.Instance != null)
+                TutorialManager.Instance.MarkCompleted("stage11_drill_tutorial");
 
             // 다음 레벨 해금
             LevelRegistry.UnlockLevel(selectedStage + 1);
@@ -5335,8 +5343,8 @@ private void OnBigBang()
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // LevelRegistry 초기화
-            LevelRegistry.Initialize();
+            // LevelRegistry 강제 재초기화 (도메인 리로드 미사용 대응)
+            LevelRegistry.ForceReinitialize();
             var allLevels = LevelRegistry.GetAllLevels();
 
             // === 루트 컨테이너 (전체 화면) ===

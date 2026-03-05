@@ -52,7 +52,10 @@ namespace JewelsHexaPuzzle.Data
         MatchOccurred,          // 매칭 발생
         SpecialBlockCreated,    // 특수 블록 생성
         CascadeComplete,        // 캐스케이드 완료
-        AnyInput                // 아무 입력
+        AnyInput,               // 아무 입력
+        MatchHighlightPause,    // 매칭 하이라이트 후 ~ 특수 블록 생성 전 pause
+        DrillCreatedPause,      // 드릴 생성 완료 후 pause
+        DrillActivated          // 드릴 발동 완료
     }
 
     // ============================================================
@@ -83,6 +86,10 @@ namespace JewelsHexaPuzzle.Data
 
         // 이벤트 대기 설정
         public TutorialWaitEvent waitEvent = TutorialWaitEvent.None;
+
+        // 블록 좌표 하이라이트 설정 (드릴 튜토리얼용)
+        public HexCoord[] highlightBlockCoords;        // 지정 좌표 블록 글로우 + 나머지 딤
+        public bool forceDrillClick = false;            // 드릴 클릭 강제 (ForcedAction에서 드릴 좌표만 허용)
 
         // 진행 설정
         public bool pauseGame = false;              // 게임 일시정지 여부
@@ -126,6 +133,9 @@ namespace JewelsHexaPuzzle.Data
 
             // ── 스테이지 3: 드릴 소개 ──
             sequences.Add(GetStage3_DrillIntro());
+
+            // ── 스테이지 11: 드릴 튜토리얼 (인터랙티브) ──
+            sequences.Add(GetStage11_DrillTutorial());
 
             // ── 상황별 힌트: 특수 블록 ──
             sequences.Add(GetHint_BombCreated());
@@ -289,6 +299,148 @@ namespace JewelsHexaPuzzle.Data
                         id = "s3_freeplay",
                         type = TutorialStepType.FreePlayHint,
                         message = "4개 직선 매칭으로 드릴을 만들어 보세요!",
+                        hintDuration = 6f
+                    }
+                }
+            };
+        }
+
+        // ============================================================
+        // 스테이지 11: 드릴 튜토리얼 (인터랙티브)
+        // ============================================================
+        private static TutorialSequence GetStage11_DrillTutorial()
+        {
+            return new TutorialSequence
+            {
+                sequenceId = "stage11_drill_tutorial",
+                trigger = TutorialTrigger.OnStageStart,
+                triggerStage = 11,
+                showOnce = false, // 수동 완료 마킹 (StageClear 시)
+                steps = new TutorialStep[]
+                {
+                    // Step 0: 드릴 패턴 하이라이트 + 설명
+                    new TutorialStep
+                    {
+                        id = "s11_drill_pattern",
+                        type = TutorialStepType.Dialog,
+                        characterName = "오라클리온",
+                        title = "드릴 만들기",
+                        message = "4개를 직선으로 맞추면 드릴이 생겨요!\n가운데 블록을 잘 보세요.",
+                        pauseGame = true,
+                        highlightBlockCoords = new HexCoord[]
+                        {
+                            new HexCoord(-1, 0), new HexCoord(0, 0),
+                            new HexCoord(1, 0), new HexCoord(2, 0)
+                        }
+                    },
+                    // Step 1: 강제 회전 유도 (CW 회전할 클러스터)
+                    new TutorialStep
+                    {
+                        id = "s11_force_rotate",
+                        type = TutorialStepType.ForcedAction,
+                        characterName = "오라클리온",
+                        message = "이 삼각형을 터치해서 회전시키세요!",
+                        showFingerGuide = true,
+                        pauseGame = false,
+                        allowedCoords = new HexCoord[]
+                        {
+                            new HexCoord(0, 0), new HexCoord(0, 1), new HexCoord(1, 0)
+                        }
+                    },
+                    // Step 2: 회전 완료 대기
+                    new TutorialStep
+                    {
+                        id = "s11_wait_rotation",
+                        type = TutorialStepType.WaitForEvent,
+                        waitEvent = TutorialWaitEvent.RotationComplete
+                    },
+                    // Step 3: 매칭 하이라이트 pause 대기
+                    new TutorialStep
+                    {
+                        id = "s11_wait_match_pause",
+                        type = TutorialStepType.WaitForEvent,
+                        waitEvent = TutorialWaitEvent.MatchHighlightPause
+                    },
+                    // Step 4: 매칭된 4블록 설명
+                    new TutorialStep
+                    {
+                        id = "s11_match_explain",
+                        type = TutorialStepType.Dialog,
+                        characterName = "오라클리온",
+                        title = "4개 직선 매칭!",
+                        message = "4개가 직선으로 매칭되었어요!\n이 모양이 드릴이 됩니다.",
+                        pauseGame = true,
+                        highlightBlockCoords = new HexCoord[]
+                        {
+                            new HexCoord(-1, 0), new HexCoord(0, 0),
+                            new HexCoord(1, 0), new HexCoord(2, 0)
+                        }
+                    },
+                    // Step 5: 드릴 생성 완료 pause 대기
+                    new TutorialStep
+                    {
+                        id = "s11_wait_drill_created",
+                        type = TutorialStepType.WaitForEvent,
+                        waitEvent = TutorialWaitEvent.DrillCreatedPause
+                    },
+                    // Step 6: 드릴 하이라이트 + 설명
+                    new TutorialStep
+                    {
+                        id = "s11_drill_explain",
+                        type = TutorialStepType.Dialog,
+                        characterName = "오라클리온",
+                        title = "드릴 완성!",
+                        message = "드릴이 만들어졌어요!\n터치하면 한 줄을 모두 파괴합니다!",
+                        pauseGame = true
+                        // highlightBlockCoords는 TutorialManager에서 pendingDrillCoord로 동적 설정
+                    },
+                    // Step 7: 드릴 클릭 강제
+                    new TutorialStep
+                    {
+                        id = "s11_force_drill_click",
+                        type = TutorialStepType.ForcedAction,
+                        characterName = "오라클리온",
+                        message = "드릴을 터치해 보세요!",
+                        showFingerGuide = true,
+                        forceDrillClick = true,
+                        pauseGame = false
+                    },
+                    // Step 8: 드릴 발동 완료 대기
+                    new TutorialStep
+                    {
+                        id = "s11_wait_drill_activated",
+                        type = TutorialStepType.WaitForEvent,
+                        waitEvent = TutorialWaitEvent.DrillActivated
+                    },
+                    // Step 9: 드릴 효과 설명
+                    new TutorialStep
+                    {
+                        id = "s11_drill_effect",
+                        type = TutorialStepType.Dialog,
+                        characterName = "오라클리온",
+                        title = "드릴 발동!",
+                        message = "드릴이 한 줄을 모두 파괴했어요!\n강력한 특수 블록이죠!",
+                        pauseGame = true
+                    },
+                    // Step 10: 미션 설명 + 자유 플레이
+                    new TutorialStep
+                    {
+                        id = "s11_mission_explain",
+                        type = TutorialStepType.Dialog,
+                        characterName = "오라클리온",
+                        title = "미션",
+                        message = "이제 드릴 3개를 만들어 보세요!\n화면 위 미션을 확인하세요.",
+                        pauseGame = true,
+                        useHighlight = true,
+                        highlightScreenPos = new Vector2(-370f, 810f),
+                        highlightRadius = 140f
+                    },
+                    // Step 11: 자유 플레이 힌트
+                    new TutorialStep
+                    {
+                        id = "s11_freeplay",
+                        type = TutorialStepType.FreePlayHint,
+                        message = "4개 직선 매칭으로 드릴 3개를 만들어 보세요!",
                         hintDuration = 6f
                     }
                 }

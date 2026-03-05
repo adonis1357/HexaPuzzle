@@ -36,7 +36,8 @@ namespace JewelsHexaPuzzle.Managers
                 { 7, GetStage7() },
                 { 8, GetStage8() },
                 { 9, GetStage9() },
-                { 10, GetStage10() }
+                { 10, GetStage10() },
+                { 11, GetStage11() }
             };
         }
 
@@ -607,6 +608,47 @@ namespace JewelsHexaPuzzle.Managers
                     perfectClearReward = 100,
                     badgeReward = "크리스탈 숲의 수호자"
                 }
+            };
+
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 11: 드릴 튜토리얼 - 드릴 3개 생성
+        // ============================================================
+        private static StageData GetStage11()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 11,
+                chapterNumber = 2,
+                chapterName = "사파이어 호수",
+                turnLimit = 20,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData
+                    {
+                        type = MissionType.CreateDrillAny,
+                        targetCount = 3,
+                        description = "드릴 3개 생성"
+                    }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = new StoryData
+                {
+                    beforeStageCutscene = "오라클리온: \"이제 특수 블록의 힘을 배워볼 시간이다.\"\n루나: \"특수 블록이요?\"",
+                    stageIntroDialogues = new[]
+                    {
+                        "오라클리온: \"4개의 블록을 직선으로 맞추면 드릴이 만들어진다.\"\n루나: \"해볼게요!\""
+                    },
+                    stageClearDialogues = new[]
+                    {
+                        "오라클리온: \"훌륭하군! 드릴의 힘을 잘 이해했구나.\""
+                    }
+                },
+                tutorialFlags = new TutorialFlag[0]
             };
 
             return stage;

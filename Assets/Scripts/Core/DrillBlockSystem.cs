@@ -388,6 +388,9 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             // 보호 목록에서 제거 및 카운터 감소
             activeBlocks.Remove(drillBlock);
             activeDrillCount--;
+
+            // 튜토리얼 콜백: 드릴 발동 완료
+            TutorialManager.Instance?.OnDrillActivated();
         }
 
         // ============================================================

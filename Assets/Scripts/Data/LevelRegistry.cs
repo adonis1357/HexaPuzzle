@@ -25,6 +25,15 @@ namespace JewelsHexaPuzzle.Data
         }
 
         /// <summary>
+        /// 레지스트리 강제 재초기화 (에디터 도메인 리로드 대응)
+        /// </summary>
+        public static void ForceReinitialize()
+        {
+            isInitialized = false;
+            Initialize();
+        }
+
+        /// <summary>
         /// 레벨 데이터 가져오기
         /// </summary>
         public static LevelData GetLevel(int levelId)
@@ -102,21 +111,16 @@ namespace JewelsHexaPuzzle.Data
             // --- 레벨 1~10: Stage 모드 (크리스탈 숲 - 색상도둑 소탕) ---
             RegisterStageLevels();
 
-            // --- 레벨 11: Infinite 모드 (무한 도전) ---
+            // --- 레벨 11: Stage 모드 (드릴 튜토리얼) ---
             Register(new LevelData
             {
                 levelId = 11,
-                levelName = "무한 도전",
-                subtitle = "생존 미션",
-                gameMode = GameMode.Infinite,
-                difficulty = 0,
+                levelName = "STAGE 11",
+                subtitle = "드릴 튜토리얼",
+                gameMode = GameMode.Stage,
+                difficulty = 1,
                 isLocked = true,
                 unlockRequirement = 10,
-                infiniteConfig = new InfiniteConfig
-                {
-                    initialMoves = 15,
-                    activeGemTypeCount = 5
-                },
                 lobbyDisplay = new LobbyDisplayConfig
                 {
                     backgroundColor = new Color(0.7f, 0.3f, 0.5f),

@@ -38,6 +38,16 @@ namespace JewelsHexaPuzzle.Managers
         private bool waitingForEvent = false;
         private TutorialWaitEvent pendingWaitEvent = TutorialWaitEvent.None;
 
+        // 드릴 튜토리얼 전용 상태
+        private bool isPausedForTutorial = false;
+        private HexCoord? pendingDrillCoord = null;
+
+        /// <summary>
+        /// BRS 캐스케이드 pause 동기화용 프로퍼티.
+        /// true이면 BRS가 yield return null로 대기.
+        /// </summary>
+        public bool IsPausedForTutorial => isPausedForTutorial;
+
         // ============================================================
         // 데이터
         // ============================================================
@@ -184,8 +194,42 @@ namespace JewelsHexaPuzzle.Managers
         {
             EnsureInitialized();
             Debug.Log($"[TutorialManager] OnStageStart({stageNumber}): active={isTutorialActive}, tutorialUI={tutorialUI != null}, sequences={allSequences?.Count}");
+
+            // 드릴 튜토리얼 보드 사전 배치 (완료되지 않은 경우만)
+            if (stageNumber == 11 && !IsTutorialCompleted("stage11_drill_tutorial"))
+            {
+                SetupDrillTutorialBoard();
+            }
+
             if (isTutorialActive) return;
             CheckTrigger(TutorialTrigger.OnStageStart, stageNumber);
+        }
+
+        /// <summary>
+        /// 드릴 튜토리얼 보드 사전 배치 — CW 회전으로 BackSlash 4-in-line 생성 가능하도록 설정
+        /// </summary>
+        private void SetupDrillTutorialBoard()
+        {
+            if (hexGrid == null) return;
+
+            var presets = new Dictionary<HexCoord, GemType>
+            {
+                // 4-in-line 핵심 블록 (BackSlash q축)
+                { new HexCoord(-1, 0), GemType.Blue },
+                { new HexCoord( 0, 0), GemType.Blue },    // 클러스터 (CW → (1,0) 위치로)
+                { new HexCoord( 0, 1), GemType.Blue },    // 클러스터 (CW → (0,0) 위치로)
+                { new HexCoord( 1, 0), GemType.Red },     // 클러스터 (CW → (0,1) 위치로)
+                { new HexCoord( 2, 0), GemType.Blue },
+
+                // 삼각형 매칭 방지용 안전 블록
+                { new HexCoord(-1, 1), GemType.Red },
+                { new HexCoord( 0,-1), GemType.Red },
+                { new HexCoord( 1,-1), GemType.Green },
+                { new HexCoord(-2, 0), GemType.Green }
+            };
+
+            hexGrid.SetPresetBlocks(presets);
+            Debug.Log("[TutorialManager] 드릴 튜토리얼 보드 사전 배치 완료");
         }
 
         /// <summary>
@@ -382,6 +426,35 @@ namespace JewelsHexaPuzzle.Managers
             if (step.useHighlight && tutorialUI != null)
                 tutorialUI.ShowHighlight(step.highlightScreenPos, step.highlightRadius);
 
+            // 블록 좌표 하이라이트 (드릴 튜토리얼용)
+            if (step.highlightBlockCoords != null && step.highlightBlockCoords.Length > 0 && hexGrid != null)
+            {
+                HashSet<HexCoord> highlightSet = new HashSet<HexCoord>();
+                foreach (var c in step.highlightBlockCoords) highlightSet.Add(c);
+
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null) continue;
+                    if (highlightSet.Contains(block.Coord))
+                        block.SetTutorialGlow(true);
+                    else
+                        block.SetTutorialDimmed(true);
+                }
+            }
+
+            // 드릴 하이라이트 (동적 좌표 — step 6: 드릴 완성 설명)
+            if (step.id == "s11_drill_explain" && pendingDrillCoord.HasValue && hexGrid != null)
+            {
+                foreach (var block in hexGrid.GetAllBlocks())
+                {
+                    if (block == null) continue;
+                    if (block.Coord.Equals(pendingDrillCoord.Value))
+                        block.SetTutorialGlow(true);
+                    else
+                        block.SetTutorialDimmed(true);
+                }
+            }
+
             // 대화 표시
             waitingForTap = true;
             if (tutorialUI != null)
@@ -409,6 +482,20 @@ namespace JewelsHexaPuzzle.Managers
             {
                 tutorialUI.HideDialog();
                 tutorialUI.HideHighlight();
+            }
+
+            // 블록 하이라이트 정리
+            if ((step.highlightBlockCoords != null && step.highlightBlockCoords.Length > 0) ||
+                step.id == "s11_drill_explain")
+            {
+                ClearBlockHighlights();
+            }
+
+            // Dialog에서 resume 처리 (매칭/드릴 pause 후 탭 시)
+            if (isPausedForTutorial)
+            {
+                isPausedForTutorial = false;
+                Debug.Log("[TutorialManager] BRS pause 해제 (Dialog 탭)");
             }
 
             if (step.pauseGame)
@@ -513,18 +600,91 @@ namespace JewelsHexaPuzzle.Managers
                         tutorialUI.ShowFingerGuide(step.fingerGuidePos);
                 }
             }
-            else if (!autoHighlight)
+            else if (step.forceDrillClick && pendingDrillCoord.HasValue)
             {
-                // 지정 좌표로 제한
-                var coords = new HashSet<HexCoord>();
-                foreach (var c in step.allowedCoords) coords.Add(c);
+                // 드릴 클릭 강제: 드릴 좌표만 허용
+                var coords = new HashSet<HexCoord> { pendingDrillCoord.Value };
                 if (inputSystem != null)
                 {
                     inputSystem.SetRestrictedMode(true, coords);
                     inputSystem.SetEnabled(true);
                 }
-                if (step.showFingerGuide && tutorialUI != null)
-                    tutorialUI.ShowFingerGuide(step.fingerGuidePos);
+
+                // 드릴 블록 글로우 + 나머지 딤
+                if (hexGrid != null)
+                {
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block == null) continue;
+                        if (block.Coord.Equals(pendingDrillCoord.Value))
+                            block.SetTutorialGlow(true);
+                        else
+                            block.SetTutorialDimmed(true);
+                    }
+                }
+
+                // 손가락 가이드: 드릴 블록 위치
+                if (step.showFingerGuide && tutorialUI != null && hexGrid != null)
+                {
+                    var drillBlock = hexGrid.GetBlock(pendingDrillCoord.Value);
+                    if (drillBlock != null)
+                    {
+                        RectTransform brt = drillBlock.GetComponent<RectTransform>();
+                        if (brt != null)
+                        {
+                            Vector2 pos = brt.anchoredPosition;
+                            pos.y += 100f; // 손끝이 드릴을 가리키도록
+                            tutorialUI.ShowFingerGuide(pos);
+                        }
+                    }
+                }
+            }
+            else if (!autoHighlight)
+            {
+                // 지정 좌표로 제한
+                var coords = new HashSet<HexCoord>();
+                foreach (var c in step.allowedCoords) coords.Add(c);
+
+                // 지정 좌표 글로우 + 나머지 딤
+                if (hexGrid != null)
+                {
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block == null) continue;
+                        if (coords.Contains(block.Coord))
+                            block.SetTutorialGlow(true);
+                        else
+                            block.SetTutorialDimmed(true);
+                    }
+                }
+
+                if (inputSystem != null)
+                {
+                    inputSystem.SetRestrictedMode(true, coords);
+                    inputSystem.SetEnabled(true);
+                }
+
+                // 손가락 가이드: 클러스터 중심
+                if (step.showFingerGuide && tutorialUI != null && hexGrid != null)
+                {
+                    Vector2 centerWorld = Vector2.zero;
+                    int count = 0;
+                    foreach (var c in step.allowedCoords)
+                    {
+                        var block = hexGrid.GetBlock(c);
+                        if (block != null)
+                        {
+                            RectTransform brt = block.GetComponent<RectTransform>();
+                            if (brt != null) { centerWorld += brt.anchoredPosition; count++; }
+                        }
+                    }
+                    if (count > 0)
+                    {
+                        centerWorld /= count;
+                        centerWorld.y += 100f;
+                        tutorialUI.ShowFingerGuide(centerWorld);
+                    }
+                }
             }
             else
             {
@@ -576,8 +736,12 @@ namespace JewelsHexaPuzzle.Managers
 
             Debug.Log($"[TutorialManager] 이벤트 대기: {step.waitEvent}");
 
-            // 타임아웃 15초
-            float timeout = 15f;
+            // 드릴 튜토리얼 pause 이벤트는 타임아웃 60초 (캐스케이드 대기)
+            bool isDrillPauseEvent = step.waitEvent == TutorialWaitEvent.MatchHighlightPause ||
+                                     step.waitEvent == TutorialWaitEvent.DrillCreatedPause ||
+                                     step.waitEvent == TutorialWaitEvent.DrillActivated;
+            float timeout = isDrillPauseEvent ? 60f : 15f;
+
             float elapsed = 0f;
             while (waitingForEvent && elapsed < timeout)
             {
@@ -604,8 +768,59 @@ namespace JewelsHexaPuzzle.Managers
             if (inputSystem != null)
                 inputSystem.SetRestrictedMode(false, null);
 
-            // 캐스케이드 완료 대기 (매칭 후 블록 정리 시간)
-            yield return new WaitForSecondsRealtime(0.5f);
+            // 캐스케이드 완료 대기 (매칭 후 블록 정리 시간) — pause 이벤트에서는 스킵
+            if (!isDrillPauseEvent)
+                yield return new WaitForSecondsRealtime(0.5f);
+        }
+
+        // ============================================================
+        // 드릴 튜토리얼 콜백 (BRS/DrillBlockSystem에서 호출)
+        // ============================================================
+
+        /// <summary>
+        /// 매칭 하이라이트 완료 시 호출 (BRS에서 특수 블록 생성 전).
+        /// MatchHighlightPause 대기 중이면 pause 걸고 이벤트 해제.
+        /// </summary>
+        public void OnMatchHighlightComplete()
+        {
+            if (waitingForEvent && pendingWaitEvent == TutorialWaitEvent.MatchHighlightPause)
+            {
+                isPausedForTutorial = true;
+                waitingForEvent = false;
+                pendingWaitEvent = TutorialWaitEvent.None;
+                Debug.Log("[TutorialManager] MatchHighlightPause 트리거 — BRS pause 시작");
+            }
+        }
+
+        /// <summary>
+        /// 드릴 생성 완료 시 호출 (BRS에서 드릴 블록 생성 후).
+        /// DrillCreatedPause 대기 중이면 pause 걸고 이벤트 해제.
+        /// </summary>
+        public void OnDrillCreated(HexCoord coord)
+        {
+            pendingDrillCoord = coord;
+
+            if (waitingForEvent && pendingWaitEvent == TutorialWaitEvent.DrillCreatedPause)
+            {
+                isPausedForTutorial = true;
+                waitingForEvent = false;
+                pendingWaitEvent = TutorialWaitEvent.None;
+                Debug.Log($"[TutorialManager] DrillCreatedPause 트리거 — 드릴 좌표={coord}, BRS pause 시작");
+            }
+        }
+
+        /// <summary>
+        /// 드릴 발동 완료 시 호출 (DrillBlockSystem에서 드릴 코루틴 끝).
+        /// DrillActivated 대기 중이면 이벤트 해제.
+        /// </summary>
+        public void OnDrillActivated()
+        {
+            if (waitingForEvent && pendingWaitEvent == TutorialWaitEvent.DrillActivated)
+            {
+                waitingForEvent = false;
+                pendingWaitEvent = TutorialWaitEvent.None;
+                Debug.Log("[TutorialManager] DrillActivated 트리거");
+            }
         }
 
         // ============================================================
@@ -648,6 +863,10 @@ namespace JewelsHexaPuzzle.Managers
                 StopCoroutine(sequenceCoroutine);
                 sequenceCoroutine = null;
             }
+
+            // BRS pause 해제
+            isPausedForTutorial = false;
+            pendingDrillCoord = null;
 
             // 입력 제한 해제
             if (inputSystem != null)

@@ -2293,6 +2293,14 @@ public void TriggerBigBang()
 
             yield return new WaitForSeconds(matchHighlightDuration);
 
+            // [튜토리얼 Pause Hook 1] 매칭 하이라이트 완료 → 특수 블록 생성 전
+            if (TutorialManager.Instance != null)
+            {
+                TutorialManager.Instance.OnMatchHighlightComplete();
+                while (TutorialManager.Instance.IsPausedForTutorial)
+                    yield return null;
+            }
+
             // 2. 특수 블록 생성
             HashSet<HexBlock> newlyCreatedSpecials = new HashSet<HexBlock>();
 
@@ -2312,6 +2320,14 @@ public void TriggerBigBang()
 
                     // 미션 시스템에 특수 블록 생성 알림 (타입 + 드릴방향)
                     OnSpecialBlockCreated?.Invoke(match.createdSpecialType, match.drillDirection);
+
+                    // [튜토리얼 Pause Hook 2] 드릴 생성 완료 후
+                    if (match.createdSpecialType == SpecialBlockType.Drill && TutorialManager.Instance != null)
+                    {
+                        TutorialManager.Instance.OnDrillCreated(match.specialSpawnBlock.Coord);
+                        while (TutorialManager.Instance.IsPausedForTutorial)
+                            yield return null;
+                    }
 
                     // 생성 가산점
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
