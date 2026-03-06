@@ -54,6 +54,7 @@ namespace JewelsHexaPuzzle.Managers
         public int RotationCount => rotationCount;
 
         private bool isProcessingChainDrill = false;
+        private float lastAftermathProgressTime = 0f;  // ProcessSpecialBlockAftermath 진행 추적 타임스탬프
         private bool isInPostRecovery = false;
         private bool isPaused = false;
         private bool isItemAction = false;
@@ -82,6 +83,7 @@ namespace JewelsHexaPuzzle.Managers
         public int InitialTurns => initialTurns;
         public bool IsPaused => isPaused;
         public int CurrentGold => currentGold;
+        public bool IsProcessingChainDrill => isProcessingChainDrill;
 
         // 이벤트
         public event System.Action<GameState> OnGameStateChanged;
@@ -236,6 +238,7 @@ namespace JewelsHexaPuzzle.Managers
             Text turnLabel = turnObj.AddComponent<Text>();
             turnLabel.font = font;
             turnLabel.fontSize = 32;
+            turnLabel.fontStyle = FontStyle.Bold;
             turnLabel.alignment = TextAnchor.MiddleCenter;
             turnLabel.color = Color.white;
             turnLabel.raycastTarget = false;
@@ -245,6 +248,10 @@ namespace JewelsHexaPuzzle.Managers
             turnLabel.verticalOverflow = VerticalWrapMode.Overflow;
             turnLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             turnLabel.text = currentGameMode == GameMode.Infinite ? "0" : initialTurns.ToString();
+            // 텍스트 아웃라인 (가독성 강화)
+            Outline turnOutline = turnObj.AddComponent<Outline>();
+            turnOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            turnOutline.effectDistance = new Vector2(2, 2);
             hudTurnText = turnLabel;
 
             // MOVES 라벨 (프레임 하단)
@@ -899,7 +906,7 @@ namespace JewelsHexaPuzzle.Managers
             panelRt.anchorMax = new Vector2(0.5f, 0.5f);
             panelRt.pivot = new Vector2(0.5f, 0.5f);
             panelRt.anchoredPosition = Vector2.zero;
-            panelRt.sizeDelta = new Vector2(500f, 420f);
+            panelRt.sizeDelta = new Vector2(500f, 480f);
 
             Image panelBg = panel.AddComponent<Image>();
             panelBg.color = new Color(0.12f, 0.1f, 0.18f, 0.95f);
@@ -954,14 +961,14 @@ namespace JewelsHexaPuzzle.Managers
             gameOverScoreText.raycastTarget = false;
             gameOverScoreText.text = "0";
 
-            // === 이동 횟수 표시 ===
+            // === 이동 횟수 표시 (베스트 스코어 아래 배치) ===
             GameObject movesObj = new GameObject("MovesLabel");
             movesObj.transform.SetParent(panel.transform, false);
             RectTransform movesRt = movesObj.AddComponent<RectTransform>();
             movesRt.anchorMin = new Vector2(0.5f, 1f);
             movesRt.anchorMax = new Vector2(0.5f, 1f);
             movesRt.pivot = new Vector2(0.5f, 1f);
-            movesRt.anchoredPosition = new Vector2(0f, -210f);
+            movesRt.anchoredPosition = new Vector2(0f, -320f);
             movesRt.sizeDelta = new Vector2(400f, 36f);
             gameOverMovesText = movesObj.AddComponent<Text>();
             gameOverMovesText.font = font;
@@ -1003,7 +1010,7 @@ namespace JewelsHexaPuzzle.Managers
             retryText.alignment = TextAnchor.MiddleCenter;
             retryText.color = Color.white;
             retryText.raycastTarget = false;
-            retryText.text = "RETRY";
+            retryText.text = "나가기";
 
             retryBtn.onClick.AddListener(() =>
             {
@@ -1224,11 +1231,11 @@ namespace JewelsHexaPuzzle.Managers
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // 최고 점수 컨테이너
+            // 최고 점수 컨테이너 (점수 아래, 무브수 위에 배치)
             GameObject hsObj = new GameObject("GameOverHighScore");
             hsObj.transform.SetParent(gameOverPopupObj.transform, false);
             RectTransform hsRt = hsObj.AddComponent<RectTransform>();
-            hsRt.anchoredPosition = new Vector2(0f, -120f);
+            hsRt.anchoredPosition = new Vector2(0f, -30f);
             hsRt.sizeDelta = new Vector2(350f, 70f);
 
             // 레벨 최고 점수 (모든 유저 통합)
@@ -1308,8 +1315,9 @@ private void Update()
                             || (bombSystem != null && bombSystem.IsBombing)
                             || (donutSystem != null && donutSystem.IsActivating)
                             || (xBlockSystem != null && xBlockSystem.IsActivating)
-
-                            || (droneSystem != null && droneSystem.IsActivating);
+                            || (droneSystem != null && droneSystem.IsActivating)
+                            // ProcessSpecialBlockAftermath 코루틴이 최근 5초 내 진행 보고가 있으면 활성으로 간주
+                            || (isProcessingChainDrill && Time.time - lastAftermathProgressTime < 5f);
 
                         if (systemsActive)
                         {
@@ -1319,7 +1327,13 @@ private void Update()
                         else
                         {
                             Debug.LogWarning($"[GameManager] STUCK DETECTED! Processing for {elapsed:F1}s. Force recovering...");
-                            Debug.LogWarning($"[GameManager] Flags: isProcessingChainDrill={isProcessingChainDrill}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}");
+                            Debug.LogWarning($"[GameManager] Flags: isProcessingChainDrill={isProcessingChainDrill}, BRS.IsProcessing={blockRemovalSystem?.IsProcessing}, " +
+                                $"isInPostRecovery={isInPostRecovery}, isItemAction={isItemAction}");
+                            Debug.LogWarning($"[GameManager] Systems: Drilling={drillSystem?.IsDrilling}, Bombing={bombSystem?.IsBombing}, " +
+                                $"Donut={donutSystem?.IsActivating}, XBlock={xBlockSystem?.IsActivating}, Drone={droneSystem?.IsActivating}");
+                            Debug.LogWarning($"[GameManager] Aftermath: lastProgress={Time.time - lastAftermathProgressTime:F1}s ago, " +
+                                $"Rotating={rotationSystem?.IsRotating}, InputEnabled={inputSystem?.IsEnabled}");
+                            Debug.LogWarning($"[GameManager] Tutorial: active={TutorialManager.Instance?.IsTutorialActive}, paused={TutorialManager.Instance?.IsPausedForTutorial}");
                             ForceRecoverFromStuck();
                         }
                     }
@@ -1365,6 +1379,7 @@ private void ForceRecoverFromStuck()
             // 모든 플래그 리셋
             isProcessingChainDrill = false;
             isInPostRecovery = false;
+            lastAftermathProgressTime = 0f;
 
             // RotationSystem 리셋
             if (rotationSystem != null)
@@ -1392,6 +1407,13 @@ private void ForceRecoverFromStuck()
                         block.SetMatched(false);
                     }
                 }
+            }
+
+            // 튜토리얼 pause 상태도 해제 (BRS가 무한 대기에 빠지는 것 방지)
+            if (TutorialManager.Instance != null && TutorialManager.Instance.IsPausedForTutorial)
+            {
+                Debug.LogWarning("[GameManager] ForceRecover: TutorialManager pause 해제");
+                TutorialManager.Instance.ForceUnpause();
             }
 
             // 타이머 리셋
@@ -1654,6 +1676,13 @@ private void InitializeSystems()
 
             if (droneSystem != null)
                 droneSystem.OnDroneComplete += OnSpecialBlockCompleted;
+
+            // 튜토리얼 이벤트 연결
+            if (TutorialManager.Instance != null)
+            {
+                TutorialManager.Instance.OnTutorialStarted += OnTutorialStarted;
+                TutorialManager.Instance.OnTutorialEnded += OnTutorialEnded;
+            }
 
             // 스테이지 관리자 이벤트 연결 (Mission 1 미션 진행도)
             if (stageManager != null)
@@ -1968,7 +1997,7 @@ private void InitializeSystems()
             panelRt.anchorMax = new Vector2(0.5f, 0.5f);
             panelRt.pivot = new Vector2(0.5f, 0.5f);
             panelRt.anchoredPosition = Vector2.zero;
-            panelRt.sizeDelta = new Vector2(420f, 300f);
+            panelRt.sizeDelta = new Vector2(420f, 320f);
             Image panelBg = panel.AddComponent<Image>();
             panelBg.color = new Color(0.15f, 0.15f, 0.25f, 0.95f);
             // 패널 클릭 시 배경 닫기 이벤트 전파 방지
@@ -2014,109 +2043,155 @@ private void InitializeSystems()
             GameObject descObj = new GameObject("Description");
             descObj.transform.SetParent(panel.transform, false);
             Text descText = descObj.AddComponent<Text>();
-            descText.text = $"{itemName} x1";
+            descText.text = itemName;
             descText.font = font;
-            descText.fontSize = 18;
+            descText.fontSize = 20;
+            descText.fontStyle = FontStyle.Bold;
             descText.alignment = TextAnchor.MiddleCenter;
             descText.color = Color.white;
             descText.raycastTarget = false;
-            descText.lineSpacing = 1.2f;
             RectTransform descRt = descObj.GetComponent<RectTransform>();
-            descRt.anchorMin = new Vector2(0.1f, 0.55f);
-            descRt.anchorMax = new Vector2(0.9f, 0.8f);
+            descRt.anchorMin = new Vector2(0.1f, 0.72f);
+            descRt.anchorMax = new Vector2(0.9f, 0.86f);
             descRt.offsetMin = Vector2.zero;
             descRt.offsetMax = Vector2.zero;
 
-            bool canAfford = currentGold >= price;
+            // 보유 골드 표시
+            GameObject goldObj = new GameObject("GoldText");
+            goldObj.transform.SetParent(panel.transform, false);
+            Text goldText = goldObj.AddComponent<Text>();
+            goldText.text = $"보유: {currentGold} 골드";
+            goldText.font = font;
+            goldText.fontSize = 14;
+            goldText.alignment = TextAnchor.MiddleCenter;
+            goldText.color = new Color(0.8f, 0.8f, 0.6f, 0.8f);
+            goldText.raycastTarget = false;
+            RectTransform goldRt = goldObj.GetComponent<RectTransform>();
+            goldRt.anchorMin = new Vector2(0.1f, 0.60f);
+            goldRt.anchorMax = new Vector2(0.9f, 0.72f);
+            goldRt.offsetMin = Vector2.zero;
+            goldRt.offsetMax = Vector2.zero;
 
-            // 가격 표시 (골드 부족 시 빨간색)
-            GameObject priceObj = new GameObject("PriceText");
-            priceObj.transform.SetParent(panel.transform, false);
-            Text priceText = priceObj.AddComponent<Text>();
-            priceText.text = $"가격: {price} 골드";
-            priceText.font = font;
-            priceText.fontSize = 18;
-            priceText.fontStyle = FontStyle.Bold;
-            priceText.alignment = TextAnchor.MiddleCenter;
-            priceText.color = canAfford ? new Color(1f, 0.9f, 0.4f, 1f) : new Color(1f, 0.3f, 0.3f, 1f);
-            priceText.raycastTarget = false;
-            RectTransform priceRt = priceObj.GetComponent<RectTransform>();
-            priceRt.anchorMin = new Vector2(0.1f, 0.30f);
-            priceRt.anchorMax = new Vector2(0.9f, 0.55f);
-            priceRt.offsetMin = Vector2.zero;
-            priceRt.offsetMax = Vector2.zero;
-
-            // 구매 버튼
-            GameObject buyBtnObj = new GameObject("BuyButton");
-            buyBtnObj.transform.SetParent(panel.transform, false);
-            RectTransform buyBtnRt = buyBtnObj.AddComponent<RectTransform>();
-            buyBtnRt.anchorMin = new Vector2(0.10f, 0.05f);
-            buyBtnRt.anchorMax = new Vector2(0.464f, 0.23f);
-            buyBtnRt.offsetMin = Vector2.zero;
-            buyBtnRt.offsetMax = Vector2.zero;
-            Image buyBtnImg = buyBtnObj.AddComponent<Image>();
-            buyBtnImg.color = new Color(0.2f, 0.7f, 0.3f, 1f);
-            Button buyBtn = buyBtnObj.AddComponent<Button>();
-            var buyBc = buyBtn.colors;
-            buyBc.normalColor = Color.white;
-            buyBc.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
-            buyBc.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
-            buyBtn.colors = buyBc;
-
+            int price1 = price;
+            int price3 = price * 3;
+            bool canAfford1 = currentGold >= price1;
+            bool canAfford3 = currentGold >= price3;
             ItemType capturedType = itemType;
-            GameObject capturedBuyBtnObj = buyBtnObj;
-            buyBtn.onClick.AddListener(() =>
+
+            // === 1개 구매 버튼 ===
+            GameObject buy1Obj = new GameObject("Buy1Button");
+            buy1Obj.transform.SetParent(panel.transform, false);
+            RectTransform buy1Rt = buy1Obj.AddComponent<RectTransform>();
+            buy1Rt.anchorMin = new Vector2(0.06f, 0.30f);
+            buy1Rt.anchorMax = new Vector2(0.48f, 0.58f);
+            buy1Rt.offsetMin = Vector2.zero;
+            buy1Rt.offsetMax = Vector2.zero;
+            Image buy1Img = buy1Obj.AddComponent<Image>();
+            buy1Img.color = canAfford1 ? new Color(0.2f, 0.65f, 0.3f, 1f) : new Color(0.35f, 0.35f, 0.4f, 1f);
+            Button buy1Btn = buy1Obj.AddComponent<Button>();
+            var buy1Bc = buy1Btn.colors;
+            buy1Bc.normalColor = Color.white;
+            buy1Bc.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            buy1Bc.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+            buy1Btn.colors = buy1Bc;
+
+            GameObject captured1Obj = buy1Obj;
+            buy1Btn.onClick.AddListener(() =>
             {
-                // 클릭 사운드
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayButtonClick();
-
-                // 버튼 리액션 애니메이션
-                StartCoroutine(PopupButtonReaction(capturedBuyBtnObj));
-
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
+                StartCoroutine(PopupButtonReaction(captured1Obj));
                 if (ItemManager.Instance != null && ItemManager.Instance.PurchaseItem(capturedType, 1))
                 {
-                    // 구매 성공 → 수량 배지 업데이트
                     UpdateItemCountBadge(capturedType, ItemManager.Instance.GetItemCount(capturedType));
                     StartCoroutine(DelayedAction(0.12f, () => ClosePurchasePopup()));
-                    Debug.Log($"[GameManager] 구매 완료: {capturedType}");
                 }
                 else
                 {
-                    // 골드 부족 메시지 표시 + 버튼 흔들림
-                    StartCoroutine(PopupButtonShake(capturedBuyBtnObj));
+                    StartCoroutine(PopupButtonShake(captured1Obj));
                     ShowFloatingMessage("골드가 부족합니다");
-                    Debug.Log($"[GameManager] 구매 실패: 골드 부족");
                 }
             });
 
-            // 구매 버튼 텍스트
-            GameObject buyTextObj = new GameObject("BuyText");
-            buyTextObj.transform.SetParent(buyBtnObj.transform, false);
-            Text buyText = buyTextObj.AddComponent<Text>();
-            buyText.text = "구매";
-            buyText.font = font;
-            buyText.fontSize = 18;
-            buyText.fontStyle = FontStyle.Bold;
-            buyText.alignment = TextAnchor.MiddleCenter;
-            buyText.color = Color.white;
-            buyText.raycastTarget = false;
-            RectTransform buyTextRt = buyTextObj.GetComponent<RectTransform>();
-            buyTextRt.anchorMin = Vector2.zero;
-            buyTextRt.anchorMax = Vector2.one;
-            buyTextRt.offsetMin = Vector2.zero;
-            buyTextRt.offsetMax = Vector2.zero;
+            // 1개 구매 버튼 텍스트 (수량 + 가격)
+            GameObject buy1TextObj = new GameObject("Buy1Text");
+            buy1TextObj.transform.SetParent(buy1Obj.transform, false);
+            Text buy1Text = buy1TextObj.AddComponent<Text>();
+            buy1Text.text = $"1개 구매\n<size=14>{price1} 골드</size>";
+            buy1Text.font = font;
+            buy1Text.fontSize = 16;
+            buy1Text.fontStyle = FontStyle.Bold;
+            buy1Text.alignment = TextAnchor.MiddleCenter;
+            buy1Text.color = canAfford1 ? Color.white : new Color(1f, 0.5f, 0.5f);
+            buy1Text.raycastTarget = false;
+            buy1Text.supportRichText = true;
+            RectTransform buy1TextRt = buy1TextObj.GetComponent<RectTransform>();
+            buy1TextRt.anchorMin = Vector2.zero;
+            buy1TextRt.anchorMax = Vector2.one;
+            buy1TextRt.offsetMin = Vector2.zero;
+            buy1TextRt.offsetMax = Vector2.zero;
 
-            // 취소 버튼
+            // === 3개 구매 버튼 ===
+            GameObject buy3Obj = new GameObject("Buy3Button");
+            buy3Obj.transform.SetParent(panel.transform, false);
+            RectTransform buy3Rt = buy3Obj.AddComponent<RectTransform>();
+            buy3Rt.anchorMin = new Vector2(0.52f, 0.30f);
+            buy3Rt.anchorMax = new Vector2(0.94f, 0.58f);
+            buy3Rt.offsetMin = Vector2.zero;
+            buy3Rt.offsetMax = Vector2.zero;
+            Image buy3Img = buy3Obj.AddComponent<Image>();
+            buy3Img.color = canAfford3 ? new Color(0.2f, 0.5f, 0.8f, 1f) : new Color(0.35f, 0.35f, 0.4f, 1f);
+            Button buy3Btn = buy3Obj.AddComponent<Button>();
+            var buy3Bc = buy3Btn.colors;
+            buy3Bc.normalColor = Color.white;
+            buy3Bc.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            buy3Bc.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+            buy3Btn.colors = buy3Bc;
+
+            GameObject captured3Obj = buy3Obj;
+            buy3Btn.onClick.AddListener(() =>
+            {
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
+                StartCoroutine(PopupButtonReaction(captured3Obj));
+                if (ItemManager.Instance != null && ItemManager.Instance.PurchaseItem(capturedType, 3))
+                {
+                    UpdateItemCountBadge(capturedType, ItemManager.Instance.GetItemCount(capturedType));
+                    StartCoroutine(DelayedAction(0.12f, () => ClosePurchasePopup()));
+                }
+                else
+                {
+                    StartCoroutine(PopupButtonShake(captured3Obj));
+                    ShowFloatingMessage("골드가 부족합니다");
+                }
+            });
+
+            // 3개 구매 버튼 텍스트
+            GameObject buy3TextObj = new GameObject("Buy3Text");
+            buy3TextObj.transform.SetParent(buy3Obj.transform, false);
+            Text buy3Text = buy3TextObj.AddComponent<Text>();
+            buy3Text.text = $"3개 구매\n<size=14>{price3} 골드</size>";
+            buy3Text.font = font;
+            buy3Text.fontSize = 16;
+            buy3Text.fontStyle = FontStyle.Bold;
+            buy3Text.alignment = TextAnchor.MiddleCenter;
+            buy3Text.color = canAfford3 ? Color.white : new Color(1f, 0.5f, 0.5f);
+            buy3Text.raycastTarget = false;
+            buy3Text.supportRichText = true;
+            RectTransform buy3TextRt = buy3TextObj.GetComponent<RectTransform>();
+            buy3TextRt.anchorMin = Vector2.zero;
+            buy3TextRt.anchorMax = Vector2.one;
+            buy3TextRt.offsetMin = Vector2.zero;
+            buy3TextRt.offsetMax = Vector2.zero;
+
+            // === 취소 버튼 (하단 중앙) ===
             GameObject cancelBtnObj = new GameObject("CancelButton");
             cancelBtnObj.transform.SetParent(panel.transform, false);
             RectTransform cancelBtnRt = cancelBtnObj.AddComponent<RectTransform>();
-            cancelBtnRt.anchorMin = new Vector2(0.536f, 0.05f);
-            cancelBtnRt.anchorMax = new Vector2(0.90f, 0.23f);
+            cancelBtnRt.anchorMin = new Vector2(0.25f, 0.06f);
+            cancelBtnRt.anchorMax = new Vector2(0.75f, 0.24f);
             cancelBtnRt.offsetMin = Vector2.zero;
             cancelBtnRt.offsetMax = Vector2.zero;
             Image cancelBtnImg = cancelBtnObj.AddComponent<Image>();
-            cancelBtnImg.color = new Color(0.5f, 0.3f, 0.3f, 1f);
+            cancelBtnImg.color = new Color(0.45f, 0.3f, 0.3f, 1f);
             Button cancelBtn = cancelBtnObj.AddComponent<Button>();
             var cancelBc = cancelBtn.colors;
             cancelBc.normalColor = Color.white;
@@ -2126,8 +2201,7 @@ private void InitializeSystems()
             GameObject capturedCancelBtnObj = cancelBtnObj;
             cancelBtn.onClick.AddListener(() =>
             {
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayButtonClick();
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
                 StartCoroutine(PopupButtonReaction(capturedCancelBtnObj));
                 StartCoroutine(DelayedAction(0.12f, () => ClosePurchasePopup()));
             });
@@ -3059,9 +3133,22 @@ private void InitializeSystems()
 
 
             // 입력 시스템 제어
+            // 튜토리얼 활성 중에는 TutorialManager가 입력을 직접 관리하므로 덮어쓰지 않음
             if (inputSystem != null)
             {
-                inputSystem.SetEnabled(newState == GameState.Playing);
+                bool tutorialActive = TutorialManager.Instance != null && TutorialManager.Instance.IsTutorialActive;
+                if (tutorialActive)
+                {
+                    // 튜토리얼 중에는 Playing 전환 시 입력을 자동 활성화하지 않음
+                    // (TutorialManager가 ForcedAction/Dialog에서 직접 제어)
+                    if (newState != GameState.Playing)
+                        inputSystem.SetEnabled(false);
+                    // Playing일 때는 튜토리얼의 현재 입력 상태 유지
+                }
+                else
+                {
+                    inputSystem.SetEnabled(newState == GameState.Playing);
+                }
             }
 
             OnGameStateChanged?.Invoke(newState);
@@ -3363,6 +3450,31 @@ private void OnRotationComplete(bool matchFound)
             }
         }
 
+        // ============================================================
+        // 튜토리얼 이벤트 핸들러
+        // ============================================================
+
+        /// <summary>
+        /// 튜토리얼 시작 시 — 게임 상태를 보존하고 입력 제어를 TutorialManager에 위임
+        /// </summary>
+        private void OnTutorialStarted()
+        {
+            Debug.Log("[GameManager] 튜토리얼 시작 감지 — 입력 제어를 TutorialManager에 위임");
+            // 현재 Playing 상태라면 입력 비활성화 (튜토리얼이 직접 제어)
+            if (currentState == GameState.Playing && inputSystem != null)
+                inputSystem.SetEnabled(false);
+        }
+
+        /// <summary>
+        /// 튜토리얼 종료 시 — Playing 상태로 복원하고 입력 활성화
+        /// </summary>
+        private void OnTutorialEnded()
+        {
+            Debug.Log("[GameManager] 튜토리얼 종료 — Playing 상태 + 입력 활성화");
+            if (currentState == GameState.Playing && inputSystem != null)
+                inputSystem.SetEnabled(true);
+        }
+
         /// <summary>
         /// 연쇄 완료 이벤트
         /// </summary>
@@ -3378,8 +3490,20 @@ private void OnCascadeComplete()
             // ProcessSpecialBlockAftermath가 실행 중이면 상태 복원을 그쪽에서 처리
             if (isProcessingChainDrill)
             {
-                Debug.Log("[GameManager] OnCascadeComplete skipped - ProcessSpecialBlockAftermath is managing state");
-                return;
+                // 안전장치: ProcessSpecialBlockAftermath가 실제로 진행 중인지 확인
+                // 마지막 진행 보고로부터 10초 이상 지났으면 코루틴이 죽은 것으로 간주
+                float timeSinceProgress = Time.time - lastAftermathProgressTime;
+                if (timeSinceProgress > 10f)
+                {
+                    Debug.LogWarning($"[GameManager] OnCascadeComplete: isProcessingChainDrill=true but no progress for {timeSinceProgress:F1}s! Resetting orphaned flag.");
+                    isProcessingChainDrill = false;
+                    // 아래로 계속 진행 (정상 OnCascadeComplete 처리)
+                }
+                else
+                {
+                    Debug.Log("[GameManager] OnCascadeComplete skipped - ProcessSpecialBlockAftermath is managing state");
+                    return;
+                }
             }
 
             // 아이템 액션이면 회색 블록 생성 없이 Playing 복귀
@@ -3392,6 +3516,25 @@ private void OnCascadeComplete()
                 return;
             }
 
+            // ★ 턴 종료 처리 전체를 try-catch로 보호
+            // 예외 발생 시 Processing 상태에 영구 고착되는 것을 방지
+            try
+            {
+                OnCascadeCompleteTurnEnd();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[GameManager] OnCascadeComplete 턴 종료 처리 예외! Playing으로 강제 복귀.\n{e.Message}\n{e.StackTrace}");
+                SetGameState(GameState.Playing);
+                if (inputSystem != null) inputSystem.SetEnabled(true);
+            }
+        }
+
+        /// <summary>
+        /// OnCascadeComplete에서 분리된 턴 종료 처리 (예외 보호용)
+        /// </summary>
+        private void OnCascadeCompleteTurnEnd()
+        {
             // 턴 종료 보너스 (복수 생성 + 멀티킬)
             if (scoreManager != null)
             {
@@ -3424,7 +3567,7 @@ private void OnCascadeComplete()
                 }
 
                 int enemyCount = 3 + (rotationCount / 10);
-                StartCoroutine(SpawnEnemiesViaSystemAndCheckMoves(enemyCount));
+                StartCoroutine(SafeSpawnEnemiesAndCheckMoves(enemyCount));
                 return;
             }
 
@@ -3443,7 +3586,7 @@ private void OnCascadeComplete()
             }
 
             // 스테이지모드: EnemySystem으로 적군 스폰
-            StartCoroutine(SpawnEnemiesViaSystemAndPlay());
+            StartCoroutine(SafeSpawnEnemiesAndPlay());
         }
 
         /// <summary>
@@ -3480,7 +3623,12 @@ private void OnSpecialBlockCompleted(int score)
             // 복구 중이면 무시 (이중 처리 방지)
             if (isInPostRecovery) return;
 
-            if (isProcessingChainDrill) return;
+            if (isProcessingChainDrill)
+            {
+                // ProcessSpecialBlockAftermath 진행 추적 갱신 (orphan 감지용)
+                lastAftermathProgressTime = Time.time;
+                return;
+            }
 
             // BlockRemovalSystem 내부 cascade에서 특수블록이 발동된 경우
             // 이미 내부적으로 연쇄 처리 중이므로 GameManager가 개입하면 데드락 발생
@@ -3488,7 +3636,7 @@ private void OnSpecialBlockCompleted(int score)
 
             // 유저 직접 클릭으로 발동된 경우 (턴 차감은 InputSystem에서 발동 시작 시 처리)
             SetGameState(GameState.Processing);
-            StartCoroutine(ProcessSpecialBlockAftermath());
+            StartCoroutine(SafeProcessSpecialBlockAftermath());
         }
 
 /// <summary>
@@ -3569,10 +3717,36 @@ private void OnSpecialBlockCompleted(int score)
             }
         }
 
+        /// <summary>
+        /// ProcessSpecialBlockAftermath의 안전한 래퍼 — 예외 발생 시에도 isProcessingChainDrill 리셋 + Playing 전환 보장
+        /// </summary>
+        private IEnumerator SafeProcessSpecialBlockAftermath()
+        {
+            bool completed = false;
+            try
+            {
+                yield return StartCoroutine(ProcessSpecialBlockAftermath());
+                completed = true;
+            }
+            finally
+            {
+                if (!completed)
+                {
+                    Debug.LogError("[GameManager] ProcessSpecialBlockAftermath 예외 발생! 플래그 리셋 + Playing 강제 복귀.");
+                    isProcessingChainDrill = false;
+                    lastAftermathProgressTime = 0f;
+                    if (currentState == GameState.Processing)
+                        SetGameState(GameState.Playing);
+                    if (inputSystem != null) inputSystem.SetEnabled(true);
+                }
+            }
+        }
+
 private IEnumerator ProcessSpecialBlockAftermath()
         {
             yield return new WaitForSeconds(0.1f);
             isProcessingChainDrill = true;
+            lastAftermathProgressTime = Time.time;
 
             int maxLoops = 20;
             int loop = 0;
@@ -3581,8 +3755,9 @@ private IEnumerator ProcessSpecialBlockAftermath()
             {
                 loop++;
 
-                // 루프 진행 시 stuck 타이머 리셋
+                // 루프 진행 시 stuck 타이머 리셋 + aftermath 진행 추적
                 processingStartTime = Time.time;
+                lastAftermathProgressTime = Time.time;
 
                 // 1. 모든 특수 블록 시스템의 pending 목록 클리어
                 if (drillSystem != null) drillSystem.PendingSpecialBlocks.Clear();
@@ -3722,7 +3897,10 @@ private IEnumerator ProcessSpecialBlockAftermath()
             if (currentGameMode == GameMode.Infinite)
             {
                 if (missionSystem != null)
-                    missionSystem.OnTurnEnd();
+                {
+                    try { missionSystem.OnTurnEnd(); }
+                    catch (System.Exception e) { Debug.LogError($"[GameManager] Aftermath missionSystem.OnTurnEnd 예외: {e.Message}\n{e.StackTrace}"); }
+                }
 
                 if (currentTurns <= 0)
                 {
@@ -3731,7 +3909,7 @@ private IEnumerator ProcessSpecialBlockAftermath()
                 }
 
                 int enemyCount = 3 + (rotationCount / 10);
-                yield return StartCoroutine(SpawnEnemiesViaSystemAndCheckMoves(enemyCount));
+                yield return StartCoroutine(SafeSpawnEnemiesAndCheckMoves(enemyCount));
                 Debug.Log("[GameManager] ProcessSpecialBlockAftermath completed (Infinite) -> Playing");
                 yield break;
             }
@@ -3749,7 +3927,7 @@ private IEnumerator ProcessSpecialBlockAftermath()
             }
 
             // EnemySystem을 통한 적군 스폰 후 Playing 전환
-            yield return StartCoroutine(SpawnEnemiesViaSystemAndPlay());
+            yield return StartCoroutine(SafeSpawnEnemiesAndPlay());
             Debug.Log("[GameManager] ProcessSpecialBlockAftermath completed -> Playing");
         }
 
@@ -3782,8 +3960,9 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
             if (block == null || block.Data == null) yield break;
             isProcessingChainDrill = true;
 
-            // stuck 타이머 리셋 (특수 블록 발동 진행 중이므로 stuck 아님)
+            // stuck 타이머 리셋 + aftermath 진행 추적
             processingStartTime = Time.time;
+            lastAftermathProgressTime = Time.time;
 
             float timeout = 5f;
             float waited = 0f;
@@ -4627,8 +4806,14 @@ private void OnBigBang()
 
         private void OnSurvivalMissionCompleted(SurvivalMission mission, int reward)
         {
-            // AddTurns 내부에서 MAX_INFINITE_TURNS 제한 적용됨
+            // 턴 즉시 추가 (UI 애니메이션과 무관하게 항상 실행)
             AddTurns(reward);
+
+            // 미션 완료 애니메이션 시작 (시각 효과만)
+            if (uiManager != null)
+            {
+                uiManager.AnimateMissionComplete(reward);
+            }
 
             // 다음 미션 배정은 MissionSystem.OnTurnEnd()에서 직접 처리
         }
@@ -4639,9 +4824,12 @@ private void OnBigBang()
         {
             if (uiManager == null) return;
 
-            // 무한도전 미션 순차 감소 필드 리셋
-            infiniteMissionDisplayed = mission.targetCount;
-            infiniteMissionTarget = mission.targetCount;
+            // 무한도전 미션 순차 감소 필드 리셋 (CollectMulti는 양쪽 타겟 합산)
+            int totalTarget = mission.targetCount;
+            if (mission.type == SurvivalMissionType.CollectMulti)
+                totalTarget += mission.targetCount2;
+            infiniteMissionDisplayed = totalTarget;
+            infiniteMissionTarget = totalTarget;
             infiniteMissionComplete = false;
             if (infiniteMissionCountDownCo != null)
             {
@@ -5046,11 +5234,27 @@ private void OnBigBang()
         {
             if (UIManager.gameMissionCountText == null) return;
 
-            int remaining = Mathf.Max(0, mission.targetCount - mission.currentCount);
+            // CollectMulti는 두 타겟 모두의 잔여량을 합산
+            int remaining;
+            if (mission.type == SurvivalMissionType.CollectMulti)
+            {
+                int r1 = Mathf.Max(0, mission.targetCount - mission.currentCount);
+                int r2 = Mathf.Max(0, mission.targetCount2 - mission.currentCount2);
+                remaining = r1 + r2;
+            }
+            else
+            {
+                remaining = Mathf.Max(0, mission.targetCount - mission.currentCount);
+            }
 
             // 초기값 설정 (처음 호출 시)
             if (infiniteMissionDisplayed < 0)
-                infiniteMissionDisplayed = mission.targetCount;
+            {
+                int initTotal = mission.targetCount;
+                if (mission.type == SurvivalMissionType.CollectMulti)
+                    initTotal += mission.targetCount2;
+                infiniteMissionDisplayed = initTotal;
+            }
 
             // 타겟 업데이트
             infiniteMissionTarget = remaining;
@@ -5070,10 +5274,21 @@ private void OnBigBang()
         private IEnumerator InfiniteMissionSequentialCountDown()
         {
             Text countText = UIManager.gameMissionCountText;
-            float interval = 0.08f;
+            bool checkMarkShown = false;
+
+            // 동적 간격: 남은 틱 수가 많으면 빠르게, 적으면 기본 속도
+            const float normalInterval = 0.08f;  // 기본 틱 간격
+            const float minInterval = 0.02f;     // 최소 틱 간격 (고속 모드)
+            const float maxTotalTime = 0.5f;     // 전체 카운트다운 최대 소요 시간
+            int soundSkipCounter = 0;            // 고속 시 사운드 간격 제어
 
             while (infiniteMissionDisplayed != infiniteMissionTarget && countText != null)
             {
+                // 매 틱마다 남은 거리 기반으로 간격 재계산 (타겟 변경 시 자동 적응)
+                int ticksRemaining = Mathf.Abs(infiniteMissionDisplayed - infiniteMissionTarget);
+                float interval = Mathf.Clamp(maxTotalTime / Mathf.Max(1, ticksRemaining), minInterval, normalInterval);
+                bool isFastMode = interval < normalInterval * 0.7f; // 기본 대비 30% 이상 빠르면 고속 모드
+
                 // 1단위 증감
                 if (infiniteMissionDisplayed > infiniteMissionTarget)
                     infiniteMissionDisplayed--;
@@ -5082,21 +5297,36 @@ private void OnBigBang()
 
                 countText.text = infiniteMissionDisplayed.ToString();
 
-                // 펄스 애니메이션
-                StartCoroutine(MissionCountPulse(countText.transform));
+                // 펄스 애니메이션 (고속 시 3틱마다 — 과도한 코루틴 방지)
+                if (!isFastMode || soundSkipCounter % 3 == 0)
+                    StartCoroutine(MissionCountPulse(countText.transform));
 
-                // 틱 사운드 (낮아질수록 높은 피치)
-                if (AudioManager.Instance != null)
+                // 틱 사운드 (고속 시 2틱마다 — 연속 재생 오버로드 방지)
+                if (AudioManager.Instance != null && (!isFastMode || soundSkipCounter % 2 == 0))
                 {
                     float progress = 1f - (float)infiniteMissionDisplayed / Mathf.Max(1f, infiniteMissionDisplayed + 3f);
                     AudioManager.Instance.PlayCountUpTick(progress);
                 }
 
+                soundSkipCounter++;
+
+                // 0 도달 + 미션 완료 시 yield 전에 즉시 체크마크 표시
+                // (레이스 컨디션 방지: yield 중 OnSurvivalMissionAssigned이 코루틴을 kill할 수 있음)
+                if (infiniteMissionDisplayed <= 0 && infiniteMissionComplete)
+                {
+                    countText.text = "";
+                    ShowCheckMarkOnText(countText);
+                    if (AudioManager.Instance != null)
+                        AudioManager.Instance.PlayMissionCompleteSound();
+                    checkMarkShown = true;
+                    break;
+                }
+
                 yield return new WaitForSeconds(interval);
             }
 
-            // 완료 시 체크마크 표시 + 미션 완료 사운드
-            if (infiniteMissionComplete && infiniteMissionTarget <= 0 && countText != null)
+            // 루프 후 체크마크 미표시 시 추가 확인 (타겟 변경으로 즉시 0에 도달한 경우)
+            if (!checkMarkShown && infiniteMissionComplete && infiniteMissionTarget <= 0 && countText != null)
             {
                 countText.text = "";
                 ShowCheckMarkOnText(countText);
@@ -5171,6 +5401,15 @@ private void OnBigBang()
                     break;
                 case SurvivalMissionType.ReachScore:
                     md.type = MissionType.ReachScore;
+                    break;
+                case SurvivalMissionType.SingleTurnRemoval:
+                    md.type = MissionType.SingleTurnRemoval;
+                    break;
+                case SurvivalMissionType.AchieveCascade:
+                    md.type = MissionType.AchieveCascade;
+                    break;
+                case SurvivalMissionType.UseSpecial:
+                    md.type = MissionType.UseSpecial;
                     break;
                 default:
                     md.type = MissionType.CollectGem;
@@ -5495,9 +5734,88 @@ private void OnBigBang()
                 );
             }
 
+            // === 튜토리얼 초기화 버튼 (좌측 하단) ===
+            CreateTutorialResetButton(lobbyContainer, font);
+
             lobbyContainer.SetActive(false);
             lobbyContainer.transform.SetAsLastSibling();
             Debug.Log($"[GameManager] 로비 UI 생성 완료 (레벨 {totalLevels}개)");
+        }
+
+        /// <summary>
+        /// 로비 좌측 하단에 튜토리얼 초기화 버튼 생성
+        /// </summary>
+        private void CreateTutorialResetButton(GameObject parent, Font font)
+        {
+            // 버튼 컨테이너
+            GameObject btnObj = new GameObject("TutorialResetButton");
+            btnObj.transform.SetParent(parent.transform, false);
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0f, 0f);
+            btnRt.anchorMax = new Vector2(0f, 0f);
+            btnRt.pivot = new Vector2(0f, 0f);
+            btnRt.anchoredPosition = new Vector2(20f, 20f);
+            btnRt.sizeDelta = new Vector2(180f, 45f);
+
+            // 배경
+            Image btnBg = btnObj.AddComponent<Image>();
+            btnBg.color = new Color(0.25f, 0.2f, 0.35f, 0.85f);
+
+            // 아웃라인
+            Outline btnOutline = btnObj.AddComponent<Outline>();
+            btnOutline.effectColor = new Color(0.6f, 0.5f, 0.8f, 0.6f);
+            btnOutline.effectDistance = new Vector2(1f, 1f);
+
+            // 버튼 컴포넌트
+            Button btn = btnObj.AddComponent<Button>();
+            var colors = btn.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1f, 0.9f, 0.7f, 1f);
+            colors.pressedColor = new Color(0.7f, 0.6f, 0.5f, 1f);
+            btn.colors = colors;
+
+            // 텍스트
+            GameObject textObj = new GameObject("Text");
+            textObj.transform.SetParent(btnObj.transform, false);
+            RectTransform textRt = textObj.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(8f, 4f);
+            textRt.offsetMax = new Vector2(-8f, -4f);
+            Text btnText = textObj.AddComponent<Text>();
+            btnText.font = font;
+            btnText.fontSize = 16;
+            btnText.alignment = TextAnchor.MiddleCenter;
+            btnText.color = new Color(0.85f, 0.8f, 0.95f, 1f);
+            btnText.raycastTarget = false;
+            btnText.text = "튜토리얼 초기화";
+
+            // 클릭 이벤트
+            btn.onClick.AddListener(() =>
+            {
+                if (TutorialManager.Instance != null)
+                {
+                    TutorialManager.Instance.ResetAllTutorials();
+
+                    // 피드백: 텍스트 변경 후 복원
+                    btnText.text = "✓ 초기화 완료!";
+                    btnText.color = new Color(0.4f, 1f, 0.5f, 1f);
+                    StartCoroutine(ResetButtonFeedback(btnText));
+                }
+            });
+        }
+
+        /// <summary>
+        /// 튜토리얼 초기화 버튼 피드백 코루틴
+        /// </summary>
+        private IEnumerator ResetButtonFeedback(Text btnText)
+        {
+            yield return new WaitForSeconds(1.5f);
+            if (btnText != null)
+            {
+                btnText.text = "튜토리얼 초기화";
+                btnText.color = new Color(0.85f, 0.8f, 0.95f, 1f);
+            }
         }
 
         /// <summary>
@@ -5943,6 +6261,48 @@ private void OnBigBang()
             SetGameState(GameState.Playing);
         }
 
+        /// <summary>
+        /// SpawnEnemiesViaSystemAndPlay의 안전한 래퍼 — 예외 발생 시에도 Playing 전환 보장
+        /// </summary>
+        private IEnumerator SafeSpawnEnemiesAndPlay()
+        {
+            bool stateRestored = false;
+            try
+            {
+                yield return StartCoroutine(SpawnEnemiesViaSystemAndPlay());
+                stateRestored = true;
+            }
+            finally
+            {
+                if (!stateRestored && currentState == GameState.Processing)
+                {
+                    Debug.LogError("[GameManager] SafeSpawnEnemiesAndPlay: 예외 발생! Playing으로 강제 복귀.");
+                    SetGameState(GameState.Playing);
+                }
+            }
+        }
+
+        /// <summary>
+        /// SpawnEnemiesViaSystemAndCheckMoves의 안전한 래퍼 — 예외 발생 시에도 Playing 전환 보장
+        /// </summary>
+        private IEnumerator SafeSpawnEnemiesAndCheckMoves(int count)
+        {
+            bool stateRestored = false;
+            try
+            {
+                yield return StartCoroutine(SpawnEnemiesViaSystemAndCheckMoves(count));
+                stateRestored = true;
+            }
+            finally
+            {
+                if (!stateRestored && currentState == GameState.Processing)
+                {
+                    Debug.LogError("[GameManager] SafeSpawnEnemiesAndCheckMoves: 예외 발생! Playing으로 강제 복귀.");
+                    SetGameState(GameState.Playing);
+                }
+            }
+        }
+
         // ============================================================
         // 적군(회색 블록) 생성 시스템 (레거시 — 하위호환)
         // ============================================================
@@ -6249,24 +6609,33 @@ private void OnBigBang()
         {
             if (countText == null) yield break;
 
-            float interval = 0.08f;
+            // 동적 간격: 틱 수가 많으면 빠르게, 적으면 기본 속도
+            const float normalInterval = 0.08f;
+            const float minInterval = 0.02f;
+            const float maxTotalTime = 0.5f;
             int step = from > to ? -1 : 1;
+            int totalTicks = Mathf.Abs(to - from);
+            float interval = Mathf.Clamp(maxTotalTime / Mathf.Max(1, totalTicks), minInterval, normalInterval);
+            bool isFastMode = interval < normalInterval * 0.7f;
+            int tickIndex = 0;
 
             for (int v = from + step; step > 0 ? v <= to : v >= to; v += step)
             {
                 if (countText == null) yield break;
                 countText.text = v.ToString();
 
-                // 펄스 애니메이션
-                StartCoroutine(MissionCountPulse(countText.transform));
+                // 펄스 애니메이션 (고속 시 3틱마다)
+                if (!isFastMode || tickIndex % 3 == 0)
+                    StartCoroutine(MissionCountPulse(countText.transform));
 
-                // 틱 사운드
-                if (AudioManager.Instance != null)
+                // 틱 사운드 (고속 시 2틱마다)
+                if (AudioManager.Instance != null && (!isFastMode || tickIndex % 2 == 0))
                 {
                     float progress = 1f - (float)Mathf.Abs(v) / Mathf.Max(1f, Mathf.Abs(from));
                     AudioManager.Instance.PlayCountUpTick(progress);
                 }
 
+                tickIndex++;
                 yield return new WaitForSeconds(interval);
             }
 

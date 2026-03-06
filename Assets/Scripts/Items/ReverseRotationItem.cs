@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using System.Collections.Generic;
 using JewelsHexaPuzzle.Core;
 using JewelsHexaPuzzle.Data;
 using JewelsHexaPuzzle.Managers;
@@ -22,18 +23,19 @@ namespace JewelsHexaPuzzle.Items
         // 참조 (자동 탐색)
         private InputSystem inputSystem;
         private RotationSystem rotationSystem;
+        private HexGrid hexGrid;
 
         // 상태 관리
         private bool isActive = false;
         private bool isProcessing = false;
         private bool pendingConsume = false; // 회전 완료 후 매칭 성공 시에만 소모
 
-        // 버튼 기본 색상
-        private Color btnOriginalColor;
+        // 버튼 기본 색상 (활성화 색상의 어두운 버전)
+        private Color btnOriginalColor = new Color(0.48f, 0.33f, 0.60f, 0.92f);
         private static readonly Color BtnActiveColor = new Color(0.80f, 0.55f, 1f, 1f);
 
-        // 오버레이 색상
-        private Color overlayColor = new Color(0.6f, 0.4f, 0.8f, 0.12f);
+        // 오버레이 색상 (버튼 색상과 동일, 알파 75%)
+        private Color overlayColor = new Color(0.6f, 0.4f, 0.8f, 0.25f);
 
         // 대기 애니메이션 코루틴 참조
         private Coroutine activeGlowCoroutine;
@@ -49,11 +51,36 @@ namespace JewelsHexaPuzzle.Items
             AutoFindReferences();
             SetupUI();
 
-            // 버튼 원래 색상 캡처
+            // 버튼 초기 색상을 비활성화 색상으로 설정
             if (reverseButton != null)
             {
                 var img = reverseButton.GetComponent<Image>();
-                if (img != null) btnOriginalColor = img.color;
+                if (img != null) img.color = btnOriginalColor;
+            }
+
+            // 오버레이가 없으면 동적 생성 (전체 화면 덮는 판)
+            if (backgroundOverlay == null)
+            {
+                Canvas canvas = GetComponentInParent<Canvas>();
+                if (canvas == null) canvas = FindObjectOfType<Canvas>();
+                if (canvas != null)
+                {
+                    GameObject overlayObj = new GameObject("ReverseRotationOverlay");
+                    overlayObj.transform.SetParent(canvas.transform, false);
+                    // 최상위에 배치 (전체 화면 덮기)
+                    overlayObj.transform.SetAsLastSibling();
+
+                    backgroundOverlay = overlayObj.AddComponent<Image>();
+                    backgroundOverlay.color = new Color(overlayColor.r, overlayColor.g, overlayColor.b, 0f);
+                    backgroundOverlay.raycastTarget = false;
+
+                    // 전체 화면 스트레치
+                    RectTransform rt = overlayObj.GetComponent<RectTransform>();
+                    rt.anchorMin = Vector2.zero;
+                    rt.anchorMax = Vector2.one;
+                    rt.sizeDelta = Vector2.zero;
+                    rt.anchoredPosition = Vector2.zero;
+                }
             }
 
             // 오버레이 초기 비활성화
@@ -75,6 +102,7 @@ namespace JewelsHexaPuzzle.Items
         {
             if (inputSystem == null) inputSystem = FindObjectOfType<InputSystem>();
             if (rotationSystem == null) rotationSystem = FindObjectOfType<RotationSystem>();
+            if (hexGrid == null) hexGrid = FindObjectOfType<HexGrid>();
         }
 
         private void SetupUI()
@@ -131,12 +159,103 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
+        // 빈 공간 터치 감지 → 비활성화
+        // ============================================================
+
+        private void Update()
+        {
+            if (!isActive || isProcessing) return;
+            if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+            if (rotationSystem != null && rotationSystem.IsRotating) return;
+
+#if UNITY_EDITOR || UNITY_STANDALONE
+            if (Input.GetMouseButtonDown(0))
+                CheckEmptySpaceClick(Input.mousePosition);
+#else
+            if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
+                CheckEmptySpaceClick(Input.GetTouch(0).position);
+#endif
+        }
+
+        /// <summary>
+        /// 빈 공간 클릭 시 비활성화. 블록이나 자기 버튼 클릭은 무시.
+        /// </summary>
+        private void CheckEmptySpaceClick(Vector2 screenPos)
+        {
+            // 자기 버튼 클릭이면 무시 (OnButtonClicked에서 처리)
+            if (IsClickOnSelfButton(screenPos)) return;
+
+            // 다른 아이템 버튼 클릭이면 무시
+            if (IsClickOnAnyUIButton(screenPos)) return;
+
+            // 블록 위 클릭이면 무시 (정상 회전 입력)
+            if (FindBlockAtPosition(screenPos) != null) return;
+
+            // 빈 공간 클릭 → 비활성화
+            Deactivate();
+        }
+
+        private bool IsClickOnSelfButton(Vector2 screenPos)
+        {
+            var es = UnityEngine.EventSystems.EventSystem.current;
+            if (es == null) return false;
+
+            var pd = new UnityEngine.EventSystems.PointerEventData(es);
+            pd.position = screenPos;
+            var results = new List<UnityEngine.EventSystems.RaycastResult>();
+            es.RaycastAll(pd, results);
+            foreach (var r in results)
+            {
+                if (r.gameObject == reverseButton?.gameObject)
+                    return true;
+            }
+            return false;
+        }
+
+        private bool IsClickOnAnyUIButton(Vector2 screenPos)
+        {
+            var es = UnityEngine.EventSystems.EventSystem.current;
+            if (es == null) return false;
+
+            var pd = new UnityEngine.EventSystems.PointerEventData(es);
+            pd.position = screenPos;
+            var results = new List<UnityEngine.EventSystems.RaycastResult>();
+            es.RaycastAll(pd, results);
+            foreach (var r in results)
+            {
+                if (r.gameObject.GetComponent<Button>() != null)
+                    return true;
+            }
+            return false;
+        }
+
+        private HexBlock FindBlockAtPosition(Vector2 screenPos)
+        {
+            if (hexGrid == null) return null;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+                RectTransform rt = block.GetComponent<RectTransform>();
+                if (rt == null) continue;
+                Vector2 localPoint;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, screenPos, null, out localPoint);
+                if (rt.rect.Contains(localPoint))
+                    return block;
+            }
+            return null;
+        }
+
+        // ============================================================
         // 활성화 연출
         // ============================================================
 
         public void Activate()
         {
             if (isActive || isProcessing) return;
+
+            // 다른 아이템 비활성화 (오버레이 중첩 방지)
+            DeactivateOtherItems();
+
             isActive = true;
 
             // 1회성 반시계 회전 설정
@@ -447,6 +566,17 @@ namespace JewelsHexaPuzzle.Items
         // ============================================================
         // 정리
         // ============================================================
+
+        /// <summary>다른 활성 아이템 비활성화 (오버레이 중첩 방지)</summary>
+        private void DeactivateOtherItems()
+        {
+            var hammer = FindObjectOfType<HammerItem>();
+            if (hammer != null && hammer.IsActive) hammer.Deactivate();
+            var swap = FindObjectOfType<SwapItem>();
+            if (swap != null && swap.IsActive) swap.Deactivate();
+            var lineDraw = FindObjectOfType<LineDrawItem>();
+            if (lineDraw != null && lineDraw.IsActive) lineDraw.Deactivate();
+        }
 
         private void OnDestroy()
         {

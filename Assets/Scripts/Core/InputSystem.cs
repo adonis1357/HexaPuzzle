@@ -775,7 +775,13 @@ private void Update()
             // 캐스케이드 완료 대기
             while (blockRemovalSystem != null && blockRemovalSystem.IsProcessing)
                 yield return null;
-            isEnabled = true;
+            // ProcessSpecialBlockAftermath 처리 중이면 완전히 끝날 때까지 대기
+            // (isProcessingChainDrill가 true이면 GameManager가 아직 후처리 중)
+            while (GameManager.Instance != null && GameManager.Instance.IsProcessingChainDrill)
+                yield return null;
+            // 게임 상태가 Playing일 때만 입력 재활성화 (Processing 상태에서 재활성화 방지)
+            if (GameManager.Instance == null || GameManager.Instance.CurrentState == GameState.Playing)
+                isEnabled = true;
         }
 
         /// <summary>합성 드래그 취소</summary>

@@ -128,6 +128,49 @@ namespace JewelsHexaPuzzle.Data
                     buttonSize = 200f
                 }
             });
+
+            // --- 마지막 레벨: Infinite 모드 (무한 도전) — 항상 스테이지 레벨 뒤에 배치 ---
+            RegisterInfiniteLevel();
+        }
+
+        /// <summary>
+        /// 무한 도전 레벨 등록 — 항상 마지막 스테이지 +1 ID로 등록
+        /// </summary>
+        private static void RegisterInfiniteLevel()
+        {
+            // 현재 등록된 레벨 중 가장 큰 ID + 1
+            int infiniteId = 0;
+            foreach (var id in levels.Keys)
+            {
+                if (id > infiniteId) infiniteId = id;
+            }
+            infiniteId += 1; // 마지막 스테이지 다음
+
+            int lastStageId = infiniteId - 1; // 해금 조건: 직전 스테이지 클리어
+
+            Register(new LevelData
+            {
+                levelId = infiniteId,
+                levelName = "무한 도전",
+                subtitle = "생존 미션",
+                gameMode = GameMode.Infinite,
+                difficulty = 0,
+                isLocked = true,
+                unlockRequirement = lastStageId,
+                infiniteConfig = new InfiniteConfig
+                {
+                    initialMoves = 15,
+                    activeGemTypeCount = 5
+                },
+                lobbyDisplay = new LobbyDisplayConfig
+                {
+                    backgroundColor = new Color(0.15f, 0.1f, 0.3f),
+                    borderColor = new Color(0.4f, 0.2f, 0.8f),
+                    buttonSize = 200f
+                }
+            });
+
+            Debug.Log($"[LevelRegistry] 무한 도전 등록: levelId={infiniteId}, 해금조건=Stage {lastStageId} 클리어");
         }
 
         /// <summary>

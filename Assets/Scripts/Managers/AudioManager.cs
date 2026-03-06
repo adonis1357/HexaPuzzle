@@ -118,20 +118,6 @@ namespace JewelsHexaPuzzle.Managers
                 LoadVolumeSettings();
                 GenerateProceduralClips();
 
-                #if UNITY_EDITOR
-                // 에디터: 모든 오디오 소스 강제 음소거 해제 (PlayerPrefs 오염 완전 차단)
-                foreach (var source in sfxPool)
-                {
-                    if (source != null) source.mute = false;
-                }
-                if (bgmSource != null) bgmSource.mute = false;
-                isMuted = false;
-                Debug.Log("[AudioManager] 에디터: 오디오 시스템 강제 초기화 완료 - 모든 소스 음소거 해제");
-
-                // 시작 시 테스트 사운드 재생 (진단용 - 이 소리가 들리면 오디오 시스템 정상)
-                StartCoroutine(PlayStartupTestSound());
-                #endif
-
                 LogAudioHealth();
             }
             else
@@ -202,20 +188,10 @@ namespace JewelsHexaPuzzle.Managers
             bgmVolume = PlayerPrefs.GetFloat("BGMVolume", 0.7f);
             sfxVolume = PlayerPrefs.GetFloat("SFXVolume", 1f);
 
-            #if UNITY_EDITOR
-            // 에디터에서는 항상 음소거 해제 (개발 중 PlayerPrefs 오염으로 인한 무음 방지)
-            isMuted = false;
-            isSfxMuted = false;
-            isBgmMuted = false;
-            PlayerPrefs.SetInt("AudioMuted", 0);
-            PlayerPrefs.SetInt("SFXMuted", 0);
-            PlayerPrefs.SetInt("BGMMuted", 0);
-            PlayerPrefs.Save();
-            #else
+            // 저장된 음소거 상태 복원 (에디터/빌드 모두)
             isMuted = PlayerPrefs.GetInt("AudioMuted", 0) == 1;
             isSfxMuted = PlayerPrefs.GetInt("SFXMuted", 0) == 1;
             isBgmMuted = PlayerPrefs.GetInt("BGMMuted", 0) == 1;
-            #endif
 
             if (bgmSource != null) bgmSource.volume = bgmVolume;
 
@@ -319,6 +295,7 @@ namespace JewelsHexaPuzzle.Managers
             bgmSource.clip = clip;
             bgmSource.loop = loop;
             bgmSource.volume = bgmVolume;
+            bgmSource.mute = isBgmMuted;   // 저장된 음소거 상태 반영
             bgmSource.Play();
         }
 
@@ -488,12 +465,12 @@ namespace JewelsHexaPuzzle.Managers
                 }
                 if (!sfxPool[i].isPlaying) return sfxPool[i];
             }
-            // 풀 확장 (mute 상태 상속, ignoreListenerPause 적용)
+            // 풀 확장 (SFX 개별 음소거 상태 반영, ignoreListenerPause 적용)
             GameObject sfxObj = new GameObject($"SFX_Pool_{sfxPool.Count}");
             sfxObj.transform.SetParent(transform);
             AudioSource newSource = sfxObj.AddComponent<AudioSource>();
             newSource.playOnAwake = false;
-            newSource.mute = isMuted;
+            newSource.mute = isSfxMuted;
             newSource.ignoreListenerPause = true;
             sfxPool.Add(newSource);
             return newSource;
@@ -659,12 +636,14 @@ namespace JewelsHexaPuzzle.Managers
             bgmVolume = Mathf.Clamp01(volume);
             if (bgmSource != null) bgmSource.volume = bgmVolume;
             PlayerPrefs.SetFloat("BGMVolume", bgmVolume);
+            PlayerPrefs.Save();
         }
 
         public void SetSFXVolume(float volume)
         {
             sfxVolume = Mathf.Clamp01(volume);
             PlayerPrefs.SetFloat("SFXVolume", sfxVolume);
+            PlayerPrefs.Save();
         }
 
         public void MuteAll(bool mute)
@@ -680,6 +659,7 @@ namespace JewelsHexaPuzzle.Managers
             PlayerPrefs.SetInt("AudioMuted", mute ? 1 : 0);
             PlayerPrefs.SetInt("SFXMuted", mute ? 1 : 0);
             PlayerPrefs.SetInt("BGMMuted", mute ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         public bool ToggleMute()
@@ -701,6 +681,7 @@ namespace JewelsHexaPuzzle.Managers
             // 전체 음소거 상태 동기화
             isMuted = isSfxMuted && isBgmMuted;
             PlayerPrefs.SetInt("AudioMuted", isMuted ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         public bool ToggleSFXMute()
@@ -719,6 +700,7 @@ namespace JewelsHexaPuzzle.Managers
             // 전체 음소거 상태 동기화
             isMuted = isSfxMuted && isBgmMuted;
             PlayerPrefs.SetInt("AudioMuted", isMuted ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         public bool ToggleBGMMute()
@@ -791,9 +773,13 @@ namespace JewelsHexaPuzzle.Managers
         {
             Debug.Log("[AudioManager] 오디오 시스템 강제 리셋 시작...");
 
-            // mute 해제
+            // mute 해제 (전체 + 개별 플래그 모두 리셋)
             isMuted = false;
+            isBgmMuted = false;
+            isSfxMuted = false;
             PlayerPrefs.SetInt("AudioMuted", 0);
+            PlayerPrefs.SetInt("BGMMuted", 0);
+            PlayerPrefs.SetInt("SFXMuted", 0);
             if (bgmSource != null) bgmSource.mute = false;
             foreach (var source in sfxPool)
             {

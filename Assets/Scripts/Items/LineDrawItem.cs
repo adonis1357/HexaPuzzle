@@ -25,7 +25,7 @@ namespace JewelsHexaPuzzle.Items
         [SerializeField] private InputSystem inputSystem;
 
         [Header("Settings")]
-        [SerializeField] private Color activeOverlayColor = new Color(0.9f, 0.6f, 0.2f, 0.15f);
+        [SerializeField] private Color activeOverlayColor = new Color(0.9f, 0.6f, 0.2f, 0.25f);
 
         // 상태
         private bool isActive = false;
@@ -53,7 +53,8 @@ namespace JewelsHexaPuzzle.Items
         private Coroutine idleAnimCoroutine;
 
         // 버튼 기본 색상 (Start()에서 실제 버튼 색상으로 캡처)
-        private Color btnOriginalColor = new Color(0.35f, 0.55f, 0.35f, 0.92f);
+        // 버튼 기본 색상 (활성화 색상의 어두운 버전)
+        private Color btnOriginalColor = new Color(0.54f, 0.36f, 0.12f, 0.92f);
         private static readonly Color BtnActiveColor = new Color(0.9f, 0.6f, 0.2f, 1f);
 
         // 라인 비주얼 설정
@@ -75,11 +76,11 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 원래 색상 캡처
+            // 버튼 초기 색상을 비활성화 색상으로 설정
             if (lineDrawButton != null)
             {
                 var img = lineDrawButton.GetComponent<Image>();
-                if (img != null) btnOriginalColor = img.color;
+                if (img != null) img.color = btnOriginalColor;
             }
         }
 
@@ -157,6 +158,10 @@ namespace JewelsHexaPuzzle.Items
         public void Activate()
         {
             if (isActive || isProcessing) return;
+
+            // 다른 아이템 비활성화 (오버레이 중첩 방지)
+            DeactivateOtherItems();
+
             isActive = true;
             if (inputSystem != null) inputSystem.SetEnabled(false);
 
@@ -1146,6 +1151,17 @@ namespace JewelsHexaPuzzle.Items
                 if (child.name.StartsWith("LineDraw"))
                     Destroy(child.gameObject);
             }
+        }
+
+        /// <summary>다른 활성 아이템 비활성화 (오버레이 중첩 방지)</summary>
+        private void DeactivateOtherItems()
+        {
+            var hammer = FindObjectOfType<HammerItem>();
+            if (hammer != null && hammer.IsActive) hammer.Deactivate();
+            var swap = FindObjectOfType<SwapItem>();
+            if (swap != null && swap.IsActive) swap.Deactivate();
+            var reverse = FindObjectOfType<ReverseRotationItem>();
+            if (reverse != null && reverse.IsActive) reverse.Deactivate();
         }
 
         private void OnDestroy()

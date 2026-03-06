@@ -875,6 +875,16 @@ namespace JewelsHexaPuzzle.Managers
             CompleteSequence();
         }
 
+        /// <summary>
+        /// 강제 복구 시 BRS pause 상태만 해제 (튜토리얼 자체는 유지)
+        /// ForceRecoverFromStuck에서 호출
+        /// </summary>
+        public void ForceUnpause()
+        {
+            isPausedForTutorial = false;
+            Debug.Log("[TutorialManager] ForceUnpause 호출 — isPausedForTutorial=false");
+        }
+
         // ============================================================
         // 입력 제어
         // ============================================================

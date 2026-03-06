@@ -20,7 +20,7 @@ namespace JewelsHexaPuzzle.Items
         [SerializeField] private InputSystem inputSystem;
 
         [Header("Settings")]
-        [SerializeField] private Color activeOverlayColor = new Color(0.6f, 1f, 0.6f, 0.15f);
+        [SerializeField] private Color activeOverlayColor = new Color(0.2f, 0.85f, 0.3f, 0.25f);
 
         private bool isActive = false;
         private bool isProcessing = false;
@@ -37,9 +37,9 @@ namespace JewelsHexaPuzzle.Items
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 
-        // 버튼 기본 색상 (Start()에서 실제 버튼 색상으로 캡처)
-        private Color btnOriginalColor = new Color(0.0f, 0.70f, 0.70f, 0.92f);
-        private static readonly Color BtnActiveColor = new Color(1f, 0.85f, 0.2f, 1f);
+        // 버튼 기본 색상 (활성화 색상의 어두운 버전)
+        private Color btnOriginalColor = new Color(0.12f, 0.51f, 0.18f, 0.92f);
+        private static readonly Color BtnActiveColor = new Color(0.2f, 0.85f, 0.3f, 1f);
         private void Start()
         {
             AutoFindReferences();
@@ -50,11 +50,11 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 원래 색상 캡처
+            // 버튼 초기 색상을 비활성화 색상으로 설정
             if (hammerButton != null)
             {
                 var img = hammerButton.GetComponent<Image>();
-                if (img != null) btnOriginalColor = img.color;
+                if (img != null) img.color = btnOriginalColor;
             }
         }
 
@@ -135,6 +135,10 @@ namespace JewelsHexaPuzzle.Items
         public void Activate()
         {
             if (isActive || isProcessing) return;
+
+            // 다른 아이템 비활성화 (오버레이 중첩 방지)
+            DeactivateOtherItems();
+
             isActive = true;
             if (inputSystem != null) inputSystem.SetEnabled(false);
 
@@ -249,7 +253,7 @@ namespace JewelsHexaPuzzle.Items
 
             var img = glow.AddComponent<Image>();
             img.raycastTarget = false;
-            img.color = new Color(1f, 0.85f, 0.2f, 0.5f);
+            img.color = new Color(0.2f, 0.85f, 0.3f, 0.5f);
 
             RectTransform rt = glow.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(60f, 60f);
@@ -263,7 +267,7 @@ namespace JewelsHexaPuzzle.Items
                 float eased = VisualConstants.EaseOutCubic(t);
                 float scale = 1f + eased * 1.5f;
                 rt.sizeDelta = new Vector2(60f * scale, 60f * scale);
-                img.color = new Color(1f, 0.85f, 0.2f, 0.5f * (1f - t));
+                img.color = new Color(0.2f, 0.85f, 0.3f, 0.5f * (1f - t));
                 yield return null;
             }
             Destroy(glow);
@@ -943,6 +947,17 @@ namespace JewelsHexaPuzzle.Items
             if (effectParent == null) return;
             for (int i = effectParent.childCount - 1; i >= 0; i--)
                 Destroy(effectParent.GetChild(i).gameObject);
+        }
+
+        /// <summary>다른 활성 아이템 비활성화 (오버레이 중첩 방지)</summary>
+        private void DeactivateOtherItems()
+        {
+            var swap = FindObjectOfType<SwapItem>();
+            if (swap != null && swap.IsActive) swap.Deactivate();
+            var lineDraw = FindObjectOfType<LineDrawItem>();
+            if (lineDraw != null && lineDraw.IsActive) lineDraw.Deactivate();
+            var reverse = FindObjectOfType<ReverseRotationItem>();
+            if (reverse != null && reverse.IsActive) reverse.Deactivate();
         }
 
         private void OnDestroy()

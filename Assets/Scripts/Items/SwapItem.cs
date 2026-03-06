@@ -24,7 +24,7 @@ namespace JewelsHexaPuzzle.Items
         [SerializeField] private InputSystem inputSystem;
 
         [Header("Settings")]
-        [SerializeField] private Color activeOverlayColor = new Color(0.4f, 0.7f, 1f, 0.15f);
+        [SerializeField] private Color activeOverlayColor = new Color(0.4f, 0.7f, 1f, 0.25f);
 
         private bool isActive = false;
         private bool isProcessing = false;
@@ -50,8 +50,8 @@ namespace JewelsHexaPuzzle.Items
         private GameObject selectedHighlight;
         private GameObject targetHighlight;
 
-        // 버튼 기본 색상 (Start()에서 실제 버튼 색상으로 캡처)
-        private Color btnOriginalColor = new Color(0.85f, 0.35f, 0.65f, 0.92f);
+        // 버튼 기본 색상 (활성화 색상의 어두운 버전)
+        private Color btnOriginalColor = new Color(0.24f, 0.42f, 0.60f, 0.92f);
         private static readonly Color BtnActiveColor = new Color(0.4f, 0.7f, 1f, 1f);
 
         private void Start()
@@ -64,11 +64,11 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 원래 색상 캡처
+            // 버튼 초기 색상을 비활성화 색상으로 설정
             if (swapButton != null)
             {
                 var img = swapButton.GetComponent<Image>();
-                if (img != null) btnOriginalColor = img.color;
+                if (img != null) img.color = btnOriginalColor;
             }
         }
 
@@ -147,6 +147,10 @@ namespace JewelsHexaPuzzle.Items
         public void Activate()
         {
             if (isActive || isProcessing) return;
+
+            // 다른 아이템 비활성화 (오버레이 중첩 방지)
+            DeactivateOtherItems();
+
             isActive = true;
             if (inputSystem != null) inputSystem.SetEnabled(false);
 
@@ -786,6 +790,17 @@ namespace JewelsHexaPuzzle.Items
                 if (child.name.StartsWith("SwapSpark") || child.name.StartsWith("SwapGlow"))
                     Destroy(child.gameObject);
             }
+        }
+
+        /// <summary>다른 활성 아이템 비활성화 (오버레이 중첩 방지)</summary>
+        private void DeactivateOtherItems()
+        {
+            var hammer = FindObjectOfType<HammerItem>();
+            if (hammer != null && hammer.IsActive) hammer.Deactivate();
+            var lineDraw = FindObjectOfType<LineDrawItem>();
+            if (lineDraw != null && lineDraw.IsActive) lineDraw.Deactivate();
+            var reverse = FindObjectOfType<ReverseRotationItem>();
+            if (reverse != null && reverse.IsActive) reverse.Deactivate();
         }
     }
 }

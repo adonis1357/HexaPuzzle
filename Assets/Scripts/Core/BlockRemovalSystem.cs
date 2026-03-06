@@ -442,6 +442,10 @@ namespace JewelsHexaPuzzle.Core
             // 미션 시스템에 특수 블록 사용 알림
             OnSpecialBlockUsed?.Invoke();
 
+            // 특수 블록 자체의 색상도 미션에 기여 (발동 시 소멸되므로 일반 블록 제거와 동일하게 카운팅)
+            if (block.Data.gemType != GemType.None)
+                GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+
             switch (cachedType)
             {
                 case SpecialBlockType.Drill:
@@ -1295,6 +1299,9 @@ private IEnumerator CascadeWithPendingLoop()
             bool fatalError = false;
             currentCascadeDepth = 0;
 
+            try
+            {
+
             while (iteration < maxIterations && !fatalError)
             {
                 iteration++;
@@ -1349,13 +1356,13 @@ private IEnumerator CascadeWithPendingLoop()
                         if (sp != null && sp.Data != null && sp.gameObject != null && sp.Data.specialType != SpecialBlockType.None)
                             validPending.Add(sp);
                     }
-                    
+
                     if (validPending.Count == 0)
                     {
                         Debug.LogWarning("[BRS] All pending specials became invalid. Breaking cascade.");
                         break;
                     }
-                    
+
                     List<Coroutine> cos = new List<Coroutine>();
                     foreach (var sp in validPending)
                         cos.Add(StartCoroutine(ActivateSpecialAndWaitLocal(sp)));
@@ -1372,24 +1379,28 @@ private IEnumerator CascadeWithPendingLoop()
             if (iteration >= maxIterations)
                 Debug.LogError($"[BRS] CascadeWithPendingLoop hit max iterations ({maxIterations})! Breaking.");
 
-            // === 항상 도달하는 최종 정리 ===
-            // 안전망: 루프 종료 후에도 남아있는 pending 블록의 깜빡임 정리
-            if (hexGrid != null)
+            } // end try
+            finally
             {
-                foreach (var block in hexGrid.GetAllBlocks())
+                // === 예외 발생 여부와 관계없이 항상 실행되는 최종 정리 ===
+                // 안전망: 루프 종료 후에도 남아있는 pending 블록의 깜빡임 정리
+                if (hexGrid != null)
                 {
-                    if (block != null && block.Data != null && block.Data.pendingActivation)
+                    foreach (var block in hexGrid.GetAllBlocks())
                     {
-                        Debug.LogWarning($"[BRS] Leftover pending block at {block.Coord} type={block.Data.specialType} — clearing pending state");
-                        block.StopWarningBlink();
-                        block.Data.pendingActivation = false;
+                        if (block != null && block.Data != null && block.Data.pendingActivation)
+                        {
+                            Debug.LogWarning($"[BRS] Leftover pending block at {block.Coord} type={block.Data.specialType} — clearing pending state");
+                            block.StopWarningBlink();
+                            block.Data.pendingActivation = false;
+                        }
                     }
                 }
+                currentCascadeDepth = 0;
+                isProcessing = false;
+                OnCascadeComplete?.Invoke();
+                Debug.Log($"[BRS] CascadeWithPendingLoop completed. isProcessing=false");
             }
-            currentCascadeDepth = 0;
-            isProcessing = false;
-            OnCascadeComplete?.Invoke();
-            Debug.Log($"[BRS] CascadeWithPendingLoop completed. isProcessing=false");
         }
 
 private List<HexBlock> CollectAndClearPendingSpecials()

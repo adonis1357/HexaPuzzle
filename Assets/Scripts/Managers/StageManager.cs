@@ -546,7 +546,12 @@ namespace JewelsHexaPuzzle.Managers
         CreateBomb = 23,            // 폭탄 생성
         CreateRainbow = 25,         // 레인보우(도넛) 생성
         CreateXBlock = 26,          // XBlock 생성
-        CreateDrone = 27            // 드론 생성
+        CreateDrone = 27,           // 드론 생성
+
+        // === 무한도전 전용 미션 ===
+        SingleTurnRemoval = 30,     // 한 턴에 N개 제거
+        AchieveCascade = 31,        // N연쇄 달성
+        UseSpecial = 32             // 특수 블록 N회 사용
     }
     
     /// <summary>

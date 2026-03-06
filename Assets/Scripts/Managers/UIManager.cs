@@ -1650,9 +1650,45 @@ namespace JewelsHexaPuzzle.Managers
             }
             rt.localScale = origScale;
 
-            // 4. 잠시 표시 유지 후 슬라이드 아웃
-            yield return new WaitForSeconds(0.8f);
+            // 4. "+1" 텍스트가 미션 패널 → 턴 UI로 날아가는 연출
+            yield return new WaitForSeconds(0.3f);
 
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) canvas = FindObjectOfType<Canvas>();
+
+            if (canvas != null && turnText != null && reward > 0)
+            {
+                RectTransform canvasRt = canvas.GetComponent<RectTransform>();
+                Camera cam = canvas.worldCamera;
+
+                // 시작 위치: 미션 패널 중앙 → 캔버스 로컬 좌표
+                Vector2 screenStart = RectTransformUtility.WorldToScreenPoint(cam, survivalMissionPanel.transform.position);
+                Vector2 localStart;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRt, screenStart, cam, out localStart);
+
+                // 도착 위치: 턴 텍스트 중앙 → 캔버스 로컬 좌표
+                Vector2 screenEnd = RectTransformUtility.WorldToScreenPoint(cam, turnText.transform.position);
+                Vector2 localEnd;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRt, screenEnd, cam, out localEnd);
+
+                // reward 개수만큼 "+1" 날리기 (0.12초 간격)
+                for (int i = 0; i < reward; i++)
+                {
+                    StartCoroutine(TurnRewardFlyAnimation(canvas.transform, canvasRt, localStart, localEnd));
+                    if (i < reward - 1)
+                        yield return new WaitForSeconds(0.12f);
+                }
+
+                // 마지막 "+1" 도착 대기 (비행 시간 0.45초)
+                yield return new WaitForSeconds(0.55f);
+            }
+            else
+            {
+                // 캔버스/턴텍스트 없으면 대기만
+                yield return new WaitForSeconds(0.5f);
+            }
+
+            // 5. 슬라이드 아웃
             Vector2 current = rt.anchoredPosition;
             Vector2 offScreen = new Vector2(-340f, current.y);
             float slideDuration = 0.3f;
@@ -1669,6 +1705,129 @@ namespace JewelsHexaPuzzle.Managers
 
             survivalMissionPanel.SetActive(false);
             rt.anchoredPosition = new Vector2(10f, -10f);
+        }
+
+        // ============================================================
+        // 턴 보상 날아가기 연출
+        // ============================================================
+
+        /// <summary>
+        /// "+1" 텍스트가 미션 패널에서 턴 UI로 베지어 곡선을 따라 이동하는 시각 효과
+        /// (턴 추가는 GameManager.OnSurvivalMissionCompleted에서 처리)
+        /// </summary>
+        private IEnumerator TurnRewardFlyAnimation(Transform canvasTransform, RectTransform canvasRt, Vector2 localStart, Vector2 localEnd)
+        {
+            // "+1" 텍스트 오브젝트 생성
+            GameObject flyObj = new GameObject("TurnRewardFly");
+            flyObj.transform.SetParent(canvasTransform, false);
+
+            Text flyText = flyObj.AddComponent<Text>();
+            flyText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            flyText.text = "+1";
+            flyText.fontSize = 28;
+            flyText.fontStyle = FontStyle.Bold;
+            flyText.alignment = TextAnchor.MiddleCenter;
+            flyText.color = new Color(0.2f, 1f, 0.4f, 1f); // 밝은 초록색
+            flyText.raycastTarget = false;
+            flyText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            flyText.verticalOverflow = VerticalWrapMode.Overflow;
+
+            // 아웃라인 (가독성)
+            Outline outline = flyObj.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            outline.effectDistance = new Vector2(1.5f, 1.5f);
+
+            RectTransform flyRt = flyObj.GetComponent<RectTransform>();
+            flyRt.sizeDelta = new Vector2(60f, 40f);
+            flyRt.anchoredPosition = localStart;
+
+            // 곡선 제어점 (위로 볼록한 포물선 + 약간의 랜덤 오프셋)
+            Vector2 mid = (localStart + localEnd) * 0.5f;
+            float curveHeight = Random.Range(60f, 120f);
+            Vector2 controlPoint = mid + Vector2.up * curveHeight + Vector2.right * Random.Range(-30f, 30f);
+
+            // 비행 애니메이션
+            float duration = 0.45f;
+            float elapsed = 0f;
+            Color startColor = flyText.color;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // EaseInOutQuad (부드러운 시작+끝)
+                float eased = t < 0.5f ? 2f * t * t : 1f - Mathf.Pow(-2f * t + 2f, 2f) / 2f;
+
+                // 2차 베지어 곡선 경로
+                float oneMinusT = 1f - eased;
+                Vector2 pos = oneMinusT * oneMinusT * localStart
+                            + 2f * oneMinusT * eased * controlPoint
+                            + eased * eased * localEnd;
+                flyRt.anchoredPosition = pos;
+
+                // 스케일: 출발 시 크게 → 도착 시 축소
+                float scale = Mathf.Lerp(1.3f, 0.7f, eased);
+                flyRt.localScale = Vector3.one * scale;
+
+                // 밝기: 도착 시 더 밝게
+                float brightness = Mathf.Lerp(1f, 1.5f, eased);
+                flyText.color = new Color(
+                    Mathf.Min(startColor.r * brightness, 1f),
+                    Mathf.Min(startColor.g * brightness, 1f),
+                    Mathf.Min(startColor.b * brightness, 1f),
+                    1f);
+
+                // 트레일 효과 (매 3프레임마다)
+                if (Time.frameCount % 3 == 0)
+                {
+                    Color trailColor = new Color(startColor.r, startColor.g, startColor.b, 0.3f);
+                    StartCoroutine(GemFlyTrail(canvasTransform, pos, 10f, trailColor));
+                }
+
+                yield return null;
+            }
+
+            // 도착: 턴 텍스트 펄스 애니메이션 (턴은 GameManager에서 이미 추가됨)
+            if (turnText != null)
+                StartCoroutine(TurnTextArrivalPulse());
+
+            // 도착: 플래시 이펙트
+            StartCoroutine(GemArrivalFlash(canvasTransform, localEnd, new Color(0.2f, 1f, 0.4f)));
+
+            Destroy(flyObj);
+        }
+
+        /// <summary>
+        /// "+1" 도착 시 턴 텍스트 펄스 (스케일 + 초록색 하이라이트)
+        /// </summary>
+        private IEnumerator TurnTextArrivalPulse()
+        {
+            if (turnText == null) yield break;
+
+            RectTransform rt = turnText.GetComponent<RectTransform>();
+            Color origColor = turnText.color;
+
+            float duration = 0.2f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                // 스케일 펄스
+                float scale = 1f + 0.25f * Mathf.Sin(t * Mathf.PI);
+                rt.localScale = Vector3.one * scale;
+
+                // 밝은 초록색 → 원래색 전환
+                turnText.color = Color.Lerp(new Color(0.3f, 1f, 0.5f), origColor, t);
+
+                yield return null;
+            }
+
+            rt.localScale = Vector3.one;
+            turnText.color = origColor;
         }
 
         // ============================================================
@@ -2525,6 +2684,21 @@ namespace JewelsHexaPuzzle.Managers
             {
                 iconImage.sprite = CreateMoveItemIcon();
             }
+            else if (mType == MissionType.SingleTurnRemoval)
+            {
+                iconImage.sprite = CreateSingleTurnRemovalIcon();
+                iconImage.color = Color.white;
+            }
+            else if (mType == MissionType.AchieveCascade)
+            {
+                iconImage.sprite = CreateCascadeIcon();
+                iconImage.color = Color.white;
+            }
+            else if (mType == MissionType.UseSpecial)
+            {
+                iconImage.sprite = CreateUseSpecialIcon();
+                iconImage.color = Color.white;
+            }
             else
             {
                 iconImage.sprite = CreateProceduralMissionIcon();
@@ -3234,6 +3408,239 @@ namespace JewelsHexaPuzzle.Managers
             tex.SetPixels(pixels);
             tex.Apply();
 
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 한 턴 제거 미션 아이콘 (번개 모양 — 한 턴에 많이 제거)
+        /// </summary>
+        private Sprite CreateSingleTurnRemovalIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = new Color(0, 0, 0, 0);
+
+            Vector2 center = Vector2.one * (size / 2f);
+            float radius = size * 0.42f;
+            Color bgColor = new Color(0.95f, 0.55f, 0.1f, 1f);    // 오렌지 배경
+            Color boltColor = new Color(1f, 1f, 0.85f, 1f);        // 밝은 노란 번개
+
+            // 원형 배경
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dist = Vector2.Distance(new Vector2(x, y), center);
+                    if (dist < radius)
+                        pixels[y * size + x] = bgColor;
+                    else if (dist < radius + 3f)
+                        pixels[y * size + x] = new Color(1f, 0.75f, 0.3f, 0.5f);
+                }
+            }
+
+            // 번개 모양 (두꺼운 지그재그 선)
+            Vector2[] bolt = new Vector2[]
+            {
+                new Vector2(0.55f, 0.85f), new Vector2(0.35f, 0.55f),
+                new Vector2(0.55f, 0.55f), new Vector2(0.3f, 0.15f),
+                new Vector2(0.6f, 0.45f), new Vector2(0.45f, 0.45f),
+                new Vector2(0.7f, 0.85f)
+            };
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float fx = (float)x / size;
+                    float fy = (float)y / size;
+                    float dist = Vector2.Distance(new Vector2(x, y), center);
+                    if (dist >= radius) continue;
+
+                    if (IsPointInBoltShape(fx, fy, bolt))
+                        pixels[y * size + x] = boltColor;
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 번개 영역 판정 (두꺼운 지그재그 선)
+        /// </summary>
+        private bool IsPointInBoltShape(float px, float py, Vector2[] pts)
+        {
+            float thickness = 0.06f;
+            for (int i = 0; i < pts.Length - 1; i++)
+            {
+                Vector2 a = pts[i];
+                Vector2 b = pts[i + 1];
+                Vector2 ab = b - a;
+                float t = Mathf.Clamp01(Vector2.Dot(new Vector2(px, py) - a, ab) / Vector2.Dot(ab, ab));
+                Vector2 proj = a + t * ab;
+                float dist = Vector2.Distance(new Vector2(px, py), proj);
+                if (dist < thickness) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 연쇄 미션 아이콘 (3개 하향 화살표 — 캐스케이드)
+        /// </summary>
+        private Sprite CreateCascadeIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = new Color(0, 0, 0, 0);
+
+            Vector2 center = Vector2.one * (size / 2f);
+            float radius = size * 0.42f;
+            Color bgColor = new Color(0.2f, 0.7f, 0.95f, 1f);     // 파란 배경
+
+            // 원형 배경
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dist = Vector2.Distance(new Vector2(x, y), center);
+                    if (dist < radius)
+                        pixels[y * size + x] = bgColor;
+                    else if (dist < radius + 3f)
+                        pixels[y * size + x] = new Color(0.4f, 0.8f, 1f, 0.5f);
+                }
+            }
+
+            // 3개 하향 화살표 (연쇄 표현)
+            float[] arrowCY = { 0.72f, 0.52f, 0.32f };
+            float arrowW = 0.18f;
+            float arrowH = 0.12f;
+            float stemW = 0.04f;
+            float stemH = 0.08f;
+
+            for (int a = 0; a < 3; a++)
+            {
+                float cy = arrowCY[a];
+                float alpha = 1f - a * 0.2f;
+                Color ac = new Color(1f, 1f, 1f, alpha);
+
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float fx = (float)x / size;
+                        float fy = (float)y / size;
+                        float dist = Vector2.Distance(new Vector2(x, y), center);
+                        if (dist >= radius) continue;
+
+                        // 줄기 (위쪽)
+                        if (fy >= cy && fy <= cy + stemH &&
+                            fx >= 0.5f - stemW && fx <= 0.5f + stemW)
+                        {
+                            pixels[y * size + x] = ac;
+                        }
+
+                        // 삼각형 화살 헤드 (아래 방향)
+                        if (fy <= cy && fy >= cy - arrowH)
+                        {
+                            float t = (cy - fy) / arrowH;
+                            float halfW = arrowW * (1f - t);
+                            if (fx >= 0.5f - halfW && fx <= 0.5f + halfW)
+                                pixels[y * size + x] = ac;
+                        }
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        /// <summary>
+        /// 특수 블록 사용 미션 아이콘 (6각 별 + 탭 인디케이터)
+        /// </summary>
+        private Sprite CreateUseSpecialIcon()
+        {
+            int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = new Color(0, 0, 0, 0);
+
+            Vector2 center = Vector2.one * (size / 2f);
+            float radius = size * 0.42f;
+            Color bgColor = new Color(0.7f, 0.25f, 0.85f, 1f);    // 보라 배경
+            Color starColor = new Color(1f, 0.95f, 0.6f, 1f);      // 금색 별
+
+            // 원형 배경
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dist = Vector2.Distance(new Vector2(x, y), center);
+                    if (dist < radius)
+                        pixels[y * size + x] = bgColor;
+                    else if (dist < radius + 3f)
+                        pixels[y * size + x] = new Color(0.8f, 0.4f, 0.95f, 0.5f);
+                }
+            }
+
+            // 별 모양 (6각 별)
+            Vector2 starCenter = new Vector2(0.5f, 0.55f);
+            float outerR = 0.25f;
+            float innerR = 0.12f;
+            int points = 6;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float fx = (float)x / size;
+                    float fy = (float)y / size;
+                    float dist = Vector2.Distance(new Vector2(x, y), center);
+                    if (dist >= radius) continue;
+
+                    Vector2 p = new Vector2(fx, fy) - starCenter;
+                    float angle = Mathf.Atan2(p.y, p.x);
+                    if (angle < 0) angle += Mathf.PI * 2;
+                    float sector = angle / (Mathf.PI * 2) * (points * 2);
+                    int seg = Mathf.FloorToInt(sector);
+                    float segT = sector - seg;
+                    float r = (seg % 2 == 0)
+                        ? Mathf.Lerp(outerR, innerR, segT)
+                        : Mathf.Lerp(innerR, outerR, segT);
+                    if (p.magnitude < r)
+                        pixels[y * size + x] = starColor;
+                }
+            }
+
+            // 탭 인디케이터 (작은 원)
+            Vector2 tapCenter = new Vector2(size * 0.5f, size * 0.25f);
+            float tapR = size * 0.06f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d = Vector2.Distance(new Vector2(x, y), tapCenter);
+                    float cd = Vector2.Distance(new Vector2(x, y), center);
+                    if (cd >= radius) continue;
+                    if (d < tapR)
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, 0.9f);
+                    else if (d < tapR + 4f)
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, 0.4f);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
         }
     }
