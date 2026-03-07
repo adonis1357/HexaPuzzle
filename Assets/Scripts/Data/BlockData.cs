@@ -446,7 +446,7 @@ namespace JewelsHexaPuzzle.Data
                 case GemType.Orange:
                     return new Color(1.0f, 0.5f, 0.05f);      // 선명한 주황
                 case GemType.Gray:
-                    return new Color(0.55f, 0.55f, 0.58f);     // 적군 회색
+                    return new Color(0.35f, 0.35f, 0.38f);     // 적군 진한 회색
                 default:
                     return new Color(0.75f, 0.68f, 0.6f);     // 베이지
             }

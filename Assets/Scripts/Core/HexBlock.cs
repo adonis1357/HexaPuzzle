@@ -134,13 +134,13 @@ namespace JewelsHexaPuzzle.Core
         {
             if (blockData == null) return;
 
-            // 블록 색상을 회색으로 변경
-            SetGemColor(new Color(0.5f, 0.5f, 0.5f, 1f));
+            // 블록 색상을 진한 불투명 회색으로 변경
+            SetGemColor(new Color(0.35f, 0.35f, 0.38f, 1f));
 
-            // 색상도둑 오버레이 표시 (슬라임 느낌)
+            // 색상도둑 오버레이 표시 (진한 슬라임)
             if (overlayImage != null)
             {
-                overlayImage.color = new Color(0.5f, 0.55f, 0.5f, 0.35f); // 약간 초록빛의 회색 슬라임
+                overlayImage.color = new Color(0.3f, 0.33f, 0.3f, 0.6f);
                 overlayImage.enabled = true;
             }
 
@@ -170,20 +170,20 @@ namespace JewelsHexaPuzzle.Core
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / highlightDuration);
 
-                // 빨강 강조에서 회색으로 페이드
+                // 빨강 강조에서 진한 회색으로 페이드
                 Color highlightColor = Color.Lerp(
                     new Color(1f, 0.3f, 0.3f, 0.9f),  // 빨간색
-                    new Color(0.4f, 0.4f, 0.4f, 0.7f),  // 회색
+                    new Color(0.3f, 0.3f, 0.33f, 0.85f),  // 진한 회색
                     VisualConstants.EaseOutCubic(t)
                 );
                 borderImage.color = highlightColor;
                 yield return null;
             }
 
-            // 2단계: 회색 테두리로 고정
+            // 2단계: 진한 회색 테두리로 고정
             if (borderImage != null && HasEnemyOfType(EnemyType.Chromophage))
             {
-                borderImage.color = new Color(0.4f, 0.4f, 0.4f, 0.7f);
+                borderImage.color = new Color(0.3f, 0.3f, 0.33f, 0.85f);
             }
         }
 
@@ -199,10 +199,10 @@ namespace JewelsHexaPuzzle.Core
                 while (elapsed < 0.25f && HasEnemyOfType(EnemyType.Chromophage))
                 {
                     elapsed += Time.deltaTime;
-                    float alpha = Mathf.Lerp(0.3f, 0.5f, elapsed / 0.25f);
+                    float alpha = Mathf.Lerp(0.5f, 0.7f, elapsed / 0.25f);
                     if (overlayImage != null)
                     {
-                        overlayImage.color = new Color(0.5f, 0.55f, 0.5f, alpha); // 슬라임 색상과 일치
+                        overlayImage.color = new Color(0.3f, 0.33f, 0.3f, alpha);
                     }
                     yield return null;
                 }
@@ -212,10 +212,10 @@ namespace JewelsHexaPuzzle.Core
                 while (elapsed < 0.25f && HasEnemyOfType(EnemyType.Chromophage))
                 {
                     elapsed += Time.deltaTime;
-                    float alpha = Mathf.Lerp(0.5f, 0.3f, elapsed / 0.25f);
+                    float alpha = Mathf.Lerp(0.7f, 0.5f, elapsed / 0.25f);
                     if (overlayImage != null)
                     {
-                        overlayImage.color = new Color(0.5f, 0.55f, 0.5f, alpha); // 슬라임 색상과 일치
+                        overlayImage.color = new Color(0.3f, 0.33f, 0.3f, alpha);
                     }
                     yield return null;
                 }

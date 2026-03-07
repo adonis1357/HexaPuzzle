@@ -2515,11 +2515,9 @@ public void TriggerBigBang()
                     EnemySystem.Instance.ProcessDividerSplits(removedDividers, RemovalMethod.Match);
             }
 
-            // 8. 인접 회색 블록 딜레이 제거 (0.3초 후 균열 이펙트)
+            // 8. 인접 회색 블록 즉시 제거 (인접 매칭 대미지)
             if (grayToRemove.Count > 0)
             {
-                yield return new WaitForSeconds(0.3f);
-
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayBlockDestroySound();
 
@@ -2532,7 +2530,15 @@ public void TriggerBigBang()
                             RemovalCondition.Normal, gray.transform.position);
                 }
 
-                yield return new WaitForSeconds(VisualConstants.DestroyDuration + 0.05f);
+                // 축소 애니메이션 병렬 실행
+                List<Coroutine> grayShrinks = new List<Coroutine>();
+                foreach (var gray in grayToRemove)
+                {
+                    if (gray != null)
+                        grayShrinks.Add(StartCoroutine(AnimateShrinkRemove(gray)));
+                }
+                foreach (var co in grayShrinks)
+                    yield return co;
 
                 foreach (var gray in grayToRemove)
                 {
