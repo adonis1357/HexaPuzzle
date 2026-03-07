@@ -1727,6 +1727,15 @@ private void InitializeSystems()
                 Debug.Log("[GameManager] ComboDisplay auto-created");
             }
 
+            // DamagePopupManager
+            if (FindObjectOfType<JewelsHexaPuzzle.UI.DamagePopupManager>() == null)
+            {
+                GameObject damageMgr = new GameObject("DamagePopupManager");
+                damageMgr.transform.SetParent(canvas.transform, false);
+                damageMgr.AddComponent<JewelsHexaPuzzle.UI.DamagePopupManager>();
+                Debug.Log("[GameManager] DamagePopupManager auto-created");
+            }
+
             // HammerItem은 Start()에서 생성 (Canvas 완전 초기화 후)
         }
 
