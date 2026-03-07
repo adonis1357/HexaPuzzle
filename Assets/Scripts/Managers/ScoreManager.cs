@@ -2,6 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.UI;
 
 namespace JewelsHexaPuzzle.Managers
 {
@@ -412,6 +413,11 @@ namespace JewelsHexaPuzzle.Managers
         public void AddEnemyScore(EnemyType type, RemovalMethod method, RemovalCondition condition, Vector3 position)
         {
             int score = ScoreCalculator.CalculateEnemyScore(type, method, condition);
+
+            // 적군 대미지 팝업 (점수와 무관하게 항상 표시)
+            if (DamagePopupManager.Instance != null)
+                DamagePopupManager.Instance.ShowDamage(1, position);
+
             if (score <= 0) return;  // 가시+매칭 → 0점
 
             currentScore += score;

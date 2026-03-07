@@ -34,6 +34,7 @@ using System.Collections.Generic;
 using System.Linq;
 using JewelsHexaPuzzle.Data;
 using JewelsHexaPuzzle.Managers;
+using JewelsHexaPuzzle.UI;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -2353,8 +2354,6 @@ public void TriggerBigBang()
                     if (block.CurrentEnemyType == EnemyType.Chromophage)
                     {
                         OnEnemyRemoved?.Invoke(block, EnemyType.Chromophage);
-                        // 색상도둑 파괴 애니메이션 시작 (회색 폭발 이펙트) - 비활성화됨
-                        // StartCoroutine(AnimateGrayCrumble(block));
                         // 색상도둑 제거 SFX 재생
                         if (AudioManager.Instance != null)
                             AudioManager.Instance.PlayChromophageRemovalSound();
@@ -2422,6 +2421,8 @@ public void TriggerBigBang()
                         neighbor.Data.enemyType = EnemyType.None;
                         neighbor.UpdateVisuals();
                         Debug.Log($"[BRS] 가시 기생충 제거: ({neighbor.Coord})");
+                        if (DamagePopupManager.Instance != null)
+                            DamagePopupManager.Instance.ShowDamage(1, neighbor.transform.position);
                         if (EnemySystem.Instance != null)
                             EnemySystem.Instance.RegisterKill(new EnemyKillData {
                                 enemyType = EnemyType.ThornParasite, method = RemovalMethod.Match, condition = RemovalCondition.Normal });
@@ -2524,8 +2525,6 @@ public void TriggerBigBang()
 
                 foreach (var gray in grayToRemove)
                 {
-                    // 회색 블록 폭발 이펙트 비활성화
-                    // StartCoroutine(AnimateGrayCrumble(gray));
                     // 회색 블록(색상도둑) 매칭 제거 점수
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
                     if (sm != null)

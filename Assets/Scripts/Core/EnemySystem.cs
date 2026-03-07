@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
 using JewelsHexaPuzzle.Managers;
+using JewelsHexaPuzzle.UI;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -463,6 +464,8 @@ namespace JewelsHexaPuzzle.Core
             if (!block.Data.HasShield()) return false;
 
             block.Data.enemyShieldCount--;
+            if (DamagePopupManager.Instance != null)
+                DamagePopupManager.Instance.ShowDamage(1, block.transform.position);
             Debug.Log($"[EnemySystem] 방패 흡수: ({block.Coord}) 남은={block.Data.enemyShieldCount}");
 
             if (block.Data.enemyShieldCount <= 0)
@@ -702,6 +705,8 @@ namespace JewelsHexaPuzzle.Core
             }
 
             block.Data.chaosHitCount++;
+            if (DamagePopupManager.Instance != null)
+                DamagePopupManager.Instance.ShowDamage(1, block.transform.position);
             if (block.Data.chaosHitCount >= 3)
             {
                 block.Data.enemyType = EnemyType.None;
