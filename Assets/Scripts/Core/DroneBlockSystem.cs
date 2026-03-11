@@ -100,10 +100,161 @@ namespace JewelsHexaPuzzle.Core
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
                 return;
             Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord}");
-            StartCoroutine(DroneCoroutine(droneBlock));
+            StartCoroutine(DroneCoroutine(droneBlock, null));
         }
 
-        private IEnumerator DroneCoroutine(HexBlock droneBlock)
+        /// <summary>
+        /// 지정된 타겟으로 드론 발동 (콤보 시스템에서 사전 할당된 타겟 사용)
+        /// </summary>
+        public void ActivateDroneWithTarget(HexBlock droneBlock, HexBlock assignedTarget)
+        {
+            if (droneBlock == null) return;
+            if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
+                return;
+            Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 사전 할당 타겟 {assignedTarget?.Coord}");
+            StartCoroutine(DroneCoroutine(droneBlock, assignedTarget));
+        }
+
+        /// <summary>
+        /// 고블린 직접 타격: 블록 없이 고블린 위치로 직접 비행하여 1 대미지
+        /// 낙하 대미지만 1인 경우 직접 타격이 더 효율적
+        /// </summary>
+        public void ActivateDroneToGoblin(HexBlock droneBlock, HexCoord goblinPos)
+        {
+            if (droneBlock == null) return;
+            if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
+                return;
+            Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 고블린 직접 타격 ({goblinPos})");
+            StartCoroutine(DroneGoblinStrikeCoroutine(droneBlock, goblinPos));
+        }
+
+        /// <summary>
+        /// 고블린 직접 타격 코루틴: 블록 파괴 없이 고블린 위치로 비행 → 1 대미지
+        /// </summary>
+        private IEnumerator DroneGoblinStrikeCoroutine(HexBlock droneBlock, HexCoord goblinPos)
+        {
+            activeDroneCount++;
+            activeBlocks.Add(droneBlock);
+            SetupEffectParent();
+
+            bool isFirst = (activeDroneCount == 1);
+
+            Vector3 droneWorldPos = droneBlock.transform.position;
+            Color droneColor = GemColors.GetColor(droneBlock.Data.gemType);
+
+            // 1. Pre-Fire 압축 애니메이션
+            if (isFirst)
+                yield return StartCoroutine(PreFireCompression(droneBlock));
+
+            // 2. 드론 블록 클리어
+            droneBlock.ClearData();
+
+            // 3. 고블린 월드 위치 결정
+            Vector3 goblinWorldPos = Vector3.zero;
+            bool goblinFound = false;
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
+                foreach (var g in aliveGoblins)
+                {
+                    if (g.isAlive && g.position == goblinPos && g.visualObject != null)
+                    {
+                        goblinWorldPos = g.visualObject.transform.position;
+                        goblinFound = true;
+                        break;
+                    }
+                }
+            }
+
+            // 고블린이 사라졌으면 좌표 기반 위치로 폴백
+            if (!goblinFound)
+            {
+                if (hexGrid != null)
+                    goblinWorldPos = (Vector3)hexGrid.CalculateFlatTopHexPosition(goblinPos);
+                else
+                {
+                    // 폴백 실패: 점수만 지급하고 종료
+                    OnDroneComplete?.Invoke(150);
+                    activeBlocks.Remove(droneBlock);
+                    activeDroneCount--;
+                    yield break;
+                }
+            }
+
+            // 4. 드론 비행
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayDroneSound();
+            yield return StartCoroutine(DroneFlyEffect(droneWorldPos, goblinWorldPos, droneColor));
+
+            // 5. 화면 흔들림
+            if (isFirst)
+                StartCoroutine(ScreenShake(3f, 0.15f));
+
+            // 6. 타격 이펙트 (블록 없이 위치 기반)
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.StopDroneSound();
+                AudioManager.Instance.PlayDroneStrikeSound();
+            }
+            yield return StartCoroutine(DroneGoblinStrikeEffect(goblinWorldPos, droneColor));
+
+            // 7. 고블린 직접 대미지
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                GoblinSystem.Instance.ApplyDamageAtPosition(goblinPos, 1);
+                Debug.Log($"[DroneBlockSystem] 고블린 직접 타격: ({goblinPos}) 1 대미지");
+            }
+
+            // 8. 점수
+            OnDroneComplete?.Invoke(150);
+
+            activeBlocks.Remove(droneBlock);
+            activeDroneCount--;
+        }
+
+        /// <summary>
+        /// 고블린 직접 타격 이펙트: 블록 없이 월드 좌표 기반으로 임팩트 웨이브 + 파편 + 스파크
+        /// </summary>
+        private IEnumerator DroneGoblinStrikeEffect(Vector3 worldPos, Color color)
+        {
+            // 1. 임팩트 플래시 (effectParent 자식으로)
+            if (effectParent != null)
+            {
+                GameObject flashObj = new GameObject("DroneGoblinFlash");
+                flashObj.transform.SetParent(effectParent, false);
+                flashObj.transform.position = worldPos;
+                RectTransform flashRt = flashObj.AddComponent<RectTransform>();
+                flashRt.sizeDelta = new Vector2(70f, 70f);
+                Image flashImg = flashObj.AddComponent<Image>();
+                flashImg.color = new Color(1f, 1f, 1f, 1f);
+                flashImg.raycastTarget = false;
+                Destroy(flashObj, 0.15f);
+            }
+
+            // 2. 임팩트 웨이브 링
+            StartCoroutine(ImpactWaveRing(worldPos, color, 60f, 0.25f));
+            StartCoroutine(ImpactWaveRing(worldPos, Color.white, 40f, 0.18f));
+
+            // 3. 파편 방출
+            int debrisCount = Random.Range(6, 11);
+            for (int i = 0; i < debrisCount; i++)
+            {
+                if (effectParent == null) break;
+                SpawnImpactDebris(worldPos, color);
+            }
+
+            // 4. 스파크 방출
+            int sparkCount = Random.Range(4, 7);
+            for (int i = 0; i < sparkCount; i++)
+            {
+                if (effectParent == null) break;
+                SpawnImpactSpark(worldPos, color);
+            }
+
+            yield return new WaitForSeconds(0.08f);
+        }
+
+        private IEnumerator DroneCoroutine(HexBlock droneBlock, HexBlock assignedTarget)
         {
             activeDroneCount++;
             activeBlocks.Add(droneBlock);
@@ -122,8 +273,12 @@ namespace JewelsHexaPuzzle.Core
             // 2. 드론 블록 클리어
             droneBlock.ClearData();
 
-            // 3. 타겟 선택
-            HexBlock target = FindTargetBlock(droneBlock);
+            // 3. 타겟 선택: 사전 할당 타겟이 유효하면 사용, 아니면 자동 탐색
+            HexBlock target = null;
+            if (assignedTarget != null && assignedTarget.Data != null && assignedTarget.Data.gemType != GemType.None)
+                target = assignedTarget;
+            else
+                target = FindTargetBlock(droneBlock);
 
             if (target == null)
             {
@@ -159,7 +314,24 @@ namespace JewelsHexaPuzzle.Core
             yield return StartCoroutine(DroneStrikeEffect(target, droneColor));
 
             // 7. 타격 효과 적용 (1데미지)
+            HexCoord targetCoord = target.Coord;
             ApplyDroneStrike(target);
+
+            // 7-1. 충돌 대미지: 타겟 위치에 고블린이 있으면 1 추가 대미지
+            if (GoblinSystem.Instance != null)
+            {
+                var goblinSystem = GoblinSystem.Instance;
+                var goblinsAtTarget = goblinSystem.GetAliveGoblins();
+                foreach (var goblin in goblinsAtTarget)
+                {
+                    if (goblin.position == targetCoord)
+                    {
+                        goblinSystem.ApplyDamageAtPosition(targetCoord, 1);
+                        Debug.Log($"[DroneBlockSystem] 충돌 대미지: ({targetCoord}) 고블린에게 1 대미지");
+                        break; // 같은 위치에 고블린은 1마리
+                    }
+                }
+            }
 
             // 8. 점수
             int score = 150;
@@ -277,14 +449,166 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 우선순위 기반 타겟 선택 (미션 연동)
-        /// 0. 미션 타겟 최우선 (미션에서 요구하는 색상/장애물)
-        /// 1. 장애물 (FixedBlock > TimeBomb > 비닐 > 사슬 > 적군)
-        /// 2. 높은 티어 블록
-        /// 3. 기본 블록 (Normal 티어, 특수 아님) — 미션 색상 > 랜덤
-        /// 4. 특수 블록 (희귀도 낮은 순)
+        /// 타겟 선택: 고블린 존재 시 스마트 열 기반, 없으면 기존 우선순위 기반
         /// </summary>
         private HexBlock FindTargetBlock(HexBlock droneBlock)
+        {
+            // 고블린이 살아있으면 스마트 타겟팅 우선
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.AliveCount > 0)
+            {
+                HexBlock smartTarget = FindSmartTargetBlock(droneBlock);
+                if (smartTarget != null) return smartTarget;
+            }
+
+            // 고블린 없거나 스마트 타겟 실패 시 기존 우선순위 기반
+            return FindPriorityTargetBlock(droneBlock);
+        }
+
+        /// <summary>
+        /// 스마트 타겟 선택: 열(q) 기반 최적 공격 대상 선택
+        /// 1차: 고블린이 가장 많은 열 (낙하 대미지 극대화)
+        /// 2차: 몬스터 위 블록 공격 시 +1 충돌 대미지 보너스
+        /// 동률: HP 합 → 가장자리 → 왼쪽 열
+        /// </summary>
+        private HexBlock FindSmartTargetBlock(HexBlock droneBlock)
+        {
+            var goblinSystem = GoblinSystem.Instance;
+            var aliveGoblins = goblinSystem.GetAliveGoblins();
+            if (aliveGoblins.Count == 0) return null;
+
+            // 열(q)별 고블린 그룹화
+            Dictionary<int, List<GoblinData>> columnGoblins = new Dictionary<int, List<GoblinData>>();
+            foreach (var goblin in aliveGoblins)
+            {
+                int q = goblin.position.q;
+                if (!columnGoblins.ContainsKey(q))
+                    columnGoblins[q] = new List<GoblinData>();
+                columnGoblins[q].Add(goblin);
+            }
+
+            // 각 열 평가 → 최적 열 선택
+            int bestQ = 0;
+            int bestTotalDamage = -1;
+            int bestHpSum = -1;
+            int bestEdgeDist = -1;
+            bool bestFound = false;
+
+            foreach (var kvp in columnGoblins)
+            {
+                int q = kvp.Key;
+                var goblinsInCol = kvp.Value;
+                int monsterCount = goblinsInCol.Count;
+
+                // 충돌 보너스: 해당 열에서 블록 위에 있는 고블린이 있는지 (드론이 1블록만 타격하므로 최대 +1)
+                int collisionBonus = 0;
+                foreach (var goblin in goblinsInCol)
+                {
+                    HexBlock blockAtPos = hexGrid.GetBlock(goblin.position);
+                    if (blockAtPos != null && blockAtPos.Data != null
+                        && blockAtPos.Data.gemType != GemType.None
+                        && blockAtPos != droneBlock
+                        && blockAtPos.Data.specialType != SpecialBlockType.Drone)
+                    {
+                        collisionBonus = 1;
+                        break;
+                    }
+                }
+
+                int totalDamage = monsterCount + collisionBonus;
+                int hpSum = 0;
+                foreach (var g in goblinsInCol) hpSum += g.hp;
+                int edgeDist = Mathf.Abs(q);
+
+                // 비교: totalDamage > hpSum > edgeDist > 왼쪽(q 작은것)
+                bool isBetter = false;
+                if (!bestFound)
+                {
+                    isBetter = true;
+                }
+                else if (totalDamage > bestTotalDamage)
+                {
+                    isBetter = true;
+                }
+                else if (totalDamage == bestTotalDamage)
+                {
+                    if (hpSum > bestHpSum)
+                        isBetter = true;
+                    else if (hpSum == bestHpSum)
+                    {
+                        if (edgeDist > bestEdgeDist)
+                            isBetter = true;
+                        else if (edgeDist == bestEdgeDist && q < bestQ)
+                            isBetter = true;
+                    }
+                }
+
+                if (isBetter)
+                {
+                    bestQ = q;
+                    bestTotalDamage = totalDamage;
+                    bestHpSum = hpSum;
+                    bestEdgeDist = edgeDist;
+                    bestFound = true;
+                }
+            }
+
+            if (!bestFound) return null;
+
+            int bestMonsterCount = columnGoblins[bestQ].Count;
+            int bestCollisionBonus = bestTotalDamage - bestMonsterCount;
+            Debug.Log($"[DroneBlockSystem] 스마트 타겟 열 선택: q={bestQ} (몬스터={bestMonsterCount}, 충돌보너스={bestCollisionBonus}, HP합={bestHpSum}, 가장자리={bestEdgeDist})");
+
+            var bestColumnGoblins = columnGoblins[bestQ];
+
+            // === 선택된 열에서 타겟 블록 결정 ===
+
+            // 1순위: 몬스터가 위에 있는 블록 (충돌 대미지 보너스)
+            // 여러 개일 경우 가장 위쪽(r 작은) 선택 → 낙하 거리 극대화
+            HexBlock monsterOnBlock = null;
+            foreach (var goblin in bestColumnGoblins)
+            {
+                HexBlock blockAtPos = hexGrid.GetBlock(goblin.position);
+                if (blockAtPos != null && blockAtPos.Data != null
+                    && blockAtPos.Data.gemType != GemType.None
+                    && blockAtPos != droneBlock
+                    && blockAtPos.Data.specialType != SpecialBlockType.Drone)
+                {
+                    if (monsterOnBlock == null || blockAtPos.Coord.r < monsterOnBlock.Coord.r)
+                        monsterOnBlock = blockAtPos;
+                }
+            }
+
+            if (monsterOnBlock != null)
+            {
+                Debug.Log($"[DroneBlockSystem] ★ 스마트 타겟: 몬스터 위 블록 {monsterOnBlock.Coord} ({monsterOnBlock.Data.gemType})");
+                return monsterOnBlock;
+            }
+
+            // 2순위: 해당 열의 가장 위 블록 (낙하 거리 극대화)
+            HexBlock topmostBlock = null;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block == droneBlock) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+                if (block.Coord.q != bestQ) continue;
+
+                // r 값이 작을수록 위쪽 (Y 반전)
+                if (topmostBlock == null || block.Coord.r < topmostBlock.Coord.r)
+                    topmostBlock = block;
+            }
+
+            if (topmostBlock != null)
+                Debug.Log($"[DroneBlockSystem] ★ 스마트 타겟: 열 최상단 블록 {topmostBlock.Coord} ({topmostBlock.Data.gemType})");
+
+            return topmostBlock;
+        }
+
+        /// <summary>
+        /// 기존 우선순위 기반 타겟 선택 (고블린 없을 때 사용)
+        /// </summary>
+        private HexBlock FindPriorityTargetBlock(HexBlock droneBlock)
         {
             List<HexBlock> candidates = new List<HexBlock>();
 

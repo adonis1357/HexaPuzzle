@@ -3023,53 +3023,8 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         private Sprite CreateEnemyIcon()
         {
-            int size = 256;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            Color[] pixels = new Color[size * size];
-
-            Vector2 center = new Vector2(size / 2f, size / 2f);
-            float outerRadius = size * 0.4f;
-            Color enemyColor = GemColors.GetColor(GemType.Gray);
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    Vector2 pos = new Vector2(x, y) - center;
-                    float dist = pos.magnitude;
-                    float angle = Mathf.Atan2(pos.y, pos.x);
-                    if (angle < 0) angle += Mathf.PI * 2f;
-
-                    float hexAngle = Mathf.PI / 3f;
-                    float sectorAngle = angle % hexAngle;
-                    float cosAngle = Mathf.Cos(sectorAngle - hexAngle / 2f);
-                    float hexDist = outerRadius * cosAngle;
-
-                    if (dist < hexDist)
-                    {
-                        Color c = enemyColor;
-                        // X 표시 (퇴치 의미)
-                        float xDist = Mathf.Min(
-                            Mathf.Abs(pos.x - pos.y) / 1.414f,
-                            Mathf.Abs(pos.x + pos.y) / 1.414f);
-                        if (xDist < size * 0.04f && dist > hexDist * 0.15f)
-                            c = new Color(0.9f, 0.15f, 0.15f);
-                        else if (dist > hexDist * 0.85f)
-                            c = Color.Lerp(c, Color.white, 0.4f);
-                        c.a = 1f;
-                        pixels[y * size + x] = c;
-                    }
-                    else
-                    {
-                        pixels[y * size + x] = new Color(0, 0, 0, 0);
-                    }
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+            // 고블린 스프라이트를 미션 아이콘으로 사용
+            return GoblinSystem.GetGoblinSprite();
         }
 
         /// <summary>

@@ -108,6 +108,29 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 고블린 제거 보고 (GoblinSystem에서 호출)
+        /// HexBlock 없이 EnemyType.Goblin으로 미션 진행도 업데이트
+        /// </summary>
+        public void ReportGoblinKill()
+        {
+            for (int i = 0; i < missionProgress.Count; i++)
+            {
+                var mission = missionProgress[i];
+                if (mission.isComplete) continue;
+
+                if (mission.mission.type == MissionType.RemoveEnemy &&
+                    mission.mission.targetEnemyType == EnemyType.Goblin)
+                {
+                    mission.currentCount++;
+                    CheckMissionCompletion(i);
+                }
+            }
+
+            OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
+            Debug.Log($"[StageManager] 고블린 제거 보고");
+        }
+
+        /// <summary>
         /// 기본 스테이지 생성 (데이터베이스 없을 때)
         /// </summary>
         private StageData GenerateDefaultStage(int stageNumber)

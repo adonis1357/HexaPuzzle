@@ -96,7 +96,8 @@ namespace JewelsHexaPuzzle.Data
         TimeFreezer = 6,        // 시간동결자: 특정 블록의 움직임을 얼림 | 별칭: 동결
         ResonanceTwin = 7,      // 공명쌍둥이: 2개가 쌍으로 존재, 동시에 파괴해야 처치 | 별칭: 쌍둥이
         ShadowSpore = 8,        // 그림자포자: 시간이 지나면 주변으로 번짐 | 별칭: 포자
-        ChaosOverlord = 9       // 카오스 군주: 여러 적군 능력을 동시에 사용하는 최종 보스 | 별칭: 카오스
+        ChaosOverlord = 9,      // 카오스 군주: 여러 적군 능력을 동시에 사용하는 최종 보스 | 별칭: 카오스
+        Goblin = 10             // 고블린: 빈 공간에서 소환, 블록을 공격해 금간 블록으로 만듦 | 별칭: 고블린
     }
 
     /// <summary>
@@ -213,6 +214,8 @@ namespace JewelsHexaPuzzle.Data
         public DrillDirection drillDirection;   // 드릴 발사 방향 (세로/슬래시/백슬래시)
         public BlockTier tier;                  // 블록 등급 (매칭 참여 횟수에 따라 상승)
         public bool pendingActivation;          // 활성화 대기 중 (특수 블록이 곧 발동될 예정인지)
+        public bool isCracked;                  // 깨진 블록 여부 (고블린 공격으로 금간 상태)
+        public bool isShell;                    // 껍데기 블록 여부 (두 번째 공격으로 테두리만 남은 상태, 매칭 불가, 낙하 장애물)
 
         // ── 적군 시스템 필드 ──
         public EnemyType enemyType;             // 이 블록에 붙어있는 적군 종류
@@ -302,6 +305,8 @@ namespace JewelsHexaPuzzle.Data
             cloned.enemyTwinId = this.enemyTwinId;
             cloned.chaosEffectMask = this.chaosEffectMask;
             cloned.chaosHitCount = this.chaosHitCount;
+            cloned.isCracked = this.isCracked;
+            cloned.isShell = this.isShell;
             return cloned;
         }
 

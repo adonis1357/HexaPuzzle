@@ -253,6 +253,18 @@ namespace JewelsHexaPuzzle.Data
                 baseScore = 1500,
                 defaultMaxOnBoard = 1
             });
+
+            // --- #10 고블린 (Goblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.Goblin,
+                name = "고블린",
+                alias = "고블린",
+                description = "나무 몽둥이를 들고 블록을 공격해 금간 블록으로 만드는 적군",
+                overlayColor = new Color(0.3f, 0.7f, 0.2f, 0.9f),
+                baseScore = 500,
+                defaultMaxOnBoard = 8
+            });
         }
 
         private static void Register(EnemyMetadata meta)

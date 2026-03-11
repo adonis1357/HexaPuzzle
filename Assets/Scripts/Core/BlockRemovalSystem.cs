@@ -53,7 +53,7 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private DrillBlockSystem drillSystem;       // 드릴 특수 블록 시스템 (한 줄 파괴)
         [SerializeField] private BombBlockSystem bombSystem;         // 폭탄 특수 블록 시스템 (주변 폭발)
         [SerializeField] private DonutBlockSystem donutSystem;       // 무지개(도넛) 특수 블록 시스템 (같은 색 전체 파괴)
-        [SerializeField] private XBlockSystem xBlockSystem;          // X블록 특수 블록 시스템 (링 색상 파괴)
+        [SerializeField] private XBlockSystem xBlockSystem;          // 타겟 레이져 특수 블록 시스템 (같은 색 전체 파괴)
         [SerializeField] private DroneBlockSystem droneSystem;       // 드론 특수 블록 시스템 (우선순위 단일 타격)
         private SpecialBlockComboSystem comboSystem;                  // 특수 블록 합성 시스템 (즉시 합성용)
 
@@ -170,7 +170,8 @@ namespace JewelsHexaPuzzle.Core
                 GameObject child = transform.GetChild(i).gameObject;
                 if (child.name.StartsWith("Spark") || child.name.StartsWith("LightningArc") ||
                     child.name.StartsWith("DestroyFlash") || child.name.StartsWith("BloomLayer") ||
-                    child.name.StartsWith("MatchPulseGlow") || child.name.StartsWith("GrayShard"))
+                    child.name.StartsWith("MatchPulseGlow") || child.name.StartsWith("GrayShard") ||
+                    child.name.StartsWith("CrackedShard") || child.name.StartsWith("CrackedBurstRing"))
                     Destroy(child);
             }
 
@@ -188,7 +189,8 @@ namespace JewelsHexaPuzzle.Core
                             child.name.StartsWith("SpawnGlow") ||
                             child.name.StartsWith("DestroyFlash") ||
                             child.name.StartsWith("MatchPulseGlow") ||
-                            child.name.StartsWith("GrayCrack"))
+                            child.name.StartsWith("GrayCrack") ||
+                            child.name.StartsWith("CrackedBurstFlash"))
                             Destroy(child);
                     }
                 }
@@ -492,7 +494,7 @@ namespace JewelsHexaPuzzle.Core
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
                         while (xBlockSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
-                        if (xBlockSystem.IsBlockActive(block)) { Debug.LogError("[BRS] XBlock timeout! ForceReset"); xBlockSystem.ForceReset(); }
+                        if (xBlockSystem.IsBlockActive(block)) { Debug.LogError("[BRS] 타겟 레이져 timeout! ForceReset"); xBlockSystem.ForceReset(); }
                     }
                     break;
 
@@ -1200,6 +1202,204 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 깨진 블록(isCracked) 전용 붉은색 폭발 이펙트
+        /// 깨진 블록이 매칭 삭제될 때 — 강렬한 붉은 플래시 + 충격파 링 + 붉은 파편
+        /// </summary>
+        private IEnumerator AnimateCrackedBurst(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            Vector3 burstCenter = block.transform.position;
+
+            // 블록 색상 캐싱 (파편 색상용)
+            Color blockColor = Color.gray;
+            if (block.Data != null && block.Data.gemType != GemType.None)
+                blockColor = GemColors.GetColor(block.Data.gemType);
+
+            // 1. 7개 파편 산개 — 길쭉한 삼각형/사각형/오각형 혼합, 크기 제각각
+            int[] shardShapes = { 3, 4, 5, 3, 5, 4, 3 };
+            for (int i = 0; i < 7; i++)
+                StartCoroutine(AnimateCrackedShard(burstCenter, blockColor, shardShapes[i]));
+
+            // 2. 백색 순간 플래시 (파쇄 순간 강조)
+            GameObject flash = new GameObject("CrackedBurstFlash");
+            flash.transform.SetParent(transform, false);
+            flash.transform.position = burstCenter;
+            var flashImg = flash.AddComponent<UnityEngine.UI.Image>();
+            flashImg.raycastTarget = false;
+            flashImg.sprite = HexBlock.GetHexFlashSprite();
+            flashImg.color = new Color(1f, 1f, 1f, 0.7f);
+            RectTransform flashRt = flash.GetComponent<RectTransform>();
+            float flashSize = hexGrid != null ? hexGrid.HexSize * 1.2f : 60f;
+            flashRt.sizeDelta = new Vector2(flashSize, flashSize);
+
+            // 3. 블록 즉시 소멸 (팽창 없이 빠르게 축소)
+            float duration = 0.08f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                if (block == null) break;
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                block.transform.localScale = Vector3.one * (1f - VisualConstants.EaseInQuad(t));
+                float fScale = 1f + t * 1.5f;
+                flashRt.sizeDelta = new Vector2(flashSize * fScale, flashSize * fScale);
+                flashImg.color = new Color(1f, 1f, 1f, 0.7f * (1f - t));
+                yield return null;
+            }
+
+            if (block != null)
+            {
+                block.transform.localScale = Vector3.zero;
+                block.transform.localRotation = Quaternion.identity;
+            }
+
+            Destroy(flash);
+        }
+
+        // ── 금간 블록 파편용 다각형 스프라이트 캐시 ──
+        private static Dictionary<int, Sprite> crackedPolygonCache = new Dictionary<int, Sprite>();
+
+        /// <summary>
+        /// 길쭉한 다각형 스프라이트 생성 (삼각형/사각형/오각형)
+        /// 32×32 텍스처에 꼭짓점을 배치하고 내부를 채움
+        /// </summary>
+        private static Sprite GetCrackedPolygonSprite(int sides)
+        {
+            if (crackedPolygonCache.TryGetValue(sides, out Sprite cached) && cached != null)
+                return cached;
+
+            int texSize = 32;
+            Texture2D tex = new Texture2D(texSize, texSize, TextureFormat.ARGB32, false);
+            Color32 white = new Color32(255, 255, 255, 255);
+            Color32 clear = new Color32(0, 0, 0, 0);
+            Color32[] pixels = new Color32[texSize * texSize];
+
+            // 다각형 꼭짓점 (중심 기준, 약간 불규칙)
+            Vector2[] verts = new Vector2[sides];
+            float cx = texSize / 2f;
+            float cy = texSize / 2f;
+            float radius = texSize / 2f - 1f;
+            float startAngle = -Mathf.PI / 2f;
+
+            for (int i = 0; i < sides; i++)
+            {
+                float a = startAngle + 2f * Mathf.PI * i / sides;
+                verts[i] = new Vector2(cx + radius * Mathf.Cos(a), cy + radius * Mathf.Sin(a));
+            }
+
+            // 래스터화: point-in-polygon 테스트
+            for (int y = 0; y < texSize; y++)
+            {
+                for (int x = 0; x < texSize; x++)
+                {
+                    pixels[y * texSize + x] = PointInPolygon(x + 0.5f, y + 0.5f, verts) ? white : clear;
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.Apply();
+
+            Sprite spr = Sprite.Create(tex, new Rect(0, 0, texSize, texSize), new Vector2(0.5f, 0.5f));
+            crackedPolygonCache[sides] = spr;
+            return spr;
+        }
+
+        /// <summary>
+        /// 점이 다각형 내부에 있는지 판정 (레이캐스팅 알고리즘)
+        /// </summary>
+        private static bool PointInPolygon(float px, float py, Vector2[] polygon)
+        {
+            bool inside = false;
+            int j = polygon.Length - 1;
+            for (int i = 0; i < polygon.Length; j = i++)
+            {
+                if ((polygon[i].y > py) != (polygon[j].y > py) &&
+                    px < (polygon[j].x - polygon[i].x) * (py - polygon[i].y) /
+                         (polygon[j].y - polygon[i].y) + polygon[i].x)
+                {
+                    inside = !inside;
+                }
+            }
+            return inside;
+        }
+
+        /// <summary>
+        /// 금간 블록 파편 조각 — 길쭉한 삼각형/사각형/오각형 모양
+        /// 크기 제각각, 살짝 터져 나오며 회전+중력+페이드
+        /// </summary>
+        private IEnumerator AnimateCrackedShard(Vector3 center, Color baseColor, int sides)
+        {
+            GameObject shard = new GameObject("CrackedShard");
+            shard.transform.SetParent(transform, false);
+            shard.transform.position = center;
+
+            var image = shard.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+            image.sprite = GetCrackedPolygonSprite(sides);
+
+            RectTransform rt = shard.GetComponent<RectTransform>();
+
+            // 크기 제각각 + 길쭉한 비율 (elongation 1.4~2.6)
+            float baseSize = Random.Range(8f, 18f);
+            float elongation = Random.Range(1.4f, 2.6f);
+            float w, h;
+            if (Random.value > 0.5f) { w = baseSize; h = baseSize * elongation; }
+            else { w = baseSize * elongation; h = baseSize; }
+            rt.sizeDelta = new Vector2(w, h);
+
+            // 살짝 터져 나오는 산개 — 부드러운 속도
+            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float speed = Random.Range(70f, 180f);
+            Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+            float gravity = Random.Range(120f, 280f);
+
+            // 블록 색상 기반 밝기 변화
+            float brightness = Random.Range(0.75f, 1.25f);
+            Color shardColor = new Color(
+                Mathf.Clamp01(baseColor.r * brightness),
+                Mathf.Clamp01(baseColor.g * brightness),
+                Mathf.Clamp01(baseColor.b * brightness),
+                1f);
+            image.color = shardColor;
+
+            // 회전 (모든 조각 회전, 속도 제각각)
+            float rotSpeed = Random.Range(-500f, 500f);
+            float currentRot = Random.Range(0f, 360f);
+
+            float lifetime = Random.Range(0.28f, 0.48f);
+            float elapsedTime = 0f;
+
+            while (elapsedTime < lifetime)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = elapsedTime / lifetime;
+
+                // 이동 (중력 적용 → 아래로 떨어짐)
+                Vector3 pos = shard.transform.position;
+                pos.x += velocity.x * Time.deltaTime;
+                pos.y += velocity.y * Time.deltaTime;
+                velocity.y -= gravity * Time.deltaTime;
+                velocity.x *= 0.97f;
+                shard.transform.position = pos;
+
+                // 회전
+                currentRot += rotSpeed * Time.deltaTime;
+                shard.transform.localRotation = Quaternion.Euler(0, 0, currentRot);
+
+                // 축소 + 페이드
+                float shrink = Mathf.Max(0.25f, 1f - t * 0.75f);
+                rt.localScale = Vector3.one * shrink;
+                image.color = new Color(shardColor.r, shardColor.g, shardColor.b, 1f - VisualConstants.EaseInQuad(t));
+
+                yield return null;
+            }
+
+            Destroy(shard);
+        }
+
+        /// <summary>
         /// 파괴 순간 백색 플래시 오버레이
         /// </summary>
         private IEnumerator DestroyFlashOverlay(HexBlock block)
@@ -1442,12 +1642,13 @@ private IEnumerator ProcessFalling()
                 List<BlockData> dataList = new List<BlockData>();
                 List<int> sourceSlots = new List<int>();
 
-                // GravityWarper: 고정 슬롯 수집
+                // GravityWarper: 고정 슬롯 수집 (쉘 블록은 낙하 가능)
                 HashSet<int> anchoredSlots = new HashSet<int>();
                 for (int i = 0; i < column.Count; i++)
                 {
                     HexBlock block = column[i];
-                    if (block != null && block.Data != null && block.Data.IsGravityAnchored())
+                    if (block != null && block.Data != null &&
+                        block.Data.IsGravityAnchored())
                         anchoredSlots.Add(i);
                 }
 
@@ -1468,10 +1669,15 @@ private IEnumerator ProcessFalling()
 
                 // ★ 먼저 모든 블록을 정확한 슬롯 위치로 강제 복원한 뒤 비주얼 숨김
                 // (합체 애니메이션 등으로 anchoredPosition이 어긋난 경우 대비)
+                // GravityWarper 고정 블록만 낙하에서 제외, 쉘 블록은 낙하 참여
                 for (int i = 0; i < column.Count; i++)
                 {
                     if (column[i] != null)
                     {
+                        // GravityWarper 고정 블록은 비주얼과 위치를 유지
+                        if (anchoredSlots.Contains(i))
+                            continue;
+
                         column[i].HideVisuals();
                         // anchoredPosition을 슬롯 위치로 강제 설정
                         if (slotPositions.ContainsKey(column[i]))
@@ -1481,10 +1687,20 @@ private IEnumerator ProcessFalling()
                     }
                 }
 
+                // non-anchored 슬롯 인덱스 수집 (아래에서 위 순서)
+                // GravityWarper 고정 블록이 중간에 있어도 정확하게 건너뛰어 데이터 덮어쓰기 방지
+                List<int> freeSlots = new List<int>();
+                for (int slot = 0; slot < column.Count; slot++)
+                {
+                    if (!anchoredSlots.Contains(slot))
+                        freeSlots.Add(slot);
+                }
+
                 float maxExistingDelay = 0f;
                 for (int i = 0; i < dataList.Count; i++)
                 {
-                    int targetSlot = i;
+                    if (i >= freeSlots.Count) break;
+                    int targetSlot = freeSlots[i];
                     int sourceSlot = sourceSlots[i];
                     HexBlock targetBlock = column[targetSlot];
                     if (targetBlock == null) continue;
@@ -1523,16 +1739,20 @@ private IEnumerator ProcessFalling()
                 }
 
                 float topY = slotPositions[column[column.Count - 1]].y;
-                float spawnOffset = 120f;
+                // 스폰 오프셋: 빈 셀 3줄 위에서 생성 (필드 맨위 + 4칸)
+                float cellHeight = hexGrid != null ? hexGrid.HexSize * Mathf.Sqrt(3f) : 87f;
+                float spawnOffset = cellHeight * 4f;
                 float newBlockBaseDelay = maxExistingDelay + 0.08f;
+
+                if (emptyCount > 0)
+                    Debug.Log($"[BRS] ★ ProcessFalling 스폰: topY={topY:F1}, cellHeight={cellHeight:F1}, spawnOffset={spawnOffset:F1}, topY+offset={topY + spawnOffset:F1}");
 
                 for (int i = 0; i < emptyCount; i++)
                 {
-                    int targetSlot = dataList.Count + i;
-                    // ★ anchoredSlots가 있을 때 targetSlot 건너뛰기
-                    while (anchoredSlots.Contains(targetSlot) && targetSlot < column.Count)
-                        targetSlot++;
-                    if (targetSlot >= column.Count) break;
+                    // freeSlots에서 기존 블록 이후의 빈 슬롯 사용
+                    int freeIdx = dataList.Count + i;
+                    if (freeIdx >= freeSlots.Count) break;
+                    int targetSlot = freeSlots[freeIdx];
 
                     HexBlock targetBlock = column[targetSlot];
                     if (targetBlock == null) continue;
@@ -1567,6 +1787,39 @@ private IEnumerator ProcessFalling()
                 yield break;
             }
 
+            // ★ 물리적 충돌 감지: 고블린 타겟 수집 → 각 FallAnimation에 주입
+            Dictionary<int, List<(GoblinData goblin, float yPos)>> goblinTargets = null;
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                goblinTargets = GoblinSystem.Instance.GetGoblinCollisionTargets(hexGrid);
+
+            if (goblinTargets != null && goblinTargets.Count > 0)
+            {
+                // 기존 블록 낙하: 시작Y가 고블린Y보다 높은 경우만 충돌 가능
+                for (int i = 0; i < existingAnimations.Count; i++)
+                {
+                    var anim = existingAnimations[i];
+                    int q = anim.block != null ? anim.block.Coord.q : int.MinValue;
+                    if (goblinTargets.TryGetValue(q, out var targets))
+                    {
+                        anim.collisionTargets = targets.Where(t => anim.startY > t.yPos).ToList();
+                        if (anim.collisionTargets.Count == 0) anim.collisionTargets = null;
+                        existingAnimations[i] = anim;
+                    }
+                }
+                // 새 블록 낙하: 그리드 위에서 스폰 → 대부분 고블린Y보다 높음
+                for (int i = 0; i < newBlockAnimations.Count; i++)
+                {
+                    var anim = newBlockAnimations[i];
+                    int q = anim.block != null ? anim.block.Coord.q : int.MinValue;
+                    if (goblinTargets.TryGetValue(q, out var targets))
+                    {
+                        anim.collisionTargets = targets.Where(t => anim.startY > t.yPos).ToList();
+                        if (anim.collisionTargets.Count == 0) anim.collisionTargets = null;
+                        newBlockAnimations[i] = anim;
+                    }
+                }
+            }
+
             int completedCount = 0;
 
             foreach (var anim in existingAnimations)
@@ -1590,6 +1843,241 @@ private IEnumerator ProcessFalling()
 
             // ★ 낙하 완료 후 모든 블록의 위치를 슬롯으로 강제 스냅 (위치 어긋남 방지)
             SnapAllBlocksToSlots();
+
+            // ★ 물리적 충돌 대미지: 낙하 중 AnimateFall에서 실시간 적용됨
+            // 사망 대기열에 있는 고블린들의 DeathAnimation 처리
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.HasPendingFallDeaths)
+            {
+                yield return StartCoroutine(GoblinSystem.Instance.ProcessPendingFallDeaths());
+            }
+        }
+
+        /// <summary>
+        /// 단일 열 낙하+리필 처리 (드릴 등 발사체가 블록 제거 시 즉시 호출)
+        /// 해당 열의 빈 슬롯을 감지하여 기존 블록 낙하 + 새 블록 스폰을 수행.
+        /// skipGoblinCollision=true이면 낙하 중 고블린 충돌 대미지를 건너뜀 (드릴 발사체가 직접 처리)
+        /// 반환된 Coroutine을 yield하면 낙하 완료까지 대기 가능
+        /// </summary>
+        public Coroutine ProcessFallingForColumn(HexBlock destroyedBlock, bool skipGoblinCollision = false)
+        {
+            if (destroyedBlock == null || hexGrid == null) return null;
+            EnsureSlotsCached();
+            if (columnCache == null) return null;
+
+            // 파괴된 블록의 X 좌표로 열 키 결정
+            if (!slotPositions.TryGetValue(destroyedBlock, out Vector2 blockPos)) return null;
+            int colKey = Mathf.RoundToInt(blockPos.x);
+
+            if (!columnCache.ContainsKey(colKey)) return null;
+
+            return StartCoroutine(ProcessFallingForColumnCoroutine(colKey, skipGoblinCollision));
+        }
+
+        private IEnumerator ProcessFallingForColumnCoroutine(int colKey, bool skipGoblinCollision = false)
+        {
+            // 드릴 블록 삭제 후 0.1초 딜레이 뒤 낙하 시작
+            yield return new WaitForSeconds(0.1f);
+
+            if (!columnCache.ContainsKey(colKey)) yield break;
+
+            List<HexBlock> column = columnCache[colKey];
+            List<FallAnimation> existingAnims = new List<FallAnimation>();
+            List<FallAnimation> newBlockAnims = new List<FallAnimation>();
+
+            float colDelay = Random.Range(0f, 0.02f);
+
+            List<BlockData> dataList = new List<BlockData>();
+            List<int> sourceSlots = new List<int>();
+
+            // 고정 슬롯 수집
+            HashSet<int> anchoredSlots = new HashSet<int>();
+            for (int i = 0; i < column.Count; i++)
+            {
+                HexBlock block = column[i];
+                if (block != null && block.Data != null &&
+                    block.Data.IsGravityAnchored())
+                    anchoredSlots.Add(i);
+            }
+
+            for (int i = 0; i < column.Count; i++)
+            {
+                HexBlock block = column[i];
+                if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                {
+                    if (anchoredSlots.Contains(i)) continue;
+                    dataList.Add(block.Data.Clone());
+                    sourceSlots.Add(i);
+                }
+            }
+
+            int emptyCount = column.Count - dataList.Count - anchoredSlots.Count;
+            if (emptyCount == 0) yield break;
+
+            // 비주얼 숨김 (고정 블록 제외)
+            for (int i = 0; i < column.Count; i++)
+            {
+                if (column[i] != null)
+                {
+                    if (anchoredSlots.Contains(i)) continue;
+                    column[i].HideVisuals();
+                    if (slotPositions.ContainsKey(column[i]))
+                        SetBlockAnchoredPosition(column[i], slotPositions[column[i]]);
+                    column[i].transform.localScale = Vector3.one;
+                    column[i].transform.localRotation = Quaternion.identity;
+                }
+            }
+
+            // freeSlots 수집
+            List<int> freeSlots = new List<int>();
+            for (int slot = 0; slot < column.Count; slot++)
+            {
+                if (!anchoredSlots.Contains(slot))
+                    freeSlots.Add(slot);
+            }
+
+            // 기존 블록 재배치
+            float maxExistingDelay = 0f;
+            for (int i = 0; i < dataList.Count; i++)
+            {
+                if (i >= freeSlots.Count) break;
+                int targetSlot = freeSlots[i];
+                int sourceSlot = sourceSlots[i];
+                HexBlock targetBlock = column[targetSlot];
+                if (targetBlock == null) continue;
+
+                if (sourceSlot != targetSlot)
+                {
+                    Vector2 startPos = slotPositions.ContainsKey(column[sourceSlot]) ? slotPositions[column[sourceSlot]] : slotPositions[targetBlock];
+                    SetBlockAnchoredPosition(targetBlock, startPos);
+                }
+
+                targetBlock.SetBlockData(dataList[i]);
+                targetBlock.transform.localScale = Vector3.one;
+
+                if (sourceSlot != targetSlot && slotPositions.ContainsKey(column[sourceSlot]))
+                {
+                    Vector2 startPos = slotPositions[column[sourceSlot]];
+                    int fallDistance = sourceSlot - targetSlot;
+                    float heightDelay = fallDistance * 0.025f;
+                    float totalDelay = colDelay + heightDelay + Random.Range(0f, 0.02f);
+                    if (totalDelay > maxExistingDelay) maxExistingDelay = totalDelay;
+
+                    existingAnims.Add(new FallAnimation
+                    {
+                        block = targetBlock,
+                        startY = startPos.y,
+                        targetY = slotPositions[targetBlock].y,
+                        delay = totalDelay,
+                        gravityMult = Random.Range(0.92f, 1.08f),
+                        maxSpeedMult = Random.Range(0.90f, 1.10f),
+                    });
+                }
+            }
+
+            // 새 블록 스폰
+            float topY = slotPositions[column[column.Count - 1]].y;
+            float cellHeight = hexGrid != null ? hexGrid.HexSize * Mathf.Sqrt(3f) : 87f;
+            float spawnOffset = cellHeight * 4f;
+            float newBlockBaseDelay = maxExistingDelay + 0.08f;
+
+            for (int i = 0; i < emptyCount; i++)
+            {
+                int freeIdx = dataList.Count + i;
+                if (freeIdx >= freeSlots.Count) break;
+                int targetSlot = freeSlots[freeIdx];
+                HexBlock targetBlock = column[targetSlot];
+                if (targetBlock == null) continue;
+                Vector2 targetPos = slotPositions.ContainsKey(targetBlock) ? slotPositions[targetBlock] : Vector2.zero;
+
+                GemType randomGem = GemTypeHelper.GetRandom();
+                BlockData newData = new BlockData(randomGem);
+
+                float startY = topY + spawnOffset + (i * 80f);
+                SetBlockAnchoredPosition(targetBlock, new Vector2(targetPos.x, startY));
+                targetBlock.SetBlockData(newData);
+                targetBlock.transform.localScale = Vector3.one;
+
+                float newDelay = newBlockBaseDelay + i * 0.04f + Random.Range(0f, 0.025f);
+                newBlockAnims.Add(new FallAnimation
+                {
+                    block = targetBlock,
+                    startY = startY,
+                    targetY = targetPos.y,
+                    delay = newDelay,
+                    gravityMult = Random.Range(0.90f, 1.10f),
+                    maxSpeedMult = Random.Range(0.88f, 1.12f),
+                    isNewBlock = true,
+                });
+            }
+
+            int totalCount = existingAnims.Count + newBlockAnims.Count;
+            if (totalCount == 0) yield break;
+
+            // ★ 물리적 충돌 감지: 고블린 타겟 수집 → 각 FallAnimation에 주입
+            // skipGoblinCollision=true이면 건너뜀 (드릴 발사체가 직접 대미지 처리)
+            if (!skipGoblinCollision)
+            {
+                Dictionary<int, List<(GoblinData goblin, float yPos)>> goblinTargets = null;
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                    goblinTargets = GoblinSystem.Instance.GetGoblinCollisionTargets(hexGrid);
+
+                if (goblinTargets != null && goblinTargets.Count > 0)
+                {
+                    for (int i = 0; i < existingAnims.Count; i++)
+                    {
+                        var anim = existingAnims[i];
+                        int q = anim.block != null ? anim.block.Coord.q : int.MinValue;
+                        if (goblinTargets.TryGetValue(q, out var targets))
+                        {
+                            anim.collisionTargets = targets.Where(t => anim.startY > t.yPos).ToList();
+                            if (anim.collisionTargets.Count == 0) anim.collisionTargets = null;
+                            existingAnims[i] = anim;
+                        }
+                    }
+                    for (int i = 0; i < newBlockAnims.Count; i++)
+                    {
+                        var anim = newBlockAnims[i];
+                        int q = anim.block != null ? anim.block.Coord.q : int.MinValue;
+                        if (goblinTargets.TryGetValue(q, out var targets))
+                        {
+                            anim.collisionTargets = targets.Where(t => anim.startY > t.yPos).ToList();
+                            if (anim.collisionTargets.Count == 0) anim.collisionTargets = null;
+                            newBlockAnims[i] = anim;
+                        }
+                    }
+                }
+            }
+
+            int completedCount = 0;
+            foreach (var anim in existingAnims)
+                StartCoroutine(AnimateFall(anim, () => completedCount++));
+            foreach (var anim in newBlockAnims)
+                StartCoroutine(AnimateFall(anim, () => completedCount++));
+
+            // 타임아웃 포함 대기
+            float waitElapsed = 0f;
+            while (completedCount < totalCount && waitElapsed < 8f)
+            {
+                waitElapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            // 열 내 블록 위치 스냅
+            foreach (var block in column)
+            {
+                if (block != null && slotPositions.TryGetValue(block, out Vector2 slotPos))
+                {
+                    SetBlockAnchoredPosition(block, slotPos);
+                    block.transform.localScale = Vector3.one;
+                    block.transform.localRotation = Quaternion.identity;
+                }
+            }
+
+            // ★ 낙하 충돌 사망 처리
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.HasPendingFallDeaths)
+            {
+                yield return StartCoroutine(GoblinSystem.Instance.ProcessPendingFallDeaths());
+            }
         }
 
         /// <summary>
@@ -1671,6 +2159,11 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
             float maxDuration = 5f; // 안전장치: 최대 5초
             bool completionInvoked = false; // ★ onComplete 중복 호출 방지
 
+            // ★ 물리적 충돌 감지: 고블린 타겟이 있으면 프레임별 Y 통과 검사
+            var collisionTargets = anim.collisionTargets;
+            HashSet<GoblinData> hitGoblins = (collisionTargets != null && collisionTargets.Count > 0)
+                ? new HashSet<GoblinData>() : null;
+
             while (elapsed < maxDuration)
             {
                 // 블록이 중간에 파괴되면 즉시 완료 처리
@@ -1681,9 +2174,27 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                 }
 
                 elapsed += Time.deltaTime;
+                float prevY = currentY; // 충돌 검사용 이전 Y
                 velocity -= blockGravity * Time.deltaTime;
                 velocity = Mathf.Max(velocity, -blockMaxSpeed);
                 currentY += velocity * Time.deltaTime;
+
+                // ★ 고블린 충돌 검사: prevY > goblinY >= currentY이면 통과
+                if (hitGoblins != null && GoblinSystem.Instance != null)
+                {
+                    for (int ci = 0; ci < collisionTargets.Count; ci++)
+                    {
+                        var target = collisionTargets[ci];
+                        if (!hitGoblins.Contains(target.goblin)
+                            && target.goblin.isAlive
+                            && prevY > target.yPos
+                            && currentY <= target.yPos)
+                        {
+                            hitGoblins.Add(target.goblin);
+                            GoblinSystem.Instance.ApplyIndividualFallDamage(target.goblin);
+                        }
+                    }
+                }
 
                 if (currentY <= targetY)
                 {
@@ -1806,11 +2317,10 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
         {
             if (block == null) yield break;
 
-            // 안전장치: 시작 전 스케일 확인 및 정규화
-            if (block.transform.localScale.x > 1.01f || block.transform.localScale.y > 1.01f)
+            // 안전장치: 시작 전 스케일 정규화 (이전 애니메이션 잔여 스케일 보정)
+            if (block.transform.localScale != Vector3.one)
             {
                 block.transform.localScale = Vector3.one;
-                Debug.LogWarning($"[BRS SquashEffect] 블록 스케일 정규화: {block.Coord}");
             }
 
             float duration = 0.08f;
@@ -1838,17 +2348,10 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                 yield return null;
             }
 
-            // 안전장치: 애니메이션 후 반드시 1.0으로 리셋
+            // 애니메이션 후 반드시 1.0으로 리셋
             if (block != null)
             {
                 block.transform.localScale = Vector3.one;
-                // 추가 검증: 스케일이 1.0이 되었는지 확인
-                if (Mathf.Abs(block.transform.localScale.x - 1f) > 0.01f)
-                {
-                    Debug.LogWarning($"[BRS SquashEffect] 스케일 리셋 실패: {block.Coord}, 스케일={block.transform.localScale}");
-                    block.transform.localScale = Vector3.one;
-                }
-                Debug.Log($"[BRS SquashEffect] 완료: {block.Coord}, 최종 스케일={block.transform.localScale}");
             }
 
             // 코루틴 추적에서 제거
@@ -1886,7 +2389,8 @@ private void FillEmptyBlocksWithAnimation()
                     block.transform.localScale = Vector3.one;
 
                     Vector2 slotPos = slotPositions[block];
-                    float startY = topY + 120f + newBlockIndex * 80f;
+                    float spawnBase = hexGrid != null ? hexGrid.HexSize * Mathf.Sqrt(3f) * 4f : 347f;
+                    float startY = topY + spawnBase + newBlockIndex * 80f;
                     SetBlockAnchoredPosition(block, new Vector2(slotPos.x, startY));
 
                     StartCoroutine(AnimateFall(new FallAnimation
@@ -1981,6 +2485,7 @@ public void TriggerFallOnly()
             int totalCount = 0;
             List<FallAnimation> anims = new List<FallAnimation>();
 
+            Debug.Log($"[BRS] ★ StartDropCoroutine: 블록 스폰 위치 설정 시작");
             foreach (var kvp in columnCache)
             {
                 List<HexBlock> column = kvp.Value;
@@ -1992,10 +2497,12 @@ public void TriggerFallOnly()
                     HexBlock block = column[i];
                     Vector2 targetPos = slotPositions[block];
 
-                    // 위치를 화면 위로 이동 (아래 블록일수록 낮은 startY → 먼저 도착)
-                    float startY = topY + 200f + i * 70f;
+                    // 위치를 화면 위로 이동 — 빈 셀 3줄 위에서 생성 (필드 맨위 + 4칸)
+                    float cellH = hexGrid != null ? hexGrid.HexSize * Mathf.Sqrt(3f) : 87f;
+                    float startY = topY + cellH * 4f + i * 70f;
                     SetBlockAnchoredPosition(block, new Vector2(targetPos.x, startY));
                     block.transform.localScale = Vector3.one;
+                    block.UpdateVisuals(); // 화면 위 위치에서 비주얼 활성화 (빈 공간에서 낙하 시작)
 
                     // 아래 블록(i=0)이 먼저 떨어지도록 딜레이: 위 블록일수록 딜레이가 큼
                     float heightDelay = i * 0.03f;
@@ -2076,7 +2583,8 @@ public void TriggerBigBang()
                     Debug.Log($"[BRS FastSpawn] 새 블록 생성: {block.Coord}, gemType={randomGem}({(int)randomGem})");
                     block.transform.localScale = Vector3.one;
 
-                    float startY = topY + 150f + (column.Count - i) * 60f;
+                    float bigBangCellH = hexGrid != null ? hexGrid.HexSize * Mathf.Sqrt(3f) : 87f;
+                    float startY = topY + bigBangCellH * 4f + (column.Count - i) * 60f;
                     SetBlockAnchoredPosition(block, new Vector2(targetPos.x, startY));
 
                     float heightDelay = (column.Count - i) * 0.03f;
@@ -2121,6 +2629,8 @@ public void TriggerBigBang()
             public float gravityMult;
             public float maxSpeedMult;
             public bool isNewBlock;
+            // 물리적 충돌 감지용: 이 블록이 낙하 중 확인할 고블린 타겟들
+            public List<(GoblinData goblin, float yPos)> collisionTargets;
         }
     
 
@@ -2314,6 +2824,8 @@ public void TriggerBigBang()
 
             // 2. 특수 블록 생성
             HashSet<HexBlock> newlyCreatedSpecials = new HashSet<HexBlock>();
+            // ★ 합체 중 이미 제자리 삭제된 깨진 블록 (blocksToRemove에서 제외용)
+            HashSet<HexBlock> alreadyRemovedCracked = new HashSet<HexBlock>();
 
             foreach (var match in matches)
             {
@@ -2324,8 +2836,28 @@ public void TriggerBigBang()
                     // 특수 블록 합체 사운드
                     if (AudioManager.Instance != null)
                         AudioManager.Instance.PlaySpecialGemSound();
+
+                    // ★ 깨진 블록 드릴 Fallback: 깨진 블록은 제자리 삭제, 건강한 블록만 합체
+                    List<HexBlock> mergeBlocks = match.blocks;
+                    if (match.hasCrackedBlocks)
+                    {
+                        // 깨진 블록을 분리하여 즉시 붉은색 폭발 삭제
+                        List<HexBlock> crackedBlocks = match.blocks
+                            .Where(b => b != null && b.Data != null && b.Data.isCracked).ToList();
+                        mergeBlocks = match.blocks
+                            .Where(b => b != null && (b.Data == null || !b.Data.isCracked)).ToList();
+
+                        // 깨진 블록: 제자리에서 붉은색 폭발 (합체에 참여하지 않음)
+                        foreach (var crackedBlock in crackedBlocks)
+                        {
+                            StartCoroutine(AnimateCrackedBurst(crackedBlock));
+                            alreadyRemovedCracked.Add(crackedBlock);
+                        }
+                        Debug.Log($"[BRS] 깨진 블록 {crackedBlocks.Count}개 제자리 삭제, 건강한 블록 {mergeBlocks.Count}개 합체");
+                    }
+
                     yield return StartCoroutine(SpecialBlockMergeAnimation(
-                        match.blocks, match.specialSpawnBlock, match.createdSpecialType,
+                        mergeBlocks, match.specialSpawnBlock, match.createdSpecialType,
                         match.drillDirection, match.gemType));
                     newlyCreatedSpecials.Add(match.specialSpawnBlock);
 
@@ -2376,6 +2908,9 @@ public void TriggerBigBang()
                 {
                     if (block == null || block.Data == null) continue;
 
+                    // ★ 합체 중 이미 제자리 삭제된 깨진 블록은 건너뛰기
+                    if (alreadyRemovedCracked.Contains(block)) continue;
+
                     // 색상도둑 제거 이벤트 발동 + 파괴 이펙트 + 오디오
                     if (block.CurrentEnemyType == EnemyType.Chromophage)
                     {
@@ -2414,9 +2949,10 @@ public void TriggerBigBang()
             }
             if (posCount > 0) avgPosition /= posCount;
 
-            // 5. 인접 회색(적군) 블록 수집 + 인접 체인 해제
+            // 5. 인접 회색(적군) 블록 수집 + 인접 쉘 블록 제거 + 인접 체인 해제
             //    삭제되는 블록 + 새로 생성된 특수 블록 모두의 인접을 확인
             HashSet<HexBlock> grayToRemove = new HashSet<HexBlock>();
+            HashSet<HexBlock> shellToRemove = new HashSet<HexBlock>();
             HashSet<HexBlock> allAffected = new HashSet<HexBlock>(blocksToRemove);
             foreach (var sp in newlyCreatedSpecials)
                 allAffected.Add(sp);
@@ -2429,6 +2965,9 @@ public void TriggerBigBang()
                     if (neighbor == null || neighbor.Data == null) continue;
                     if (neighbor.Data.gemType == GemType.Gray && !allAffected.Contains(neighbor))
                         grayToRemove.Add(neighbor);
+                    // 쉘 블록(크랙 회색): 인접 매칭으로 제거
+                    if (neighbor.Data.isShell && !allAffected.Contains(neighbor))
+                        shellToRemove.Add(neighbor);
                     if (neighbor.Data.hasChain)
                     {
                         neighbor.RemoveChain();
@@ -2487,27 +3026,103 @@ public void TriggerBigBang()
 
             // 5d. 미션 시스템 보고: 각 기본 블록 파괴 시 개별 보고 (Stage/Infinite 모두 지원)
             // ClearData() 전에 호출해야 gemType이 유효함
+            // 깨진 블록(isCracked) 및 껍데기 블록(isShell)은 미션 카운트에서 제외
             foreach (var block in blocksToRemove)
             {
-                if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                if (block != null && block.Data != null && block.Data.gemType != GemType.None
+                    && !block.Data.isCracked && !block.Data.isShell)
                 {
                     GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
                 }
+            }
+
+            // 5e. 깨진 블록으로 인한 특수 블록 생성 차단 / 드릴 fallback 메시지 표시
+            foreach (var match in matches)
+            {
+                if (match.crackedBlockedSpecial != SpecialBlockType.None)
+                {
+                    string specialName = match.crackedBlockedSpecial switch
+                    {
+                        SpecialBlockType.Drill => "드릴",
+                        SpecialBlockType.Bomb => "폭탄",
+                        SpecialBlockType.Rainbow => "레인보우",
+                        SpecialBlockType.XBlock => "타겟",
+                        SpecialBlockType.Drone => "드론",
+                        _ => "특수 블록"
+                    };
+
+                    if (match.createdSpecialType == SpecialBlockType.Drill && match.hasCrackedBlocks)
+                    {
+                        // 드릴 fallback 성공: "폭탄 → 드릴" 전환 메시지
+                        GameManager.Instance?.ShowFloatingMessage(
+                            $"깨진 블록! {specialName} 대신 드릴 생성");
+                        Debug.Log($"[BRS] 깨진 블록 드릴 Fallback: {match.crackedBlockedSpecial} → Drill");
+                    }
+                    else
+                    {
+                        // 완전 차단: 기존 메시지
+                        GameManager.Instance?.ShowFloatingMessage(
+                            $"깨진 블록으로 {specialName} 생성에 실패 하였습니다");
+                        Debug.Log($"[BRS] 깨진 블록 차단: {match.crackedBlockedSpecial} 생성 불가");
+                    }
+                }
+            }
+
+            // 5f. 매칭 제거 시 인접 고블린 데미지 (좌표별 누적)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                // 제거되는 블록의 좌표 + 인접 좌표의 데미지를 누적 수집
+                // 깨진 블록(isCracked)은 인접 대미지를 주지 않음
+                // 단, 몬스터가 서있는 자리의 깨진 블록은 매칭 대미지를 줌
+                Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
+                foreach (var block in blocksToRemove)
+                {
+                    if (block == null || block.Data == null) continue;
+                    HexCoord blockCoord = block.Coord;
+                    bool cracked = block.Data.isCracked;
+
+                    // 블록 위치 자체: 깨진 블록이어도 해당 자리 몬스터에는 대미지
+                    if (damageMap.ContainsKey(blockCoord))
+                        damageMap[blockCoord] += 1;
+                    else
+                        damageMap[blockCoord] = 1;
+
+                    // 인접 6방향: 깨진 블록은 인접 대미지 불가
+                    if (!cracked)
+                    {
+                        foreach (var neighbor in blockCoord.GetAllNeighbors())
+                        {
+                            if (damageMap.ContainsKey(neighbor))
+                                damageMap[neighbor] += 1;
+                            else
+                                damageMap[neighbor] = 1;
+                        }
+                    }
+                }
+                // 누적된 데미지를 고블린별로 일괄 적용
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap);
             }
 
             // 6. 삭제 애니메이션 (축소하며 사라짐) + 파괴 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBlockDestroySound();
 
-            // 모든 블록의 축소 애니메이션을 병렬 시작
+            // 모든 블록의 삭제 애니메이션을 병렬 시작 (깨진 블록은 산산조각 파괴)
             List<Coroutine> shrinkCoroutines = new List<Coroutine>();
             foreach (var block in blocksToRemove)
             {
                 if (block != null)
-                    shrinkCoroutines.Add(StartCoroutine(AnimateShrinkRemove(block)));
+                {
+                    // 금간 블록: block.Data.isCracked로 직접 판별 (hasCrackedBlocks 의존 제거)
+                    if (block.Data != null && block.Data.isCracked
+                        && !alreadyRemovedCracked.Contains(block))
+                        shrinkCoroutines.Add(StartCoroutine(AnimateCrackedBurst(block)));
+                    else
+                        shrinkCoroutines.Add(StartCoroutine(AnimateShrinkRemove(block)));
+                }
             }
 
-            // 모든 축소 애니메이션 완료 대기
+            // 모든 삭제 애니메이션 완료 대기
             foreach (var co in shrinkCoroutines)
                 yield return co;
 
@@ -2577,47 +3192,85 @@ public void TriggerBigBang()
                 OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
             }
 
-            // 6. 매칭 특수블록 + pending 특수블록 동시 발동
-            List<HexBlock> allSpecialsToActivate = new List<HexBlock>();
+            // 8b. 인접 쉘 블록(크랙 회색) 제거
+            if (shellToRemove.Count > 0)
+            {
+                foreach (var shell in shellToRemove)
+                {
+                    if (shell != null && shell.Data != null)
+                    {
+                        shell.ClearData();
+                        shell.SetMatched(false);
+                        RestoreBlockToSlot(shell);
+                        shell.transform.localScale = Vector3.one;
+                    }
+                }
+                Debug.Log($"[BRS] 인접 매칭으로 쉘 블록 {shellToRemove.Count}개 제거");
+            }
 
+            // 6. 매칭 특수블록 발동 (매칭에서 직접 생긴 특수 블록만)
+            List<HexBlock> matchSpecialsToActivate = new List<HexBlock>();
             foreach (var sp in matchSpecialBlocks)
             {
                 if (sp != null && sp.Data != null)
                 {
                     sp.SetMatched(false);
-                    allSpecialsToActivate.Add(sp);
+                    matchSpecialsToActivate.Add(sp);
                 }
             }
 
-            if (pendingSpecials != null)
+            if (matchSpecialsToActivate.Count > 0)
             {
-                foreach (var sp in pendingSpecials)
-                {
-                    if (sp != null && sp.Data != null && !allSpecialsToActivate.Contains(sp))
-                    {
-                        Debug.Log($"[BRS] Pending special simultaneous: {sp.Coord} type={sp.Data.specialType}");
-                        allSpecialsToActivate.Add(sp);
-                    }
-                }
-            }
-
-            if (allSpecialsToActivate.Count > 0)
-            {
-                Debug.Log($"[BRS] Activating {allSpecialsToActivate.Count} specials (match+pending)");
+                Debug.Log($"[BRS] Activating {matchSpecialsToActivate.Count} match specials");
                 List<Coroutine> activationCoroutines = new List<Coroutine>();
-                foreach (var specialBlock in allSpecialsToActivate)
+                foreach (var specialBlock in matchSpecialsToActivate)
                 {
                     if (specialBlock == null || specialBlock.Data == null) continue;
-                    Debug.Log($"[BRS] Activate: {specialBlock.Data.specialType} at {specialBlock.Coord}");
+                    Debug.Log($"[BRS] Activate match special: {specialBlock.Data.specialType} at {specialBlock.Coord}");
                     activationCoroutines.Add(StartCoroutine(ActivateSpecialAndWaitLocal(specialBlock)));
                 }
                 foreach (var co in activationCoroutines)
                     yield return co;
 
-                // ★ 특수 블록 발동 후 낙하 처리 — 파괴된 빈 자리에 블록 안착 보장
+                // 매칭 특수 블록 발동 후 낙하 처리
                 SnapClearedBlocksToSlots();
                 yield return StartCoroutine(ProcessFalling());
                 yield return new WaitForSeconds(cascadeDelay);
+            }
+
+            // 7. pending 특수블록 발동 (낙하 완료 후 실행)
+            if (pendingSpecials != null && pendingSpecials.Count > 0)
+            {
+                List<HexBlock> validPending = new List<HexBlock>();
+                foreach (var sp in pendingSpecials)
+                {
+                    if (sp != null && sp.Data != null
+                        && sp.Data.specialType != SpecialBlockType.None
+                        && !matchSpecialsToActivate.Contains(sp))
+                    {
+                        validPending.Add(sp);
+                    }
+                }
+
+                if (validPending.Count > 0)
+                {
+                    Debug.Log($"[BRS] Activating {validPending.Count} pending specials (after fall)");
+                    List<Coroutine> pendingCoroutines = new List<Coroutine>();
+                    foreach (var sp in validPending)
+                    {
+                        if (sp == null || sp.Data == null) continue;
+                        Debug.Log($"[BRS] Activate pending: {sp.Data.specialType} at {sp.Coord}");
+                        sp.SetMatched(false);
+                        pendingCoroutines.Add(StartCoroutine(ActivateSpecialAndWaitLocal(sp)));
+                    }
+                    foreach (var co in pendingCoroutines)
+                        yield return co;
+
+                    // pending 특수 블록 발동 후 낙하 처리
+                    SnapClearedBlocksToSlots();
+                    yield return StartCoroutine(ProcessFalling());
+                    yield return new WaitForSeconds(cascadeDelay);
+                }
             }
         }
 }

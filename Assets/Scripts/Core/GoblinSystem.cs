@@ -36,14 +36,15 @@ namespace JewelsHexaPuzzle.Core
     public class GoblinData
     {
         public HexCoord position;       // 현재 위치 (그리드 외부 좌표 포함)
-        public int hp = 20;             // 현재 체력
-        public int maxHp = 20;          // 최대 체력
+        public int hp = 10;             // 현재 체력
+        public int maxHp = 10;          // 최대 체력
         public GameObject visualObject; // 비주얼 GameObject
         public Image goblinImage;       // 고블린 스프라이트
         public Image hpBarBg;           // HP바 배경
         public Image hpBarFill;         // HP바 채움
         public Text hpText;            // HP 숫자 텍스트
         public bool isAlive = true;     // 생존 여부
+        public bool isFlashing = false; // DamageFlashAnimation 진행 중 (중복 방지)
 
         // 데미지 팝업 누적 표시용
         public float lastDamageTime = -1f;           // 마지막 데미지 시간
@@ -71,6 +72,9 @@ namespace JewelsHexaPuzzle.Core
         private List<GoblinData> goblins = new List<GoblinData>();
         private int totalKills = 0;
         private int totalSpawned = 0; // 총 소환된 고블린 수 (미션 목표까지만 소환)
+
+        // 낙하 충돌 대미지로 사망한 고블린 대기열 (ProcessFalling 완료 후 처리)
+        private List<GoblinData> pendingFallDeaths = new List<GoblinData>();
 
         // 프로시저럴 스프라이트 캐시
         private static Sprite goblinSprite;
@@ -192,12 +196,23 @@ namespace JewelsHexaPuzzle.Core
 
             foreach (var goblin in aliveGoblins)
             {
-                var shuffled = DownDirections.OrderBy(x => Random.value).ToArray();
+                // 열 블록 기준 중앙 판정: 현재 열의 블록 범위 중앙에 도달하면 6방향 이동
+                bool isAtColumnCenter = false;
+                int gQ = goblin.position.q;
+                if (Mathf.Abs(gQ) <= hexGrid.GridRadius)
+                {
+                    int colRMin = hexGrid.GetTopR(gQ);
+                    int colRMax = Mathf.Min(hexGrid.GridRadius, -gQ + hexGrid.GridRadius);
+                    int colCenterR = (colRMin + colRMax) / 2;
+                    isAtColumnCenter = (goblin.position.r >= colCenterR);
+                }
+                HexCoord[] directionsToUse = isAtColumnCenter ? HexCoord.Directions : DownDirections;
+                var shuffled = directionsToUse.OrderBy(x => Random.value).ToArray();
                 HexCoord bestTarget = goblin.position;
                 bool found = false;
                 HexBlock targetBlock = null;
 
-                // 1차: 블록이 있는 방향 우선 탐색
+                // 1차: 공격 가능한 블록(non-shell) 방향 우선 탐색
                 foreach (var dir in shuffled)
                 {
                     HexCoord target = goblin.position + dir;
@@ -227,45 +242,81 @@ namespace JewelsHexaPuzzle.Core
                     }
                 }
 
-                // 2차: 블록이 없으면 바로 아래(0,1)로 이동
+                // 2차: 공격 가능한 블록이 없을 때
                 if (!found)
                 {
-                    HexCoord downTarget = goblin.position + new HexCoord(0, 1);
-
-                    bool canMoveDown = true;
-
-                    // 좌우 경계 체크
-                    if (Mathf.Abs(downTarget.q) > hexGrid.GridRadius) canMoveDown = false;
-
-                    if (canMoveDown)
+                    if (isAtColumnCenter)
                     {
-                        int rMin = hexGrid.GetTopR(downTarget.q);
-                        int rMax = Mathf.Min(hexGrid.GridRadius, -downTarget.q + hexGrid.GridRadius);
-                        if (downTarget.r < rMin - 3 || downTarget.r > rMax) canMoveDown = false;
-                    }
-
-                    if (canMoveDown)
-                    {
-                        bool occupied = goblins.Any(g => g.isAlive && g != goblin && g.position == downTarget);
-                        if (occupied) canMoveDown = false;
-                        if (reservedCoords.Contains(downTarget)) canMoveDown = false;
-                    }
-
-                    if (canMoveDown)
-                    {
-                        // 빈 공간인지 확인 (블록이 없거나 그리드 밖)
-                        if (hexGrid.IsInsideGrid(downTarget))
+                        // 열 중앙 도달: 6방향 중 블록이 있는 곳으로 랜덤 이동 (쉘 포함)
+                        var reshuffled = HexCoord.Directions.OrderBy(x => Random.value).ToArray();
+                        foreach (var dir in reshuffled)
                         {
-                            HexBlock block = hexGrid.GetBlock(downTarget);
+                            HexCoord target = goblin.position + dir;
+
+                            // 좌우 경계 체크
+                            if (Mathf.Abs(target.q) > hexGrid.GridRadius) continue;
+
+                            // r 범위 체크
+                            int rMin = hexGrid.GetTopR(target.q);
+                            int rMax = Mathf.Min(hexGrid.GridRadius, -target.q + hexGrid.GridRadius);
+                            if (target.r < rMin || target.r > rMax) continue;
+
+                            // 다른 고블린 선점 확인
+                            bool occupied = goblins.Any(g => g.isAlive && g != goblin && g.position == target);
+                            if (occupied) continue;
+                            if (reservedCoords.Contains(target)) continue;
+
+                            // 블록이 있는 곳이면 이동 (쉘 포함)
+                            HexBlock block = hexGrid.GetBlock(target);
                             if (block != null && block.Data != null && block.Data.gemType != GemType.None)
-                                canMoveDown = false; // 블록 있는 곳은 스킵
+                            {
+                                bestTarget = target;
+                                targetBlock = block;
+                                found = true;
+                                break;
+                            }
                         }
                     }
-
-                    if (canMoveDown)
+                    else
                     {
-                        bestTarget = downTarget;
-                        found = true;
+                        // 중앙 아닐 때: 바로 아래(0,1) 빈 공간으로 이동
+                        HexCoord downTarget = goblin.position + new HexCoord(0, 1);
+
+                        bool canMoveDown = true;
+
+                        // 좌우 경계 체크
+                        if (Mathf.Abs(downTarget.q) > hexGrid.GridRadius) canMoveDown = false;
+
+                        if (canMoveDown)
+                        {
+                            int rMin = hexGrid.GetTopR(downTarget.q);
+                            int rMax = Mathf.Min(hexGrid.GridRadius, -downTarget.q + hexGrid.GridRadius);
+                            if (downTarget.r < rMin - 3 || downTarget.r > rMax) canMoveDown = false;
+                        }
+
+                        if (canMoveDown)
+                        {
+                            bool occupied = goblins.Any(g => g.isAlive && g != goblin && g.position == downTarget);
+                            if (occupied) canMoveDown = false;
+                            if (reservedCoords.Contains(downTarget)) canMoveDown = false;
+                        }
+
+                        if (canMoveDown)
+                        {
+                            // 빈 공간인지 확인 (블록이 없거나 그리드 밖)
+                            if (hexGrid.IsInsideGrid(downTarget))
+                            {
+                                HexBlock block = hexGrid.GetBlock(downTarget);
+                                if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                                    canMoveDown = false; // 블록 있는 곳은 스킵
+                            }
+                        }
+
+                        if (canMoveDown)
+                        {
+                            bestTarget = downTarget;
+                            found = true;
+                        }
                     }
                 }
 
@@ -393,8 +444,21 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            // 3. 타격 순간: 금간 → 껍데기(쉘) 처리
-            if (block.Data != null && !block.Data.isCracked)
+            // 3. 타격 순간: 특수 블록은 기능 해제+크랙, 일반 블록은 금간 → 껍데기(쉘) 처리
+            if (block.Data != null && block.Data.specialType != SpecialBlockType.None
+                && block.Data.specialType != SpecialBlockType.MoveBlock
+                && block.Data.specialType != SpecialBlockType.FixedBlock)
+            {
+                // 특수 블록 (Drill, Bomb, Rainbow, XBlock, Drone 등): 발동 없이 기능만 제거 + 크랙
+                // 색상은 유지, 특수 아이콘만 사라지고 일반 크랙 블록으로 전환
+                var data = block.Data;
+                var removedType = data.specialType;
+                data.specialType = SpecialBlockType.None;
+                data.isCracked = true;
+                block.SetBlockData(data);
+                Debug.Log($"[GoblinSystem] 공격→특수블록 기능 해제: ({goblin.position}) → ({targetCoord}) {removedType} → 일반 크랙 블록");
+            }
+            else if (block.Data != null && !block.Data.isCracked)
             {
                 // 첫 타격: 블록에 금이 감 (완전 파괴 아님)
                 var data = block.Data;
@@ -534,8 +598,9 @@ namespace JewelsHexaPuzzle.Core
             int spawnBudget = currentConfig.missionKillCount - totalSpawned;
             if (spawnBudget <= 0) yield break;
 
+            // 미션 수량 = 필드 최대 제한 (필드 몬스터 수가 미션 수량이면 소환 중단)
             int aliveCount = AliveCount;
-            int remaining = currentConfig.maxOnBoard - aliveCount;
+            int remaining = currentConfig.missionKillCount - aliveCount;
             if (remaining <= 0) yield break;
 
             int spawnCount = Random.Range(currentConfig.minSpawnPerTurn, currentConfig.maxSpawnPerTurn + 1);
@@ -558,8 +623,8 @@ namespace JewelsHexaPuzzle.Core
                 GoblinData newGoblin = new GoblinData
                 {
                     position = coord,
-                    hp = 20,
-                    maxHp = 20,
+                    hp = 10,
+                    maxHp = 10,
                     isAlive = true
                 };
 
@@ -888,75 +953,8 @@ namespace JewelsHexaPuzzle.Core
         // 낙하 충돌 데미지
         // ============================================================
 
-        /// <summary>
-        /// ProcessFalling 완료 후 호출.
-        /// 각 열에서 낙하한 블록 수로 고블린에 데미지 적용.
-        /// fallDamageMap: key=HexCoord(고블린이 있는 열), value=낙하 블록 수
-        /// </summary>
-        public IEnumerator ApplyFallDamage(Dictionary<int, int> columnFallCounts)
-        {
-            if (columnFallCounts == null || columnFallCounts.Count == 0) yield break;
-
-            List<GoblinData> damaged = new List<GoblinData>();
-            List<GoblinData> killed = new List<GoblinData>();
-            // 각 고블린이 받은 낙하 데미지량 기록 (팝업 표시용)
-            Dictionary<GoblinData, int> damageAmounts = new Dictionary<GoblinData, int>();
-
-            foreach (var goblin in goblins.Where(g => g.isAlive))
-            {
-                int colKey = goblin.position.q;
-                if (columnFallCounts.TryGetValue(colKey, out int fallCount) && fallCount > 0)
-                {
-                    // 낙하 블록이 몬스터와 충돌 → 블록당 1 대미지
-                    int fallDamage = fallCount;
-                    goblin.hp -= fallDamage;
-                    damaged.Add(goblin);
-                    damageAmounts[goblin] = fallDamage;
-
-                    Debug.Log($"[GoblinSystem] 낙하 데미지: ({goblin.position}) HP {goblin.hp + fallDamage} → {goblin.hp} (-{fallDamage}) [열 낙하 {fallCount}개]");
-
-                    // ★ 즉시 HP바 반영
-                    UpdateHPBar(goblin);
-
-                    // ★ 데미지 숫자 팝업 표시 ("-1" 1회)
-                    if (goblin.visualObject != null)
-                        SpawnDamagePopups(goblin, fallDamage);
-
-                    if (goblin.hp <= 0)
-                    {
-                        goblin.hp = 0;
-                        goblin.isAlive = false;
-                        killed.Add(goblin);
-                    }
-                }
-            }
-
-            // 데미지 애니메이션
-            List<Coroutine> dmgCoroutines = new List<Coroutine>();
-            foreach (var goblin in damaged)
-            {
-                if (!killed.Contains(goblin))
-                    dmgCoroutines.Add(StartCoroutine(DamageFlashAnimation(goblin)));
-            }
-
-            foreach (var co in dmgCoroutines)
-                yield return co;
-
-            // 제거 연출
-            List<Coroutine> killCoroutines = new List<Coroutine>();
-            foreach (var goblin in killed)
-            {
-                totalKills++;
-                OnGoblinKilled?.Invoke(totalKills);
-                killCoroutines.Add(StartCoroutine(DeathAnimation(goblin)));
-            }
-
-            foreach (var co in killCoroutines)
-                yield return co;
-
-            // 제거된 고블린 리스트 정리
-            goblins.RemoveAll(g => !g.isAlive && g.visualObject == null);
-        }
+        // ★ ApplyFallDamage 제거됨 — 물리적 충돌 기반 ApplyIndividualFallDamage로 대체
+        // 낙하 중 블록이 고블린 Y좌표를 통과할 때 AnimateFall에서 직접 호출
 
         /// <summary>
         /// 간단한 낙하 데미지 적용 (열 기반이 아닌 개별 좌표 기반)
@@ -1129,7 +1127,7 @@ namespace JewelsHexaPuzzle.Core
         /// 누적 데미지 팝업 윈도우 (초).
         /// 이 시간 내에 반복 데미지가 들어오면 기존 팝업에 누적 표시.
         /// </summary>
-        private const float DAMAGE_ACCUMULATE_WINDOW = 0.15f;
+        private const float DAMAGE_ACCUMULATE_WINDOW = 0.5f;
 
         /// <summary>
         /// 데미지 팝업 — 짧은 시간 내 반복 데미지는 누적 표시 (-1 → -2 → -3).
@@ -1142,7 +1140,7 @@ namespace JewelsHexaPuzzle.Core
             if (Time.time - goblin.lastDamageTime < DAMAGE_ACCUMULATE_WINDOW
                 && goblin.activeDamagePopup != null)
             {
-                // 기존 팝업에 누적
+                // 기존 팝업에 누적 (팝업은 제자리 유지)
                 goblin.accumulatedDamage += totalDamage;
                 goblin.lastDamageTime = Time.time;
                 if (goblin.activeDamageText != null)
@@ -1153,10 +1151,7 @@ namespace JewelsHexaPuzzle.Core
             }
             else
             {
-                // 이전 팝업 제거
-                if (goblin.activeDamagePopup != null)
-                    Destroy(goblin.activeDamagePopup);
-
+                // 이전 팝업은 파괴하지 않음 — 자연 소멸 (위로 떠오르며 페이드)
                 // 새 누적 팝업 시작
                 goblin.accumulatedDamage = totalDamage;
                 goblin.lastDamageTime = Time.time;
@@ -1212,7 +1207,7 @@ namespace JewelsHexaPuzzle.Core
             goblin.activeDamagePopup = popup;
             goblin.activeDamageText = text;
 
-            // 누적 대기: 새로운 데미지가 없을 때까지 대기
+            // 누적 대기: 새로운 데미지가 없을 때까지 대기 (팝업은 제자리 유지)
             while (Time.time - goblin.lastDamageTime < DAMAGE_ACCUMULATE_WINDOW)
             {
                 if (popup == null) yield break;
@@ -1222,7 +1217,15 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            // 누적 완료 → 위로 떠오르며 페이드아웃
+            // ★ 누적 완료 — 먼저 활성 팝업 참조 해제 (새 히트 시 새 팝업 생성 가능)
+            // 이전 팝업(자기 자신)은 독립적으로 떠오르며 사라짐 (공존)
+            if (goblin.activeDamagePopup == popup)
+            {
+                goblin.activeDamagePopup = null;
+                goblin.activeDamageText = null;
+            }
+
+            // 위로 떠오르며 페이드아웃
             Vector2 startPos = popupRt.anchoredPosition;
             float duration = 0.6f;
             float elapsed = 0f;
@@ -1247,11 +1250,6 @@ namespace JewelsHexaPuzzle.Core
             }
 
             if (popup != null) Destroy(popup);
-            if (goblin.activeDamagePopup == popup)
-            {
-                goblin.activeDamagePopup = null;
-                goblin.activeDamageText = null;
-            }
         }
 
         /// <summary>
@@ -1290,6 +1288,9 @@ namespace JewelsHexaPuzzle.Core
                 goblin.goblinImage.color = Color.white;
             yield return new WaitForSeconds(0.08f);
 
+            // WaitForSeconds 동안 오브젝트가 파괴될 수 있음
+            if (goblin.visualObject == null || rt == null) yield break;
+
             // 2. 파편 산개
             StartCoroutine(SpawnDeathDebris(rt.parent, deathPos));
 
@@ -1298,6 +1299,8 @@ namespace JewelsHexaPuzzle.Core
             float elapsed = 0f;
             while (elapsed < duration)
             {
+                if (goblin.visualObject == null || rt == null) yield break;
+
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
 
@@ -1654,6 +1657,104 @@ namespace JewelsHexaPuzzle.Core
         /// 활성 상태인지 (config가 설정되어 있는지)
         /// </summary>
         public bool IsActive => currentConfig != null;
+
+        /// <summary>
+        /// 낙하 충돌로 사망 대기 중인 고블린이 있는지
+        /// </summary>
+        public bool HasPendingFallDeaths => pendingFallDeaths.Count > 0;
+
+        // ============================================================
+        // 물리적 충돌 기반 낙하 대미지
+        // ============================================================
+
+        /// <summary>
+        /// BlockRemovalSystem이 낙하 시작 전 호출.
+        /// 살아있는 모든 고블린의 열(q)별 Y좌표를 반환하여 충돌 타겟으로 사용.
+        /// </summary>
+        public Dictionary<int, List<(GoblinData goblin, float yPos)>> GetGoblinCollisionTargets(HexGrid grid)
+        {
+            var result = new Dictionary<int, List<(GoblinData goblin, float yPos)>>();
+            if (grid == null) return result;
+
+            foreach (var goblin in goblins.Where(g => g.isAlive))
+            {
+                int q = goblin.position.q;
+                float yPos = grid.CalculateFlatTopHexPosition(goblin.position).y;
+
+                if (!result.ContainsKey(q))
+                    result[q] = new List<(GoblinData, float)>();
+                result[q].Add((goblin, yPos));
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// AnimateFall에서 블록이 고블린 Y좌표를 통과할 때 호출 (1 대미지).
+        /// 비코루틴 — 즉시 실행.
+        /// </summary>
+        public void ApplyIndividualFallDamage(GoblinData goblin)
+        {
+            if (goblin == null || !goblin.isAlive) return;
+
+            goblin.hp -= 1;
+            Debug.Log($"[GoblinSystem] 낙하 충돌 대미지: ({goblin.position}) HP {goblin.hp + 1} → {goblin.hp} (-1)");
+
+            UpdateHPBar(goblin);
+
+            // 데미지 팝업 (누적 시스템)
+            if (goblin.visualObject != null)
+                SpawnDamagePopups(goblin, 1);
+
+            // 첫 히트에만 플래시 (중복 방지)
+            if (!goblin.isFlashing && goblin.visualObject != null)
+            {
+                goblin.isFlashing = true;
+                StartCoroutine(DamageFlashWithReset(goblin));
+            }
+
+            // 사망 처리 (대기열에 추가, 나중에 ProcessPendingFallDeaths에서 처리)
+            if (goblin.hp <= 0)
+            {
+                goblin.hp = 0;
+                goblin.isAlive = false;
+                if (!pendingFallDeaths.Contains(goblin))
+                    pendingFallDeaths.Add(goblin);
+            }
+        }
+
+        /// <summary>
+        /// DamageFlashAnimation + isFlashing 리셋
+        /// </summary>
+        private IEnumerator DamageFlashWithReset(GoblinData goblin)
+        {
+            yield return StartCoroutine(DamageFlashAnimation(goblin));
+            goblin.isFlashing = false;
+        }
+
+        /// <summary>
+        /// ProcessFalling 완료 후 호출. 낙하 충돌로 사망한 고블린들의 DeathAnimation 실행.
+        /// </summary>
+        public IEnumerator ProcessPendingFallDeaths()
+        {
+            if (pendingFallDeaths.Count == 0) yield break;
+
+            // 사망 고블린들의 DeathAnimation 실행
+            List<Coroutine> deathCoroutines = new List<Coroutine>();
+            foreach (var goblin in pendingFallDeaths)
+            {
+                totalKills++;
+                OnGoblinKilled?.Invoke(totalKills);
+                if (goblin.visualObject != null)
+                    deathCoroutines.Add(StartCoroutine(DeathAnimation(goblin)));
+            }
+
+            // 모든 사망 애니메이션 완료 대기
+            foreach (var c in deathCoroutines)
+                yield return c;
+
+            pendingFallDeaths.Clear();
+            goblins.RemoveAll(g => !g.isAlive && g.visualObject == null);
+        }
 
         /// <summary>
         /// 고블린 스프라이트 외부 접근용 (미션 아이콘 등)

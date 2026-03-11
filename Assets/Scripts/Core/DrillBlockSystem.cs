@@ -303,6 +303,12 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             // [3단계] 드릴 블록 자체의 데이터를 지움 (투사체는 별도로 날아감)
             drillBlock.ClearData();
 
+            // ★ 드릴 시작 지점 열 즉시 낙하+리필 (백그라운드 실행)
+            // Vertical 드릴은 같은 열에서 진행하므로 발사 중 낙하하면 새 블록이 경로 방해 → 스킵
+            // 드릴 발사체가 고블린 충돌을 직접 처리하므로 낙하 충돌 대미지 건너뜀
+            if (removalSystem != null && direction != DrillDirection.Vertical)
+                removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: true);
+
             // [4단계] 양방향으로 경로에 있는 블록들을 수집
             // 예: Vertical이면 위쪽(positive)과 아래쪽(negative)
             List<HexBlock> targets1 = GetBlocksInDirection(startCoord, direction, true);
@@ -359,15 +365,34 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                 }
             }
 
+            // 고블린 데미지는 DrillLineWithProjectile에서 투사체 도달 시점에 적용
+
             // [6단계] 중앙에서 발사 이펙트 재생 (섬광 + 빛줄기 + 스파크) — 첫 번째 드릴만
             if (isFirstDrill)
                 StartCoroutine(DrillLaunchEffect(drillWorldPos, direction, drillColor));
 
+            // ★ Vertical 드릴: 양방향 타겟 파괴 완료 추적
+            // 낙하는 여기서 실행하지 않음 — CascadeWithPendingLoop의 ProcessFalling()이
+            // 완전히 처리한 뒤 pending 특수 블록이 발동되도록 보장 (연쇄 드릴 타이밍 문제 방지)
+            System.Action onDirectionTargetsDestroyed = null;
+            if (direction == DrillDirection.Vertical)
+            {
+                int verticalDirectionsComplete = 0;
+                onDirectionTargetsDestroyed = () =>
+                {
+                    verticalDirectionsComplete++;
+                    if (verticalDirectionsComplete >= 2)
+                        Debug.Log($"[DrillBlockSystem] Vertical 드릴 양방향 타겟 파괴 완료 (낙하는 캐스케이드 루프에서 처리)");
+                };
+            }
+
             // 양방향 동시에 투사체 발사 — 두 코루틴이 동시에 실행됨
             Coroutine drill1 = StartCoroutine(DrillLineWithProjectile(
-                drillWorldPos, targets1, direction, true, drillColor, isFirstDrill));
+                drillWorldPos, targets1, direction, true, drillColor, startCoord, isFirstDrill,
+                onDirectionTargetsDestroyed));
             Coroutine drill2 = StartCoroutine(DrillLineWithProjectile(
-                drillWorldPos, targets2, direction, false, drillColor, isFirstDrill));
+                drillWorldPos, targets2, direction, false, drillColor, startCoord, isFirstDrill,
+                onDirectionTargetsDestroyed));
 
             // 미션 카운팅: DrillLineWithProjectile에서 블록 파괴 시점마다 개별 보고
             // (일괄 보고 제거 — 드릴 파괴 연출과 미션 숫자 감소가 동기화됨)
@@ -375,6 +400,17 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             // [7단계] 양방향 투사체가 모두 끝날 때까지 대기
             yield return drill1;
             yield return drill2;
+
+            // [7b단계] Vertical 드릴: 열 낙하+리필 완료까지 대기
+            // CascadeWithPendingLoop의 ProcessFalling()보다 먼저 완료하여
+            // pending 특수 블록이 안정된 그리드에서 발동되도록 보장
+            // ★ 드릴 투사체 직접 충돌과 리필 블록 낙하 충돌은 별개 → 낙하 충돌 활성화
+            if (direction == DrillDirection.Vertical && removalSystem != null)
+            {
+                Coroutine fallingCo = removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: false);
+                if (fallingCo != null)
+                    yield return fallingCo;
+            }
 
             // [8단계] 최종 점수 계산 (드릴 기본 200점 + 파괴한 블록들의 점수 합)
             int totalScore = 200 + blockScoreSum;
@@ -478,15 +514,39 @@ private HexCoord GetDirectionDelta(DrillDirection direction, bool positive)
         /// </summary>
 private IEnumerator DrillLineWithProjectile(
             Vector3 startPos, List<HexBlock> targets, DrillDirection direction,
-            bool positive, Color drillColor, bool showEffects = true)
+            bool positive, Color drillColor, HexCoord pathStartCoord, bool showEffects = true,
+            System.Action onTargetsDestroyed = null)
         {
-            if (targets.Count == 0) yield break;
-            // 각 블록 파괴 애니메이션의 코루틴 핸들을 저장 (나중에 완료 대기용)
+                // 각 블록 파괴 애니메이션의 코루틴 핸들을 저장 (나중에 완료 대기용)
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
 
-            // 첫 번째 타겟 방향으로 투사체의 초기 각도 계산
-            Vector3 firstTargetPos = targets[0].transform.position;
-            Vector3 initDir = (firstTargetPos - startPos).normalized;
+            // 고블린 데미지용 경로 추적 변수
+            HexCoord pathDelta = GetDirectionDelta(direction, positive);
+            HexCoord lastDamageCoord = pathStartCoord; // 마지막으로 데미지를 적용한 좌표
+
+            // 투사체의 초기 방향 계산 (타겟 블록 유무에 따라 다르게 처리)
+            Vector3 initDir;
+            if (targets.Count > 0)
+            {
+                // 타겟 블록이 있으면: 첫 번째 블록 방향
+                Vector3 firstTargetPos = targets[0].transform.position;
+                initDir = (firstTargetPos - startPos).normalized;
+            }
+            else
+            {
+                // 타겟 블록이 없어도: 그리드 방향으로 발사체 발사
+                HexCoord nextCoord = pathStartCoord + pathDelta;
+                if (hexGrid != null)
+                {
+                    Vector2 nextPos2D = hexGrid.CalculateFlatTopHexPosition(nextCoord);
+                    Vector2 startPos2D = hexGrid.CalculateFlatTopHexPosition(pathStartCoord);
+                    initDir = ((Vector3)(nextPos2D - startPos2D)).normalized;
+                }
+                else
+                {
+                    initDir = Vector3.up;
+                }
+            }
             float initAngle = Mathf.Atan2(initDir.y, initDir.x) * Mathf.Rad2Deg;
 
             // 투사체(드릴 탄환) 생성 — 첫 번째 드릴만
@@ -494,6 +554,41 @@ private IEnumerator DrillLineWithProjectile(
 
             Vector3 currentPos = startPos;
             Vector3 lastMoveDir = initDir; // 마지막 이동 방향 (투사체 퇴장 시 사용)
+
+            // ★ 드릴 경로 위 고블린 위치 사전 스캔 (투사체 충돌 시 1회 대미지용)
+            // 그리드 내부 + 그리드 밖 3칸(고블린 소환 영역)까지 확장 스캔
+            HashSet<HexCoord> pathGoblinPositions = new HashSet<HexCoord>();
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive && hexGrid != null)
+            {
+                HexCoord scanCoord = pathStartCoord + pathDelta;
+                int scanLimit = 0;
+                int outsideGridCount = 0;
+                while (scanLimit < 20)
+                {
+                    if (!hexGrid.IsValidCoord(scanCoord))
+                    {
+                        outsideGridCount++;
+                        if (outsideGridCount > 3) break; // 그리드 밖 3칸까지 (고블린 소환 영역)
+                    }
+                    if (GoblinSystem.Instance.HasGoblinAt(scanCoord))
+                        pathGoblinPositions.Add(scanCoord);
+                    scanCoord = scanCoord + pathDelta;
+                    scanLimit++;
+                }
+            }
+            // 이미 대미지를 준 고블린 좌표 추적 (중복 방지)
+            HashSet<HexCoord> damagedGoblinPositions = new HashSet<HexCoord>();
+
+            // lastDamageCoord를 그리드 마지막 유효 좌표로 미리 계산 (exit 애니메이션용)
+            if (hexGrid != null)
+            {
+                HexCoord testCoord = pathStartCoord + pathDelta;
+                while (hexGrid.IsValidCoord(testCoord))
+                {
+                    lastDamageCoord = testCoord;
+                    testCoord = testCoord + pathDelta;
+                }
+            }
 
             // 각 타겟 블록을 순서대로 방문하며 파괴
             for (int i = 0; i < targets.Count; i++)
@@ -526,6 +621,15 @@ private IEnumerator DrillLineWithProjectile(
                 }
 
                 currentPos = targetPos;
+
+                // ★ 투사체가 고블린 좌표에 도달 시 1회만 대미지 (물리적 충돌)
+                if (pathGoblinPositions.Count > 0 && pathGoblinPositions.Contains(target.Coord)
+                    && !damagedGoblinPositions.Contains(target.Coord))
+                {
+                    damagedGoblinPositions.Add(target.Coord);
+                    if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                        GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, 1);
+                }
 
                 // 안전 검사: 다른 드릴/폭탄 등이 동시에 이 블록을 처리했을 수 있음
                 if (target.Data == null || target.Data.gemType == GemType.None) continue;
@@ -566,68 +670,98 @@ private IEnumerator DrillLineWithProjectile(
                     // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (드릴 파괴 연출과 동기화)
                     if (destroyedGemType != GemType.None)
                         GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType);
+
+                    // ★ 블록 제거 즉시 해당 열 낙하+리필 시작 (대기하지 않고 백그라운드 실행)
+                    // Vertical 드릴은 같은 열에서 계속 진행하므로 스킵 (완료 후 일괄 낙하)
+                    // 드릴 발사체가 고블린 충돌을 직접 처리하므로 낙하 충돌 대미지 건너뜀
+                    if (removalSystem != null && direction != DrillDirection.Vertical)
+                        removalSystem.ProcessFallingForColumn(target, skipGoblinCollision: true);
                 }
 
                 // 블록 사이 약간의 간격을 두어 "하나씩 뚫어가는" 느낌 연출
                 yield return new WaitForSeconds(drillSpeed);
             }
 
-            // --- 투사체 퇴장 애니메이션 ---
-            // 마지막 블록을 지난 후 투사체가 서서히 사라지며 화면 밖으로 나감
-
-            if (lastMoveDir == Vector3.zero)
-                lastMoveDir = initDir;
-
-            // 투사체의 모든 이미지 컴포넌트와 초기 투명도를 수집
-            List<UnityEngine.UI.Image> imgs = new List<UnityEngine.UI.Image>();
-            List<float> initAlphas = new List<float>();
-            if (projectile != null)
+            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 1회 대미지 적용
+            if (pathGoblinPositions.Count > 0 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                foreach (var img in projectile.GetComponentsInChildren<UnityEngine.UI.Image>())
+                foreach (var gPos in pathGoblinPositions)
                 {
-                    imgs.Add(img);
-                    initAlphas.Add(img.color.a);
-                }
-            }
-
-            // 퇴장: 점점 투명해지고 작아지면서 마지막 방향으로 날아감
-            float exitDuration = 0.3f;
-            float exitElapsed = 0f;
-            Vector3 exitStart = currentPos;
-
-            while (exitElapsed < exitDuration && projectile != null)
-            {
-                exitElapsed += Time.deltaTime;
-                float t = exitElapsed / exitDuration;
-
-                // 마지막 이동 방향으로 계속 전진
-                projectile.transform.position = exitStart + lastMoveDir * projectileSpeed * exitElapsed;
-
-                // 서서히 투명해짐
-                float fade = 1f - t;
-                projectile.transform.localScale = Vector3.one * (1f - t * 0.5f);
-
-                for (int i = 0; i < imgs.Count; i++)
-                {
-                    if (imgs[i] != null)
+                    if (!damagedGoblinPositions.Contains(gPos))
                     {
-                        Color c = imgs[i].color;
-                        c.a = initAlphas[i] * fade;
-                        imgs[i].color = c;
+                        damagedGoblinPositions.Add(gPos);
+                        GoblinSystem.Instance.ApplyDamageAtPosition(gPos, 1);
                     }
                 }
-
-                yield return null;
             }
 
-            // 투사체 오브젝트 제거
-            if (projectile != null) Destroy(projectile);
+            // ★ 모든 타겟 파괴 완료 신호 (Vertical 드릴: 양방향 완료 후 열 낙하 트리거용)
+            onTargetsDestroyed?.Invoke();
 
             // 모든 블록 파괴 애니메이션이 완료될 때까지 대기
             // (ClearData가 확실히 호출되도록 보장)
             foreach (var co in destroyCoroutines)
                 yield return co;
 
+            // --- 투사체 퇴장: 백그라운드에서 실행 (DrillCoroutine 완료를 차단하지 않음) ---
+            if (lastMoveDir == Vector3.zero)
+                lastMoveDir = initDir;
+            if (projectile != null)
+                StartCoroutine(ProjectileExitPhase(projectile, currentPos, lastMoveDir, damagedGoblinPositions));
+
+        }
+
+        /// <summary>
+        /// 투사체 퇴장 애니메이션 (백그라운드 실행 — DrillCoroutine 완료를 차단하지 않음)
+        /// 화면 밖으로 이동하면서 고블린 충돌 감지
+        /// </summary>
+        private IEnumerator ProjectileExitPhase(GameObject projectile, Vector3 startPos, Vector3 moveDir, HashSet<HexCoord> alreadyDamagedPositions = null)
+        {
+            float exitElapsed = 0f;
+            float exitDuration = 3f;
+
+            // 경로 내 충돌 이력 포함하여 중복 방지
+            HashSet<HexCoord> exitDamagedPositions = alreadyDamagedPositions != null
+                ? new HashSet<HexCoord>(alreadyDamagedPositions)
+                : new HashSet<HexCoord>();
+
+            while (exitElapsed < exitDuration && projectile != null)
+            {
+                exitElapsed += Time.deltaTime;
+
+                // 마지막 이동 방향으로 계속 전진
+                Vector3 newPos = startPos + moveDir * projectileSpeed * exitElapsed;
+                projectile.transform.position = newPos;
+
+                // 이동 중 고블린 충돌 체크 (그리드 밖 포함) — 월드 좌표 기반
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                {
+                    var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
+                    Vector2 projWorld2D = new Vector2(newPos.x, newPos.y);
+                    float hitRadius = hexGrid != null ? hexGrid.HexSize * 0.8f : 40f;
+
+                    foreach (var goblin in aliveGoblins)
+                    {
+                        if (goblin.visualObject == null) continue;
+                        if (exitDamagedPositions.Contains(goblin.position)) continue;
+
+                        Vector3 goblinWorldPos = goblin.visualObject.transform.position;
+                        float dist = Vector2.Distance(
+                            projWorld2D,
+                            new Vector2(goblinWorldPos.x, goblinWorldPos.y));
+
+                        if (dist < hitRadius)
+                        {
+                            GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, 1);
+                            exitDamagedPositions.Add(goblin.position);
+                        }
+                    }
+                }
+
+                yield return null;
+            }
+
+            if (projectile != null) Destroy(projectile);
         }
 
         /// <summary>
@@ -953,61 +1087,79 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
             if (block == null) yield break;
 
             Vector3 pos = block.transform.position;
+            Vector3 origScale = block.transform.localScale;
+
+            // ★ 원본 블록 데이터 즉시 클리어 (낙하 시스템이 빈 슬롯으로 인식하도록)
+            block.transform.localScale = Vector3.one;
+            block.ClearData();
+
+            // 파괴 애니메이션용 임시 복제 오브젝트 생성
+            GameObject clone = null;
+
+            if (showEffects && effectParent != null)
+            {
+                clone = new GameObject("DrillDestroyClone");
+                clone.transform.SetParent(effectParent, false);
+                clone.transform.position = pos;
+                clone.transform.localScale = origScale;
+
+                RectTransform cloneRt = clone.AddComponent<RectTransform>();
+                cloneRt.sizeDelta = new Vector2(hexGrid != null ? hexGrid.HexSize * 1.6f : 80f,
+                                                hexGrid != null ? hexGrid.HexSize * 1.6f : 80f);
+
+                var cloneImg = clone.AddComponent<UnityEngine.UI.Image>();
+                cloneImg.sprite = HexBlock.GetHexFlashSprite();
+                cloneImg.color = blockColor;
+                cloneImg.raycastTarget = false;
+            }
 
             if (showEffects)
             {
-                // 1. 화이트 플래시 — 블록 위에 흰색이 번쩍 나타났다 사라짐
-                StartCoroutine(DestroyFlashOverlay(block));
-
-                // 2. 충격파 — 원이 커지면서 퍼져나감
+                // 1. 충격파 — 원이 커지면서 퍼져나감
                 StartCoroutine(ImpactWave(pos, blockColor));
 
                 // 블록 파괴 사운드
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayBlockDestroySound();
 
-                // 3. 파편 생성 — 블록 조각들이 드릴 방향의 수직으로 튀어나감
+                // 2. 파편 생성
                 float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
                 int count = Mathf.RoundToInt((VisualConstants.DebrisBaseCount + Random.Range(0, 3)) * cascadeMult);
                 for (int i = 0; i < count; i++)
                     StartCoroutine(AnimateDebris(pos, blockColor, drillAngle));
             }
 
-            // 4. 이중 이징 파괴 애니메이션
-            //    전반부: 블록이 20% 정도 확대됨 (터지기 직전 팽창)
-            //    후반부: 가로로 찌그러지면서 세로로 납작해짐 (으스러짐)
-            float duration = VisualConstants.DestroyDuration;
-            float elapsed = 0f;
-            float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
-            Vector3 origScale = block.transform.localScale;
-
-            while (elapsed < duration)
+            // 3. 임시 복제 오브젝트에 이중 이징 파괴 애니메이션
+            if (clone != null)
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
+                float duration = VisualConstants.DestroyDuration;
+                float elapsed = 0f;
+                float expandRatio = VisualConstants.DestroyExpandPhaseRatio;
 
-                if (t < expandRatio)
+                while (elapsed < duration)
                 {
-                    // 전반부: 팽창 (EaseOutCubic → 처음에 빠르고 나중에 느려짐)
-                    float expandT = t / expandRatio;
-                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
-                    block.transform.localScale = origScale * scale;
-                }
-                else
-                {
-                    // 후반부: 찌그러지며 축소 (가로는 볼록해졌다가, 세로는 사라짐)
-                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
-                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
-                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
-                    block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+
+                    if (t < expandRatio)
+                    {
+                        float expandT = t / expandRatio;
+                        float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
+                        clone.transform.localScale = origScale * scale;
+                    }
+                    else
+                    {
+                        float shrinkT = (t - expandRatio) / (1f - expandRatio);
+                        float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI);
+                        float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT));
+                        clone.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
+                    }
+
+                    yield return null;
                 }
 
-                yield return null;
+                Destroy(clone);
             }
-
-            // 5. 블록을 원래 크기로 되돌리고 데이터 초기화 (빈 칸이 됨)
-            block.transform.localScale = Vector3.one;
-            block.ClearData();
         }
 
         /// <summary>
@@ -1659,8 +1811,8 @@ private float GetDirectionAngle(DrillDirection direction, bool positive)
         /// <summary>특수 블록 합성 시스템에서 드릴 투사체 발사에 사용</summary>
         public IEnumerator DrillLineWithProjectilePublic(
             Vector3 startPos, List<HexBlock> targets, DrillDirection dir,
-            bool positive, Color color, bool showEffects = true)
-            => DrillLineWithProjectile(startPos, targets, dir, positive, color, showEffects);
+            bool positive, Color color, HexCoord pathStartCoord, bool showEffects = true)
+            => DrillLineWithProjectile(startPos, targets, dir, positive, color, pathStartCoord, showEffects);
 
         /// <summary>특수 블록 합성 시스템에서 방향 델타 계산에 사용</summary>
         public HexCoord GetDirectionDeltaPublic(DrillDirection dir, bool positive)

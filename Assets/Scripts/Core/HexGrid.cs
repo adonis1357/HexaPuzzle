@@ -26,7 +26,47 @@ namespace JewelsHexaPuzzle.Core
         // 수직 간격 = sqrt(3) * size (높이와 동일)
 
         public float HexSize => hexSize;
+        public int GridRadius => gridRadius;
         public int BlockCount => blocks.Count;
+
+        /// <summary>
+        /// 특정 q열의 그리드 내 최소 r값 (가장 위쪽 블록의 r좌표)
+        /// </summary>
+        public int GetTopR(int q)
+        {
+            return Mathf.Max(-gridRadius, -q - gridRadius);
+        }
+
+        /// <summary>
+        /// 그리드 상단 빈 공간 3줄의 소환 가능 좌표 목록 반환
+        /// 고블린 소환 위치로 사용
+        /// </summary>
+        public List<HexCoord> GetExtendedTopCoords()
+        {
+            var coords = new List<HexCoord>();
+            for (int q = -gridRadius; q <= gridRadius; q++)
+            {
+                int rMin = GetTopR(q);
+                for (int row = 1; row <= 3; row++)
+                {
+                    coords.Add(new HexCoord(q, rMin - row));
+                }
+            }
+            return coords;
+        }
+
+        /// <summary>
+        /// 해당 좌표가 메인 그리드 범위 내인지 확인
+        /// </summary>
+        public bool IsInsideGrid(HexCoord coord)
+        {
+            return blocks.ContainsKey(coord);
+        }
+
+        /// <summary>
+        /// gridContainer의 Transform 반환 (고블린 등 외부 오브젝트 배치용)
+        /// </summary>
+        public Transform GridContainer => gridContainer;
 
         private void Awake()
         {
@@ -113,6 +153,75 @@ namespace JewelsHexaPuzzle.Core
                 borderImg.raycastTarget = false;
                 borderImg.type = Image.Type.Simple;
             }
+
+            // 그리드 상단 3줄 확장 (연한 빈 셀 — 블록 스폰 영역 시각화)
+            CreateExtendedTopCells(backgroundGridContainer.transform, fillSprite, borderSprite, hexWidth, hexHeight);
+        }
+
+        /// <summary>
+        /// 그리드 상단에 3줄의 연한 빈 셀을 추가 생성.
+        /// 블록이 떨어져 들어오는 영역을 시각적으로 표시하며,
+        /// 위로 갈수록 투명도가 낮아져 자연스럽게 페이드아웃됩니다.
+        /// </summary>
+        private void CreateExtendedTopCells(Transform parent, Sprite fillSprite, Sprite borderSprite, float hexWidth, float hexHeight)
+        {
+            const int extendRows = 3;
+
+            // 기존 fill/border의 기본 알파값
+            const float baseFillAlpha = 0.22f;
+            const float baseBorderAlpha = 0.30f;
+
+            // 확장 셀은 기존 대비 연하게 (35%)
+            const float extendAlphaRatio = 0.35f;
+
+            for (int q = -gridRadius; q <= gridRadius; q++)
+            {
+                // 현재 그리드에서 이 열의 최소 r값 (= 화면 최상단)
+                int rMin = Mathf.Max(-gridRadius, -q - gridRadius);
+
+                for (int row = 1; row <= extendRows; row++)
+                {
+                    int r = rMin - row;
+                    Vector2 pos = CalculateFlatTopHexPosition(new HexCoord(q, r));
+
+                    // 행별 페이드: 가까운 행(row=1)이 가장 진하고, 먼 행(row=3)이 가장 연함
+                    float fadeMul = 1f - (row - 1) * 0.3f; // 1행=1.0, 2행=0.7, 3행=0.4
+
+                    float fillAlpha = baseFillAlpha * extendAlphaRatio * fadeMul;
+                    float borderAlpha = baseBorderAlpha * extendAlphaRatio * fadeMul;
+
+                    // 셀 컨테이너
+                    GameObject cellObj = new GameObject("BgCellExt");
+                    cellObj.transform.SetParent(parent, false);
+
+                    RectTransform cellRT = cellObj.AddComponent<RectTransform>();
+                    cellRT.anchoredPosition = pos;
+                    cellRT.sizeDelta = new Vector2(hexWidth, hexHeight);
+
+                    // 어두운 배경
+                    Image bgImg = cellObj.AddComponent<Image>();
+                    bgImg.sprite = fillSprite;
+                    bgImg.color = new Color(0.03f, 0.02f, 0.06f, fillAlpha);
+                    bgImg.raycastTarget = false;
+                    bgImg.type = Image.Type.Simple;
+
+                    // 밝은 테두리
+                    GameObject borderObj = new GameObject("Border");
+                    borderObj.transform.SetParent(cellObj.transform, false);
+
+                    RectTransform borderRT = borderObj.AddComponent<RectTransform>();
+                    borderRT.anchorMin = Vector2.zero;
+                    borderRT.anchorMax = Vector2.one;
+                    borderRT.offsetMin = Vector2.zero;
+                    borderRT.offsetMax = Vector2.zero;
+
+                    Image brdImg = borderObj.AddComponent<Image>();
+                    brdImg.sprite = borderSprite;
+                    brdImg.color = new Color(0.95f, 0.92f, 0.90f, borderAlpha);
+                    brdImg.raycastTarget = false;
+                    brdImg.type = Image.Type.Simple;
+                }
+            }
         }
 
         private void CreateBlocks()
@@ -152,8 +261,9 @@ namespace JewelsHexaPuzzle.Core
 
         /// <summary>
         /// Flat-top 육각형 위치 계산 - 면과 면이 정확히 맞닿음
+        /// 외부 시스템(GoblinSystem 등)에서도 확장 좌표 위치 계산에 사용
         /// </summary>
-        private Vector2 CalculateFlatTopHexPosition(HexCoord coord)
+        public Vector2 CalculateFlatTopHexPosition(HexCoord coord)
         {
             // Flat-top 배치 공식:
             // x = size * 3/2 * q
@@ -246,6 +356,7 @@ namespace JewelsHexaPuzzle.Core
                     chosen = GemTypeHelper.GetRandom();
 
                 block.SetBlockData(new BlockData(chosen));
+                block.HideVisuals(); // 낙하 시작 전까지 숨김 (StartDropCoroutine에서 활성화)
             }
 
             Debug.Log("[HexGrid] Populated with no-match gems (삼각형+링 매칭 방지)");

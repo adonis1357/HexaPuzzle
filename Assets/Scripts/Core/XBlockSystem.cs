@@ -1,26 +1,25 @@
 // ============================================================================
-// XBlockSystem.cs - X블록 특수 블록 시스템
+// XBlockSystem.cs - 타겟 레이져 특수 블록 시스템
 // ============================================================================
 //
 // [한줄 요약]
-// X블록은 "링 매칭"으로 생성되며, 발동하면 게임판 전체에서
-// 같은 색상의 블록을 한번에 모두 제거하는 강력한 특수 블록입니다.
+// 타겟 레이져는 "링 매칭"으로 생성되며, 발동하면 게임판 전체에서
+// 같은 색상의 블록을 레이져로 순차 파괴하는 강력한 특수 블록입니다.
 //
-// [X블록이란?]
+// [타겟 레이져란?]
 // 육각형 게임판에서 중앙 블록 주변 6개가 모두 같은 색일 때 (=링 매칭)
-// 중앙 위치에 X블록이 생성됩니다.
-// 비유하자면, 꽃잎 6개가 같은 색으로 둘러싼 꽃의 중심에 X 표시가 나타나는 것입니다.
+// 중앙 위치에 타겟 레이져가 생성됩니다.
 //
 // [발동 효과]
-// X블록이 매칭에 포함되어 발동하면:
+// 타겟 레이져가 매칭에 포함되어 발동하면:
 // 1. 발동 전 "쿵!" 하고 압축했다가 팽창하는 사전 애니메이션 재생
-// 2. 게임판 전체를 스캔하여 X블록과 같은 색상의 블록을 모두 찾음
-// 3. X자 형태의 화려한 이펙트와 함께 충격파가 퍼져나감
-// 4. 중심에서 가까운 블록부터 파도처럼 순차적으로 파괴
-// 5. 각 블록이 파괴될 때 45도 회전하며 찌그러지는 애니메이션 재생
+// 2. 게임판 전체를 스캔하여 같은 색상의 블록을 모두 찾아 타겟 마킹
+// 3. 레이져 총이 등장하여 각 타겟을 향해 총구를 회전
+// 4. 시안색 레이져 빔을 순차 발사, 맞은 블록은 즉시 파괴
+// 5. 모든 타겟 파괴 후 레이져 총이 자폭
 //
 // [처리 흐름]
-// CreateXBlock() → ActivateXBlock() → XBlockCoroutine() → 이펙트 + 순차 파괴
+// CreateXBlock() → ActivateXBlock() → XBlockCoroutine() → 타겟 마킹 + 레이져 발사
 //
 // ============================================================================
 
@@ -33,10 +32,9 @@ using JewelsHexaPuzzle.Managers;
 namespace JewelsHexaPuzzle.Core
 {
     /// <summary>
-    /// X블록 특수 블록 시스템 클래스.
+    /// 타겟 레이져 특수 블록 시스템 클래스.
     /// 링 매칭(중앙 블록 주변 6개가 모두 같은 색)으로 생성되며,
-    /// 발동 시 게임판 전체에서 같은 색 블록을 한꺼번에 제거하는 "색상 청소기" 역할.
-    /// 비유: 물감을 뿌리면 같은 색 물감이 전부 사라지는 마법 같은 블록.
+    /// 발동 시 게임판 전체에서 같은 색 블록을 레이져로 순차 파괴하는 역할.
     /// </summary>
     public class XBlockSystem : MonoBehaviour
     {
@@ -47,7 +45,7 @@ namespace JewelsHexaPuzzle.Core
         [Header("References")]
         /// <summary>
         /// 육각형 게임판(그리드) 참조. 블록 위치 정보와 전체 블록 목록을 가져올 때 사용.
-        /// 비유: X블록이 "게임판 지도"를 보고 같은 색 블록을 찾는 데 필요한 지도 자체.
+        /// 타겟 레이져가 "게임판 지도"를 보고 같은 색 블록을 찾는 데 필요한 지도 자체.
         /// </summary>
         [SerializeField] private HexGrid hexGrid;
 
@@ -57,18 +55,15 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         [SerializeField] private BlockRemovalSystem removalSystem;
 
-        [Header("XBlock Settings")]
+        [Header("Target Laser Settings")]
         /// <summary>
-        /// 블록을 순차적으로 파괴할 때 각 블록 사이의 대기 시간 (초).
-        /// 값이 작을수록 빠르게 연쇄 파괴되고, 클수록 "파도"처럼 천천히 퍼져나감.
-        /// 기본값 0.03초 = 거의 즉시지만 약간의 순차 느낌을 줌.
+        /// 레이져 발사 간격 (초). 값이 작을수록 빠른 연사.
         /// </summary>
         [SerializeField] private float waveDelay = 0.03f;
 
         [Header("Effect Settings")]
         /// <summary>
-        /// X블록 발동 시 중심에서 뿜어져 나오는 불꽃(스파크) 개수.
-        /// 연쇄 깊이에 따라 실제로는 이보다 더 많은 스파크가 생길 수 있음.
+        /// 레이져 건 자폭 시 파편 개수.
         /// </summary>
         [SerializeField] private int sparkCount = 20;
 
@@ -77,29 +72,22 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// X블록 발동이 완전히 끝났을 때 발생하는 이벤트.
-        /// 정수 인자는 획득한 총 점수. 외부 시스템(점수 관리 등)이 이 이벤트를 구독해서 처리.
-        /// 비유: "X블록 임무 완료!" 라고 방송하는 것. 점수판이 이 방송을 듣고 점수를 올림.
+        /// 타겟 레이져 발동 완료 이벤트. 정수 인자는 획득 총 점수.
         /// </summary>
         public event System.Action<int> OnXBlockComplete;
 
         /// <summary>
-        /// 현재 동시에 발동 중인 X블록의 수.
-        /// 여러 X블록이 동시에 터질 수 있기 때문에 카운터로 추적.
-        /// 0이면 모든 X블록 발동이 끝난 것.
+        /// 현재 동시에 발동 중인 타겟 레이져 수.
         /// </summary>
         private int activeXBlockCount = 0;
 
         /// <summary>
-        /// X블록이 파괴하려는 대상 중 "특수 블록"들을 따로 모아두는 목록.
-        /// 특수 블록은 바로 파괴하지 않고, 나중에 연쇄 발동시키기 위해 대기열에 넣음.
-        /// 비유: "이건 그냥 부수면 안 돼, 나중에 따로 터뜨려야 해" 리스트.
+        /// 파괴 대상 중 연쇄 발동 가능한 특수 블록들의 대기열.
         /// </summary>
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
 
         /// <summary>
-        /// 현재 발동 중인(애니메이션이 재생 중인) X블록들의 집합.
-        /// 같은 블록이 중복 발동되지 않도록 방지하는 "진행 중" 목록.
+        /// 현재 발동 중인 타겟 레이져 블록들의 집합.
         /// </summary>
         private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
@@ -108,8 +96,7 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// X블록이 현재 발동 중인지 확인. true면 아직 애니메이션/파괴가 진행 중.
-        /// 다른 시스템이 "X블록 아직 일하고 있어?" 하고 물어볼 때 사용.
+        /// 타겟 레이져가 현재 발동 중인지 확인.
         /// </summary>
         public bool IsActivating => activeXBlockCount > 0;
 
@@ -120,7 +107,7 @@ namespace JewelsHexaPuzzle.Core
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
 
         /// <summary>
-        /// 특정 블록이 현재 X블록 발동에 의해 처리 중인지 확인.
+        /// 특정 블록이 현재 타겟 레이져 발동에 의해 처리 중인지 확인.
         /// </summary>
         public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
 
@@ -136,7 +123,7 @@ namespace JewelsHexaPuzzle.Core
             activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
-            Debug.Log("[XBlockSystem] ForceReset called");
+            Debug.Log("[타겟 레이져] ForceReset 호출");
         }
 
         /// <summary>
@@ -163,11 +150,14 @@ namespace JewelsHexaPuzzle.Core
         private Transform effectParent;
 
         /// <summary>
-        /// X블록 아이콘 스프라이트를 캐시(저장)해두는 정적 변수.
-        /// 한 번 만들어두면 게임 내내 재사용. 매번 새로 만들면 메모리 낭비이므로.
-        /// static이라 XBlockSystem 인스턴스가 여러 개여도 아이콘은 하나만 존재.
+        /// 타겟 레이져 아이콘 스프라이트 캐시. 레이져 총 형태의 프로시저럴 스프라이트.
         /// </summary>
-        private static Sprite xBlockIconSprite;
+        private static Sprite laserGunIconSprite;
+
+        /// <summary>
+        /// 타겟 십자선 스프라이트 캐시.
+        /// </summary>
+        private static Sprite crosshairSprite;
 
         // ============================================================
         // 초기화 메서드들
@@ -186,9 +176,9 @@ namespace JewelsHexaPuzzle.Core
             {
                 hexGrid = FindObjectOfType<HexGrid>();
                 if (hexGrid != null)
-                    Debug.Log("[XBlockSystem] HexGrid auto-found: " + hexGrid.name);
+                    Debug.Log("[타겟 레이져] HexGrid 자동 연결: " + hexGrid.name);
                 else
-                    Debug.LogError("[XBlockSystem] HexGrid not found!");
+                    Debug.LogError("[타겟 레이져] HexGrid를 찾을 수 없습니다!");
             }
             // removalSystem도 마찬가지로 자동 탐색
             if (removalSystem == null)
@@ -212,8 +202,8 @@ namespace JewelsHexaPuzzle.Core
             Canvas canvas = hexGrid.GetComponentInParent<Canvas>();
             if (canvas != null)
             {
-                // "XBlockEffectLayer"라는 이름의 빈 오브젝트를 Canvas 자식으로 생성
-                GameObject effectLayer = new GameObject("XBlockEffectLayer");
+                // "TargetLaserEffectLayer" 빈 오브젝트를 Canvas 자식으로 생성
+                GameObject effectLayer = new GameObject("TargetLaserEffectLayer");
                 effectLayer.transform.SetParent(canvas.transform, false);
 
                 // 화면 전체를 덮도록 RectTransform 설정 (앵커: 좌하단~우상단)
@@ -235,27 +225,36 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // X블록 아이콘 스프라이트 생성
-        // 블록 위에 표시되는 "X" 모양 그래픽을 코드로 직접 그리는 영역
-        // (이 게임은 외부 이미지 파일 없이 코드로 모든 그래픽을 생성함)
+        // 타겟 레이져 아이콘 스프라이트 생성
+        // 블록 위에 표시되는 레이져 총 모양 그래픽을 코드로 직접 그림
         // ============================================================
 
         /// <summary>
-        /// X블록 아이콘 스프라이트를 가져오는 공개 메서드.
-        /// 이미 만들어져 있으면 캐시된 것을 반환하고, 없으면 새로 생성.
-        /// 비유: 도장이 이미 만들어져 있으면 꺼내 쓰고, 없으면 새로 조각하는 것.
+        /// 타겟 레이져 아이콘 스프라이트를 가져오는 공개 메서드.
         /// </summary>
         public static Sprite GetXBlockIconSprite()
         {
-            if (xBlockIconSprite == null)
-                xBlockIconSprite = CreateXSprite(256); // 256x256 고해상도
-            return xBlockIconSprite;
+            if (laserGunIconSprite == null)
+                laserGunIconSprite = CreateLaserGunSprite(256);
+            return laserGunIconSprite;
         }
 
         /// <summary>
-        /// X 아이콘 프로시저럴 생성 - 베벨된 메탈릭 X + 보석 중심 + 글로우
+        /// 타겟 십자선 스프라이트를 가져오는 메서드.
         /// </summary>
-        private static Sprite CreateXSprite(int size)
+        public static Sprite GetCrosshairSprite()
+        {
+            if (crosshairSprite == null)
+                crosshairSprite = CreateCrosshairSprite(64);
+            return crosshairSprite;
+        }
+
+        /// <summary>
+        /// 레이져 총 프로시저럴 스프라이트 생성 (256x256)
+        /// 방향성 있는 레이져 총: 총신 + 빛나는 총구 + 손잡이 + 조준경
+        /// 전체가 우상단 45° 방향을 향함
+        /// </summary>
+        private static Sprite CreateLaserGunSprite(int size)
         {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
@@ -263,114 +262,181 @@ namespace JewelsHexaPuzzle.Core
             for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
 
             Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
-            float armLength = size * 0.36f;
-            float armWidth = size * 0.11f;
-            float glowRadius = size * 0.07f;
-            float inv1414 = 1f / 1.414f;
+            float cos45 = 0.7071f;
+            float sin45 = 0.7071f;
+
+            // 색상 정의
+            Color metalBase = new Color(0.55f, 0.50f, 0.72f);    // 라벤더 메탈
+            Color metalLight = new Color(0.80f, 0.75f, 0.95f);   // 밝은 라벤더
+            Color metalDark = new Color(0.35f, 0.30f, 0.50f);    // 어두운 라벤더
+            Color cyanGlow = new Color(0f, 1f, 1f);              // 시안 총구
+            Color handleColor = new Color(0.25f, 0.22f, 0.35f);  // 손잡이
 
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
                     Vector2 p = new Vector2(x, y) - center;
-                    float fromCenter = p.magnitude;
-                    if (fromCenter > armLength + glowRadius + 2f) continue;
 
-                    // X의 두 대각선까지 거리
-                    float dist1 = Mathf.Abs(p.x - p.y) * inv1414;
-                    float dist2 = Mathf.Abs(p.x + p.y) * inv1414;
-                    float minDist = Mathf.Min(dist1, dist2);
+                    // 45° 회전된 로컬 좌표 (총이 우상단을 향하도록)
+                    float lx = p.x * cos45 + p.y * sin45;   // 총신 방향 (길이)
+                    float ly = -p.x * sin45 + p.y * cos45;  // 총신 수직 (폭)
 
-                    // --- 코어 X (메탈릭 라벤더 + 베벨) ---
-                    if (minDist < armWidth + 1.5f && fromCenter <= armLength + 1.5f)
+                    // --- 총신 (메인 바디) ---
+                    float barrelLength = size * 0.38f;
+                    float barrelWidth = size * 0.09f;
+                    float barrelStart = -size * 0.08f;
+                    // 총구 쪽으로 약간 좁아짐
+                    float taperFactor = Mathf.Lerp(1f, 0.7f, Mathf.Clamp01((lx - barrelStart) / barrelLength));
+                    float effectiveWidth = barrelWidth * taperFactor;
+
+                    if (lx > barrelStart && lx < barrelStart + barrelLength && Mathf.Abs(ly) < effectiveWidth)
                     {
-                        float edgeT = minDist / armWidth; // 0=중앙선 1=가장자리
-                        float lengthT = fromCenter / armLength; // 0=중심 1=끝
-                        float aa = Mathf.Clamp01((armWidth - minDist + 1.5f) * 1.2f)
-                                 * Mathf.Clamp01((armLength - fromCenter + 1.5f) * 1.2f);
+                        float edgeT = Mathf.Abs(ly) / effectiveWidth;
+                        float lengthT = (lx - barrelStart) / barrelLength;
+                        float aa = Mathf.Clamp01((effectiveWidth - Mathf.Abs(ly)) * 2f);
 
-                        // 원통형 셰이딩 (중앙 밝음)
-                        float cylinderShade = 1f - edgeT * edgeT * 0.55f;
-                        // 끝으로 갈수록 약간 어둡게
-                        cylinderShade *= Mathf.Lerp(1f, 0.75f, lengthT * lengthT);
+                        // 원통형 셰이딩
+                        float shade = 1f - edgeT * edgeT * 0.5f;
+                        shade *= Mathf.Lerp(0.9f, 1f, lengthT);
 
-                        // 좌상단 광원 스페큘러
-                        Vector2 lightDir = new Vector2(-0.5f, 0.5f).normalized;
-                        float specAngle = Vector2.Dot(p.normalized, lightDir);
-                        float specular = Mathf.Pow(Mathf.Clamp01(specAngle), 4f) * 0.3f * (1f - edgeT);
+                        // 스페큘러
+                        float spec = Mathf.Pow(Mathf.Clamp01(1f - edgeT * 2f), 3f) * 0.2f;
 
-                        // 라벤더-실버 그라데이션
-                        float r = Mathf.Lerp(0.50f, 0.92f, cylinderShade) + specular;
-                        float g = Mathf.Lerp(0.45f, 0.85f, cylinderShade) + specular * 0.9f;
-                        float b = Mathf.Lerp(0.60f, 1f, cylinderShade) + specular * 0.7f;
+                        Color col = Color.Lerp(metalDark, metalLight, shade);
+                        col.r += spec; col.g += spec; col.b += spec;
+                        col.a = aa;
+                        pixels[y * size + x] = col;
+                    }
 
-                        // 가장자리 림 하이라이트
-                        if (edgeT > 0.7f)
+                    // --- 총구 글로우 (에너지 충전) ---
+                    float muzzleX = barrelStart + barrelLength;
+                    Vector2 muzzleLocal = new Vector2(muzzleX, 0);
+                    float muzzleDist = Vector2.Distance(new Vector2(lx, ly), muzzleLocal);
+                    float muzzleR = size * 0.08f;
+                    float glowR = size * 0.14f;
+
+                    if (muzzleDist < glowR)
+                    {
+                        float glowT = muzzleDist / glowR;
+                        float glowAlpha;
+                        Color glowCol;
+
+                        if (muzzleDist < muzzleR)
                         {
-                            float rimT = (edgeT - 0.7f) / 0.3f;
-                            float rim = rimT * 0.15f;
-                            r += rim * 0.6f; g += rim * 0.5f; b += rim * 0.8f;
+                            // 코어: 밝은 흰색-시안
+                            float coreT = muzzleDist / muzzleR;
+                            glowCol = Color.Lerp(Color.white, cyanGlow, coreT * 0.4f);
+                            glowAlpha = 1f;
+                        }
+                        else
+                        {
+                            // 외곽 글로우: 시안 페이드
+                            float outerT = (muzzleDist - muzzleR) / (glowR - muzzleR);
+                            glowCol = cyanGlow;
+                            glowAlpha = Mathf.Pow(1f - outerT, 2f) * 0.6f;
                         }
 
-                        pixels[y * size + x] = new Color(
-                            Mathf.Clamp01(r), Mathf.Clamp01(g), Mathf.Clamp01(b), aa
-                        );
+                        glowCol.a = glowAlpha;
+                        Color existing = pixels[y * size + x];
+                        pixels[y * size + x] = Color.Lerp(existing, glowCol, glowAlpha);
                     }
-                    // --- 외곽 글로우 ---
-                    else if (minDist < armWidth + glowRadius && fromCenter <= armLength + glowRadius)
+
+                    // --- 손잡이 (하단) ---
+                    float handleTop = -size * 0.02f;
+                    float handleBottom = -size * 0.18f;
+                    float handleW = size * 0.06f;
+                    float handleCenter = -size * 0.02f;
+
+                    if (ly < handleTop && ly > handleBottom && Mathf.Abs(lx - handleCenter) < handleW)
                     {
-                        float glowT = (minDist - armWidth) / glowRadius;
-                        float glowAlpha = Mathf.Pow(Mathf.Clamp01(1f - glowT), 2f) * 0.35f;
-                        float edgeFade = Mathf.Clamp01((armLength + glowRadius - fromCenter) / glowRadius);
-                        glowAlpha *= edgeFade;
-                        Color glowC = new Color(0.7f, 0.6f, 0.95f, glowAlpha);
-                        if (pixels[y * size + x].a < glowAlpha)
-                            pixels[y * size + x] = glowC;
+                        float hEdge = Mathf.Abs(lx - handleCenter) / handleW;
+                        float haa = Mathf.Clamp01((handleW - Mathf.Abs(lx - handleCenter)) * 2f);
+                        float hShade = 1f - hEdge * hEdge * 0.4f;
+                        Color hCol = Color.Lerp(handleColor * 0.7f, handleColor, hShade);
+                        hCol.a = haa;
+                        Color ex = pixels[y * size + x];
+                        if (ex.a < haa)
+                            pixels[y * size + x] = hCol;
+                    }
+
+                    // --- 조준경 (총신 상단 삼각형) ---
+                    float sightBase = size * 0.05f;
+                    float sightH = size * 0.06f;
+                    float sightX = size * 0.08f;
+
+                    if (ly > barrelWidth * 0.5f && ly < barrelWidth * 0.5f + sightH
+                        && Mathf.Abs(lx - sightX) < sightBase * (1f - (ly - barrelWidth * 0.5f) / sightH))
+                    {
+                        float saa = Mathf.Clamp01((sightBase * (1f - (ly - barrelWidth * 0.5f) / sightH) - Mathf.Abs(lx - sightX)) * 3f);
+                        Color sCol = metalBase;
+                        sCol.a = saa;
+                        Color ex2 = pixels[y * size + x];
+                        if (ex2.a < saa)
+                            pixels[y * size + x] = sCol;
                     }
                 }
             }
 
-            // --- 중앙 보석 (다이아몬드 형태) ---
-            float gemR = size * 0.1f;
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>
+        /// 타겟 십자선 프로시저럴 스프라이트 생성 (64x64)
+        /// 빨간 원형 링 + 십자선
+        /// </summary>
+        private static Sprite CreateCrosshairSprite(int size)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
+
+            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
+            float ringR = size * 0.42f;
+            float ringW = size * 0.06f;
+            float crossW = size * 0.04f;
+            float crossGap = size * 0.12f;
+            Color red = new Color(1f, 0.15f, 0.1f, 0.9f);
+
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
                     Vector2 p = new Vector2(x, y) - center;
-                    // 다이아몬드 거리 (맨해튼 거리)
-                    float diam = Mathf.Abs(p.x) + Mathf.Abs(p.y);
-                    if (diam < gemR + 2f)
+                    float dist = p.magnitude;
+
+                    // 원형 링
+                    float ringDist = Mathf.Abs(dist - ringR);
+                    if (ringDist < ringW)
                     {
-                        float gemT = diam / gemR;
-                        float aa = Mathf.Clamp01((gemR + 2f - diam) * 1f);
-
-                        // 보석 그라데이션 (밝은 중심 → 라벤더 가장자리)
-                        float shine = Mathf.Pow(1f - gemT, 2f);
-                        Color gemC = Color.Lerp(
-                            new Color(0.75f, 0.65f, 0.95f, 1f),  // 외곽 라벤더
-                            new Color(1f, 0.98f, 1f, 1f),         // 중심 화이트
-                            shine
-                        );
-
-                        // 좌상단 하이라이트 점
-                        float hlDist = Vector2.Distance(p, new Vector2(-gemR * 0.3f, gemR * 0.3f));
-                        float hl = Mathf.Pow(Mathf.Clamp01(1f - hlDist / (gemR * 0.4f)), 3f) * 0.6f;
-                        gemC.r = Mathf.Clamp01(gemC.r + hl);
-                        gemC.g = Mathf.Clamp01(gemC.g + hl);
-                        gemC.b = Mathf.Clamp01(gemC.b + hl * 0.5f);
-                        gemC.a = aa;
-
-                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], gemC, aa);
+                        float aa = Mathf.Clamp01((ringW - ringDist) * 3f);
+                        Color c = red;
+                        c.a *= aa;
+                        pixels[y * size + x] = c;
                     }
 
-                    // 보석 주변 광채
-                    float circDist = Vector2.Distance(new Vector2(x, y), center);
-                    if (circDist < gemR * 1.8f && circDist > gemR * 0.8f)
+                    // 십자선 (중앙 간격 있음)
+                    if (dist > crossGap && dist < ringR + ringW)
                     {
-                        float ringT = Mathf.Abs(circDist - gemR * 1.2f) / (gemR * 0.6f);
-                        float ringA = Mathf.Pow(Mathf.Clamp01(1f - ringT), 2f) * 0.2f;
-                        Color ringC = new Color(0.85f, 0.8f, 1f, ringA);
-                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], ringC, ringA);
+                        bool isHLine = Mathf.Abs(p.y) < crossW;
+                        bool isVLine = Mathf.Abs(p.x) < crossW;
+                        if (isHLine || isVLine)
+                        {
+                            float lineEdge = isHLine ? Mathf.Abs(p.y) / crossW : Mathf.Abs(p.x) / crossW;
+                            float laa = Mathf.Clamp01((1f - lineEdge) * 2f) * 0.85f;
+                            Color lc = red;
+                            lc.a = laa;
+                            Color ex = pixels[y * size + x];
+                            pixels[y * size + x] = new Color(
+                                Mathf.Max(ex.r, lc.r * laa),
+                                Mathf.Max(ex.g, lc.g * laa),
+                                Mathf.Max(ex.b, lc.b * laa),
+                                Mathf.Max(ex.a, laa)
+                            );
+                        }
                     }
                 }
             }
@@ -381,220 +447,471 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // X블록 생성
-        // 매칭 시스템이 링 매칭을 감지하면 이 메서드를 호출하여 X블록을 만듦
+        // 타겟 레이져 생성
+        // 매칭 시스템이 링 매칭을 감지하면 이 메서드를 호출하여 타겟 레이져를 만듦
         // ============================================================
 
         /// <summary>
-        /// 지정된 블록을 X블록으로 변환하는 메서드.
-        /// 매칭 시스템이 "여기에 X블록을 만들어!" 하고 호출함.
-        /// 기존 블록의 데이터를 X블록 데이터로 교체하는 방식.
-        /// 비유: 일반 블록에게 "X" 모자를 씌워서 특수 블록으로 승격시키는 것.
+        /// 지정된 블록을 타겟 레이져로 변환하는 메서드.
         /// </summary>
-        /// <param name="block">X블록으로 변환할 대상 블록 (보통 링 매칭의 중앙 블록)</param>
-        /// <param name="gemType">X블록의 색상. 발동 시 이 색상의 블록들이 전부 파괴됨.</param>
         public void CreateXBlock(HexBlock block, GemType gemType)
         {
             if (block == null) return;
-            // 새로운 블록 데이터를 만들어서 specialType을 XBlock으로 설정
             BlockData xData = new BlockData(gemType);
             xData.specialType = SpecialBlockType.XBlock;
             block.SetBlockData(xData);
-            Debug.Log($"[XBlockSystem] Created X-block at {block.Coord}, gemType={gemType}");
+            Debug.Log($"[타겟 레이져] 생성 완료: {block.Coord}, gemType={gemType}");
         }
 
         // ============================================================
-        // X블록 발동 (핵심 로직)
-        // X블록이 매칭에 포함되면 이 메서드가 호출되어 발동 프로세스 시작
+        // 타겟 레이져 발동 (핵심 로직)
         // ============================================================
 
         /// <summary>
-        /// X블록 발동을 시작하는 진입점 메서드.
-        /// 유효성 검사 후 실제 발동 코루틴(XBlockCoroutine)을 시작.
-        /// 비유: 폭탄의 뇌관을 당기는 동작. 당긴 후에는 XBlockCoroutine이 알아서 폭발 처리.
+        /// 타겟 레이져 발동 시작 진입점.
         /// </summary>
-        /// <param name="xBlock">발동할 X블록</param>
         public void ActivateXBlock(HexBlock xBlock)
         {
             if (xBlock == null) return;
-            // X블록이 아닌 블록이 실수로 여기에 오면 무시
             if (xBlock.Data == null || xBlock.Data.specialType != SpecialBlockType.XBlock)
                 return;
-            Debug.Log($"[XBlockSystem] Activating X-block at {xBlock.Coord}");
+            Debug.Log($"[타겟 레이져] 발동 시작: {xBlock.Coord}");
             StartCoroutine(XBlockCoroutine(xBlock));
         }
 
         /// <summary>
-        /// X블록 발동의 전체 과정을 처리하는 메인 코루틴.
-        /// 이 하나의 메서드 안에서 사전 애니메이션 → 대상 탐색 → 이펙트 재생 → 순차 파괴 → 점수 계산까지 모두 수행.
-        ///
-        /// 전체 흐름:
-        /// 1. 사전 압축 애니메이션 (블록이 움찔하며 힘을 모으는 느낌)
-        /// 2. 히트스톱 + 줌펀치 (게임판 전체가 잠깐 멈추며 임팩트 강조)
-        /// 3. X블록 자신의 데이터를 지움 (자기 자신은 사라짐)
-        /// 4. 게임판을 스캔하여 같은 색 블록들을 모두 수집
-        /// 5. 중심부 X 이펙트 + 파동 이펙트 + 화면 흔들림
-        /// 6. 거리순으로 정렬 후 파도처럼 순차 파괴
-        /// 7. 점수 계산 및 미션 시스템에 알림
-        ///
-        /// 비유: 폭탄이 터지는 전체 시나리오. 카운트다운(압축) → 폭발(이펙트) → 파편(블록 파괴) → 피해 보고(점수)
+        /// 타겟 레이져 발동의 전체 과정을 처리하는 메인 코루틴.
+        /// 흐름: PreFire → HitStop → ZoomPunch → ClearData → 타겟 수집 →
+        ///       타겟 마킹(십자선) → 레이져 건 등장 → 순차 레이져 발사 → 자폭 → 점수
         /// </summary>
         private IEnumerator XBlockCoroutine(HexBlock xBlock)
         {
-            // --- 발동 시작: 카운터 증가 및 활성 목록에 등록 ---
             activeXBlockCount++;
             activeBlocks.Add(xBlock);
 
-            // X블록의 위치, 색상 정보를 미리 저장 (나중에 블록 데이터가 지워져도 사용하기 위해)
-            HexCoord xCoord = xBlock.Coord;            // X블록의 그리드 좌표
-            Vector3 xWorldPos = xBlock.transform.position; // X블록의 화면상 위치
-            GemType targetGemType = xBlock.Data.gemType;   // 파괴할 대상 색상
-            Color xColor = GemColors.GetColor(targetGemType); // 색상의 실제 RGB 값
+            HexCoord xCoord = xBlock.Coord;
+            Vector3 xWorldPos = xBlock.transform.position;
+            GemType targetGemType = xBlock.Data.gemType;
+            Color xColor = GemColors.GetColor(targetGemType);
 
-            Debug.Log($"[XBlockSystem] === X-BLOCK ACTIVATED === Coord={xCoord}, TargetColor={targetGemType}");
+            Debug.Log($"[타겟 레이져] === 발동 === Coord={xCoord}, 타겟색상={targetGemType}");
 
             // --- 1단계: 사전 압축 애니메이션 ---
-            // 블록이 "쿵" 하고 작아졌다가 커지는 모션. 발동 전 긴장감을 줌.
             yield return StartCoroutine(PreFireCompression(xBlock));
 
-            // --- 2단계: 히트스톱 (화면 일시 정지) ---
-            // 게임 시간을 잠깐 멈춰서 "강한 충격" 느낌을 줌 (격투게임의 히트스톱과 같은 원리)
+            // --- 2단계: 히트스톱 + 줌 펀치 ---
             StartCoroutine(HitStop(VisualConstants.HitStopDurationMedium));
-
-            // --- 3단계: 줌 펀치 (게임판 확대→축소) ---
-            // 게임판 전체가 살짝 커졌다가 돌아오는 효과. 충격파 느낌.
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
-            // --- 4단계: X블록 자신의 데이터 삭제 ---
-            // X블록 자체는 사라지고, 이제부터 같은 색 블록들을 파괴하는 단계
+            // --- 3단계: 자신 데이터 삭제 ---
             xBlock.ClearData();
 
-            // --- 5단계: 게임판에서 같은 색 블록 전부 수집 ---
-            // 비유: 빨간 X블록이 터지면, 게임판 전체를 훑으며 빨간 블록을 모두 "표적 목록"에 넣음
-            List<HexBlock> targets = new List<HexBlock>();
+            // --- 4단계: 같은 색 타겟 수집 (블록 + 고블린 통합) ---
+            // 통합 타겟 리스트: (월드좌표, HexBlock or null, GoblinData or null)
+            List<(Vector3 worldPos, HexBlock block, GoblinData goblin)> unifiedTargets =
+                new List<(Vector3, HexBlock, GoblinData)>();
+
+            // 4a. 같은 색 블록 타겟 수집
             if (hexGrid != null)
             {
                 foreach (var block in hexGrid.GetAllBlocks())
                 {
                     if (block == null || block.Data == null) continue;
-                    if (block.Data.gemType == GemType.None) continue; // 빈 블록은 무시
-                    if (block == xBlock) continue; // 자기 자신은 제외
-
-                    // 같은 색상이면 표적에 추가
+                    if (block.Data.gemType == GemType.None) continue;
+                    if (block == xBlock) continue;
                     if (block.Data.gemType == targetGemType)
-                        targets.Add(block);
+                        unifiedTargets.Add((block.transform.position, block, null));
                 }
             }
 
-            Debug.Log($"[XBlockSystem] Targets: {targets.Count} same-color blocks ({targetGemType})");
-
-            // --- 6단계: 화려한 이펙트 재생 ---
-            // X자 중심 이펙트 (플래시 + X자 빔 + 충격파 링 + 스파크 다발)
-            StartCoroutine(XCenterEffect(xWorldPos, xColor));
-
-            // 원형 파동 이펙트 (중심에서 바깥으로 퍼지는 동심원)
-            StartCoroutine(XWaveExpand(xWorldPos, xColor));
-
-            // 화면 흔들림 (게임판 전체가 덜덜 떨림)
-            StartCoroutine(ScreenShake(VisualConstants.ShakeMediumIntensity, VisualConstants.ShakeMediumDuration));
-
-            // 이펙트가 펼쳐질 시간을 살짝 대기
-            yield return new WaitForSeconds(0.15f);
-
-            // --- 7단계: 거리순 정렬 ---
-            // 중심에서 가까운 블록부터 파괴하여 "파도가 퍼져나가는" 느낌을 줌
-            targets.Sort((a, b) =>
+            // 4b. 살아있는 고블린 타겟 수집
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                float distA = Vector3.Distance(a.transform.position, xWorldPos);
-                float distB = Vector3.Distance(b.transform.position, xWorldPos);
+                var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
+                foreach (var goblin in aliveGoblins)
+                {
+                    if (goblin.visualObject != null)
+                        unifiedTargets.Add((goblin.visualObject.transform.position, null, goblin));
+                }
+            }
+
+            int blockTargetCount = unifiedTargets.FindAll(t => t.block != null).Count;
+            int goblinTargetCount = unifiedTargets.FindAll(t => t.goblin != null).Count;
+            Debug.Log($"[타겟 레이져] 타겟 수: 블록={blockTargetCount}({targetGemType}), 고블린={goblinTargetCount}");
+
+            // 거리순 정렬 (가까운 것부터 발사)
+            unifiedTargets.Sort((a, b) =>
+            {
+                float distA = Vector3.Distance(a.worldPos, xWorldPos);
+                float distB = Vector3.Distance(b.worldPos, xWorldPos);
                 return distA.CompareTo(distB);
             });
 
-            // --- 8단계: 파도처럼 순차 파괴 ---
-            List<Coroutine> destroyCoroutines = new List<Coroutine>(); // 파괴 애니메이션 추적용
-            int blockScoreSum = 0;      // 파괴된 블록들의 기본 점수 합계
-            int basicBlockCount = 0;    // 기본 블록(일반 젬) 카운트
-            for (int i = 0; i < targets.Count; i++)
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+
+            // --- 5단계: 타겟 마킹 (십자선 표시) ---
+            List<GameObject> crosshairs = new List<GameObject>();
+            for (int i = 0; i < unifiedTargets.Count; i++)
             {
-                HexBlock target = targets[i];
-                if (target == null) continue;
-                if (target.Data == null || target.Data.gemType == GemType.None) continue;
+                var ut = unifiedTargets[i];
+                // 블록 타겟이면 FixedBlock 제외
+                if (ut.block != null && ut.block.Data.specialType == SpecialBlockType.FixedBlock) continue;
 
-                // FixedBlock(고정 블록)은 어떤 공격으로도 파괴 불가 - 건너뜀
-                if (target.Data.specialType == SpecialBlockType.FixedBlock)
-                    continue;
+                // 십자선 아이콘 생성
+                GameObject ch = new GameObject($"LaserCrosshair_{i}");
+                ch.transform.SetParent(parent, false);
+                ch.transform.position = ut.worldPos;
 
-                // 연쇄 발동 가능한 특수 블록(드릴, 폭탄 등)은 바로 파괴하지 않고 "대기열"에 넣음
-                // TimeBomb, MoveBlock, FixedBlock은 발동 로직이 없으므로 일반 블록처럼 파괴
-                if (IsChainActivatable(target.Data.specialType))
+                var chImg = ch.AddComponent<UnityEngine.UI.Image>();
+                chImg.sprite = GetCrosshairSprite();
+                chImg.raycastTarget = false;
+                // 고블린 타겟은 붉은색 더 강하게
+                chImg.color = ut.goblin != null
+                    ? new Color(1f, 0f, 0f, 0f)
+                    : new Color(1f, 0.2f, 0.1f, 0f);
+
+                RectTransform chRt = ch.GetComponent<RectTransform>();
+                chRt.sizeDelta = new Vector2(50f, 50f);
+                ch.transform.localScale = Vector3.zero;
+
+                crosshairs.Add(ch);
+            }
+
+            // 십자선 등장 애니메이션 (모두 동시에 0→1 스케일, 0.15초)
+            {
+                float dur = 0.15f;
+                float elapsed = 0f;
+                while (elapsed < dur)
                 {
-                    Debug.Log($"[XBlockSystem] Special block at {target.Coord} type={target.Data.specialType} -> queued");
-                    if (!pendingSpecialBlocks.Contains(target))
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / dur);
+                    float scale = VisualConstants.EaseOutCubic(t);
+                    float alpha = t;
+                    foreach (var ch in crosshairs)
                     {
-                        pendingSpecialBlocks.Add(target);
-                        target.SetPendingActivation();  // "곧 발동됩니다" 상태 표시
-                        target.StartWarningBlink(10f);  // 깜빡이는 경고 애니메이션 시작
+                        if (ch == null) continue;
+                        ch.transform.localScale = Vector3.one * scale;
+                        var img = ch.GetComponent<UnityEngine.UI.Image>();
+                        if (img != null)
+                        {
+                            Color c = img.color;
+                            img.color = new Color(c.r, c.g, c.b, alpha * 0.9f);
+                        }
                     }
+                    yield return null;
                 }
-                else
-                {
-                    // 일반 블록이면 점수 계산 후 파괴 애니메이션 시작
-                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+            }
 
-                    // 기본 젬(GemType 1~5: Red, Blue, Green, Yellow, Purple) 카운트
-                    if ((int)target.Data.gemType >= 1 && (int)target.Data.gemType <= 5)
+            // 짧은 유지 (0.1초)
+            yield return new WaitForSeconds(0.1f);
+
+            // --- 6단계: 레이져 건 등장 ---
+            GameObject laserGun = new GameObject("LaserGunIcon");
+            laserGun.transform.SetParent(parent, false);
+            laserGun.transform.position = xWorldPos;
+
+            var gunImg = laserGun.AddComponent<UnityEngine.UI.Image>();
+            gunImg.sprite = GetXBlockIconSprite();
+            gunImg.raycastTarget = false;
+            gunImg.color = Color.white;
+
+            RectTransform gunRt = laserGun.GetComponent<RectTransform>();
+            float gunSize = 75f;
+            gunRt.sizeDelta = new Vector2(gunSize, gunSize);
+            laserGun.transform.localScale = Vector3.zero;
+
+            // 레이져 건 등장 애니메이션 (0→1.5 스케일, 0.1초)
+            {
+                float dur = 0.1f;
+                float elapsed = 0f;
+                while (elapsed < dur)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / dur);
+                    float scale = VisualConstants.EaseOutCubic(t) * 1.5f;
+                    laserGun.transform.localScale = Vector3.one * scale;
+                    yield return null;
+                }
+                laserGun.transform.localScale = Vector3.one * 1.5f;
+            }
+
+            // --- 7단계: 순차 레이져 발사 루프 (블록 + 고블린 통합) ---
+            int blockScoreSum = 0;
+            int crosshairIdx = 0;
+            for (int i = 0; i < unifiedTargets.Count; i++)
+            {
+                var ut = unifiedTargets[i];
+
+                // === 블록 타겟 처리 ===
+                if (ut.block != null)
+                {
+                    HexBlock target = ut.block;
+                    if (target.Data == null || target.Data.gemType == GemType.None)
                     {
-                        basicBlockCount++;
+                        if (crosshairIdx < crosshairs.Count && crosshairs[crosshairIdx] != null)
+                            Destroy(crosshairs[crosshairIdx]);
+                        crosshairIdx++;
+                        continue;
+                    }
+                    if (target.Data.specialType == SpecialBlockType.FixedBlock)
+                    {
+                        continue; // FixedBlock은 십자선도 안 만듦
                     }
 
-                    // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
+                    // 연쇄 발동 가능한 특수 블록은 pending에 등록
+                    if (IsChainActivatable(target.Data.specialType))
+                    {
+                        if (!pendingSpecialBlocks.Contains(target))
+                        {
+                            pendingSpecialBlocks.Add(target);
+                            target.SetPendingActivation();
+                            target.StartWarningBlink(10f);
+                        }
+                        if (crosshairIdx < crosshairs.Count && crosshairs[crosshairIdx] != null)
+                            Destroy(crosshairs[crosshairIdx]);
+                        crosshairIdx++;
+                        continue;
+                    }
+
+                    Vector3 targetPos = target.transform.position;
+
+                    // 레이져 발사 (블록)
+                    yield return StartCoroutine(FireLaserBeam(laserGun, xWorldPos, targetPos, parent, i, xColor));
+
+                    // 타겟 히트: 흰색 플래시 + 블록 즉시 파괴
+                    StartCoroutine(DestroyFlashOverlay(target));
+
+                    // 미션 카운팅
                     if (target.Data.gemType != GemType.None)
                         GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
 
-                    // 적군 점수 처리 (가시, 체인, 회색 블록 등의 방해 요소 제거 보너스)
+                    // 적군 점수 처리
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
                     if (sm != null)
                     {
-                        // 가시(Thorn) 기생 블록 제거 시 적군 점수
                         if (target.Data.hasThorn)
                             sm.AddEnemyScore(EnemyType.ThornParasite, RemovalMethod.SpecialAdvanced,
                                 RemovalCondition.Normal, target.transform.position);
-                        // 체인(Chain) 속박 블록 제거 시 적군 점수
                         if (target.Data.hasChain)
                             sm.AddEnemyScore(EnemyType.ChainAnchor, RemovalMethod.SpecialAdvanced,
                                 RemovalCondition.Normal, target.transform.position);
-                        // 회색(Gray) 블록 제거 시 적군 점수
                         if (target.Data.gemType == GemType.Gray)
                             sm.AddEnemyScore(EnemyType.Chromophage, RemovalMethod.SpecialAdvanced,
                                 RemovalCondition.Normal, target.transform.position);
                     }
 
-                    // 블록 파괴 애니메이션 시작 (X 회전하며 찌그러지는 이펙트)
-                    Color blockColor = GemColors.GetColor(target.Data.gemType);
-                    destroyCoroutines.Add(StartCoroutine(DestroyBlockWithX(target, blockColor, xWorldPos)));
+                    // 점수 합산
+                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
+
+                    // 고블린 데미지: 해당 좌표 + 인접 6칸 (좌표별 누적 일괄 적용)
+                    if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                    {
+                        var damageMap = new Dictionary<HexCoord, int>();
+                        damageMap[target.Coord] = 1;
+                        foreach (var neighbor in target.Coord.GetAllNeighbors())
+                        {
+                            if (damageMap.ContainsKey(neighbor))
+                                damageMap[neighbor] += 1;
+                            else
+                                damageMap[neighbor] = 1;
+                        }
+                        GoblinSystem.Instance.ApplyBatchDamage(damageMap);
+                    }
+
+                    // 블록 즉시 파괴 (ClearData)
+                    target.ClearData();
+                }
+                // === 고블린 타겟 처리 ===
+                else if (ut.goblin != null)
+                {
+                    GoblinData goblin = ut.goblin;
+                    if (!goblin.isAlive || goblin.visualObject == null)
+                    {
+                        if (crosshairIdx < crosshairs.Count && crosshairs[crosshairIdx] != null)
+                            Destroy(crosshairs[crosshairIdx]);
+                        crosshairIdx++;
+                        continue;
+                    }
+
+                    // 고블린의 현재 위치 (이동했을 수 있으므로 실시간 갱신)
+                    Vector3 targetPos = goblin.visualObject.transform.position;
+
+                    // 레이져 발사 (고블린)
+                    yield return StartCoroutine(FireLaserBeam(laserGun, xWorldPos, targetPos, parent, i, xColor));
+
+                    // 고블린 데미지 1
+                    GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, 1);
                 }
 
-                // 다음 블록 파괴 전 약간 대기 (파도 느낌)
-                yield return new WaitForSeconds(waveDelay);
+                // 십자선 제거
+                if (crosshairIdx < crosshairs.Count && crosshairs[crosshairIdx] != null)
+                    Destroy(crosshairs[crosshairIdx]);
+                crosshairIdx++;
+
+                // 타겟 간 간격 (초고속 연사)
+                yield return new WaitForSeconds(0.005f);
             }
 
-            // --- 9단계: 모든 파괴 애니메이션 완료 대기 ---
-            // 모든 블록의 ClearData()가 확실히 호출되도록 기다림
-            foreach (var co in destroyCoroutines)
-                yield return co;
+            // --- 8단계: 레이져 건 자폭 ---
+            {
+                // 흰색 플래시
+                if (gunImg != null) gunImg.color = Color.white;
+                yield return new WaitForSeconds(0.05f);
 
-            // --- 10단계: 점수 계산 ---
-            // 기본 점수 800점 + 파괴된 블록들의 티어별 점수 합산
+                // 파편 산개
+                int debrisCount = 8;
+                for (int d = 0; d < debrisCount; d++)
+                {
+                    float angle = d * (360f / debrisCount) + Random.Range(-10f, 10f);
+                    float rad = angle * Mathf.Deg2Rad;
+                    StartCoroutine(LaserDebris(xWorldPos, new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)), xColor));
+                }
+
+                // 스케일 축소 → 소멸 (0.15초)
+                float dur = 0.15f;
+                float elapsed = 0f;
+                while (elapsed < dur)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / dur);
+                    float scale = 1.5f * (1f - VisualConstants.EaseInQuad(t));
+                    laserGun.transform.localScale = Vector3.one * scale;
+                    if (gunImg != null)
+                        gunImg.color = new Color(1f, 1f, 1f, 1f - t);
+                    yield return null;
+                }
+                Destroy(laserGun);
+            }
+
+            // 남은 십자선 정리
+            foreach (var ch in crosshairs)
+                if (ch != null) Destroy(ch);
+
+            // 화면 흔들림
+            StartCoroutine(ScreenShake(VisualConstants.ShakeMediumIntensity * 0.5f, VisualConstants.ShakeMediumDuration * 0.5f));
+
+            // --- 9단계: 점수 계산 ---
             int totalScore = 800 + blockScoreSum;
-            Debug.Log($"[XBlockSystem] === X-BLOCK COMPLETE === Score={totalScore} (base:800 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
+            Debug.Log($"[타겟 레이져] === 완료 === 점수={totalScore} (기본:800 + 블록:{blockScoreSum}), 타겟={unifiedTargets.Count}");
 
-            // 미션 카운팅은 파괴 루프에서 OnSingleGemDestroyedForMission()으로 개별 처리
-
-
-            // --- 12단계: 완료 이벤트 발생 및 상태 정리 ---
-            OnXBlockComplete?.Invoke(totalScore); // 외부 시스템에 "끝났어요, 점수는 이만큼!" 알림
+            // --- 10단계: 완료 이벤트 ---
+            OnXBlockComplete?.Invoke(totalScore);
             activeBlocks.Remove(xBlock);
             activeXBlockCount--;
+        }
+
+        /// <summary>
+        /// 레이져 건 자폭 시 파편 하나의 애니메이션.
+        /// </summary>
+        private IEnumerator LaserDebris(Vector3 origin, Vector2 direction, Color color)
+        {
+            Transform par = effectParent != null ? effectParent : hexGrid.transform;
+
+            GameObject debris = new GameObject("LaserDebris");
+            debris.transform.SetParent(par, false);
+            debris.transform.position = origin;
+
+            var img = debris.AddComponent<UnityEngine.UI.Image>();
+            img.raycastTarget = false;
+            img.color = new Color(color.r * 0.8f + 0.2f, color.g * 0.8f + 0.2f, color.b * 0.8f + 0.2f, 1f);
+
+            RectTransform rt = debris.GetComponent<RectTransform>();
+            float sz = Random.Range(4f, 8f);
+            rt.sizeDelta = new Vector2(sz, sz);
+
+            float speed = Random.Range(120f, 220f);
+            Vector2 vel = direction * speed;
+            float lifetime = Random.Range(0.2f, 0.35f);
+            float elapsed = 0f;
+
+            while (elapsed < lifetime)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / lifetime;
+                debris.transform.position += new Vector3(vel.x, vel.y, 0) * Time.deltaTime;
+                vel *= 0.95f;
+                img.color = new Color(img.color.r, img.color.g, img.color.b, 1f - t);
+                float sc = sz * (1f - t * 0.5f);
+                rt.sizeDelta = new Vector2(sc, sc);
+                yield return null;
+            }
+
+            Destroy(debris);
+        }
+
+        /// <summary>
+        /// 레이져 빔 발사 공통 코루틴 (블록/고블린 공용).
+        /// 총구 회전 → 빔 즉시 표시 → 빔 후퇴(뒤→앞) 순서로 처리.
+        /// </summary>
+        private IEnumerator FireLaserBeam(GameObject laserGun, Vector3 gunPos, Vector3 targetPos,
+            Transform parent, int index, Color beamColor)
+        {
+            // 총구 즉시 회전
+            {
+                Vector3 dir = targetPos - gunPos;
+                float targetAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 45f;
+                laserGun.transform.localRotation = Quaternion.Euler(0, 0, targetAngle);
+            }
+
+            // 빔 방향/길이 계산
+            Vector3 beamDir = targetPos - gunPos;
+            float beamAngle = Mathf.Atan2(beamDir.y, beamDir.x) * Mathf.Rad2Deg;
+            float beamLength = Vector3.Distance(gunPos, targetPos);
+
+            // 코어 빔 (밝은 시안, 두꺼운 라인)
+            GameObject beam = new GameObject($"LaserBeam_{index}");
+            beam.transform.SetParent(parent, false);
+            beam.transform.position = gunPos;
+            beam.transform.localRotation = Quaternion.Euler(0, 0, beamAngle);
+
+            var beamImg = beam.AddComponent<UnityEngine.UI.Image>();
+            beamImg.raycastTarget = false;
+            beamImg.color = new Color(0.7f, 1f, 1f, 1f);
+
+            RectTransform beamRt = beam.GetComponent<RectTransform>();
+            beamRt.pivot = new Vector2(0f, 0.5f);
+            beamRt.sizeDelta = new Vector2(beamLength, 10f);
+
+            // 글로우 빔 (넓고 투명한 외곽 글로우)
+            GameObject beamGlow = new GameObject($"LaserBeamGlow_{index}");
+            beamGlow.transform.SetParent(parent, false);
+            beamGlow.transform.position = gunPos;
+            beamGlow.transform.localRotation = Quaternion.Euler(0, 0, beamAngle);
+
+            var glowImg = beamGlow.AddComponent<UnityEngine.UI.Image>();
+            glowImg.raycastTarget = false;
+            glowImg.color = new Color(0f, 1f, 1f, 0.4f);
+
+            RectTransform glowRt = beamGlow.GetComponent<RectTransform>();
+            glowRt.pivot = new Vector2(0f, 0.5f);
+            glowRt.sizeDelta = new Vector2(beamLength, 24f);
+
+            // 빔 후퇴: 뒤(총구)에서 앞(타겟)으로 빠르게 줄어듦
+            {
+                float retractDur = 0.025f;
+                float elapsed = 0f;
+                while (elapsed < retractDur)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / retractDur);
+                    float eased = VisualConstants.EaseInQuad(t);
+
+                    Vector3 newStart = Vector3.Lerp(gunPos, targetPos, eased);
+                    beam.transform.position = newStart;
+                    beamGlow.transform.position = newStart;
+
+                    float remainLen = beamLength * (1f - eased);
+                    beamRt.sizeDelta = new Vector2(remainLen, 10f * (1f - eased * 0.5f));
+                    glowRt.sizeDelta = new Vector2(remainLen, 24f * (1f - eased * 0.5f));
+
+                    beamImg.color = new Color(0.7f, 1f, 1f, 1f - eased * 0.7f);
+                    glowImg.color = new Color(0f, 1f, 1f, 0.4f * (1f - eased));
+
+                    yield return null;
+                }
+                Destroy(beam);
+                Destroy(beamGlow);
+            }
         }
 
         /// <summary>
@@ -613,422 +930,12 @@ namespace JewelsHexaPuzzle.Core
 
         // ============================================================
         // 이펙트 (시각 효과) 메서드들
-        // X블록 발동 시 화면에 표시되는 화려한 연출을 담당
+        // 타겟 레이져 발동 시 화면에 표시되는 연출을 담당
         // ============================================================
-
-        /// <summary>
-        /// X블록 중앙에서 재생되는 메인 이펙트 코루틴.
-        /// X자 형태의 밝은 빔 + 중앙 플래시 + 충격파 링 + 불꽃 다발을
-        /// 동시에 재생하여 강렬한 발동 연출을 만듦.
-        ///
-        /// 구성 요소:
-        /// - 블룸 레이어: 뒤쪽에 깔리는 부드러운 빛 번짐
-        /// - 중앙 플래시: 밝은 빛이 확장되며 사라짐
-        /// - X자 라인 2개: 45도, -45도로 교차하는 빔
-        /// - 충격파 링: 원형으로 퍼지는 파동
-        /// - 스파크 다발: 대각선 방향으로 튀는 불꽃들
-        ///
-        /// 비유: 불꽃놀이에서 X자 모양으로 폭죽이 터지는 장면.
-        /// </summary>
-        /// <param name="pos">이펙트가 재생될 위치 (X블록이 있던 자리)</param>
-        /// <param name="color">이펙트의 기본 색상 (X블록의 젬 색상)</param>
-        private IEnumerator XCenterEffect(Vector3 pos, Color color)
-        {
-            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
-
-            // [배경] 블룸 레이어 - 메인 플래시 뒤에 깔리는 부드러운 빛 번짐
-            StartCoroutine(BloomLayer(pos, color, VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
-
-            // [1] 밝은 중앙 플래시 - 발동 순간 화면이 번쩍하는 효과
-            GameObject flash = new GameObject("XBlockFlash");
-            flash.transform.SetParent(parent, false);
-            flash.transform.position = pos;
-
-            var flashImg = flash.AddComponent<UnityEngine.UI.Image>();
-            flashImg.sprite = HexBlock.GetHexFlashSprite();
-            flashImg.raycastTarget = false; // 터치 입력을 가로채지 않도록
-            flashImg.color = new Color(color.r, color.g, color.b, 1f);
-
-            RectTransform flashRt = flash.GetComponent<RectTransform>();
-            float initSize = VisualConstants.FlashInitialSize;
-            flashRt.sizeDelta = new Vector2(initSize, initSize);
-
-            // [2] X자 형태의 두 줄 (45도 + -45도 = X자 교차)
-            GameObject line1 = CreateXLine(pos, parent, 45f, color);  // / 방향 빔
-            GameObject line2 = CreateXLine(pos, parent, -45f, color); // \ 방향 빔
-
-            // [3] 충격파 링 - 원형으로 퍼지는 파동 (물에 돌을 던지면 퍼지는 동심원 같은 것)
-            GameObject ring = new GameObject("XBlockRing");
-            ring.transform.SetParent(parent, false);
-            ring.transform.position = pos;
-
-            var ringImg = ring.AddComponent<UnityEngine.UI.Image>();
-            ringImg.sprite = HexBlock.GetHexFlashSprite();
-            ringImg.raycastTarget = false;
-            Color darkColor = VisualConstants.Darken(color); // 약간 어두운 색으로 차별화
-            ringImg.color = new Color(darkColor.r, darkColor.g, darkColor.b, 0.7f);
-
-            RectTransform ringRt = ring.GetComponent<RectTransform>();
-            float ringInitSize = VisualConstants.WaveLargeInitialSize;
-            ringRt.sizeDelta = new Vector2(ringInitSize, ringInitSize);
-
-            // [4] 스파크(불꽃) 다발 - 대각선 방향으로 튀는 작은 불꽃들
-            // 연쇄(캐스케이드)가 깊어질수록 불꽃이 더 많아짐 (연쇄 보너스 시각 피드백)
-            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
-            int totalSparks = Mathf.RoundToInt(sparkCount * cascadeMult);
-            for (int i = 0; i < totalSparks; i++)
-            {
-                Color sparkColor = VisualConstants.Brighten(color); // 밝은 색 스파크
-                sparkColor.a = 1f;
-                StartCoroutine(XSpark(pos, sparkColor));
-            }
-
-            // --- 애니메이션 루프: 모든 이펙트가 확장되며 사라짐 ---
-            float duration = VisualConstants.FlashDuration;
-            float elapsed = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration); // 0→1 진행률
-                float eased = VisualConstants.EaseOutCubic(t); // 빠르게 시작, 느리게 끝나는 이징
-
-                // 플래시: 점점 커지면서 투명해짐
-                float flashScale = 1f + eased * (VisualConstants.FlashExpand - 1f);
-                flashRt.sizeDelta = new Vector2(initSize * flashScale, initSize * flashScale);
-                flashImg.color = new Color(color.r, color.g, color.b, (1f - t) * 0.9f);
-
-                // X 라인: 길어지면서 얇아지고 투명해짐 (0px → 320px)
-                AnimateXLine(line1, eased, 45f);
-                AnimateXLine(line2, eased, -45f);
-
-                // 충격파 링: 커지면서 사라짐
-                float ringScale = 1f + eased * (VisualConstants.WaveLargeExpand - 1f);
-                ringRt.sizeDelta = new Vector2(ringInitSize * ringScale, ringInitSize * ringScale);
-                ringImg.color = new Color(darkColor.r, darkColor.g, darkColor.b, (1f - t) * 0.5f);
-
-                yield return null; // 다음 프레임까지 대기
-            }
-
-            // 모든 이펙트 오브젝트 삭제 (깔끔한 정리)
-            Destroy(flash);
-            Destroy(line1);
-            Destroy(line2);
-            Destroy(ring);
-        }
-
-        /// <summary>
-        /// X자의 한쪽 팔(빔 라인)을 생성하는 헬퍼 메서드.
-        /// 가느다란 직사각형 이미지를 원하는 각도로 회전시켜 빔을 만듦.
-        /// 비유: 레이저 포인터 빔을 특정 각도로 쏘는 것.
-        /// </summary>
-        /// <param name="pos">빔의 시작 위치 (X블록 중앙)</param>
-        /// <param name="parent">부모 Transform (이펙트 레이어)</param>
-        /// <param name="angle">회전 각도 (45도 또는 -45도)</param>
-        /// <param name="color">빔 색상</param>
-        /// <returns>생성된 빔 오브젝트 (나중에 애니메이션 및 삭제용)</returns>
-        private GameObject CreateXLine(Vector3 pos, Transform parent, float angle, Color color)
-        {
-            GameObject line = new GameObject("XLine");
-            line.transform.SetParent(parent, false);
-            line.transform.position = pos;
-            line.transform.localRotation = Quaternion.Euler(0, 0, angle); // Z축 기준 회전
-
-            var img = line.AddComponent<UnityEngine.UI.Image>();
-            img.raycastTarget = false;
-
-            Color lineColor = VisualConstants.Brighten(color); // 밝은 색으로
-            lineColor.a = 0.9f; // 약간 반투명
-            img.color = lineColor;
-
-            RectTransform rt = line.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(5f, 20f); // 초기: 폭 5px, 길이 20px (짧은 상태에서 시작)
-
-            return line;
-        }
-
-        /// <summary>
-        /// X자 빔 라인의 매 프레임 애니메이션을 처리.
-        /// 시간이 지남에 따라 빔이 길어지고 얇아지며 투명해짐.
-        /// 비유: 검을 휘두를 때 잔상이 늘어나다가 사라지는 느낌.
-        /// </summary>
-        /// <param name="line">애니메이션할 빔 오브젝트</param>
-        /// <param name="easedT">이징이 적용된 진행률 (0=시작, 1=끝)</param>
-        /// <param name="angle">빔 각도 (사용하지 않지만 시그니처 유지)</param>
-        private void AnimateXLine(GameObject line, float easedT, float angle)
-        {
-            if (line == null) return;
-            var rt = line.GetComponent<RectTransform>();
-            var img = line.GetComponent<UnityEngine.UI.Image>();
-            if (rt == null || img == null) return;
-
-            // 빔이 20px에서 320px까지 늘어남 (EaseOutCubic으로 빠르게 뻗어나감)
-            float length = 20f + easedT * 300f;
-            // 동시에 폭은 5px에서 2.5px로 줄어듦 (날카로워지는 느낌)
-            float width = 5f * (1f - easedT * 0.5f);
-            rt.sizeDelta = new Vector2(width, length);
-
-            // 점점 투명해짐
-            Color c = img.color;
-            c.a = (1f - easedT) * 0.8f;
-            img.color = c;
-        }
-
-        /// <summary>
-        /// X 웨이브(파동) 확산 이펙트 코루틴.
-        /// X블록 중심에서 바깥으로 큰 원형 파동이 퍼져나가는 효과.
-        /// 비유: 호수에 큰 돌을 던졌을 때 퍼져나가는 물결.
-        /// XCenterEffect의 충격파 링보다 더 크고 느리게 퍼짐.
-        /// </summary>
-        /// <param name="center">파동의 중심점</param>
-        /// <param name="color">파동 색상</param>
-        private IEnumerator XWaveExpand(Vector3 center, Color color)
-        {
-            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
-
-            float initSize = VisualConstants.WaveLargeInitialSize;
-
-            // 원형 파동 오브젝트 생성
-            GameObject wave = new GameObject("XWaveExpand");
-            wave.transform.SetParent(parent, false);
-            wave.transform.position = center;
-
-            var img = wave.AddComponent<UnityEngine.UI.Image>();
-            img.raycastTarget = false;
-            img.color = new Color(color.r, color.g, color.b, 0.5f); // 반투명
-
-            RectTransform rt = wave.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(initSize, initSize);
-
-            // 파동이 퍼져나가면서 사라지는 애니메이션
-            float duration = VisualConstants.WaveLargeDuration;
-            float elapsed = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = VisualConstants.EaseOutCubic(t);
-
-                // 파동 크기 확장 (2.5배 계수로 일반 파동보다 더 크게)
-                float scale = 1f + eased * (VisualConstants.WaveLargeExpand - 1f) * 2.5f;
-                rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
-
-                // 퍼지면서 점점 투명해짐
-                img.color = new Color(color.r, color.g, color.b, (1f - t) * 0.35f);
-
-                yield return null;
-            }
-
-            Destroy(wave);
-        }
-
-        /// <summary>
-        /// 개별 블록이 X블록에 의해 파괴될 때의 애니메이션 코루틴.
-        /// 블록이 잠깐 팽창했다가 45도 회전하며 찌그러져 사라짐.
-        /// X블록만의 독특한 파괴 모션으로, 다른 특수 블록과 차별화됨.
-        ///
-        /// 애니메이션 단계:
-        /// 1. 화이트 플래시 (순간 하얀 빛)
-        /// 2. 마이크로 X 플래시 (작은 X자가 반짝)
-        /// 3. 스파크 방출
-        /// 4. 팽창 → 찌그러짐 + 45도 회전 → 소멸
-        ///
-        /// 비유: 풍선이 잠깐 부풀었다가 비틀어지며 터지는 느낌.
-        /// </summary>
-        /// <param name="block">파괴할 대상 블록</param>
-        /// <param name="blockColor">블록의 색상 (이펙트 색상에 사용)</param>
-        /// <param name="center">X블록 중심 위치 (방향 계산에 사용)</param>
-        private IEnumerator DestroyBlockWithX(HexBlock block, Color blockColor, Vector3 center)
-        {
-            if (block == null) yield break;
-
-            Vector3 blockPos = block.transform.position;
-
-            // 화이트 플래시 오버레이 (블록 위에 하얀 빛이 번쩍)
-            StartCoroutine(DestroyFlashOverlay(block));
-
-            // 마이크로 X 플래시 (블록 위치에서 작은 X자가 반짝 - X블록의 정체성 유지)
-            StartCoroutine(MicroXFlash(blockPos, blockColor));
-
-            // X형 스파크 (대각선 방향으로 작은 불꽃 방출)
-            // 연쇄 깊이에 따라 스파크 수가 증가
-            float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
-            int sparkCount = Mathf.RoundToInt(VisualConstants.SparkSmallCount * cascadeMult);
-            for (int i = 0; i < sparkCount; i++)
-            {
-                Color sparkColor = VisualConstants.Brighten(blockColor);
-                sparkColor.a = 1f;
-                StartCoroutine(XSpark(blockPos, sparkColor));
-            }
-
-            // --- 이중 이징 파괴 애니메이션 + 45도 회전 ---
-            // 앞부분(20%): 살짝 팽창 / 뒷부분(80%): 찌그러지며 축소
-            float duration = VisualConstants.DestroyDuration;
-            float elapsed = 0f;
-            float expandRatio = VisualConstants.DestroyExpandPhaseRatio; // 팽창 구간 비율 (약 20%)
-            Vector3 origScale = block.transform.localScale;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-
-                if (t < expandRatio)
-                {
-                    // 팽창 구간: 블록이 살짝 커짐 (터지기 직전의 부풀어 오름)
-                    float expandT = t / expandRatio;
-                    float scale = 1f + (VisualConstants.DestroyExpandScale - 1f) * VisualConstants.EaseOutCubic(expandT);
-                    block.transform.localScale = origScale * scale;
-                }
-                else
-                {
-                    // 찌그러짐+축소 구간: 가로로 눌리면서 세로로 줄어듦 (쭈그러져서 소멸)
-                    float shrinkT = (t - expandRatio) / (1f - expandRatio);
-                    float sx = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(shrinkT * Mathf.PI); // 가로 압축
-                    float sy = Mathf.Max(0f, 1f - VisualConstants.EaseInQuad(shrinkT)); // 세로 축소
-                    block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
-                }
-
-                // 45도 회전 (X의 정체성을 보여주는 독특한 회전 모션)
-                float rot = t * 45f;
-                block.transform.localRotation = Quaternion.Euler(0, 0, rot);
-
-                yield return null;
-            }
-
-            // 애니메이션 종료 후 블록을 원래 상태로 복원하고 데이터 삭제
-            block.transform.localScale = Vector3.one;
-            block.transform.localRotation = Quaternion.identity;
-            block.ClearData(); // 블록 데이터 삭제 = 빈 칸이 됨
-        }
-
-        /// <summary>
-        /// X형 스파크(불꽃) 하나의 애니메이션 코루틴.
-        /// 대각선 방향(45도, 135도, 225도, 315도)으로 발사되어 점점 사라짐.
-        /// 일반 스파크와 달리 X 모양(대각선)으로 튀는 것이 특징.
-        /// 비유: X자 폭죽에서 네 대각선 방향으로 튀는 작은 불티.
-        /// </summary>
-        /// <param name="center">스파크 발사 시작 위치</param>
-        /// <param name="color">스파크 색상</param>
-        private IEnumerator XSpark(Vector3 center, Color color)
-        {
-            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
-
-            // 작은 사각형 이미지로 스파크 표현
-            GameObject spark = new GameObject("XSpark");
-            spark.transform.SetParent(parent, false);
-            spark.transform.position = center;
-
-            var img = spark.AddComponent<UnityEngine.UI.Image>();
-            img.raycastTarget = false;
-            img.color = color;
-
-            RectTransform rt = spark.GetComponent<RectTransform>();
-            float size = Random.Range(VisualConstants.SparkMediumSizeMin, VisualConstants.SparkMediumSizeMax);
-            rt.sizeDelta = new Vector2(size, size);
-
-            // X 방향 (대각선 위주)으로 발사 방향 결정
-            // 45도, 135도, 225도, 315도 중 하나를 기본으로 하고 +-25도 랜덤 편차 추가
-            float[] xAngles = { 45f, 135f, 225f, 315f };
-            float baseAngle = xAngles[Random.Range(0, xAngles.Length)];
-            float angle = (baseAngle + Random.Range(-25f, 25f)) * Mathf.Deg2Rad;
-            float speed = Random.Range(VisualConstants.SparkMediumSpeedMin, VisualConstants.SparkMediumSpeedMax);
-            Vector2 vel = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed; // 속도 벡터
-
-            float lifetime = Random.Range(VisualConstants.SparkMediumLifetimeMin, VisualConstants.SparkMediumLifetimeMax);
-            float elapsed = 0f;
-
-            while (elapsed < lifetime)
-            {
-                elapsed += Time.deltaTime;
-                float t = elapsed / lifetime;
-
-                // 위치 이동 (속도대로 날아감)
-                spark.transform.position += new Vector3(vel.x, vel.y, 0) * Time.deltaTime;
-                // 감속 (공기 저항처럼 점점 느려짐)
-                vel *= VisualConstants.SparkDeceleration;
-
-                // 시간에 따라 투명해짐
-                color.a = 1f - t;
-                img.color = color;
-
-                // 크기도 점점 작아짐
-                float sc = size * (1f - t * 0.5f);
-                rt.sizeDelta = new Vector2(sc, sc);
-
-                yield return null;
-            }
-
-            Destroy(spark);
-        }
-
-        /// <summary>
-        /// 마이크로 X 플래시 - 블록 파괴 직전에 재생되는 작은 X자 플래시.
-        /// 블록 위치에서 아주 작은 X가 반짝하고 사라짐.
-        /// X블록 시스템의 정체성(X 모양)을 블록 하나하나의 파괴에도 반영하는 디테일 이펙트.
-        /// 비유: 블록에 X 도장을 찍고 사라지게 하는 느낌.
-        /// </summary>
-        /// <param name="pos">플래시 위치</param>
-        /// <param name="color">플래시 색상</param>
-        private IEnumerator MicroXFlash(Vector3 pos, Color color)
-        {
-            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
-
-            // X의 두 대각선을 작은 직사각형 2개로 표현
-            // 라인 1: / 방향 (45도)
-            GameObject l1 = new GameObject("MicroXFlash1");
-            l1.transform.SetParent(parent, false);
-            l1.transform.position = pos;
-            l1.transform.localRotation = Quaternion.Euler(0, 0, 45f);
-            var img1 = l1.AddComponent<UnityEngine.UI.Image>();
-            img1.raycastTarget = false;
-            Color bright = VisualConstants.Brighten(color);
-            bright.a = 0.8f;
-            img1.color = bright;
-            RectTransform rt1 = l1.GetComponent<RectTransform>();
-            rt1.sizeDelta = new Vector2(2f, 15f); // 가느다란 작은 빔
-
-            // 라인 2: \ 방향 (-45도)
-            GameObject l2 = new GameObject("MicroXFlash2");
-            l2.transform.SetParent(parent, false);
-            l2.transform.position = pos;
-            l2.transform.localRotation = Quaternion.Euler(0, 0, -45f);
-            var img2 = l2.AddComponent<UnityEngine.UI.Image>();
-            img2.raycastTarget = false;
-            img2.color = bright;
-            RectTransform rt2 = l2.GetComponent<RectTransform>();
-            rt2.sizeDelta = new Vector2(2f, 15f);
-
-            // 0.08초 동안 빠르게 커지면서 사라짐 (매우 짧은 플래시)
-            float duration = 0.08f;
-            float elapsed = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-
-                // 길이가 3배까지 늘어남
-                float scale = 1f + t * 2f;
-                rt1.sizeDelta = new Vector2(2f, 15f * scale);
-                rt2.sizeDelta = new Vector2(2f, 15f * scale);
-
-                // 동시에 투명해짐
-                bright.a = 0.8f * (1f - t);
-                img1.color = bright;
-                img2.color = bright;
-
-                yield return null;
-            }
-
-            Destroy(l1);
-            Destroy(l2);
-        }
 
         // ============================================================
         // 화면 흔들림 (Screen Shake)
-        // X블록 발동 시 게임판 전체를 떨리게 하는 효과
+        // 타겟 레이져 발동 시 게임판 전체를 떨리게 하는 효과
         // ============================================================
 
         /// <summary>

@@ -25,6 +25,10 @@ namespace JewelsHexaPuzzle.Core
             public SpecialBlockType preExistingSpecialType = SpecialBlockType.None;
             public DrillDirection preExistingDrillDirection;
             public GemType preExistingGemType = GemType.None;
+            // 깨진 블록으로 인해 차단된 특수 블록 타입 (메시지 표시용)
+            public SpecialBlockType crackedBlockedSpecial = SpecialBlockType.None;
+            // 이 매칭에 깨진 블록이 포함되었는지 (붉은색 삭제 이펙트 분기용)
+            public bool hasCrackedBlocks = false;
         }
 
         private void Start()
@@ -70,6 +74,8 @@ public List<MatchGroup> FindMatches()
                 if (block.Data == null) { nullDataBlocks++; continue; }
                 if (block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) { noneGemBlocks++; continue; }
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) { fixedBlocks++; continue; }
+                // 껍데기 블록은 매칭 불가 (고블린 2회 공격으로 테두리만 남은 상태)
+                if (block.Data.isShell) { fixedBlocks++; continue; }
                 // 색상도둑이 있는 블록은 매칭에서 제외
                 if (block.CurrentEnemyType == EnemyType.Chromophage) { noneGemBlocks++; continue; }
                 // ChaosOverlord Chromophage 효과: 매칭에서 제외
@@ -146,6 +152,7 @@ private List<MatchGroup> FindRingMatches()
 
                 if (block.Data == null || block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) continue;
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+                if (block.Data.isShell) continue; // 껍데기 블록은 링 매칭 불가
                 // 색상도둑이 있는 블록은 링 매칭에서 제외
                 if (block.CurrentEnemyType == EnemyType.Chromophage) continue;
 
@@ -157,7 +164,8 @@ private List<MatchGroup> FindRingMatches()
                 {
                     if (neighbor.Data == null || neighbor.Data.gemType == GemType.None ||
                         neighbor.Data.gemType == GemType.Gray ||
-                        neighbor.Data.specialType == SpecialBlockType.FixedBlock)
+                        neighbor.Data.specialType == SpecialBlockType.FixedBlock ||
+                        neighbor.Data.isShell)
                     { validRing = false; break; }
                     // 색상도둑이 있는 블록은 링 매칭에서 제외
                     if (neighbor.CurrentEnemyType == EnemyType.Chromophage)
@@ -226,7 +234,8 @@ private List<MatchGroup> FindRingMatches()
                 .Where(n => n.Data != null &&
                            n.Data.gemType == targetType &&
                            n.Data.gemType != GemType.Gray &&
-                           n.Data.specialType != SpecialBlockType.FixedBlock)
+                           n.Data.specialType != SpecialBlockType.FixedBlock &&
+                           !n.Data.isShell)
                 .ToList();
 
             for (int i = 0; i < sameColorNeighbors.Count; i++)
@@ -321,6 +330,54 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 else if (merged.blocks.Count >= 4)
                 {
                     CheckForDrillPattern(merged);
+                }
+
+                // ★ 깨진 블록(isCracked) 포함 시 특수 블록 생성 차단 → 드릴 Fallback 시도
+                if (merged.createdSpecialType != SpecialBlockType.None)
+                {
+                    bool hasCracked = merged.blocks.Any(b => b != null && b.Data != null && b.Data.isCracked);
+                    if (hasCracked)
+                    {
+                        SpecialBlockType blockedType = merged.createdSpecialType;
+                        Debug.Log($"[MatchingSystem] ★ 깨진 블록으로 {blockedType} 생성 차단, 드릴 fallback 시도");
+
+                        // 차단 상태로 전환
+                        merged.crackedBlockedSpecial = blockedType;
+                        merged.createdSpecialType = SpecialBlockType.None;
+                        merged.specialSpawnBlock = null;
+                        merged.hasCrackedBlocks = true;
+
+                        // ★ 드릴 Fallback: 깨지지 않은 블록만 추출하여 드릴 패턴 검사
+                        if (blockedType == SpecialBlockType.Bomb || blockedType == SpecialBlockType.Rainbow
+                            || blockedType == SpecialBlockType.Drone)
+                        {
+                            List<HexBlock> healthyBlocks = merged.blocks
+                                .Where(b => b != null && b.Data != null && !b.Data.isCracked)
+                                .ToList();
+
+                            if (healthyBlocks.Count >= 4)
+                            {
+                                // 임시 MatchGroup으로 드릴 패턴 검사
+                                MatchGroup tempGroup = new MatchGroup();
+                                tempGroup.blocks = new List<HexBlock>(healthyBlocks);
+                                tempGroup.gemType = merged.gemType;
+
+                                bool drillFound = TryFindDrillInSubset(tempGroup);
+
+                                if (drillFound)
+                                {
+                                    // 드릴 생성 결과를 원래 그룹에 복사 (blocks는 깨진 블록 포함 전체 유지)
+                                    merged.createdSpecialType = SpecialBlockType.Drill;
+                                    merged.drillDirection = tempGroup.drillDirection;
+                                    merged.specialSpawnBlock = tempGroup.specialSpawnBlock;
+
+                                    Debug.Log($"[MatchingSystem] ★ 드릴 Fallback 성공! " +
+                                        $"Direction={merged.drillDirection}, Spawn=({merged.specialSpawnBlock.Coord}), " +
+                                        $"차단된 원래 타입={blockedType}");
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Debug.Log($"[MatchingSystem] ▶ 병합 결과: count={merged.blocks.Count}, color={merged.gemType}, " +
@@ -707,6 +764,44 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
             return DrillDirection.Vertical;
         }
 
+        /// <summary>
+        /// 건강한 블록 서브셋에서 드릴 패턴 검색 (깨진 블록 차단 → 드릴 fallback용)
+        /// 4개면 CheckForDrillPattern 직접 호출, 5개+면 4개 조합 열거
+        /// </summary>
+        private bool TryFindDrillInSubset(MatchGroup tempGroup)
+        {
+            if (tempGroup.blocks.Count == 4)
+            {
+                CheckForDrillPattern(tempGroup);
+                return tempGroup.createdSpecialType == SpecialBlockType.Drill;
+            }
+
+            // 5개 이상: C(n,4) 조합 열거 (최대 C(6,4)=15, 성능 무시 가능)
+            List<HexBlock> blocks = tempGroup.blocks;
+            int n = blocks.Count;
+
+            for (int i = 0; i < n - 3; i++)
+            for (int j = i + 1; j < n - 2; j++)
+            for (int k = j + 1; k < n - 1; k++)
+            for (int l = k + 1; l < n; l++)
+            {
+                MatchGroup subset = new MatchGroup();
+                subset.blocks = new List<HexBlock> { blocks[i], blocks[j], blocks[k], blocks[l] };
+                subset.gemType = tempGroup.gemType;
+
+                CheckForDrillPattern(subset);
+                if (subset.createdSpecialType == SpecialBlockType.Drill)
+                {
+                    tempGroup.createdSpecialType = SpecialBlockType.Drill;
+                    tempGroup.drillDirection = subset.drillDirection;
+                    tempGroup.specialSpawnBlock = subset.specialSpawnBlock;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         // ============================================================
         // 유틸리티
         // ============================================================
@@ -841,6 +936,7 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 if (block.Data == null) continue;
                 if (block.Data.gemType == GemType.None || block.Data.gemType == GemType.Gray) continue;
                 if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
+                if (block.Data.isShell) continue; // 껍데기 블록은 매칭 불가
 
                 var triangles = FindTrianglesContaining(block);
                 if (triangles.Count > 0) return true;

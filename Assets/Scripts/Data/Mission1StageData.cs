@@ -6,17 +6,21 @@ using JewelsHexaPuzzle.Data;
 namespace JewelsHexaPuzzle.Managers
 {
     /// <summary>
-    /// 미션 1: 색상도둑 소탕 - Stage 1-10 데이터
+    /// 미션 1: 고블린 소탕 - Stage 1-10 데이터
     ///
-    /// 레벨 디자인 기획서:
-    /// LevelDesign_Mission1_ChromophageCleaning.md 참조
+    /// 레벨 디자인:
+    /// 고블린이 그리드 상단 빈 공간 3줄에서 포털을 통해 소환되고,
+    /// 매 턴 아래로 이동하며 블록을 공격해 "깨진 블록"으로 만든다.
+    /// 블록 낙하 시 고블린에게 충돌 데미지를 주어 제거하는 미션.
     ///
     /// 난이도 곡선:
-    /// Stage 1-2: 색상도둑 1개 (⭐ 튜토리얼)
-    /// Stage 3-5: 색상도둑 2개 (⭐⭐ 중간)
-    /// Stage 6-8: 색상도둑 2-3개 (⭐⭐ 중상)
-    /// Stage 9: 색상도둑 3개 (⭐⭐ 약간 어려움)
-    /// Stage 10: 색상도둑 3개 + 콤보 20 (⭐⭐⭐ 어려움, 보스)
+    /// Stage 1-2: 소환 0~1마리/턴, 제거 2~3마리 (⭐ 튜토리얼)
+    /// Stage 3-4: 소환 1~2마리/턴, 제거 4~5마리 (⭐ 초급)
+    /// Stage 5-6: 소환 1~2마리/턴, 제거 6~8마리 (⭐⭐ 중급)
+    /// Stage 7-8: 소환 1~3마리/턴, 제거 10~12마리 (⭐⭐ 중상)
+    /// Stage 9-10: 소환 2~4마리/턴, 제거 14~16마리 (⭐⭐⭐ 상급)
+    ///
+    /// 모든 스테이지 턴 제한: 15턴
     /// </summary>
     public static class Mission1StageData
     {
@@ -42,7 +46,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 1: 적군 소개 - 색상도둑 1개
+        // Stage 1: 고블린 소개 - 고블린 2마리 제거
         // ============================================================
         private static StageData GetStage1()
         {
@@ -57,10 +61,10 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.None, // 모든 색상
-                        targetCount = 100,
-                        description = "기본 블록 100개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 2,
+                        description = "고블린 2마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -68,15 +72,16 @@ namespace JewelsHexaPuzzle.Managers
                 storyData = new StoryData
                 {
                     chapterIntroduction = "루나가 크리스탈 숲에 발을 디딘다.",
-                    beforeStageCutscene = "루나가 크리스탈 숲의 보석 블록들을 관찰한다.\n오라클리온: \"자, 이게 보석의 격자야. 같은 색 3개가 모이면 정화된단다.\"",
+                    beforeStageCutscene = "숲 속에서 이상한 소리가 들린다...\n프리즘: \"저기 봐! 녹색 괴물들이 나타나고 있어!\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"먼저 기본을 익혀보자. 블록을 회전시켜 같은 색끼리 모아봐.\"",
-                        "루나: \"알겠어요! 해볼게요!\""
+                        "오라클리온: \"저건 고블린이다. 블록을 공격해서 금간 블록으로 만들어 버리지.\"",
+                        "오라클리온: \"블록을 낙하시켜 고블린에게 충돌 데미지를 줄 수 있단다.\"",
+                        "루나: \"알겠어요! 블록을 떨어뜨려서 고블린을 처치할게요!\""
                     },
                     stageClearDialogues = new[]
                     {
-                        "오라클리온: \"훌륭하군! 기본을 잘 익혔구나.\""
+                        "오라클리온: \"훌륭하군! 고블린을 물리치는 법을 잘 익혔구나.\""
                     }
                 },
                 tutorialFlags = new TutorialFlag[0]
@@ -86,7 +91,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 2: 빨간색 30개 + 초록색 30개 제거
+        // Stage 2: 고블린 3마리 제거
         // ============================================================
         private static StageData GetStage2()
         {
@@ -95,23 +100,16 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 2,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 20,
+                turnLimit = 15,
                 difficulty = 1,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Red,
-                        targetCount = 30,
-                        description = "빨간색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Green,
-                        targetCount = 30,
-                        description = "초록색 블록 30개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 3,
+                        description = "고블린 3마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -124,7 +122,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 3: 파란색 블록 40개 제거 (1종 색상 수집)
+        // Stage 3: 고블린 4마리 제거
         // ============================================================
         private static StageData GetStage3()
         {
@@ -139,10 +137,10 @@ namespace JewelsHexaPuzzle.Managers
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Blue,
-                        targetCount = 40,
-                        description = "파란색 블록 40개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 4,
+                        description = "고블린 4마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
@@ -155,7 +153,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 4: 노란색 35 + 보라색 35 제거 (2종 색상 수집)
+        // Stage 4: 고블린 5마리 제거
         // ============================================================
         private static StageData GetStage4()
         {
@@ -164,33 +162,26 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 4,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 22,
-                difficulty = 2,
+                turnLimit = 15,
+                difficulty = 1,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Yellow,
-                        targetCount = 35,
-                        description = "노란색 블록 35개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Purple,
-                        targetCount = 35,
-                        description = "보라색 블록 35개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 5,
+                        description = "고블린 5마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
-                    beforeStageCutscene = "루나가 더 위험한 지역으로 진입한다.\n오라클리온: \"이 숲 깊숙이로 들어갈수록 오염이 심해지는군.\"",
+                    beforeStageCutscene = "루나가 더 깊은 숲으로 진입한다.\n오라클리온: \"고블린의 수가 점점 늘어나고 있구나.\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"이번엔 두 가지 색상의 보석을 모아봐.\""
+                        "프리즘: \"루나, 조심해! 고블린이 더 많이 나타나고 있어!\""
                     },
                     stageClearDialogues = new[]
                     {
@@ -204,7 +195,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 5: 빨강 40 + 파랑 40 제거 + 세로 드릴 1개 생성
+        // Stage 5: 고블린 6마리 제거
         // ============================================================
         private static StageData GetStage5()
         {
@@ -213,36 +204,23 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 5,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 25,
+                turnLimit = 15,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Red,
-                        targetCount = 40,
-                        description = "빨간색 블록 40개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Blue,
-                        targetCount = 40,
-                        description = "파란색 블록 40개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CreateDrillVertical,
-                        targetCount = 1,
-                        description = "세로 드릴 1개 생성"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 6,
+                        description = "고블린 6마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
-                    beforeStageCutscene = "루나: \"보석들이 점점 다양해지네요.\"\n오라클리온: \"맞다. 더 많은 색상을 효율적으로 모아야 한다.\"",
+                    beforeStageCutscene = "루나: \"고블린들이 점점 더 몰려오네요.\"\n오라클리온: \"침착하게, 블록을 효율적으로 낙하시켜라.\"",
                     stageIntroDialogues = new[]
                     {
                         "프리즘: \"루나는 할 수 있어! 이겨내!\""
@@ -259,7 +237,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 6: 초록·노랑·보라 각 30개 제거 (3종 색상 수집)
+        // Stage 6: 고블린 8마리 제거
         // ============================================================
         private static StageData GetStage6()
         {
@@ -268,47 +246,26 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 6,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 28,
+                turnLimit = 15,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Green,
-                        targetCount = 30,
-                        description = "초록색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Yellow,
-                        targetCount = 30,
-                        description = "노란색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Purple,
-                        targetCount = 30,
-                        description = "보라색 블록 30개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 8,
+                        description = "고블린 8마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, -1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, -2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(-2, 2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, -2), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
-                    beforeStageCutscene = "루나가 숲의 더 깊숙한 곳으로 진입한다.\n프리즘: \"와... 색상도둑이 3개나!\"\n루나: \"이게 최종 시험일까요?\"",
+                    beforeStageCutscene = "루나가 숲의 더 깊숙한 곳으로 진입한다.\n프리즘: \"고블린 대장이 부하들을 더 보내고 있어!\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"그렇도록 보이는군. 자신감을 잃지 말고 차근차근이다.\""
+                        "오라클리온: \"자신감을 잃지 말고 차근차근 제거하거라.\""
                     },
                     stageClearDialogues = new[]
                     {
@@ -322,7 +279,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 7: 빨강 35 + 파랑 35 + 폭탄 1개 생성
+        // Stage 7: 고블린 10마리 제거
         // ============================================================
         private static StageData GetStage7()
         {
@@ -331,46 +288,25 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 7,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 30,
+                turnLimit = 15,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Red,
-                        targetCount = 35,
-                        description = "빨간색 블록 35개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Blue,
-                        targetCount = 35,
-                        description = "파란색 블록 35개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CreateBomb,
-                        targetCount = 1,
-                        description = "폭탄 1개 생성"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 10,
+                        description = "고블린 10마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, 0), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, 0), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, -2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(-2, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, 2), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"계속해서 진행하거라.\""
+                        "오라클리온: \"고블린의 공세가 더 거세지고 있다.\""
                     },
                     stageClearDialogues = new[]
                     {
@@ -384,7 +320,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 8: 4색 각 30개 제거 (4종 색상 수집)
+        // Stage 8: 고블린 12마리 제거
         // ============================================================
         private static StageData GetStage8()
         {
@@ -393,49 +329,20 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 8,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 32,
+                turnLimit = 15,
                 difficulty = 2,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Red,
-                        targetCount = 30,
-                        description = "빨간색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Blue,
-                        targetCount = 30,
-                        description = "파란색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Yellow,
-                        targetCount = 30,
-                        description = "노란색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Purple,
-                        targetCount = 30,
-                        description = "보라색 블록 30개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 12,
+                        description = "고블린 12마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, -1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(-2, 0), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, 2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, -1), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
                     stageIntroDialogues = new[]
@@ -454,7 +361,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 9: 4색 각 35개 제거 (4종 색상 수집, 고난이도)
+        // Stage 9: 고블린 14마리 제거
         // ============================================================
         private static StageData GetStage9()
         {
@@ -463,59 +370,30 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 9,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 35,
+                turnLimit = 15,
                 difficulty = 3,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Red,
-                        targetCount = 35,
-                        description = "빨간색 블록 35개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Green,
-                        targetCount = 35,
-                        description = "초록색 블록 35개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Yellow,
-                        targetCount = 35,
-                        description = "노란색 블록 35개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Purple,
-                        targetCount = 35,
-                        description = "보라색 블록 35개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 14,
+                        description = "고블린 14마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, 0), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, -2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(-2, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, 2), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
-                    beforeStageCutscene = "루나가 숲의 깊은 곳에 도달한다.\n거대한 색상도둑 무리가 모습을 드러낸다!",
+                    beforeStageCutscene = "루나가 숲의 깊은 곳에 도달한다.\n거대한 고블린 무리가 모습을 드러낸다!",
                     stageIntroDialogues = new[]
                     {
-                        "프리즘: \"와, 색상도둑이 3개나!\""
+                        "프리즘: \"와, 고블린이 엄청 많아!\""
                     },
                     stageClearDialogues = new[]
                     {
-                        "오라클리온: \"완벽하다, 루나! 이제 넌 색상도둑의 방해를 이겨낼 수 있다!\""
+                        "오라클리온: \"대단하다, 루나! 이제 마지막 시험만 남았구나.\""
                     }
                 },
                 tutorialFlags = new TutorialFlag[0]
@@ -525,7 +403,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 10: 챕터 1 보스 - 5색 각 30개 제거 (5종 색상 수집)
+        // Stage 10: 챕터 1 보스 - 고블린 16마리 제거
         // ============================================================
         private static StageData GetStage10()
         {
@@ -534,66 +412,31 @@ namespace JewelsHexaPuzzle.Managers
                 stageNumber = 10,
                 chapterNumber = 1,
                 chapterName = "크리스탈 숲",
-                turnLimit = 38,
+                turnLimit = 15,
                 difficulty = 3,
                 isBossStage = true,
                 missions = new[]
                 {
                     new MissionData
                     {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Red,
-                        targetCount = 30,
-                        description = "빨간색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Blue,
-                        targetCount = 30,
-                        description = "파란색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Green,
-                        targetCount = 30,
-                        description = "초록색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Yellow,
-                        targetCount = 30,
-                        description = "노란색 블록 30개 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.CollectGem,
-                        targetGemType = GemType.Purple,
-                        targetCount = 30,
-                        description = "보라색 블록 30개 제거"
+                        type = MissionType.RemoveEnemy,
+                        targetEnemyType = EnemyType.Goblin,
+                        targetCount = 16,
+                        description = "고블린 16마리 제거"
                     }
                 },
                 enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new[]
-                {
-                    new EnemyPlacement { coord = new HexCoord(-1, 1), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, 0), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(0, 2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(1, -2), enemyType = EnemyType.None },
-                    new EnemyPlacement { coord = new HexCoord(2, 1), enemyType = EnemyType.None }
-                },
+                fixedBlockPlacements = new EnemyPlacement[0],
                 storyData = new StoryData
                 {
-                    beforeStageCutscene = "루나가 크리스탈 숲의 중심에 도달한다.\n거대한 색상도둑 무리 3개가 마주선다!\n프리즘: \"와, 이게 우리가 이겨낼 수 있는 건가?\"\n루나: \"지금까지 배운 모든 것을 써야겠어요!\"",
+                    beforeStageCutscene = "루나가 크리스탈 숲의 중심에 도달한다.\n거대한 고블린 대장이 몽둥이를 휘두르며 나타난다!\n프리즘: \"저게 고블린 대장인가 봐! 부하들이 끝없이 밀려와!\"\n루나: \"지금까지 배운 모든 것을 써야겠어요!\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"루나, 마지막 시험이다. 이 색상도둑들을 정화해보거라.\"",
-                        "오라클리온: \"단순히 제거하는 것 외에... 연쇄의 흐름도 중요하다.\"",
-                        "루나: \"알겠습니다! 색상도둑도 제거하고, 아름다운 연쇄도!\""
+                        "오라클리온: \"루나, 마지막 시험이다. 고블린 무리를 소탕하거라.\"",
+                        "오라클리온: \"블록을 매칭시켜 낙하를 만들어 고블린을 쓰러뜨려라!\"",
+                        "루나: \"알겠습니다! 꼭 해내겠어요!\""
                     },
-                    stageClearCutscene = "색상도둑들이 모두 정화되며 밝은 빛으로 사라진다.\n크리스탈 숲이 다시 생기를 되찾는다.\n루나가 숨을 고른다.\n루나: \"해냈어요! 색상도둑들을 모두 정화했어요!\"\n프리즘: \"우와! 루나, 정말 멋있었어!\"\n오라클리온: \"훌륭하군, 루나. 이제 넌 진정한 크리스탈 수호자의 길을 시작했다.\"",
+                    stageClearCutscene = "고블린 대장이 쓰러지며 나머지 고블린들이 달아난다.\n크리스탈 숲이 다시 평화를 되찾는다.\n루나가 숨을 고른다.\n루나: \"해냈어요! 고블린들을 모두 물리쳤어요!\"\n프리즘: \"우와! 루나, 정말 멋있었어!\"\n오라클리온: \"훌륭하군, 루나. 이제 넌 진정한 크리스탈 수호자의 길을 시작했다.\"",
                     stageClearDialogues = new[]
                     {
                         "오라클리온: \"이제 사파이어 호수로 나아가자. 더 큰 도전이 기다리고 있다.\"",

@@ -50,6 +50,8 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite resonanceTwinOverlaySprite;
         private static Sprite shadowSporeOverlaySprite;
         private static Sprite chaosOverlordOverlaySprite;
+        private static Sprite crackedOverlaySprite;
+        private static Sprite shellOverlaySprite;
 
         private const float BORDER_WIDTH = 10f;
         private const float INNER_BORDER_WIDTH = 7f;  // ���� �׵θ� 30% ��� (10 * 0.7)
@@ -760,6 +762,205 @@ namespace JewelsHexaPuzzle.Core
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
+        /// <summary>
+        /// 깨진 블록 금간 오버레이 스프라이트 생성 (프로시저럴)
+        /// 육각형 내부에 대각선 금 패턴을 그린다
+        /// </summary>
+        private static Sprite CreateCrackedOverlaySprite(int size)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = Color.clear;
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float hexRadius = size * 0.42f;
+            Color crackColor = new Color(1f, 1f, 1f, 0.9f);
+
+            // 금 라인 정의: 시작점, 끝점, 두께
+            // 주 금: 좌상→우하 대각선
+            DrawCrackLine(pixels, size, center,
+                new Vector2(center.x - hexRadius * 0.5f, center.y + hexRadius * 0.6f),
+                new Vector2(center.x + hexRadius * 0.3f, center.y - hexRadius * 0.5f),
+                2.5f, crackColor, hexRadius);
+            // 분기 1: 주 금 중앙에서 오른쪽 위로
+            DrawCrackLine(pixels, size, center,
+                new Vector2(center.x - hexRadius * 0.1f, center.y + hexRadius * 0.1f),
+                new Vector2(center.x + hexRadius * 0.5f, center.y + hexRadius * 0.35f),
+                1.8f, crackColor, hexRadius);
+            // 분기 2: 주 금 아래에서 왼쪽으로
+            DrawCrackLine(pixels, size, center,
+                new Vector2(center.x + hexRadius * 0.1f, center.y - hexRadius * 0.15f),
+                new Vector2(center.x - hexRadius * 0.45f, center.y - hexRadius * 0.35f),
+                1.8f, crackColor, hexRadius);
+            // 작은 분기 3
+            DrawCrackLine(pixels, size, center,
+                new Vector2(center.x - hexRadius * 0.3f, center.y + hexRadius * 0.35f),
+                new Vector2(center.x - hexRadius * 0.6f, center.y + hexRadius * 0.15f),
+                1.2f, crackColor, hexRadius);
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>
+        /// 금간 라인을 텍스처에 그리기 (육각형 내부만)
+        /// </summary>
+        private static void DrawCrackLine(Color[] pixels, int size, Vector2 center,
+            Vector2 from, Vector2 to, float thickness, Color color, float hexRadius)
+        {
+            Vector2 dir = to - from;
+            float length = dir.magnitude;
+            if (length < 0.01f) return;
+            dir /= length;
+            Vector2 perp = new Vector2(-dir.y, dir.x);
+
+            int padding = (int)(thickness + 3);
+            int minX = Mathf.Max(0, (int)(Mathf.Min(from.x, to.x) - padding));
+            int maxX = Mathf.Min(size - 1, (int)(Mathf.Max(from.x, to.x) + padding));
+            int minY = Mathf.Max(0, (int)(Mathf.Min(from.y, to.y) - padding));
+            int maxY = Mathf.Min(size - 1, (int)(Mathf.Max(from.y, to.y) + padding));
+
+            for (int y = minY; y <= maxY; y++)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    Vector2 p = new Vector2(x, y);
+
+                    // 육각형 내부 체크
+                    float hexDist = HexSignedDistance(p, center, hexRadius);
+                    if (hexDist > -1f) continue;
+
+                    // 라인까지 거리
+                    Vector2 toP = p - from;
+                    float proj = Vector2.Dot(toP, dir);
+                    if (proj < -1f || proj > length + 1f) continue;
+                    float perpDist = Mathf.Abs(Vector2.Dot(toP, perp));
+
+                    if (perpDist < thickness)
+                    {
+                        // 끝 부분 페이드
+                        float endFade = 1f;
+                        if (proj < 0) endFade = 1f - Mathf.Abs(proj);
+                        else if (proj > length) endFade = 1f - (proj - length);
+                        endFade = Mathf.Clamp01(endFade);
+
+                        // 가장자리 AA
+                        float edgeFade = 1f - Mathf.Clamp01((perpDist - (thickness - 1f)));
+
+                        float alpha = color.a * endFade * edgeFade;
+                        int idx = y * size + x;
+                        Color existing = pixels[idx];
+                        float blendA = alpha + existing.a * (1f - alpha);
+                        if (blendA > 0.001f)
+                        {
+                            pixels[idx] = new Color(
+                                (color.r * alpha + existing.r * existing.a * (1f - alpha)) / blendA,
+                                (color.g * alpha + existing.g * existing.a * (1f - alpha)) / blendA,
+                                (color.b * alpha + existing.b * existing.a * (1f - alpha)) / blendA,
+                                blendA
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 껍데기 블록 오버레이 스프라이트 생성 (중앙이 깨진 잔해 패턴)
+        /// 테두리만 남고 가운데가 부서진 느낌
+        /// </summary>
+        private static Sprite CreateShellOverlaySprite(int size)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = Color.clear;
+
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float hexRadius = size * 0.42f;
+            Color shellColor = new Color(1f, 1f, 1f, 0.85f);
+            Color darkColor = new Color(0.3f, 0.25f, 0.2f, 0.7f);
+
+            // 중앙에 큰 깨진 구멍 패턴 (불규칙한 다각형)
+            float holeRadius = hexRadius * 0.5f;
+            // 파편 금 라인들: 구멍 가장자리에서 방사형으로 퍼짐
+            for (int angleI = 0; angleI < 8; angleI++)
+            {
+                float angle = angleI * 45f + UnityEngine.Random.Range(-10f, 10f);
+                float rad = angle * Mathf.Deg2Rad;
+                // 구멍 가장자리에서 바깥으로
+                Vector2 from = center + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * holeRadius * 0.6f;
+                Vector2 to = center + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * holeRadius * 1.1f;
+                DrawCrackLine(pixels, size, center, from, to, 2.0f, shellColor, hexRadius);
+            }
+
+            // 중앙 구멍: 어두운 영역으로 표시
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x, y);
+                    float distFromCenter = (p - center).magnitude;
+
+                    // 육각형 내부만
+                    float hexDist = HexSignedDistance(p, center, hexRadius);
+                    if (hexDist > -1f) continue;
+
+                    // 중앙 구멍 영역
+                    if (distFromCenter < holeRadius * 0.55f)
+                    {
+                        // 중앙에 가까울수록 더 진한 어둠 (부서진 느낌)
+                        float holeFactor = 1f - (distFromCenter / (holeRadius * 0.55f));
+                        float alpha = darkColor.a * holeFactor * 0.8f;
+                        int idx = y * size + x;
+                        Color existing = pixels[idx];
+                        float blendA = alpha + existing.a * (1f - alpha);
+                        if (blendA > 0.001f)
+                        {
+                            pixels[idx] = new Color(
+                                (darkColor.r * alpha + existing.r * existing.a * (1f - alpha)) / blendA,
+                                (darkColor.g * alpha + existing.g * existing.a * (1f - alpha)) / blendA,
+                                (darkColor.b * alpha + existing.b * existing.a * (1f - alpha)) / blendA,
+                                blendA
+                            );
+                        }
+                    }
+                    // 구멍 가장자리: 파편 조각 (불규칙한 링)
+                    else if (distFromCenter < holeRadius * 0.75f)
+                    {
+                        float edgeFactor = 1f - ((distFromCenter - holeRadius * 0.55f) / (holeRadius * 0.2f));
+                        // 불규칙한 패턴: 각도에 따라 투명도 변화
+                        float angle = Mathf.Atan2(p.y - center.y, p.x - center.x);
+                        float noise = Mathf.Sin(angle * 5f) * 0.3f + Mathf.Sin(angle * 11f) * 0.2f;
+                        float alpha = shellColor.a * edgeFactor * (0.4f + noise);
+                        if (alpha > 0.05f)
+                        {
+                            int idx = y * size + x;
+                            Color existing = pixels[idx];
+                            float blendA = alpha + existing.a * (1f - alpha);
+                            if (blendA > 0.001f)
+                            {
+                                pixels[idx] = new Color(
+                                    (shellColor.r * alpha + existing.r * existing.a * (1f - alpha)) / blendA,
+                                    (shellColor.g * alpha + existing.g * existing.a * (1f - alpha)) / blendA,
+                                    (shellColor.b * alpha + existing.b * existing.a * (1f - alpha)) / blendA,
+                                    blendA
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
         private void SetupBorder()
         {
             // ��� �̹��� - ���� ������ (raycast ������)
@@ -815,6 +1016,13 @@ namespace JewelsHexaPuzzle.Core
             borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 테두리 색상 및 불투명도
             borderImage.raycastTarget = false;
             borderImage.type = Image.Type.Simple;
+
+            // ★ 초기 숨김: SetBlockData → UpdateVisuals 전까지 보이지 않도록
+            gemImage.color = Color.clear;
+            gemImage.enabled = false;
+            borderImage.enabled = false;
+            if (backgroundImage != null)
+                backgroundImage.color = Color.clear;
         }
 
         private void SetupDrillIndicator()
@@ -872,6 +1080,9 @@ namespace JewelsHexaPuzzle.Core
         private void SetupVisuals()
         {
             if (backgroundImage != null) backgroundImage.color = new Color(0.96f, 0.93f, 0.90f, 0.28f);
+            // 초기 상태: 젬과 테두리를 숨김 (SetBlockData 전 흰색 블록 깜빡임 방지)
+            if (gemImage != null) { gemImage.color = Color.clear; gemImage.enabled = false; }
+            if (borderImage != null) { borderImage.enabled = false; }
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
             if (drillIndicator != null) drillIndicator.enabled = false;
@@ -964,6 +1175,38 @@ public void UpdateVisuals()
             if (blockData == null || blockData.gemType == GemType.None)
             {
                 SetEmpty();
+                return;
+            }
+
+            // ── 껍데기(쉘) 블록: 고유 색 상실, 동일한 회색 + 심한 크랙 ──
+            if (blockData.isShell)
+            {
+                // 배경/젬/테두리 모두 동일한 회색 톤으로 통일
+                Color shellGray = new Color(0.52f, 0.50f, 0.48f, 1f);
+
+                if (backgroundImage != null)
+                    backgroundImage.color = shellGray;
+
+                // 젬: 스프라이트를 완전 불투명 육각형으로 교체 (외부 스프라이트의 투명 픽셀 제거)
+                if (gemImage != null)
+                {
+                    gemImage.sprite = hexFillSprite;  // 투명 영역 없는 꽉 찬 육각형
+                    gemImage.color = shellGray;
+                    gemImage.enabled = true;
+                }
+
+                // 테두리: 약간 어두운 회색 (윤곽만 살짝)
+                if (borderImage != null)
+                {
+                    borderImage.enabled = true;
+                    borderImage.color = new Color(0.42f, 0.40f, 0.38f, 1f);
+                }
+
+                // 특수 블록 아이콘 숨김
+                if (drillIndicator != null) drillIndicator.enabled = false;
+
+                // 심한 크랙 오버레이
+                UpdateOverlay();
                 return;
             }
 
@@ -1326,6 +1569,24 @@ public void ShowDroneIndicator()
                 overlayImage.sprite = null;
                 float alpha = blockData.vinylLayer == 2 ? 0.6f : 0.3f;
                 overlayImage.color = new Color(1f, 1f, 1f, alpha);
+                overlayImage.enabled = true;
+            }
+            else if (blockData.isShell)
+            {
+                // 껍데기 블록: 심한 크랙 (더 어둡고 불투명하게)
+                if (crackedOverlaySprite == null)
+                    crackedOverlaySprite = CreateCrackedOverlaySprite(256);
+                overlayImage.sprite = crackedOverlaySprite;
+                overlayImage.color = new Color(0.12f, 0.10f, 0.08f, 0.9f);
+                overlayImage.enabled = true;
+            }
+            else if (blockData.isCracked)
+            {
+                // 깨진 블록: 금간 오버레이 표시 (색상 유지, 금 패턴 위에 표시)
+                if (crackedOverlaySprite == null)
+                    crackedOverlaySprite = CreateCrackedOverlaySprite(256);
+                overlayImage.sprite = crackedOverlaySprite;
+                overlayImage.color = new Color(0.15f, 0.1f, 0.05f, 0.55f);  // 어두운 갈색 금
                 overlayImage.enabled = true;
             }
             else

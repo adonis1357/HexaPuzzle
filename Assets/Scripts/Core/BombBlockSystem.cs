@@ -283,10 +283,12 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             // 발사 순간 블록 클리어
             bombBlock.ClearData();
 
-            // 반경 2칸 타겟 수집 (1칸/2칸 분리)
+            // 반경 2칸 타겟 수집 (1칸/2칸 분리) + 좌표 세트 분리 (고블린 데미지 타이밍용)
             List<HexBlock> ring1Targets = new List<HexBlock>();
             List<HexBlock> ring2Targets = new List<HexBlock>();
             HashSet<HexCoord> visitedCoords = new HashSet<HexCoord>();
+            HashSet<HexCoord> ring1Coords = new HashSet<HexCoord>(); // 1칸 범위 좌표 (블록 유무 무관)
+            HashSet<HexCoord> ring2Coords = new HashSet<HexCoord>(); // 2칸 범위 좌표 (블록 유무 무관)
             visitedCoords.Add(bombCoord);
 
             if (hexGrid != null)
@@ -298,6 +300,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
                     {
                         visitedCoords.Add(neighbor.Coord);
+                        ring1Coords.Add(neighbor.Coord);
                         if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
                             ring1Targets.Add(neighbor);
                     }
@@ -313,6 +316,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                         if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
                         {
                             visitedCoords.Add(neighbor.Coord);
+                            ring2Coords.Add(neighbor.Coord);
                             if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
                                 ring2Targets.Add(neighbor);
                         }
@@ -330,6 +334,21 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 // 1칸 폭발 사운드
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayBombSound();
+            }
+
+            // ★ 1칸 폭발 시점: 중심 + ring1 좌표에 고블린 데미지 (누적 일괄 적용)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                var damageMap = new Dictionary<HexCoord, int>();
+                damageMap[bombCoord] = 1;
+                foreach (var coord in ring1Coords)
+                {
+                    if (damageMap.ContainsKey(coord))
+                        damageMap[coord] += 1;
+                    else
+                        damageMap[coord] = 1;
+                }
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap);
             }
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
@@ -393,6 +412,20 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             // 화면 흔들림은 첫 번째 폭탄만
             if (isFirstBomb)
                 StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity * 0.6f, VisualConstants.ShakeLargeDuration * 0.7f));
+
+            // ★ 2칸 폭발 시점: ring2 좌표에 고블린 데미지 (누적 일괄 적용)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                var damageMap = new Dictionary<HexCoord, int>();
+                foreach (var coord in ring2Coords)
+                {
+                    if (damageMap.ContainsKey(coord))
+                        damageMap[coord] += 1;
+                    else
+                        damageMap[coord] = 1;
+                }
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap);
+            }
 
             foreach (var target in ring2Targets)
             {
@@ -583,6 +616,8 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
         private IEnumerator DestroyBlockWithExplosion(HexBlock block, Color blockColor, Vector3 bombCenter, bool showEffects = true)
         {
             if (block == null) yield break;
+
+            // 고블린 데미지는 BombCoroutine에서 폭발 범위 전체에 일괄 적용 (블록 유무 무관)
 
             Vector3 blockPos = block.transform.position;
             Vector3 pushDir = (blockPos - bombCenter).normalized;

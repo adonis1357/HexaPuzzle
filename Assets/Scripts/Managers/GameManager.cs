@@ -28,6 +28,7 @@ namespace JewelsHexaPuzzle.Managers
 
         [SerializeField] private DroneBlockSystem droneSystem;
         [SerializeField] private EnemySystem enemySystem;
+        private GoblinSystem goblinSystem;
 
 
 
@@ -1602,7 +1603,23 @@ private IEnumerator PostRecoveryCleanup()
                 }
             }
 
-            
+            // 고블린 시스템 자동 생성/찾기
+            if (goblinSystem == null)
+            {
+                goblinSystem = FindObjectOfType<GoblinSystem>();
+                if (goblinSystem == null)
+                {
+                    GameObject gsObj = new GameObject("GoblinSystem");
+                    goblinSystem = gsObj.AddComponent<GoblinSystem>();
+                    Debug.Log("[GameManager] GoblinSystem auto-created");
+                }
+                else
+                {
+                    Debug.Log("[GameManager] GoblinSystem auto-found");
+                }
+            }
+
+
 if (inputSystem == null)
             {
                 inputSystem = FindObjectOfType<InputSystem>();
@@ -2401,6 +2418,24 @@ private void InitializeSystems()
                 Destroy(msgObj);
         }
 
+        /// <summary>
+        /// 캔버스에 남아있는 플로팅 메시지/골드 팝업 정리 (로비 전환 시 호출)
+        /// </summary>
+        private void CleanupFloatingMessages()
+        {
+            Canvas canvas = hexGrid != null ? hexGrid.GetComponentInParent<Canvas>() : FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            var toDestroy = new System.Collections.Generic.List<GameObject>();
+            foreach (Transform child in canvas.transform)
+            {
+                if (child.name.StartsWith("FloatingMessage") || child.name.StartsWith("GoldPopup_"))
+                    toDestroy.Add(child.gameObject);
+            }
+            foreach (var obj in toDestroy)
+                Destroy(obj);
+        }
+
         private Image CreateItemOverlay(Canvas canvas, string name, Color overlayColor)
         {
             GameObject overlayObj = new GameObject(name);
@@ -2924,6 +2959,29 @@ private void InitializeSystems()
                 }
             }
 
+            // 고블린 시스템 초기화 (스테이지 1~10에서만 활성화)
+            if (goblinSystem != null && currentGameMode == GameMode.Stage && selectedStage >= 1 && selectedStage <= 10)
+            {
+                var goblinConfig = GetGoblinConfigForStage(selectedStage);
+                if (goblinConfig != null)
+                {
+                    goblinSystem.Initialize(hexGrid, goblinConfig);
+                    // 고블린 킬 이벤트 → 미션 시스템 연동
+                    goblinSystem.OnGoblinKilled -= OnGoblinKilledForMission;
+                    goblinSystem.OnGoblinKilled += OnGoblinKilledForMission;
+                    // 첫 턴 시작 시 즉시 고블린 소환
+                    yield return StartCoroutine(goblinSystem.ProcessTurn());
+                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + 초기 소환 완료: 스테이지 {selectedStage}");
+
+                    // 고블린 출현 알림 메시지
+                    ShowFloatingMessage("⚔️ 고블린이 출현! 블록을 떨어뜨려 처치하세요!");
+                }
+            }
+            else if (goblinSystem != null)
+            {
+                goblinSystem.CleanupAll();
+            }
+
             // 점수 리셋 (게임 시작 시마다) — 골드는 유지 (PlayerPrefs에서 로드된 누적 골드)
             if (scoreManager != null)
                 scoreManager.ResetScore();
@@ -3312,13 +3370,7 @@ private void OnRotationComplete(bool matchFound)
                     StageMissionSequentialCountDown(idx, countText, from, remaining, isComplete));
             }
 
-            // 블록 수집 이펙트 (컨테이너 위치로)
-            RectTransform flyTarget = UIManager.gameMissionContainerRect ?? UIManager.gameMissionIconRect;
-            Canvas canvas = FindObjectOfType<Canvas>();
-            if (flyTarget != null && canvas != null)
-            {
-                StartCoroutine(BlockFlyEffectCoroutine(flyTarget.anchoredPosition, canvas));
-            }
+            // 블록 수집 이펙트 제거됨 (BlockFlyEffectCoroutine)
         }
 
         /// <summary>
@@ -6014,6 +6066,13 @@ private void OnBigBang()
 
             SetGameState(GameState.Lobby);
 
+            // 인게임 플로팅 메시지 잔상 정리 (StopAllCoroutines로 코루틴은 멈추지만 GameObject는 남음)
+            CleanupFloatingMessages();
+
+            // 고블린 시스템 정리 (남아있는 몬스터 제거)
+            if (goblinSystem != null)
+                goblinSystem.CleanupAll();
+
             // 미션 UI 제거
             if (uiManager != null)
                 uiManager.CleanupGameMissionUI();
@@ -6221,6 +6280,21 @@ private void OnBigBang()
         private IEnumerator SpawnEnemiesViaSystemAndPlay()
         {
             processingStartTime = Time.time; // STUCK 방지: 적군 스폰 대기 중 타임아웃 방지
+
+            // 고블린 턴 처리 (이동 → 공격 → 소환)
+            if (goblinSystem != null && goblinSystem.IsActive)
+            {
+                yield return StartCoroutine(goblinSystem.ProcessTurn());
+                processingStartTime = Time.time; // STUCK 방지 갱신
+
+                // 고블린 턴 후 미션 완료 확인
+                if (stageManager != null && stageManager.IsMissionComplete())
+                {
+                    StageClear();
+                    yield break;
+                }
+            }
+
             if (enemySystem != null)
             {
                 // [몬스터 비활성화] 적군 스폰 사운드 비활성화
@@ -6823,6 +6897,53 @@ private void OnDestroy()
             if (blockRemovalSystem != null)
             {
                 blockRemovalSystem.OnSpecialBlockCreated -= HandleSpecialBlockCreatedForStage;
+            }
+
+            // 고블린 시스템 이벤트 정리
+            if (goblinSystem != null)
+            {
+                goblinSystem.OnGoblinKilled -= OnGoblinKilledForMission;
+            }
+        }
+
+        // ============================================================
+        // 고블린 시스템 관련 메서드
+        // ============================================================
+
+        /// <summary>
+        /// 고블린 제거 시 미션 시스템에 보고
+        /// blockRemovalSystem.OnEnemyRemoved 이벤트를 통해 StageManager에 전달
+        /// </summary>
+        private void OnGoblinKilledForMission(int totalKills)
+        {
+            Debug.Log($"[GameManager] 고블린 제거 미션 보고: 총 {totalKills}킬");
+
+            // StageManager의 OnEnemyRemoved와 동일한 경로로 미션 진행도 업데이트
+            if (stageManager != null)
+            {
+                // StageManager에 직접 접근하여 미션 업데이트
+                stageManager.ReportGoblinKill();
+            }
+        }
+
+        /// <summary>
+        /// 스테이지별 고블린 설정 반환
+        /// </summary>
+        private GoblinStageConfig GetGoblinConfigForStage(int stage)
+        {
+            switch (stage)
+            {
+                case 1: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 1, missionKillCount = 2, maxOnBoard = 3 };
+                case 2: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 1, missionKillCount = 3, maxOnBoard = 4 };
+                case 3: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 1, missionKillCount = 4, maxOnBoard = 5 };
+                case 4: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 5, maxOnBoard = 5 };
+                case 5: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 6, maxOnBoard = 6 };
+                case 6: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 8, maxOnBoard = 6 };
+                case 7: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 10, maxOnBoard = 7 };
+                case 8: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 12, maxOnBoard = 7 };
+                case 9: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 14, maxOnBoard = 8 };
+                case 10: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 16, maxOnBoard = 8 };
+                default: return null;
             }
         }
     }
