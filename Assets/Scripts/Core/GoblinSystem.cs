@@ -164,12 +164,27 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private int GetMissionTargetForType(bool isArmored, bool isArcher, bool isShieldType = false)
         {
-            if (GameManager.Instance == null) return 0;
+            if (GameManager.Instance == null)
+            {
+                Debug.LogWarning("[GoblinSystem] GetMissionTargetForType: GameManager.Instance == null");
+                return 0;
+            }
             var stageManager = GameManager.Instance.StageManagerRef;
-            if (stageManager == null) return 0;
+            if (stageManager == null)
+            {
+                Debug.LogWarning("[GoblinSystem] GetMissionTargetForType: StageManagerRef == null");
+                return 0;
+            }
 
             var missions = stageManager.GetMissionProgress();
-            if (missions == null) return 0;
+            if (missions == null || missions.Length == 0)
+            {
+                Debug.LogWarning($"[GoblinSystem] GetMissionTargetForType: missions null 또는 빈 배열 (length={missions?.Length})");
+                // ★ 폴백: missionKillCount 기반 (미션 데이터 로드 실패 시)
+                if (currentConfig != null && !isArmored && !isArcher && !isShieldType)
+                    return currentConfig.missionKillCount;
+                return 0;
+            }
 
             EnemyType targetType;
             if (isArcher) targetType = EnemyType.ArcherGoblin;
@@ -896,10 +911,18 @@ namespace JewelsHexaPuzzle.Core
 
         private IEnumerator SpawnGoblins()
         {
-            if (currentConfig == null) yield break;
+            if (currentConfig == null)
+            {
+                Debug.LogWarning("[GoblinSystem] SpawnGoblins 취소: currentConfig == null");
+                yield break;
+            }
 
             // 미션 완료 시 추가 소환 중단
-            if (MissionComplete) yield break;
+            if (MissionComplete)
+            {
+                Debug.Log("[GoblinSystem] SpawnGoblins 취소: MissionComplete");
+                yield break;
+            }
 
             // 보드 최대 동시 존재 수 제한 (maxOnBoard 이하일 때만 소환)
             int aliveCount = AliveCount;
