@@ -119,22 +119,13 @@ namespace JewelsHexaPuzzle.Items
                 return;
             }
 
-            // 수량 체크: 아이템이 없으면 구매 팝업 표시
-            if (ItemManager.Instance != null)
+            // MP 체크: MP가 부족하면 사용 불가
+            if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.Bomb))
             {
-                int count = ItemManager.Instance.GetItemCount(ItemType.Bomb);
-                if (count <= 0)
-                {
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.ShowItemPurchasePopup(ItemType.Bomb);
-                    return;
-                }
-
-                if (!ItemManager.Instance.CanUseItem(ItemType.Bomb))
-                {
-                    Debug.Log("[SwapItem] 게임당 사용 제한 초과");
-                    return;
-                }
+                Debug.Log($"[SwapItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.Bomb)}, 현재 {MPManager.Instance.CurrentMP}");
+                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                return;
             }
 
             Activate();
@@ -427,9 +418,12 @@ namespace JewelsHexaPuzzle.Items
             isProcessing = true;
             Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord}");
 
-            // 아이템 소모
-            if (ItemManager.Instance != null)
-                ItemManager.Instance.ConsumeItem(ItemType.Bomb);
+            // MP 소모 (두 블록 중간 위치에 팝업)
+            if (MPManager.Instance != null)
+            {
+                Vector3 midPos = (blockA.transform.position + blockB.transform.position) * 0.5f;
+                MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.Bomb), midPos);
+            }
 
             RectTransform rtA = blockA.GetComponent<RectTransform>();
             RectTransform rtB = blockB.GetComponent<RectTransform>();

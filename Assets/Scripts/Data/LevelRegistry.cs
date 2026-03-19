@@ -129,6 +129,15 @@ namespace JewelsHexaPuzzle.Data
                 }
             });
 
+            // --- 레벨 12~15: Stage 모드 (활+몽둥이+갑옷 혼합) ---
+            RegisterStages12To15();
+
+            // --- 레벨 16~20: Stage 모드 (방패 고블린 등장) ---
+            RegisterStages16To20();
+
+            // --- 레벨 21~30: Stage 모드 (화산 심장 — 4종 전체 혼합) ---
+            RegisterStages21To30();
+
             // --- 마지막 레벨: Infinite 모드 (무한 도전) — 항상 스테이지 레벨 뒤에 배치 ---
             RegisterInfiniteLevel();
         }
@@ -229,6 +238,170 @@ namespace JewelsHexaPuzzle.Data
                     difficulty = i >= 10 ? 3 : Mathf.Min(1 + i / 3, 3),
                     isLocked = i > 1,
                     unlockRequirement = i > 1 ? i - 1 : 0,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 12~15 등록 (활+몽둥이+갑옷 고블린 혼합)
+        /// </summary>
+        private static void RegisterStages12To15()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.65f, 0.25f, 0.5f),  // 12
+                new Color(0.7f, 0.2f, 0.45f),   // 13
+                new Color(0.75f, 0.15f, 0.4f),  // 14
+                new Color(0.8f, 0.1f, 0.35f)    // 15: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "궁수3 + 고블린12 + 갑옷8",
+                "궁수3 + 고블린14 + 갑옷11",
+                "궁수4 + 고블린15 + 갑옷15",
+                "궁수4 + 고블린17 + 갑옷18"
+            };
+
+            for (int i = 12; i <= 15; i++)
+            {
+                int idx = i - 12;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"STAGE {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficulty = i >= 15 ? 3 : 2,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 16~20 등록 (방패 고블린 등장 — 궁수+갑옷+방패 혼합)
+        /// </summary>
+        private static void RegisterStages16To20()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.20f, 0.35f, 0.60f),  // 16: 짙은 파랑
+                new Color(0.18f, 0.30f, 0.65f),  // 17
+                new Color(0.15f, 0.25f, 0.70f),  // 18
+                new Color(0.12f, 0.20f, 0.75f),  // 19
+                new Color(0.10f, 0.15f, 0.80f)   // 20: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "궁수2 + 갑옷8 + 방패3 + 기본12",   // 16
+                "궁수3 + 갑옷10 + 방패4 + 기본13",  // 17
+                "궁수4 + 갑옷12 + 방패6 + 기본14",  // 18
+                "궁수4 + 갑옷14 + 방패8 + 기본16",  // 19
+                "궁수5 + 갑옷15 + 방패10 + 기본18"  // 20
+            };
+
+            for (int i = 16; i <= 20; i++)
+            {
+                int idx = i - 16;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"STAGE {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficulty = i >= 20 ? 3 : 2,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 21~30 등록 (화산 심장 — 4종 전체 혼합)
+        /// </summary>
+        private static void RegisterStages21To30()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.70f, 0.25f, 0.15f),  // 21: 화산 주황
+                new Color(0.75f, 0.22f, 0.12f),  // 22
+                new Color(0.78f, 0.18f, 0.10f),  // 23
+                new Color(0.82f, 0.15f, 0.08f),  // 24
+                new Color(0.85f, 0.12f, 0.12f),  // 25: 중간 보스
+                new Color(0.80f, 0.10f, 0.18f),  // 26
+                new Color(0.75f, 0.08f, 0.22f),  // 27
+                new Color(0.70f, 0.06f, 0.28f),  // 28
+                new Color(0.65f, 0.05f, 0.35f),  // 29
+                new Color(0.60f, 0.04f, 0.40f)   // 30: 최종 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "기본10 + 갑옷8 + 궁수3 + 방패4",   // 21
+                "기본12 + 갑옷10 + 궁수5 + 방패5",  // 22
+                "방패8 + 갑옷12 + 기본8 + 궁수4",   // 23
+                "궁수7 + 기본14 + 갑옷8 + 방패6",   // 24
+                "★ 기본16 + 갑옷14 + 궁수6 + 방패8", // 25: 보스
+                "갑옷18 + 기본10 + 방패7 + 궁수5",  // 26
+                "방패10 + 기본12 + 갑옷12 + 궁수6",  // 27
+                "기본14 + 갑옷14 + 궁수8 + 방패8",  // 28
+                "기본16 + 갑옷16 + 방패10 + 궁수7",  // 29
+                "★ 기본18 + 갑옷18 + 궁수8 + 방패12" // 30: 최종 보스
+            };
+
+            for (int i = 21; i <= 30; i++)
+            {
+                int idx = i - 21;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"STAGE {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficulty = (i == 25 || i >= 29) ? 3 : 2,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
                     lobbyDisplay = new LobbyDisplayConfig
                     {
                         backgroundColor = bgColor,

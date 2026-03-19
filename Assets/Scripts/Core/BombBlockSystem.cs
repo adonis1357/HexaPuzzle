@@ -348,7 +348,9 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     else
                         damageMap[coord] = 1;
                 }
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap);
+                // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
+                var directHitCoords = new HashSet<HexCoord>(damageMap.Keys);
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
             }
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
@@ -424,7 +426,9 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     else
                         damageMap[coord] = 1;
                 }
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap);
+                // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
+                var directHitCoords = new HashSet<HexCoord>(damageMap.Keys);
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
             }
 
             foreach (var target in ring2Targets)
@@ -517,6 +521,9 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
 
+            // ★ 흰색 충격파 — 폭발 범위를 시각적으로 표현
+            StartCoroutine(ShockwaveRangeEffect(pos));
+
             // 블룸 레이어 (메인 플래시 뒤에)
             StartCoroutine(BloomLayer(pos, VisualConstants.FlashColorBomb, VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
 
@@ -576,6 +583,97 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             Destroy(flash);
             Destroy(ring1);
             Destroy(ring2);
+        }
+
+        /// <summary>
+        /// 폭발 범위 충격파 — 흰색 불투명 원형이 중심에서 2칸 범위까지 팽창 후 페이드아웃
+        /// 폭탄이 어디까지 영향을 미치는지 시각적으로 전달
+        /// </summary>
+        private IEnumerator ShockwaveRangeEffect(Vector3 pos)
+        {
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+            float hexSz = hexGrid != null ? hexGrid.HexSize : 50f;
+
+            // 최종 충격파 반경: 2칸 범위 + 여유 (hex 간격 기준)
+            float finalRadius = hexSz * Mathf.Sqrt(3f) * 2.2f; // ~190px (2칸 범위)
+
+            // --- 메인 충격파 (흰색 불투명 원형 디스크) ---
+            GameObject shockwave = new GameObject("BombShockwave");
+            shockwave.transform.SetParent(parent, false);
+            shockwave.transform.position = pos;
+
+            var swImg = shockwave.AddComponent<UnityEngine.UI.Image>();
+            swImg.sprite = HexBlock.GetHexFlashSprite();
+            swImg.raycastTarget = false;
+            swImg.color = new Color(1f, 1f, 1f, 0.7f); // 흰색 반불투명
+
+            RectTransform swRt = shockwave.GetComponent<RectTransform>();
+            float startSize = hexSz * 0.5f; // 작게 시작
+            swRt.sizeDelta = new Vector2(startSize, startSize);
+
+            // --- 외곽 링 (얇은 흰색 테두리) ---
+            GameObject outerRing = new GameObject("BombShockwaveRing");
+            outerRing.transform.SetParent(parent, false);
+            outerRing.transform.position = pos;
+
+            var ringImg = outerRing.AddComponent<UnityEngine.UI.Image>();
+            ringImg.sprite = HexBlock.GetHexFlashSprite();
+            ringImg.raycastTarget = false;
+            ringImg.color = new Color(1f, 1f, 1f, 0.9f);
+
+            RectTransform ringRt = outerRing.GetComponent<RectTransform>();
+            ringRt.sizeDelta = new Vector2(startSize, startSize);
+
+            // Phase 1: 빠르게 팽창 (0.15초)
+            float expandDuration = 0.15f;
+            float elapsed = 0f;
+
+            while (elapsed < expandDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / expandDuration);
+                float eased = VisualConstants.EaseOutCubic(t);
+
+                // 메인 충격파: 작게 → 최종 범위까지 팽창
+                float currentSize = Mathf.Lerp(startSize, finalRadius * 2f, eased);
+                swRt.sizeDelta = new Vector2(currentSize, currentSize);
+                // 팽창하면서 약간 투명해짐
+                swImg.color = new Color(1f, 1f, 1f, Mathf.Lerp(0.7f, 0.35f, eased));
+
+                // 외곽 링: 약간 더 크게 팽창 (경계선 강조)
+                float ringSize = Mathf.Lerp(startSize, finalRadius * 2.3f, eased);
+                ringRt.sizeDelta = new Vector2(ringSize, ringSize);
+                ringImg.color = new Color(1f, 1f, 1f, Mathf.Lerp(0.9f, 0.6f, eased));
+
+                yield return null;
+            }
+
+            // Phase 2: 유지 + 페이드아웃 (0.2초)
+            float fadeDuration = 0.2f;
+            elapsed = 0f;
+            float holdSize = finalRadius * 2f;
+            float holdRingSize = finalRadius * 2.3f;
+
+            while (elapsed < fadeDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDuration);
+                float fadeEased = VisualConstants.EaseInQuad(t);
+
+                // 살짝 더 팽창하면서 완전히 사라짐
+                float currentSize = holdSize + holdSize * 0.1f * fadeEased;
+                swRt.sizeDelta = new Vector2(currentSize, currentSize);
+                swImg.color = new Color(1f, 1f, 1f, 0.35f * (1f - fadeEased));
+
+                float ringSize = holdRingSize + holdRingSize * 0.08f * fadeEased;
+                ringRt.sizeDelta = new Vector2(ringSize, ringSize);
+                ringImg.color = new Color(1f, 1f, 1f, 0.6f * (1f - fadeEased));
+
+                yield return null;
+            }
+
+            Destroy(shockwave);
+            Destroy(outerRing);
         }
 
         private GameObject CreateExplosionRing(Vector3 pos, Transform parent, Color color)

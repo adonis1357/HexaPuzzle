@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using JewelsHexaPuzzle.Data;
 using JewelsHexaPuzzle.Managers;
 
@@ -99,6 +100,19 @@ namespace JewelsHexaPuzzle.Core
             if (droneBlock == null) return;
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
                 return;
+
+            // 활 고블린 우선 직접 타격: 낙하 면역이므로 본체를 직접 공격해야 함
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                GoblinData targetArcher = FindBestArcherTarget();
+                if (targetArcher != null)
+                {
+                    Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 활 고블린 직접 타격 ({targetArcher.position})");
+                    ActivateDroneToGoblin(droneBlock, targetArcher.position);
+                    return;
+                }
+            }
+
             Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord}");
             StartCoroutine(DroneCoroutine(droneBlock, null));
         }
@@ -465,20 +479,46 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 스마트 타겟 선택: 열(q) 기반 최적 공격 대상 선택
-        /// 1차: 고블린이 가장 많은 열 (낙하 대미지 극대화)
-        /// 2차: 몬스터 위 블록 공격 시 +1 충돌 대미지 보너스
-        /// 동률: HP 합 → 가장자리 → 왼쪽 열
+        /// 활 고블린 중 최적 타겟 선택 (직접 타격용)
+        /// 우선순위: HP 낮은 순 → 왼쪽 열
+        /// </summary>
+        private GoblinData FindBestArcherTarget()
+        {
+            if (GoblinSystem.Instance == null) return null;
+            var archers = GoblinSystem.Instance.GetAliveGoblins()
+                .Where(g => g.isAlive && g.isArcher)
+                .ToList();
+            if (archers.Count == 0) return null;
+
+            // HP가 낮은 활 고블린 우선 (처치 가능성↑), 동률 시 왼쪽(q 작은것)
+            GoblinData best = archers[0];
+            for (int i = 1; i < archers.Count; i++)
+            {
+                var a = archers[i];
+                if (a.hp < best.hp || (a.hp == best.hp && a.position.q < best.position.q))
+                    best = a;
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// 스마트 타겟 선택: 블록 단위 최적 공격 대상 선택
+        /// 각 블록별 총 대미지 = 같은 열 고블린 수(낙하) + 충돌 보너스(고블린 위 블록)
+        /// 킬 우선순위: 처치 가능 고블린 수 최우선 (hp==1 낙하 사망 + hp<=2 충돌 사망)
+        /// 동률: 총 대미지 → 갑옷 고블린 수 → HP 합 → 가장자리 → 왼쪽 열
         /// </summary>
         private HexBlock FindSmartTargetBlock(HexBlock droneBlock)
         {
             var goblinSystem = GoblinSystem.Instance;
-            var aliveGoblins = goblinSystem.GetAliveGoblins();
-            if (aliveGoblins.Count == 0) return null;
+            // 모든 고블린 포함 (활 고블린도 열 우선순위 평가에 포함)
+            var allGoblins = goblinSystem.GetAliveGoblins();
+            // 낙하 대미지 대상은 활 고블린 제외 (낙하 면역)
+            var fallTargets = allGoblins.Where(g => !g.isArcher).ToList();
+            if (allGoblins.Count == 0) return null;
 
-            // 열(q)별 고블린 그룹화
-            Dictionary<int, List<GoblinData>> columnGoblins = new Dictionary<int, List<GoblinData>>();
-            foreach (var goblin in aliveGoblins)
+            // 열(q)별 고블린 그룹화 (낙하 대상만)
+            var columnGoblins = new Dictionary<int, List<GoblinData>>();
+            foreach (var goblin in fallTargets)
             {
                 int q = goblin.position.q;
                 if (!columnGoblins.ContainsKey(q))
@@ -486,123 +526,182 @@ namespace JewelsHexaPuzzle.Core
                 columnGoblins[q].Add(goblin);
             }
 
-            // 각 열 평가 → 최적 열 선택
-            int bestQ = 0;
+            // 열(q)별 활 고블린 수 (타겟팅 우선순위용)
+            var archerByCol = new Dictionary<int, int>();
+            foreach (var goblin in allGoblins)
+            {
+                if (!goblin.isArcher) continue;
+                int q = goblin.position.q;
+                archerByCol[q] = archerByCol.ContainsKey(q) ? archerByCol[q] + 1 : 1;
+            }
+
+            // 고블린이 있는 열 집합 (낙하 대상 + 활 고블린 모두)
+            var columnsWithGoblins = new HashSet<int>(columnGoblins.Keys);
+            foreach (int q in archerByCol.Keys) columnsWithGoblins.Add(q);
+
+            // 열(q)별 방패 고블린 수 (모든 고블린 대상)
+            var shieldByCol = new Dictionary<int, int>();
+            foreach (var goblin in allGoblins)
+            {
+                if (!goblin.isShielded) continue;
+                int q = goblin.position.q;
+                shieldByCol[q] = shieldByCol.ContainsKey(q) ? shieldByCol[q] + 1 : 1;
+            }
+
+            // 열(q)별 갑옷 고블린 수
+            var armoredByCol = new Dictionary<int, int>();
+            foreach (var goblin in allGoblins)
+            {
+                if (!goblin.isArmored) continue;
+                int q = goblin.position.q;
+                armoredByCol[q] = armoredByCol.ContainsKey(q) ? armoredByCol[q] + 1 : 1;
+            }
+
+            // 모든 후보 블록에 대해 개별 평가
+            HexBlock bestBlock = null;
+            int bestShieldInCol = -1;
+            int bestShieldDirectHit = -1;
+            int bestArcherCount = -1;
+            int bestArmoredCount = -1;
+            int bestKillCount = -1;
             int bestTotalDamage = -1;
             int bestHpSum = -1;
             int bestEdgeDist = -1;
-            bool bestFound = false;
+            int bestQ = int.MaxValue;
 
-            foreach (var kvp in columnGoblins)
+            foreach (var block in hexGrid.GetAllBlocks())
             {
-                int q = kvp.Key;
-                var goblinsInCol = kvp.Value;
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.gemType == GemType.Gray) continue;
+                if (block == droneBlock) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+
+                int q = block.Coord.q;
+                if (!columnsWithGoblins.Contains(q)) continue;
+
+                var goblinsInCol = columnGoblins.ContainsKey(q) ? columnGoblins[q] : new List<GoblinData>();
                 int monsterCount = goblinsInCol.Count;
 
-                // 충돌 보너스: 해당 열에서 블록 위에 있는 고블린이 있는지 (드론이 1블록만 타격하므로 최대 +1)
-                int collisionBonus = 0;
+                // 충돌 판정: 이 블록 위치에 고블린이 있으면 직접 타격
+                GoblinData collisionGoblin = null;
                 foreach (var goblin in goblinsInCol)
                 {
-                    HexBlock blockAtPos = hexGrid.GetBlock(goblin.position);
-                    if (blockAtPos != null && blockAtPos.Data != null
-                        && blockAtPos.Data.gemType != GemType.None
-                        && blockAtPos != droneBlock
-                        && blockAtPos.Data.specialType != SpecialBlockType.Drone)
+                    if (goblin.position == block.Coord)
                     {
-                        collisionBonus = 1;
+                        collisionGoblin = goblin;
                         break;
                     }
                 }
+                bool hasCollision = collisionGoblin != null;
 
-                int totalDamage = monsterCount + collisionBonus;
+                // ★ 방패 직접 타격: 이 블록 위치에 방패 고블린이 있어야만 대미지 가능
+                int shieldDirectHit = (hasCollision && collisionGoblin.isShielded) ? 1 : 0;
+
+                // 대미지 계산 (방패 고블린은 낙하 대미지 면역 → 제외)
+                int killCount = 0;
+                int totalDamage = 0;
                 int hpSum = 0;
-                foreach (var g in goblinsInCol) hpSum += g.hp;
+                foreach (var g in goblinsInCol)
+                {
+                    if (g.isShielded)
+                    {
+                        // 방패는 직접 충돌만 대미지 가능
+                        if (hasCollision && g.position == block.Coord)
+                        {
+                            totalDamage += 1; // 충돌 1대미지 (방패에)
+                            hpSum += g.hp;
+                        }
+                        continue; // 낙하 대미지 제외
+                    }
+
+                    hpSum += g.hp;
+                    if (hasCollision && g.position == block.Coord)
+                    {
+                        totalDamage += 2; // 충돌 + 낙하
+                        if (g.hp <= 2) killCount++;
+                    }
+                    else
+                    {
+                        totalDamage += 1; // 낙하만
+                        if (g.hp <= 1) killCount++;
+                    }
+                }
+
+                // 이 열의 방패/활/갑옷 고블린 수
+                int shieldInCol = shieldByCol.ContainsKey(q) ? shieldByCol[q] : 0;
+                int archerCount = archerByCol.ContainsKey(q) ? archerByCol[q] : 0;
+                int armoredCount = armoredByCol.ContainsKey(q) ? armoredByCol[q] : 0;
+
                 int edgeDist = Mathf.Abs(q);
 
-                // 비교: totalDamage > hpSum > edgeDist > 왼쪽(q 작은것)
+                // ★ 우선순위: 방패열 → 방패직접 → 활 → 갑옷 → killCount → totalDamage → hpSum → edgeDist → q
                 bool isBetter = false;
-                if (!bestFound)
+                if (bestBlock == null)
                 {
                     isBetter = true;
                 }
-                else if (totalDamage > bestTotalDamage)
+                else if (shieldInCol > bestShieldInCol)
                 {
                     isBetter = true;
                 }
-                else if (totalDamage == bestTotalDamage)
+                else if (shieldInCol == bestShieldInCol)
                 {
-                    if (hpSum > bestHpSum)
+                    if (shieldDirectHit > bestShieldDirectHit)
                         isBetter = true;
-                    else if (hpSum == bestHpSum)
+                    else if (shieldDirectHit == bestShieldDirectHit)
                     {
-                        if (edgeDist > bestEdgeDist)
+                        if (archerCount > bestArcherCount)
                             isBetter = true;
-                        else if (edgeDist == bestEdgeDist && q < bestQ)
-                            isBetter = true;
+                        else if (archerCount == bestArcherCount)
+                        {
+                            if (armoredCount > bestArmoredCount)
+                                isBetter = true;
+                            else if (armoredCount == bestArmoredCount)
+                            {
+                                if (killCount > bestKillCount)
+                                    isBetter = true;
+                                else if (killCount == bestKillCount)
+                                {
+                                    if (totalDamage > bestTotalDamage)
+                                        isBetter = true;
+                                    else if (totalDamage == bestTotalDamage)
+                                    {
+                                        if (hpSum > bestHpSum)
+                                            isBetter = true;
+                                        else if (hpSum == bestHpSum)
+                                        {
+                                            if (edgeDist > bestEdgeDist)
+                                                isBetter = true;
+                                            else if (edgeDist == bestEdgeDist && q < bestQ)
+                                                isBetter = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
                 if (isBetter)
                 {
-                    bestQ = q;
+                    bestBlock = block;
+                    bestShieldInCol = shieldInCol;
+                    bestShieldDirectHit = shieldDirectHit;
+                    bestArcherCount = archerCount;
+                    bestArmoredCount = armoredCount;
+                    bestKillCount = killCount;
                     bestTotalDamage = totalDamage;
                     bestHpSum = hpSum;
                     bestEdgeDist = edgeDist;
-                    bestFound = true;
+                    bestQ = q;
                 }
             }
 
-            if (!bestFound) return null;
+            if (bestBlock != null)
+                Debug.Log($"[DroneBlockSystem] ★ 스마트 타겟: {bestBlock.Coord} (방패열={bestShieldInCol}, 방패직접={bestShieldDirectHit}, 활={bestArcherCount}, 갑옷={bestArmoredCount}, 킬={bestKillCount}, 대미지={bestTotalDamage})");
 
-            int bestMonsterCount = columnGoblins[bestQ].Count;
-            int bestCollisionBonus = bestTotalDamage - bestMonsterCount;
-            Debug.Log($"[DroneBlockSystem] 스마트 타겟 열 선택: q={bestQ} (몬스터={bestMonsterCount}, 충돌보너스={bestCollisionBonus}, HP합={bestHpSum}, 가장자리={bestEdgeDist})");
-
-            var bestColumnGoblins = columnGoblins[bestQ];
-
-            // === 선택된 열에서 타겟 블록 결정 ===
-
-            // 1순위: 몬스터가 위에 있는 블록 (충돌 대미지 보너스)
-            // 여러 개일 경우 가장 위쪽(r 작은) 선택 → 낙하 거리 극대화
-            HexBlock monsterOnBlock = null;
-            foreach (var goblin in bestColumnGoblins)
-            {
-                HexBlock blockAtPos = hexGrid.GetBlock(goblin.position);
-                if (blockAtPos != null && blockAtPos.Data != null
-                    && blockAtPos.Data.gemType != GemType.None
-                    && blockAtPos != droneBlock
-                    && blockAtPos.Data.specialType != SpecialBlockType.Drone)
-                {
-                    if (monsterOnBlock == null || blockAtPos.Coord.r < monsterOnBlock.Coord.r)
-                        monsterOnBlock = blockAtPos;
-                }
-            }
-
-            if (monsterOnBlock != null)
-            {
-                Debug.Log($"[DroneBlockSystem] ★ 스마트 타겟: 몬스터 위 블록 {monsterOnBlock.Coord} ({monsterOnBlock.Data.gemType})");
-                return monsterOnBlock;
-            }
-
-            // 2순위: 해당 열의 가장 위 블록 (낙하 거리 극대화)
-            HexBlock topmostBlock = null;
-            foreach (var block in hexGrid.GetAllBlocks())
-            {
-                if (block == null || block.Data == null) continue;
-                if (block.Data.gemType == GemType.None) continue;
-                if (block == droneBlock) continue;
-                if (block.Data.specialType == SpecialBlockType.Drone) continue;
-                if (block.Coord.q != bestQ) continue;
-
-                // r 값이 작을수록 위쪽 (Y 반전)
-                if (topmostBlock == null || block.Coord.r < topmostBlock.Coord.r)
-                    topmostBlock = block;
-            }
-
-            if (topmostBlock != null)
-                Debug.Log($"[DroneBlockSystem] ★ 스마트 타겟: 열 최상단 블록 {topmostBlock.Coord} ({topmostBlock.Data.gemType})");
-
-            return topmostBlock;
+            return bestBlock;
         }
 
         /// <summary>
@@ -616,6 +715,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 if (block == null || block.Data == null) continue;
                 if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.gemType == GemType.Gray) continue; // 회색(쉘) 블록 타겟 제외
                 if (block == droneBlock) continue;
                 if (block.Data.specialType == SpecialBlockType.Drone) continue;
                 candidates.Add(block);

@@ -259,11 +259,35 @@ namespace JewelsHexaPuzzle.Data
             {
                 type = EnemyType.Goblin,
                 name = "고블린",
-                alias = "고블린",
+                alias = "몽둥이",
                 description = "나무 몽둥이를 들고 블록을 공격해 금간 블록으로 만드는 적군",
                 overlayColor = new Color(0.3f, 0.7f, 0.2f, 0.9f),
                 baseScore = 500,
                 defaultMaxOnBoard = 8
+            });
+
+            // --- #11 갑옷 고블린 (ArmoredGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.ArmoredGoblin,
+                name = "갑옷 고블린",
+                alias = "갑옷",
+                description = "갑옷으로 무장한 고블린. HP가 3배로 높아 제거하기 어렵다",
+                overlayColor = new Color(0.5f, 0.5f, 0.55f, 0.9f),
+                baseScore = 1000,
+                defaultMaxOnBoard = 4
+            });
+
+            // --- #12 활 고블린 (ArcherGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.ArcherGoblin,
+                name = "활 고블린",
+                alias = "활",
+                description = "상단에 고정 배치되어 매턴 화살을 쏴 블록에 크랙을 가하는 은신 사격수",
+                overlayColor = new Color(0.2f, 0.5f, 0.15f, 0.9f),
+                baseScore = 800,
+                defaultMaxOnBoard = 5
             });
         }
 

@@ -134,24 +134,13 @@ namespace JewelsHexaPuzzle.Items
                 return;
             }
 
-            // 수량 체크
-            if (ItemManager.Instance != null)
+            // MP 체크: MP가 부족하면 사용 불가
+            if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.ReverseRotation))
             {
-                int count = ItemManager.Instance.GetItemCount(ItemType.ReverseRotation);
-                if (count <= 0)
-                {
-                    // 구매 팝업 표시
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.ShowItemPurchasePopup(ItemType.ReverseRotation);
-                    return;
-                }
-
-                // 게임당 사용 제한 체크
-                if (!ItemManager.Instance.CanUseItem(ItemType.ReverseRotation))
-                {
-                    Debug.Log("[ReverseRotationItem] 게임당 사용 제한 초과");
-                    return;
-                }
+                Debug.Log($"[ReverseRotationItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.ReverseRotation)}, 현재 {MPManager.Instance.CurrentMP}");
+                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                return;
             }
 
             // 활성화
@@ -380,16 +369,16 @@ namespace JewelsHexaPuzzle.Items
 
             if (matchFound)
             {
-                // 매칭 성공 → 아이템 소모
-                if (ItemManager.Instance != null)
-                    ItemManager.Instance.ConsumeItem(ItemType.ReverseRotation);
+                // 매칭 성공 → MP 소모
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.ReverseRotation));
 
-                Debug.Log("[ReverseRotationItem] 매칭 성공 → 아이템 소모");
+                Debug.Log("[ReverseRotationItem] 매칭 성공 → MP 소모");
             }
             else
             {
-                // 매칭 실패 → 아이템 수량 보존
-                Debug.Log("[ReverseRotationItem] 매칭 실패 → 아이템 수량 보존");
+                // 매칭 실패 → MP 보존
+                Debug.Log("[ReverseRotationItem] 매칭 실패 → MP 보존");
             }
         }
 

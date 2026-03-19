@@ -80,12 +80,23 @@ namespace JewelsHexaPuzzle.Core
             }
         }
 
+        /// <summary>그리드 전체 Y 오프셋 (블록 필드를 아래로 이동)</summary>
+        public const float FIELD_Y_OFFSET = -100f;
+
         public void InitializeGrid()
         {
             ClearGrid();
             GenerateGridCoordinates();
             CreateBackgroundGrid();
             CreateBlocks();
+
+            // 블록 필드 전체를 아래로 이동 (절대값 설정으로 누적 방지)
+            RectTransform containerRt = gridContainer.GetComponent<RectTransform>();
+            if (containerRt != null)
+            {
+                Vector2 pos = containerRt.anchoredPosition;
+                containerRt.anchoredPosition = new Vector2(pos.x, FIELD_Y_OFFSET);
+            }
         }
 
         private void GenerateGridCoordinates()

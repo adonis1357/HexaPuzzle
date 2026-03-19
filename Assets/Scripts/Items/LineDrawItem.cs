@@ -130,22 +130,13 @@ namespace JewelsHexaPuzzle.Items
                 return;
             }
 
-            // 수량 체크: 아이템이 없으면 구매 팝업 표시
-            if (ItemManager.Instance != null)
+            // MP 체크: MP가 부족하면 사용 불가
+            if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.SSD))
             {
-                int count = ItemManager.Instance.GetItemCount(ItemType.SSD);
-                if (count <= 0)
-                {
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.ShowItemPurchasePopup(ItemType.SSD);
-                    return;
-                }
-
-                if (!ItemManager.Instance.CanUseItem(ItemType.SSD))
-                {
-                    Debug.Log("[LineDrawItem] 게임당 사용 제한 초과");
-                    return;
-                }
+                Debug.Log($"[LineDrawItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.SSD)}, 현재 {MPManager.Instance.CurrentMP}");
+                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                return;
             }
 
             Activate();
@@ -587,9 +578,12 @@ namespace JewelsHexaPuzzle.Items
             isProcessing = true;
             Debug.Log($"[LineDrawItem] Removing {blocksToRemove.Count} blocks");
 
-            // 아이템 소모
-            if (ItemManager.Instance != null)
-                ItemManager.Instance.ConsumeItem(ItemType.SSD);
+            // MP 소모 (라인 중간 위치에 팝업)
+            if (MPManager.Instance != null && blocksToRemove.Count > 0)
+            {
+                Vector3 midPos = blocksToRemove[blocksToRemove.Count / 2].transform.position;
+                MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.SSD), midPos);
+            }
 
             // 1. HitStop + ZoomPunch (체인 길이에 비례)
             float hitStopDur = Mathf.Min(blocksToRemove.Count * 0.005f, VisualConstants.HitStopDurationSmall);

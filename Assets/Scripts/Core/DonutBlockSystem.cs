@@ -479,6 +479,7 @@ namespace JewelsHexaPuzzle.Core
                 {
                     if (block == null || block.Data == null) continue;
                     if (block.Data.gemType == GemType.None) continue;  // 빈 블록 무시
+                    if (block.Data.gemType == GemType.Gray) continue;  // 회색(쉘) 블록 타겟 제외
                     if (block == donutBlock) continue;  // 자기 자신 제외
 
                     if (block.Data.gemType == targetGemType)

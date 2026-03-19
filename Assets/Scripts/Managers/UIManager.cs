@@ -2066,22 +2066,22 @@ namespace JewelsHexaPuzzle.Managers
             missionRt.anchorMax = new Vector2(0, 1);
             missionRt.pivot = new Vector2(0, 1);
             missionRt.anchoredPosition = new Vector2(20, -20);
-            missionRt.sizeDelta = new Vector2(280, rowHeight + 20f);
+            missionRt.sizeDelta = new Vector2(196, rowHeight + 20f); // 280→196 (30% 축소)
 
             // 배경 패널 (밝은 라벤더 톤)
             Image bgImage = missionObj.AddComponent<Image>();
             bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
             bgImage.raycastTarget = false;
 
-            // 미션 아이콘 (레벨 모드와 동일 크기: 70x70)
+            // 미션 아이콘 (70x70)
             GameObject iconObj = new GameObject("MissionIcon");
             iconObj.transform.SetParent(missionObj.transform, false);
             RectTransform iconRt = iconObj.AddComponent<RectTransform>();
             iconRt.anchorMin = new Vector2(0, 0.5f);
             iconRt.anchorMax = new Vector2(0, 0.5f);
             iconRt.pivot = new Vector2(0, 0.5f);
-            iconRt.anchoredPosition = new Vector2(15, 0);
-            iconRt.sizeDelta = new Vector2(70, 70);
+            iconRt.anchoredPosition = new Vector2(10, 0);
+            iconRt.sizeDelta = new Vector2(60, 60);
 
             Image iconImage = iconObj.AddComponent<Image>();
             SetMissionIconForType(iconImage, mission);
@@ -2099,8 +2099,8 @@ namespace JewelsHexaPuzzle.Managers
             countRt.anchorMin = new Vector2(0, 0.5f);
             countRt.anchorMax = new Vector2(0, 0.5f);
             countRt.pivot = new Vector2(0, 0.5f);
-            countRt.anchoredPosition = new Vector2(95, 0);
-            countRt.sizeDelta = new Vector2(160, 70);
+            countRt.anchoredPosition = new Vector2(75, 0);
+            countRt.sizeDelta = new Vector2(112, 60);
 
             Text countText = countObj.AddComponent<Text>();
             countText.font = font;
@@ -2146,9 +2146,17 @@ namespace JewelsHexaPuzzle.Managers
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // 미션 컨테이너 (배경 패널)
+            // ★ 4개 이상: 2열 레이아웃 (1~3번 왼쪽열, 4번~ 오른쪽열)
+            bool useTwoColumns = missions.Length >= 4;
+            int leftColCount = useTwoColumns ? 3 : missions.Length;
+            int rightColCount = useTwoColumns ? missions.Length - leftColCount : 0;
+            int maxRows = Mathf.Max(leftColCount, rightColCount);
+
             float rowHeight = 90f;
-            float containerHeight = missions.Length * rowHeight + 20f; // 패딩 포함
+            float rowSpacing = rowHeight + 5f; // 행 높이 + 5px 간격
+            float colWidth = 196f;
+            float containerHeight = maxRows * rowSpacing + 15f; // 행 수 기준 높이 + 패딩
+            float containerWidth = useTwoColumns ? colWidth * 2f + 5f : colWidth; // 2열이면 2배 + 5px 간격
 
             GameObject containerObj = new GameObject("GameMissionUI_Multi");
             containerObj.transform.SetParent(canvas.transform, false);
@@ -2157,7 +2165,7 @@ namespace JewelsHexaPuzzle.Managers
             containerRt.anchorMax = new Vector2(0, 1);
             containerRt.pivot = new Vector2(0, 1);
             containerRt.anchoredPosition = new Vector2(20, -20);
-            containerRt.sizeDelta = new Vector2(280, containerHeight);
+            containerRt.sizeDelta = new Vector2(containerWidth, containerHeight);
 
             // 밝은 라벤더 톤 배경
             Image containerBg = containerObj.AddComponent<Image>();
@@ -2170,27 +2178,41 @@ namespace JewelsHexaPuzzle.Managers
             for (int i = 0; i < missions.Length; i++)
             {
                 MissionData mission = missions[i];
-                float yOffset = -10f - (i * rowHeight); // 상단부터 아래로
+
+                // ★ 2열 위치 계산
+                float xOffset;
+                float yOffset;
+                if (!useTwoColumns || i < leftColCount)
+                {
+                    xOffset = 0f;
+                    yOffset = -10f - (i * rowSpacing);
+                }
+                else
+                {
+                    int rightIdx = i - leftColCount;
+                    xOffset = colWidth + 5f; // 오른쪽 열 (5px 간격)
+                    yOffset = -10f - (rightIdx * rowSpacing);
+                }
 
                 // === 미션 행 컨테이너 ===
                 GameObject rowObj = new GameObject($"MissionRow_{i}");
                 rowObj.transform.SetParent(containerObj.transform, false);
                 RectTransform rowRt = rowObj.AddComponent<RectTransform>();
                 rowRt.anchorMin = new Vector2(0, 1);
-                rowRt.anchorMax = new Vector2(1, 1);
+                rowRt.anchorMax = new Vector2(0, 1);
                 rowRt.pivot = new Vector2(0, 1);
-                rowRt.anchoredPosition = new Vector2(0, yOffset);
-                rowRt.sizeDelta = new Vector2(0, rowHeight);
+                rowRt.anchoredPosition = new Vector2(xOffset, yOffset);
+                rowRt.sizeDelta = new Vector2(colWidth, rowHeight);
 
-                // === 미션 아이콘 (단색 육각형 블록) ===
+                // === 미션 아이콘 ===
                 GameObject iconObj = new GameObject($"MissionIcon_{i}");
                 iconObj.transform.SetParent(rowObj.transform, false);
                 RectTransform iconRt = iconObj.AddComponent<RectTransform>();
                 iconRt.anchorMin = new Vector2(0, 0.5f);
                 iconRt.anchorMax = new Vector2(0, 0.5f);
                 iconRt.pivot = new Vector2(0, 0.5f);
-                iconRt.anchoredPosition = new Vector2(15, 0);
-                iconRt.sizeDelta = new Vector2(70, 70);
+                iconRt.anchoredPosition = new Vector2(10, 0);
+                iconRt.sizeDelta = new Vector2(60, 60);
 
                 Image iconImage = iconObj.AddComponent<Image>();
                 iconImage.raycastTarget = false;
@@ -2208,8 +2230,8 @@ namespace JewelsHexaPuzzle.Managers
                 countRt.anchorMin = new Vector2(0, 0.5f);
                 countRt.anchorMax = new Vector2(0, 0.5f);
                 countRt.pivot = new Vector2(0, 0.5f);
-                countRt.anchoredPosition = new Vector2(95, 0);
-                countRt.sizeDelta = new Vector2(160, 70);
+                countRt.anchoredPosition = new Vector2(75, 0);
+                countRt.sizeDelta = new Vector2(112, 60);
 
                 Text countText = countObj.AddComponent<Text>();
                 countText.font = font;
@@ -2247,7 +2269,7 @@ namespace JewelsHexaPuzzle.Managers
             GameObject existing = GameObject.Find("NextMissionPlaceholder");
             if (existing != null) Destroy(existing);
 
-            // NextMissionPreview와 동일한 크기/위치 (196×77, 좌상단)
+            // NextMissionPreview와 동일한 크기/위치 (137×77, 좌상단)
             GameObject placeholderObj = new GameObject("NextMissionPlaceholder");
             placeholderObj.transform.SetParent(canvas.transform, false);
             RectTransform rt = placeholderObj.AddComponent<RectTransform>();
@@ -2255,7 +2277,7 @@ namespace JewelsHexaPuzzle.Managers
             rt.anchorMax = new Vector2(0, 1);
             rt.pivot = new Vector2(0, 1);
             rt.anchoredPosition = new Vector2(20, -20);
-            rt.sizeDelta = new Vector2(196, 77);
+            rt.sizeDelta = new Vector2(137, 77);
 
             // 배경 (반투명 라벤더 — 다음 미션 없음을 시각적으로 표시)
             Image bgImage = placeholderObj.AddComponent<Image>();
@@ -2270,13 +2292,22 @@ namespace JewelsHexaPuzzle.Managers
         /// 개별 미션 행 생성 (순차 등장용, 자체 배경 포함).
         /// 복수 미션을 하나씩 등장시킬 때 각 행을 독립적으로 생성.
         /// </summary>
-        public RectTransform CreateIndividualMissionRow(Canvas canvas, MissionData mission, int index)
+        public RectTransform CreateIndividualMissionRow(Canvas canvas, MissionData mission, int index, int totalMissions = 1)
         {
             if (mission == null) return null;
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            float rowHeight = 90f;
+            // 미션 3개 이상이면 30% 축소
+            float scale = totalMissions >= 3 ? 0.7f : 1.0f;
+            float rowHeight = 90f * scale;
+            float containerWidth = 196f * scale;   // 기본 196 (이미 30% 축소된 값)
+            float iconSize = 60f * scale;
+            float iconX = 10f * scale;
+            float countX = 75f * scale;
+            float countW = 112f * scale;
+            int fontSize = Mathf.RoundToInt(48f * scale);
+
             GameObject rowObj = new GameObject($"GameMissionUI_Row_{index}");
             rowObj.transform.SetParent(canvas.transform, false);
             RectTransform rowRt = rowObj.AddComponent<RectTransform>();
@@ -2284,22 +2315,22 @@ namespace JewelsHexaPuzzle.Managers
             rowRt.anchorMax = new Vector2(0, 1);
             rowRt.pivot = new Vector2(0, 1);
             rowRt.anchoredPosition = new Vector2(40, -102); // 애니메이션에서 오버라이드됨
-            rowRt.sizeDelta = new Vector2(280, rowHeight + 20f);
+            rowRt.sizeDelta = new Vector2(containerWidth, rowHeight + 20f * scale);
 
             // 배경 패널 (밝은 라벤더 톤)
             Image bgImage = rowObj.AddComponent<Image>();
             bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
             bgImage.raycastTarget = false;
 
-            // 미션 아이콘 (70×70)
+            // 미션 아이콘
             GameObject iconObj = new GameObject("MissionIcon");
             iconObj.transform.SetParent(rowObj.transform, false);
             RectTransform iconRt = iconObj.AddComponent<RectTransform>();
             iconRt.anchorMin = new Vector2(0, 0.5f);
             iconRt.anchorMax = new Vector2(0, 0.5f);
             iconRt.pivot = new Vector2(0, 0.5f);
-            iconRt.anchoredPosition = new Vector2(15, 0);
-            iconRt.sizeDelta = new Vector2(70, 70);
+            iconRt.anchoredPosition = new Vector2(iconX, 0);
+            iconRt.sizeDelta = new Vector2(iconSize, iconSize);
 
             Image iconImage = iconObj.AddComponent<Image>();
             SetMissionIconForType(iconImage, mission);
@@ -2317,12 +2348,12 @@ namespace JewelsHexaPuzzle.Managers
             countRt.anchorMin = new Vector2(0, 0.5f);
             countRt.anchorMax = new Vector2(0, 0.5f);
             countRt.pivot = new Vector2(0, 0.5f);
-            countRt.anchoredPosition = new Vector2(95, 0);
-            countRt.sizeDelta = new Vector2(160, 70);
+            countRt.anchoredPosition = new Vector2(countX, 0);
+            countRt.sizeDelta = new Vector2(countW, iconSize);
 
             Text countText = countObj.AddComponent<Text>();
             countText.font = font;
-            countText.fontSize = 48;
+            countText.fontSize = fontSize;
             countText.fontStyle = FontStyle.Bold;
             countText.alignment = TextAnchor.MiddleLeft;
             countText.color = Color.white;
@@ -2363,7 +2394,7 @@ namespace JewelsHexaPuzzle.Managers
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // 컨테이너 (현재 미션 280×110의 70% = 196×77)
+            // 컨테이너 (현재 미션 196×110의 70% = 137×77)
             GameObject previewObj = new GameObject("NextMissionPreview");
             previewObj.transform.SetParent(canvas.transform, false);
             RectTransform previewRt = previewObj.AddComponent<RectTransform>();
@@ -2371,7 +2402,7 @@ namespace JewelsHexaPuzzle.Managers
             previewRt.anchorMax = new Vector2(0, 1);
             previewRt.pivot = new Vector2(0, 1);
             previewRt.anchoredPosition = new Vector2(20, -20);
-            previewRt.sizeDelta = new Vector2(196, 77);
+            previewRt.sizeDelta = new Vector2(137, 77);
 
             // 배경 (반투명 라벤더)
             Image bgImage = previewObj.AddComponent<Image>();
@@ -2674,7 +2705,37 @@ namespace JewelsHexaPuzzle.Managers
             }
             else if (mType == MissionType.RemoveEnemy)
             {
-                iconImage.sprite = CreateEnemyIcon();
+                // 적군 타입별 아이콘 분기
+                if (mission.targetEnemyType == EnemyType.ArcherGoblin)
+                    iconImage.sprite = GoblinSystem.GetArcherGoblinSprite();
+                else if (mission.targetEnemyType == EnemyType.ArmoredGoblin)
+                    iconImage.sprite = GoblinSystem.GetArmoredGoblinSprite();
+                else if (mission.targetEnemyType == EnemyType.ShieldGoblin)
+                {
+                    iconImage.sprite = GoblinSystem.GetShieldGoblinSprite();
+                    // 방패 오버레이 추가 (고블린 앞에 방패 표시)
+                    Sprite shieldSprite = GoblinSystem.GetShieldSprite();
+                    if (shieldSprite != null)
+                    {
+                        GameObject shieldOverlay = new GameObject("ShieldOverlay");
+                        shieldOverlay.transform.SetParent(iconImage.transform, false);
+                        RectTransform shieldRt = shieldOverlay.AddComponent<RectTransform>();
+                        shieldRt.anchorMin = new Vector2(0.5f, 0.5f);
+                        shieldRt.anchorMax = new Vector2(0.5f, 0.5f);
+                        shieldRt.pivot = new Vector2(0.5f, 0.5f);
+                        shieldRt.anchoredPosition = new Vector2(0f, -8f); // 고블린 앞(아래쪽)에 배치
+                        shieldRt.sizeDelta = new Vector2(40f, 44f);
+                        Image shieldImg = shieldOverlay.AddComponent<Image>();
+                        shieldImg.sprite = shieldSprite;
+                        shieldImg.color = Color.white;
+                        shieldImg.raycastTarget = false;
+                    }
+                }
+                else if (mission.targetEnemyType == EnemyType.Goblin)
+                    iconImage.sprite = GoblinSystem.GetGoblinSprite();
+                else
+                    iconImage.sprite = CreateEnemyIcon();
+                iconImage.color = Color.white;
             }
             else if (mType == MissionType.AchieveCombo)
             {
@@ -4024,13 +4085,17 @@ namespace JewelsHexaPuzzle.Managers
             {
                 if (countText != null)
                 {
-                    countText.text = data.count > 0 ? data.count.ToString() : "+";
+                    // MP 소모량 표시 (수량 대신)
+                    int cost = MPManager.Instance != null ? MPManager.Instance.GetItemCost(data.type) : 0;
+                    countText.text = cost > 0 ? cost.ToString() : "+";
                 }
             }
 
             if (button != null)
             {
-                button.interactable = isUnlocked && data.count > 0;
+                // MP 기반 활성화 체크
+                bool hasEnoughMP = MPManager.Instance != null ? MPManager.Instance.CanUseItem(data.type) : true;
+                button.interactable = isUnlocked && hasEnoughMP;
             }
         }
 

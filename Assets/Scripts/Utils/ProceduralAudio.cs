@@ -947,37 +947,112 @@ namespace JewelsHexaPuzzle.Utils
         /// <summary>
         /// 적군 스폰 사운드 — 저음 럼블 + 불길한 단조 톤 (0.25s)
         /// </summary>
-        public static AudioClip CreateEnemySpawnSound(float duration = 0.25f)
+        /// <summary>
+        /// 고블린 소환 사운드 — 시공간 수축 도플러 효과 (0.35s)
+        /// 고주파→저주파 빠른 하강 스윕 + 공간 수축 우웅 + 짧은 임팩트
+        /// </summary>
+        public static AudioClip CreateEnemySpawnSound(float duration = 0.35f)
         {
             int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
             float[] data = new float[sampleCount];
             System.Random rng = new System.Random(777);
 
+            float phase1 = 0f; // 도플러 스윕 위상
+            float phase2 = 0f; // 서브베이스 위상
+            float phase3 = 0f; // 와블 위상
+
             for (int i = 0; i < sampleCount; i++)
             {
                 float t = (float)i / SAMPLE_RATE;
                 float tNorm = (float)i / sampleCount;
-                float envelope = ADSR(tNorm, 0.01f, 0.15f, 0.4f, 0.3f);
 
-                // 저음 럼블 (60Hz → 40Hz 하강)
-                float rumbleFreq = Mathf.Lerp(60f, 40f, tNorm);
-                float rumble = Mathf.Sin(2f * Mathf.PI * rumbleFreq * t) * 0.5f;
+                // ── 엔벨로프: 즉각 어택, 빠른 수축 ──
+                float env;
+                if (tNorm < 0.05f)
+                    env = tNorm / 0.05f; // 매우 빠른 어택
+                else if (tNorm < 0.6f)
+                    env = 1f - 0.3f * ((tNorm - 0.05f) / 0.55f); // 서서히 감쇠
+                else
+                    env = 0.7f * (1f - (tNorm - 0.6f) / 0.4f); // 릴리즈
+                env = Mathf.Max(0f, env);
 
-                // 불길한 단조 톤 (Eb minor: Eb4=311Hz, Gb4=370Hz)
-                float minor1 = Mathf.Sin(2f * Mathf.PI * 311f * t) * 0.2f * (1f - tNorm);
-                float minor2 = Mathf.Sin(2f * Mathf.PI * 370f * t) * 0.15f * (1f - tNorm * 1.2f);
+                // ── 레이어 1: 도플러 스윕 (1800Hz → 80Hz 지수 하강) ──
+                // 시공간이 빠르게 수축하는 느낌 — 접근하는 물체의 주파수 변화
+                float sweepT = tNorm * tNorm; // 가속 커브 (후반부 급격히 내려감)
+                float sweepFreq = 1800f * Mathf.Pow(80f / 1800f, sweepT);
+                phase1 += 2f * Mathf.PI * sweepFreq / SAMPLE_RATE;
+                float sweep = Mathf.Sin(phase1) * 0.45f;
+                // 스윕 후반부에 saw 텍스처 혼합 (금속성)
+                float sawMix = tNorm > 0.3f ? (tNorm - 0.3f) / 0.7f * 0.3f : 0f;
+                float sawPhase = (phase1 % (2f * Mathf.PI)) / (2f * Mathf.PI);
+                sweep = sweep * (1f - sawMix) + (2f * sawPhase - 1f) * sawMix * 0.35f;
 
-                // 노이즈 텍스처
-                float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * 0.1f * (1f - tNorm);
+                // ── 레이어 2: 서브베이스 우웅 (50Hz → 35Hz) ──
+                float subFreq = Mathf.Lerp(50f, 35f, tNorm);
+                phase2 += 2f * Mathf.PI * subFreq / SAMPLE_RATE;
+                float sub = Mathf.Sin(phase2) * 0.4f;
 
-                data[i] = (rumble + minor1 + minor2 + noise) * envelope * 0.45f;
+                // ── 레이어 3: 공간 와블 (300Hz 중심, AM 변조) ──
+                float woblFreq = 300f * (1f - tNorm * 0.5f);
+                phase3 += 2f * Mathf.PI * woblFreq / SAMPLE_RATE;
+                float amMod = 0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 18f * t); // 18Hz AM
+                float wobl = Mathf.Sin(phase3) * amMod * 0.2f * (1f - tNorm);
+
+                // ── 레이어 4: 수축 임팩트 (끝부분 짧은 펀치) ──
+                float impact = 0f;
+                if (tNorm > 0.55f && tNorm < 0.75f)
+                {
+                    float impT = (tNorm - 0.55f) / 0.2f;
+                    impact = Mathf.Sin(2f * Mathf.PI * 55f * t) * (1f - impT) * 0.5f;
+                }
+
+                // ── 레이어 5: 노이즈 텍스처 (시공간 왜곡감) ──
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * 0.08f * (1f - tNorm * 0.7f);
+
+                data[i] = (sweep + sub + wobl + impact + noise) * env * 0.4f;
             }
 
-            ApplyFades(data, 8, 64);
-            ApplyLowPass(data, 0.35f);
-            ApplyReverb(data, 15f, 0.25f, 2);
+            ApplyFades(data, 8, 80);
+            ApplyLowPass(data, 0.45f);
+            ApplyReverb(data, 12f, 0.3f, 2);
 
             AudioClip clip = AudioClip.Create("EnemySpawn", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>
+        /// 쉘 변환 사운드 — 벽돌 내려놓는 짧은 둔탁음 (0.08s)
+        /// 저주파 임팩트 + 돌 부딪히는 노이즈 텍스처
+        /// </summary>
+        public static AudioClip CreateShellConvertSound(float duration = 0.08f)
+        {
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            System.Random rng = new System.Random(333);
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float tNorm = (float)i / sampleCount;
+
+                // 매우 빠른 감쇠 엔벨로프 (즉시 어택 → 급속 감쇠)
+                float env = Mathf.Exp(-tNorm * 8f);
+
+                // 둔탁한 저음 임팩트 (120Hz → 70Hz 빠른 하강)
+                float freq = Mathf.Lerp(120f, 70f, tNorm);
+                float t = (float)i / SAMPLE_RATE;
+                float thud = Mathf.Sin(2f * Mathf.PI * freq * t) * 0.6f;
+
+                // 돌 부딪히는 노이즈 (초반 강하게, 빠르게 감쇠)
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * 0.4f * Mathf.Exp(-tNorm * 12f);
+
+                data[i] = (thud + noise) * env * 0.5f;
+            }
+
+            ApplyFades(data, 4, 32);
+            ApplyLowPass(data, 0.5f);
+
+            AudioClip clip = AudioClip.Create("ShellConvert", sampleCount, 1, SAMPLE_RATE, false);
             clip.SetData(data, 0);
             return clip;
         }

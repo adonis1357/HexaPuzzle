@@ -88,6 +88,11 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>현재 연쇄(캐스케이드) 깊이를 외부에서 읽을 수 있는 속성</summary>
         public int CurrentCascadeDepth => currentCascadeDepth;
 
+        // 진행 하트비트: ProcessMatchesInline 등에서 주기적으로 갱신하여 WaitForBRSComplete 타임아웃 방지
+        private float lastProgressTime = 0f;
+        /// <summary>BRS 내부 진행 시각 (Time.time 기준)</summary>
+        public float LastProgressTime => lastProgressTime;
+
         // 현재 처리 중인 매칭 그룹 수 (동시 다색 매칭 보너스 계산용)
         private int currentMatchGroupCount = 0;
         /// <summary>현재 처리 중인 매칭 그룹 수 (동시 다색 매칭 보너스용)</summary>
@@ -171,7 +176,8 @@ namespace JewelsHexaPuzzle.Core
                 if (child.name.StartsWith("Spark") || child.name.StartsWith("LightningArc") ||
                     child.name.StartsWith("DestroyFlash") || child.name.StartsWith("BloomLayer") ||
                     child.name.StartsWith("MatchPulseGlow") || child.name.StartsWith("GrayShard") ||
-                    child.name.StartsWith("CrackedShard") || child.name.StartsWith("CrackedBurstRing"))
+                    child.name.StartsWith("CrackedShard") || child.name.StartsWith("CrackedBurstRing") ||
+                    child.name.StartsWith("AdjDmgEdgeLine"))
                     Destroy(child);
             }
 
@@ -359,6 +365,7 @@ namespace JewelsHexaPuzzle.Core
         private IEnumerator ProcessMatchesWithPendingCoroutine(List<MatchingSystem.MatchGroup> matches, List<HexBlock> pendingSpecials)
         {
             isProcessing = true;
+            lastProgressTime = Time.time;
             EnsureSlotsCached();  // 블록 원래 위치 캐시 확인
 
             // 안전 검사: 매칭 데이터가 유효한지 확인
@@ -394,6 +401,7 @@ namespace JewelsHexaPuzzle.Core
         private IEnumerator ProcessMatchesCoroutine(List<MatchingSystem.MatchGroup> matches)
         {
             isProcessing = true;
+            lastProgressTime = Time.time;
             EnsureSlotsCached();
 
             // 안전 검사: 매칭 데이터가 비어있으면 즉시 종료
@@ -422,11 +430,12 @@ namespace JewelsHexaPuzzle.Core
         {
             // Safety: 블록이 이미 파괴되었거나 데이터가 없으면 즉시 종료
             if (block == null || block.Data == null || block.gameObject == null) yield break;
-            
+
             // 발동 전 specialType 캐싱 (발동 중 Data가 변경될 수 있음)
             SpecialBlockType cachedType = block.Data.specialType;
             if (cachedType == SpecialBlockType.None) yield break;
-            
+
+            lastProgressTime = Time.time; // 하트비트: 특수 블록 발동 시작
             float timeout = 5f;
             float waited = 0f;
 
@@ -1202,6 +1211,92 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 인접 매칭 대미지 시 대미지 받은 블록의 해당 면에 붉은색 라인 표시
+        /// damagedCoord: 대미지 받은 블록 좌표, sourceCoord: 대미지 준 블록 좌표
+        /// 0.5초 동안 표시 후 페이드아웃
+        /// </summary>
+        private IEnumerator ShowAdjacentDamageEdgeLine(HexCoord damagedCoord, HexCoord sourceCoord)
+        {
+            if (hexGrid == null) yield break;
+
+            float hexSize = hexGrid.HexSize;
+            Vector2 centerPos = hexGrid.CalculateFlatTopHexPosition(damagedCoord);
+
+            // 대미지 준 블록 방향 결정 (6방향 중 어느 면인지)
+            HexCoord delta = new HexCoord(sourceCoord.q - damagedCoord.q, sourceCoord.r - damagedCoord.r);
+            int dirIndex = -1;
+            for (int i = 0; i < 6; i++)
+            {
+                if (HexCoord.Directions[i].q == delta.q && HexCoord.Directions[i].r == delta.r)
+                {
+                    dirIndex = i;
+                    break;
+                }
+            }
+            if (dirIndex < 0) yield break;
+
+            // Flat-top 육각형 꼭짓점 각도: 0°, 60°, 120°, 180°, 240°, 300°
+            // 면 i는 꼭짓점 i와 꼭짓점 (i+1)%6 사이의 변
+            // Directions 순서(axial): (1,0)=0°, (1,-1)=60°, (0,-1)=120°, (-1,0)=180°, (-1,1)=240°, (0,1)=300°
+            // Flat-top hex 꼭짓점: angle = 60*k (k=0~5)
+            //   k=0: 0° (오른쪽), k=1: 60° (오른쪽 위), k=2: 120° (왼쪽 위)
+            //   k=3: 180° (왼쪽), k=4: 240° (왼쪽 아래), k=5: 300° (오른쪽 아래)
+            // 면 dirIndex의 양 끝 꼭짓점 매핑 (flat-top, Y 반전)
+            // dir 0 (1,0)  → 꼭짓점 5,0  (300°~0° = 오른쪽 면)
+            // dir 1 (1,-1) → 꼭짓점 0,1  (0°~60° = 오른쪽 위 면)
+            // dir 2 (0,-1) → 꼭짓점 1,2  (60°~120° = 왼쪽 위 면)
+            // dir 3 (-1,0) → 꼭짓점 2,3  (120°~180° = 왼쪽 면)
+            // dir 4 (-1,1) → 꼭짓점 3,4  (180°~240° = 왼쪽 아래 면)
+            // dir 5 (0,1)  → 꼭짓점 4,5  (240°~300° = 오른쪽 아래 면)
+            int v1 = (dirIndex + 5) % 6; // 첫 꼭짓점
+            int v2 = dirIndex;            // 둘째 꼭짓점
+
+            float angleDeg1 = 60f * v1;
+            float angleDeg2 = 60f * v2;
+            float rad1 = angleDeg1 * Mathf.Deg2Rad;
+            float rad2 = angleDeg2 * Mathf.Deg2Rad;
+
+            // 꼭짓점 좌표 (flat-top: x=cos, y=sin, Y 반전)
+            Vector2 p1 = centerPos + new Vector2(Mathf.Cos(rad1), -Mathf.Sin(rad1)) * hexSize;
+            Vector2 p2 = centerPos + new Vector2(Mathf.Cos(rad2), -Mathf.Sin(rad2)) * hexSize;
+
+            // 면 라인 오브젝트 생성
+            Vector2 mid = (p1 + p2) * 0.5f;
+            float lineLen = Vector2.Distance(p1, p2);
+            Vector2 lineDir = p2 - p1;
+            float lineAngle = Mathf.Atan2(lineDir.y, lineDir.x) * Mathf.Rad2Deg;
+
+            Transform parent = hexGrid.GridContainer;
+
+            GameObject lineObj = new GameObject("AdjDmgEdgeLine");
+            lineObj.transform.SetParent(parent, false);
+            RectTransform lrt = lineObj.AddComponent<RectTransform>();
+            lrt.anchoredPosition = mid;
+            lrt.sizeDelta = new Vector2(lineLen, 4f); // 두께 4px
+            lrt.localEulerAngles = new Vector3(0, 0, lineAngle);
+
+            UnityEngine.UI.Image limg = lineObj.AddComponent<UnityEngine.UI.Image>();
+            Color edgeColor = new Color(1f, 0.15f, 0.1f, 0.9f); // 붉은색
+            limg.color = edgeColor;
+            limg.raycastTarget = false;
+
+            // 0.5초 페이드아웃
+            float fadeDur = 0.5f;
+            float elapsed = 0f;
+            while (elapsed < fadeDur)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDur);
+                float alpha = 0.9f * (1f - t);
+                if (limg != null)
+                    limg.color = new Color(edgeColor.r, edgeColor.g, edgeColor.b, alpha);
+                yield return null;
+            }
+
+            if (lineObj != null) Destroy(lineObj);
+        }
+
+        /// <summary>
         /// 깨진 블록(isCracked) 전용 붉은색 폭발 이펙트
         /// 깨진 블록이 매칭 삭제될 때 — 강렬한 붉은 플래시 + 충격파 링 + 붉은 파편
         /// </summary>
@@ -1506,6 +1601,7 @@ private IEnumerator CascadeWithPendingLoop()
             {
                 iteration++;
                 currentCascadeDepth = iteration - 1;
+                lastProgressTime = Time.time; // 하트비트
 
                 // 캐스케이드 콤보 사운드 (피치 상승)
                 if (currentCascadeDepth > 0 && AudioManager.Instance != null)
@@ -2443,6 +2539,7 @@ public void TriggerFallOnly()
         private IEnumerator FallOnlyCoroutine()
         {
             isProcessing = true;
+            lastProgressTime = Time.time;
             EnsureSlotsCached();
 
             yield return StartCoroutine(ProcessFalling());
@@ -2477,6 +2574,7 @@ public void TriggerFallOnly()
         private IEnumerator StartDropCoroutine()
         {
             isProcessing = true;
+            lastProgressTime = Time.time;
             EnsureSlotsCached();
 
             if (hexGrid == null || columnCache == null) { isProcessing = false; yield break; }
@@ -2544,6 +2642,7 @@ public void TriggerBigBang()
         private IEnumerator BigBangCoroutine()
         {
             isProcessing = true;
+            lastProgressTime = Time.time;
             EnsureSlotsCached();
             OnBigBang?.Invoke();
 
@@ -2702,6 +2801,7 @@ public void TriggerBigBang()
             currentMatchGroupCount = matches?.Count ?? 0;
 
             // ★ 디버그: 진입 로그
+            lastProgressTime = Time.time; // 하트비트
             Debug.Log($"[BRS] ▶ ProcessMatchesInline 진입: matches={matches?.Count ?? 0}, pending={pendingSpecials?.Count ?? 0}");
 
             if (matches == null || matches.Count == 0)
@@ -2755,6 +2855,7 @@ public void TriggerBigBang()
                 // Phase A: 특수 블록 생성 그룹 먼저 처리
                 Debug.Log("[BRS] ★ Phase A 시작");
                 yield return StartCoroutine(ProcessMatchesInline(specialMatches, pendingSpecials));
+                lastProgressTime = Time.time; // 하트비트
                 Debug.Log("[BRS] ★ Phase A 완료");
 
                 // ★ 버그 수정: Phase A↔B 사이에 ProcessFalling을 실행하면
@@ -2768,6 +2869,7 @@ public void TriggerBigBang()
                 // Phase B: 일반 매칭 그룹 처리 (pending은 이미 Phase A에서 처리했으므로 null)
                 Debug.Log($"[BRS] ★★★ Phase B 시작: 일반 매칭 {normalMatches.Count}그룹 처리");
                 yield return StartCoroutine(ProcessMatchesInline(normalMatches, null));
+                lastProgressTime = Time.time; // 하트비트
                 Debug.Log("[BRS] ★★★ Phase B 완료");
                 yield break;
             }
@@ -2837,9 +2939,9 @@ public void TriggerBigBang()
                     if (AudioManager.Instance != null)
                         AudioManager.Instance.PlaySpecialGemSound();
 
-                    // ★ 깨진 블록 드릴 Fallback: 깨진 블록은 제자리 삭제, 건강한 블록만 합체
+                    // ★ 깨진 블록 혼합 매칭: 깨진 블록은 제자리 파쇄, 건강한 블록만 합체
                     List<HexBlock> mergeBlocks = match.blocks;
-                    if (match.hasCrackedBlocks)
+                    if (match.hasCrackedBlocks && !match.allBlocksCracked)
                     {
                         // 깨진 블록을 분리하여 즉시 붉은색 폭발 삭제
                         List<HexBlock> crackedBlocks = match.blocks
@@ -2852,13 +2954,19 @@ public void TriggerBigBang()
                         {
                             StartCoroutine(AnimateCrackedBurst(crackedBlock));
                             alreadyRemovedCracked.Add(crackedBlock);
+                            // ★ 블록 데이터 즉시 정리: ProcessFalling이 빈 슬롯으로 인식하도록
+                            // AnimateCrackedBurst는 첫 프레임에서 색상을 캐싱하므로 안전
+                            crackedBlock.ClearData();
+                            crackedBlock.SetMatched(false);
+                            RestoreBlockToSlot(crackedBlock);
                         }
-                        Debug.Log($"[BRS] 깨진 블록 {crackedBlocks.Count}개 제자리 삭제, 건강한 블록 {mergeBlocks.Count}개 합체");
+                        Debug.Log($"[BRS] 깨진 블록 {crackedBlocks.Count}개 제자리 삭제+데이터 정리, 건강한 블록 {mergeBlocks.Count}개 합체 → {match.createdSpecialType} 생성");
                     }
 
                     yield return StartCoroutine(SpecialBlockMergeAnimation(
                         mergeBlocks, match.specialSpawnBlock, match.createdSpecialType,
                         match.drillDirection, match.gemType));
+                    lastProgressTime = Time.time; // 하트비트
                     newlyCreatedSpecials.Add(match.specialSpawnBlock);
 
                     // 미션 시스템에 특수 블록 생성 알림 (타입 + 드릴방향)
@@ -2957,6 +3065,9 @@ public void TriggerBigBang()
             foreach (var sp in newlyCreatedSpecials)
                 allAffected.Add(sp);
 
+            // 인접 대미지 면 라인 이펙트용: (대미지 받는 블록, 대미지 준 블록 좌표) 기록
+            List<(HexBlock damaged, HexCoord sourceCoord)> adjacentDamageEdges = new List<(HexBlock, HexCoord)>();
+
             foreach (var block in allAffected)
             {
                 if (block == null) continue;
@@ -2967,7 +3078,10 @@ public void TriggerBigBang()
                         grayToRemove.Add(neighbor);
                     // 쉘 블록(크랙 회색): 인접 매칭으로 제거
                     if (neighbor.Data.isShell && !allAffected.Contains(neighbor))
+                    {
                         shellToRemove.Add(neighbor);
+                        adjacentDamageEdges.Add((neighbor, block.Coord));
+                    }
                     if (neighbor.Data.hasChain)
                     {
                         neighbor.RemoveChain();
@@ -3036,10 +3150,10 @@ public void TriggerBigBang()
                 }
             }
 
-            // 5e. 깨진 블록으로 인한 특수 블록 생성 차단 / 드릴 fallback 메시지 표시
+            // 5e. 모든 블록이 깨져서 특수 블록 생성이 차단된 경우 메시지 표시
             foreach (var match in matches)
             {
-                if (match.crackedBlockedSpecial != SpecialBlockType.None)
+                if (match.allBlocksCracked && match.crackedBlockedSpecial != SpecialBlockType.None)
                 {
                     string specialName = match.crackedBlockedSpecial switch
                     {
@@ -3051,20 +3165,9 @@ public void TriggerBigBang()
                         _ => "특수 블록"
                     };
 
-                    if (match.createdSpecialType == SpecialBlockType.Drill && match.hasCrackedBlocks)
-                    {
-                        // 드릴 fallback 성공: "폭탄 → 드릴" 전환 메시지
-                        GameManager.Instance?.ShowFloatingMessage(
-                            $"깨진 블록! {specialName} 대신 드릴 생성");
-                        Debug.Log($"[BRS] 깨진 블록 드릴 Fallback: {match.crackedBlockedSpecial} → Drill");
-                    }
-                    else
-                    {
-                        // 완전 차단: 기존 메시지
-                        GameManager.Instance?.ShowFloatingMessage(
-                            $"깨진 블록으로 {specialName} 생성에 실패 하였습니다");
-                        Debug.Log($"[BRS] 깨진 블록 차단: {match.crackedBlockedSpecial} 생성 불가");
-                    }
+                    GameManager.Instance?.ShowFloatingMessage(
+                        $"모든 블록이 깨져 {specialName} 생성에 실패 하였습니다");
+                    Debug.Log($"[BRS] 모든 블록 깨짐 → {match.crackedBlockedSpecial} 생성 완전 차단");
                 }
             }
 
@@ -3075,6 +3178,8 @@ public void TriggerBigBang()
                 // 깨진 블록(isCracked)은 인접 대미지를 주지 않음
                 // 단, 몬스터가 서있는 자리의 깨진 블록은 매칭 대미지를 줌
                 Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
+                // ★ 바닥 매칭 좌표 수집 (방패 고블린용: 자기 자리 블록이 직접 매칭된 경우)
+                HashSet<HexCoord> directHitCoords = new HashSet<HexCoord>();
                 foreach (var block in blocksToRemove)
                 {
                     if (block == null || block.Data == null) continue;
@@ -3086,6 +3191,7 @@ public void TriggerBigBang()
                         damageMap[blockCoord] += 1;
                     else
                         damageMap[blockCoord] = 1;
+                    directHitCoords.Add(blockCoord); // 바닥 매칭 좌표 기록
 
                     // 인접 6방향: 깨진 블록은 인접 대미지 불가
                     if (!cracked)
@@ -3099,8 +3205,8 @@ public void TriggerBigBang()
                         }
                     }
                 }
-                // 누적된 데미지를 고블린별로 일괄 적용
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap);
+                // 누적된 데미지를 고블린별로 일괄 적용 (바닥 매칭 좌표 전달)
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
             }
 
             // 6. 삭제 애니메이션 (축소하며 사라짐) + 파괴 사운드
@@ -3125,6 +3231,7 @@ public void TriggerBigBang()
             // 모든 삭제 애니메이션 완료 대기
             foreach (var co in shrinkCoroutines)
                 yield return co;
+            lastProgressTime = Time.time; // 하트비트: 삭제 애니메이션 완료
 
             // 7. 일반 블록 데이터 클리어
             foreach (var block in blocksToRemove)
@@ -3192,9 +3299,16 @@ public void TriggerBigBang()
                 OnBlocksRemoved?.Invoke(grayToRemove.Count, currentCascadeDepth, avgPosition);
             }
 
-            // 8b. 인접 쉘 블록(크랙 회색) 제거
+            // 8b. 인접 쉘 블록(크랙 회색) 제거 + 면 라인 이펙트
             if (shellToRemove.Count > 0)
             {
+                // 면 라인 이펙트 표시: 대미지 받은 면에 붉은색 라인 (0.5초 페이드아웃)
+                foreach (var edge in adjacentDamageEdges)
+                {
+                    if (edge.damaged != null)
+                        StartCoroutine(ShowAdjacentDamageEdgeLine(edge.damaged.Coord, edge.sourceCoord));
+                }
+
                 foreach (var shell in shellToRemove)
                 {
                     if (shell != null && shell.Data != null)
@@ -3231,6 +3345,7 @@ public void TriggerBigBang()
                 }
                 foreach (var co in activationCoroutines)
                     yield return co;
+                lastProgressTime = Time.time; // 하트비트: 특수 블록 발동 완료
 
                 // 매칭 특수 블록 발동 후 낙하 처리
                 SnapClearedBlocksToSlots();

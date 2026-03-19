@@ -109,17 +109,27 @@ namespace JewelsHexaPuzzle.Managers
 
         /// <summary>
         /// 고블린 제거 보고 (GoblinSystem에서 호출)
-        /// HexBlock 없이 EnemyType.Goblin으로 미션 진행도 업데이트
+        /// isArmored에 따라 EnemyType.Goblin 또는 ArmoredGoblin 미션 진행도 업데이트
         /// </summary>
-        public void ReportGoblinKill()
+        public void ReportGoblinKill(bool isArmored, bool isArcher = false, bool isShieldType = false)
         {
+            EnemyType targetType;
+            if (isShieldType)
+                targetType = EnemyType.ShieldGoblin;
+            else if (isArcher)
+                targetType = EnemyType.ArcherGoblin;
+            else if (isArmored)
+                targetType = EnemyType.ArmoredGoblin;
+            else
+                targetType = EnemyType.Goblin;
+
             for (int i = 0; i < missionProgress.Count; i++)
             {
                 var mission = missionProgress[i];
                 if (mission.isComplete) continue;
 
                 if (mission.mission.type == MissionType.RemoveEnemy &&
-                    mission.mission.targetEnemyType == EnemyType.Goblin)
+                    mission.mission.targetEnemyType == targetType)
                 {
                     mission.currentCount++;
                     CheckMissionCompletion(i);
@@ -127,7 +137,8 @@ namespace JewelsHexaPuzzle.Managers
             }
 
             OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
-            Debug.Log($"[StageManager] 고블린 제거 보고");
+            string typeName = isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
+            Debug.Log($"[StageManager] {typeName} 고블린 제거 보고");
         }
 
         /// <summary>

@@ -377,9 +377,20 @@ private void Update()
             // 드릴은 일반 클릭 범위
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
+                // ★ MP 체크
+                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill))
+                {
+                    Debug.Log("[InputSystem] MP 부족: Drill 발동 불가");
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return false;
+                }
                 Debug.Log($"[InputSystem] Drill block clicked at {clickedBlock.Coord}");
                 // 발동 시작 시점에 이동횟수 1 차감
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                // MP 소모
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drill), clickedBlock.transform.position);
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
                 drillSystem.ActivateDrill(clickedBlock);
                 ClearHighlight();
@@ -393,9 +404,20 @@ private void Update()
                 HexBlock tightBlock = GetBlockAtPositionTight(localPos);
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
+                    // ★ MP 체크
+                    if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb))
+                    {
+                        Debug.Log("[InputSystem] MP 부족: Bomb 발동 불가");
+                        var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                        if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                        return false;
+                    }
                     Debug.Log($"[InputSystem] Bomb block clicked at {clickedBlock.Coord}");
                     // 발동 시작 시점에 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                    // MP 소모
+                    if (MPManager.Instance != null)
+                        MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb), clickedBlock.transform.position);
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
                     bombSystem.ActivateBomb(clickedBlock);
                     ClearHighlight();
@@ -411,9 +433,20 @@ private void Update()
                 HexBlock tightBlock = GetBlockAtPositionTight(localPos);
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
+                    // ★ MP 체크
+                    if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock))
+                    {
+                        Debug.Log("[InputSystem] MP 부족: XBlock 발동 불가");
+                        var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                        if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                        return false;
+                    }
                     Debug.Log($"[InputSystem] X-block clicked at {clickedBlock.Coord}");
                     // 발동 시작 시점에 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                    // MP 소모
+                    if (MPManager.Instance != null)
+                        MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock), clickedBlock.transform.position);
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
                     xBlockSystem.ActivateXBlock(clickedBlock);
                     ClearHighlight();
@@ -429,8 +462,19 @@ private void Update()
                 HexBlock tightBlock = GetBlockAtPositionTight(localPos);
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
+                    // ★ MP 체크
+                    if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drone))
+                    {
+                        Debug.Log("[InputSystem] MP 부족: Drone 발동 불가");
+                        var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                        if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                        return false;
+                    }
                     Debug.Log($"[InputSystem] Drone block clicked at {clickedBlock.Coord}");
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                    // MP 소모
+                    if (MPManager.Instance != null)
+                        MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drone), clickedBlock.transform.position);
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
                     droneSystem.ActivateDrone(clickedBlock);
                     ClearHighlight();
@@ -679,6 +723,27 @@ private void Update()
                 // 드래그로 타겟까지 이동 → 합성 실행
                 if (comboSystem.CanCombo(comboSource, comboTarget))
                 {
+                    // ★ 합성 MP 체크: 두 블록 비용 중 높은 쪽 적용
+                    if (MPManager.Instance != null)
+                    {
+                        int sourceCost = MPManager.Instance.GetSpecialBlockCost(comboSource.Data.specialType);
+                        int targetCost = MPManager.Instance.GetSpecialBlockCost(comboTarget.Data.specialType);
+                        int comboCost = Mathf.Max(sourceCost, targetCost);
+                        if (comboCost > 0 && !MPManager.Instance.CanAfford(comboCost))
+                        {
+                            Debug.Log($"[InputSystem] MP 부족: 합성 불가 (필요 {comboCost})");
+                            var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                            if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                            CancelComboDrag();
+                            return;
+                        }
+                        if (comboCost > 0)
+                        {
+                            // 합성 중간 위치에 팝업 표시
+                            Vector3 comboMidPos = (comboSource.transform.position + comboTarget.transform.position) * 0.5f;
+                            MPManager.Instance.TryConsumeMP(comboCost, comboMidPos);
+                        }
+                    }
                     Debug.Log($"[InputSystem] 합성 실행: {comboSource.Data.specialType} × {comboTarget.Data.specialType}");
                     // 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
@@ -723,8 +788,18 @@ private void Update()
 
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
+                // ★ MP 체크
+                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill))
+                {
+                    Debug.Log("[InputSystem] MP 부족: Drill 단독 발동 불가");
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return false;
+                }
                 Debug.Log($"[InputSystem] Drill 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drill), block.transform.position);
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
                 drillSystem.ActivateDrill(block);
                 ClearHighlight();
@@ -734,8 +809,18 @@ private void Update()
 
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb && bombSystem != null)
             {
+                // ★ MP 체크
+                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb))
+                {
+                    Debug.Log("[InputSystem] MP 부족: Bomb 단독 발동 불가");
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return false;
+                }
                 Debug.Log($"[InputSystem] Bomb 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb), block.transform.position);
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
                 bombSystem.ActivateBomb(block);
                 ClearHighlight();
@@ -745,8 +830,18 @@ private void Update()
 
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock && xBlockSystem != null)
             {
+                // ★ MP 체크
+                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock))
+                {
+                    Debug.Log("[InputSystem] MP 부족: XBlock 단독 발동 불가");
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return false;
+                }
                 Debug.Log($"[InputSystem] XBlock 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock), block.transform.position);
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayXBlockSound();
                 xBlockSystem.ActivateXBlock(block);
                 ClearHighlight();
@@ -756,8 +851,18 @@ private void Update()
 
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drone && droneSystem != null)
             {
+                // ★ MP 체크
+                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drone))
+                {
+                    Debug.Log("[InputSystem] MP 부족: Drone 단독 발동 불가");
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return false;
+                }
                 Debug.Log($"[InputSystem] Drone 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drone), block.transform.position);
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
                 droneSystem.ActivateDrone(block);
                 ClearHighlight();

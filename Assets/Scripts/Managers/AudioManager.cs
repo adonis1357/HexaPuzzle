@@ -82,6 +82,7 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralSpecialGem;
         private AudioClip proceduralSpecialImpact;
         private AudioClip proceduralEnemySpawn;
+        private AudioClip proceduralShellConvert;
         private AudioClip proceduralChromophageRemoval;
         private AudioClip proceduralTransformTick;
         private AudioClip proceduralDroneSound;
@@ -235,7 +236,8 @@ namespace JewelsHexaPuzzle.Managers
             proceduralWarningBeep = SafeCreateClip("Warning", () => ProceduralAudio.CreateWarningBeep(0.25f), ref successCount, ref failCount);
             proceduralSpecialGem = SafeCreateClip("SpecialGem", () => ProceduralAudio.CreateSpecialGemSound(0.5f), ref successCount, ref failCount);
             proceduralSpecialImpact = SafeCreateClip("Impact", () => ProceduralAudio.CreateImpact(0.1f), ref successCount, ref failCount);
-            proceduralEnemySpawn = SafeCreateClip("EnemySpawn", () => ProceduralAudio.CreateEnemySpawnSound(0.25f), ref successCount, ref failCount);
+            proceduralEnemySpawn = SafeCreateClip("EnemySpawn", () => ProceduralAudio.CreateEnemySpawnSound(0.35f), ref successCount, ref failCount);
+            proceduralShellConvert = SafeCreateClip("ShellConvert", () => ProceduralAudio.CreateShellConvertSound(0.08f), ref successCount, ref failCount);
             proceduralChromophageRemoval = SafeCreateClip("ChromophageRemoval", () => ProceduralAudio.CreateNoiseBurst(0.15f), ref successCount, ref failCount);
             proceduralTransformTick = SafeCreateClip("TransformTick", () => ProceduralAudio.CreateTransformTick(0.08f), ref successCount, ref failCount);
             proceduralDroneSound = SafeCreateClip("Drone", () => ProceduralAudio.CreateDroneSound(2.0f), ref successCount, ref failCount);
@@ -597,6 +599,9 @@ namespace JewelsHexaPuzzle.Managers
         public void PlaySpecialImpactSound() => PlaySFX(proceduralSpecialImpact, 0.7f);
 
         public void PlayEnemySpawnSound() => PlaySFX(proceduralEnemySpawn, 0.7f);
+
+        // 쉘 변환 사운드 (벽돌 내려놓기)
+        public void PlayShellConvertSound() => PlaySFX(proceduralShellConvert, 0.55f);
 
         // 색상도둑 제거 사운드 (슬라임 분해음 느낌)
         public void PlayChromophageRemovalSound() => PlaySFX(Resolve(chromophageRemovalSound, proceduralChromophageRemoval), 0.75f);

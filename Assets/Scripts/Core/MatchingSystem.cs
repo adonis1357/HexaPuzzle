@@ -29,6 +29,8 @@ namespace JewelsHexaPuzzle.Core
             public SpecialBlockType crackedBlockedSpecial = SpecialBlockType.None;
             // 이 매칭에 깨진 블록이 포함되었는지 (붉은색 삭제 이펙트 분기용)
             public bool hasCrackedBlocks = false;
+            // 모든 블록이 깨져있는지 (전부 깨지면 생성→소멸 연출)
+            public bool allBlocksCracked = false;
         }
 
         private void Start()
@@ -332,50 +334,60 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                     CheckForDrillPattern(merged);
                 }
 
-                // ★ 깨진 블록(isCracked) 포함 시 특수 블록 생성 차단 → 드릴 Fallback 시도
+                // ★ 깨진 블록(isCracked) 포함 시: 정상 블록이 1개라도 있으면 생성, 모두 깨지면 차단
                 if (merged.createdSpecialType != SpecialBlockType.None)
                 {
                     bool hasCracked = merged.blocks.Any(b => b != null && b.Data != null && b.Data.isCracked);
                     if (hasCracked)
                     {
-                        SpecialBlockType blockedType = merged.createdSpecialType;
-                        Debug.Log($"[MatchingSystem] ★ 깨진 블록으로 {blockedType} 생성 차단, 드릴 fallback 시도");
-
-                        // 차단 상태로 전환
-                        merged.crackedBlockedSpecial = blockedType;
-                        merged.createdSpecialType = SpecialBlockType.None;
-                        merged.specialSpawnBlock = null;
                         merged.hasCrackedBlocks = true;
 
-                        // ★ 드릴 Fallback: 깨지지 않은 블록만 추출하여 드릴 패턴 검사
-                        if (blockedType == SpecialBlockType.Bomb || blockedType == SpecialBlockType.Rainbow
-                            || blockedType == SpecialBlockType.Drone)
+                        List<HexBlock> healthyBlocks = merged.blocks
+                            .Where(b => b != null && b.Data != null && !b.Data.isCracked).ToList();
+
+                        if (healthyBlocks.Count > 0)
                         {
-                            List<HexBlock> healthyBlocks = merged.blocks
-                                .Where(b => b != null && b.Data != null && !b.Data.isCracked)
-                                .ToList();
-
-                            if (healthyBlocks.Count >= 4)
+                            // ★ 정상 블록 존재: 특수 블록 생성 유지, 스폰 블록만 정상 블록으로 보장
+                            if (merged.specialSpawnBlock != null && merged.specialSpawnBlock.Data != null
+                                && merged.specialSpawnBlock.Data.isCracked)
                             {
-                                // 임시 MatchGroup으로 드릴 패턴 검사
-                                MatchGroup tempGroup = new MatchGroup();
-                                tempGroup.blocks = new List<HexBlock>(healthyBlocks);
-                                tempGroup.gemType = merged.gemType;
-
-                                bool drillFound = TryFindDrillInSubset(tempGroup);
-
-                                if (drillFound)
+                                // 스폰 블록이 깨진 블록이면 정상 블록 중 가장 아래쪽 블록으로 교체
+                                HexBlock replacement = null;
+                                foreach (var hb in healthyBlocks)
                                 {
-                                    // 드릴 생성 결과를 원래 그룹에 복사 (blocks는 깨진 블록 포함 전체 유지)
-                                    merged.createdSpecialType = SpecialBlockType.Drill;
-                                    merged.drillDirection = tempGroup.drillDirection;
-                                    merged.specialSpawnBlock = tempGroup.specialSpawnBlock;
-
-                                    Debug.Log($"[MatchingSystem] ★ 드릴 Fallback 성공! " +
-                                        $"Direction={merged.drillDirection}, Spawn=({merged.specialSpawnBlock.Coord}), " +
-                                        $"차단된 원래 타입={blockedType}");
+                                    if (hb.Data == null || hb.Data.specialType != SpecialBlockType.None) continue;
+                                    if (replacement == null) { replacement = hb; }
+                                    else
+                                    {
+                                        Vector2 pos = GetBlockScreenPosition(hb);
+                                        Vector2 curPos = GetBlockScreenPosition(replacement);
+                                        if (pos.y < curPos.y) replacement = hb;
+                                    }
+                                }
+                                if (replacement != null)
+                                {
+                                    merged.specialSpawnBlock = replacement;
+                                    Debug.Log($"[MatchingSystem] ★ 깨진 스폰 블록 → 정상 블록으로 교체: ({replacement.Coord})");
+                                }
+                                else
+                                {
+                                    // 정상 블록은 있지만 모두 특수 블록이라 교체 불가 → 차단
+                                    merged.crackedBlockedSpecial = merged.createdSpecialType;
+                                    merged.createdSpecialType = SpecialBlockType.None;
+                                    merged.specialSpawnBlock = null;
+                                    Debug.Log($"[MatchingSystem] ★ 정상 블록 모두 특수 블록 → {merged.crackedBlockedSpecial} 생성 차단");
                                 }
                             }
+                            Debug.Log($"[MatchingSystem] ★ 깨진 블록 혼합 매칭: 정상 {healthyBlocks.Count}개로 {merged.createdSpecialType} 생성 유지");
+                        }
+                        else
+                        {
+                            // ★ 모든 블록 깨짐: 특수 블록 생성 차단
+                            merged.allBlocksCracked = true;
+                            merged.crackedBlockedSpecial = merged.createdSpecialType;
+                            merged.createdSpecialType = SpecialBlockType.None;
+                            merged.specialSpawnBlock = null;
+                            Debug.Log($"[MatchingSystem] ★ 모든 블록 깨짐 → {merged.crackedBlockedSpecial} 생성 완전 차단");
                         }
                     }
                 }

@@ -174,7 +174,7 @@ namespace JewelsHexaPuzzle.Core
                 int row = i % BUTTONS_PER_COL;
 
                 float x = leftmostX + col * (TEST_BTN_SIZE * 0.75f + TEST_BTN_GAP);
-                float y = lowestY + 30f - row * (btnHexH + TEST_BTN_GAP);
+                float y = lowestY - 70f - row * (btnHexH + TEST_BTN_GAP);
                 if (col % 2 == 1)
                     y -= (btnHexH + TEST_BTN_GAP) / 2f;
 
@@ -285,7 +285,7 @@ namespace JewelsHexaPuzzle.Core
 
             // 특수 블록 버튼 영역의 최하단 Y 계산
             int specialCols = (specialBlockTypes.Length + BUTTONS_PER_COL - 1) / BUTTONS_PER_COL;
-            float specialBottomY = lowestY + 30f - (BUTTONS_PER_COL - 1) * (specialBtnHexH + TEST_BTN_GAP)
+            float specialBottomY = lowestY - 70f - (BUTTONS_PER_COL - 1) * (specialBtnHexH + TEST_BTN_GAP)
                                    - (specialBtnHexH + TEST_BTN_GAP) / 2f; // 홀수 열 오프셋 고려
             float colorStartY = specialBottomY - 35f; // 특수 버튼 아래 35px 간격 (10px 하향)
 

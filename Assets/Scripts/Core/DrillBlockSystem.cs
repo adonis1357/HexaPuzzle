@@ -303,11 +303,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             // [3단계] 드릴 블록 자체의 데이터를 지움 (투사체는 별도로 날아감)
             drillBlock.ClearData();
 
-            // ★ 드릴 시작 지점 열 즉시 낙하+리필 (백그라운드 실행)
-            // Vertical 드릴은 같은 열에서 진행하므로 발사 중 낙하하면 새 블록이 경로 방해 → 스킵
-            // 드릴 발사체가 고블린 충돌을 직접 처리하므로 낙하 충돌 대미지 건너뜀
-            if (removalSystem != null && direction != DrillDirection.Vertical)
-                removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: true);
+            // ★ 드릴 시작 지점 열 낙하는 전체 라인 파괴 완료 후 일괄 처리
 
             // [4단계] 양방향으로 경로에 있는 블록들을 수집
             // 예: Vertical이면 위쪽(positive)과 아래쪽(negative)
@@ -401,15 +397,29 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             yield return drill1;
             yield return drill2;
 
-            // [7b단계] Vertical 드릴: 열 낙하+리필 완료까지 대기
-            // CascadeWithPendingLoop의 ProcessFalling()보다 먼저 완료하여
-            // pending 특수 블록이 안정된 그리드에서 발동되도록 보장
-            // ★ 드릴 투사체 직접 충돌과 리필 블록 낙하 충돌은 별개 → 낙하 충돌 활성화
-            if (direction == DrillDirection.Vertical && removalSystem != null)
+            // [7b단계] 전체 라인 파괴 완료 → 영향받은 모든 열 일괄 낙하
+            // 모든 드릴 타입 통합: 발사체가 라인을 전부 파괴한 뒤 한번에 낙하
+            if (removalSystem != null)
             {
-                Coroutine fallingCo = removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: false);
-                if (fallingCo != null)
-                    yield return fallingCo;
+                List<Coroutine> fallingCoroutines = new List<Coroutine>();
+
+                // 드릴 시작 열 낙하
+                Coroutine startFall = removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: false);
+                if (startFall != null)
+                    fallingCoroutines.Add(startFall);
+
+                // 각 타겟 열 낙하 (allDrillTargets = targets1 + targets2)
+                foreach (var target in allDrillTargets)
+                {
+                    if (target == null) continue;
+                    Coroutine fall = removalSystem.ProcessFallingForColumn(target, skipGoblinCollision: false);
+                    if (fall != null)
+                        fallingCoroutines.Add(fall);
+                }
+
+                // 모든 열의 낙하 완료 대기
+                foreach (var co in fallingCoroutines)
+                    yield return co;
             }
 
             // [8단계] 최종 점수 계산 (드릴 기본 200점 + 파괴한 블록들의 점수 합)
@@ -452,9 +462,31 @@ private List<HexBlock> GetBlocksInDirection(HexCoord start, DrillDirection direc
             HexCoord current = start + delta; // 시작점 다음 칸부터 탐색
             int maxSteps = 20; // 무한 루프 방지용 최대 이동 횟수
             int step = 0;
+
+            // ★ 시작점이 그리드 밖이면 그리드 진입점까지 전진
+            if (!hexGrid.IsValidCoord(start))
+            {
+                while (!hexGrid.IsValidCoord(current) && step < maxSteps)
+                {
+                    // ★ 그리드 밖에서도 방패 고블린 체크 (소환 영역)
+                    if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                        && GoblinSystem.Instance.HasShieldGoblinAt(current))
+                        return blocks; // 방패 차단 → 빈 목록 반환
+
+                    current = current + delta;
+                    step++;
+                }
+            }
+
             // 그리드 범위 안에 있는 한 계속 전진
             while (hexGrid.IsValidCoord(current) && step < maxSteps)
             {
+                // ★ 방패 고블린이 이 좌표에 있으면 드릴 라인 수집 중단
+                // 방패 뒤의 블록은 수집하지 않음 → 특수 블록 반짝임/점수계산/낙하 방지
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                    && GoblinSystem.Instance.HasShieldGoblinAt(current))
+                    break;
+
                 HexBlock block = hexGrid.GetBlock(current);
                 // 유효한 블록이 있으면 목록에 추가
                 if (block != null && block.Data != null && block.Data.gemType != GemType.None)
@@ -557,6 +589,7 @@ private IEnumerator DrillLineWithProjectile(
 
             // ★ 드릴 경로 위 고블린 위치 사전 스캔 (투사체 충돌 시 1회 대미지용)
             // 그리드 내부 + 그리드 밖 3칸(고블린 소환 영역)까지 확장 스캔
+            // 방패 고블린을 만나면 그 뒤의 고블린은 수집하지 않음 (방패가 드릴을 차단)
             HashSet<HexCoord> pathGoblinPositions = new HashSet<HexCoord>();
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive && hexGrid != null)
             {
@@ -570,6 +603,9 @@ private IEnumerator DrillLineWithProjectile(
                         outsideGridCount++;
                         if (outsideGridCount > 3) break; // 그리드 밖 3칸까지 (고블린 소환 영역)
                     }
+                    // ★ 방패 고블린을 만나면 이 방향 스캔 중단 (뒤의 몬스터 보호)
+                    if (GoblinSystem.Instance.HasShieldGoblinAt(scanCoord))
+                        break;
                     if (GoblinSystem.Instance.HasGoblinAt(scanCoord))
                         pathGoblinPositions.Add(scanCoord);
                     scanCoord = scanCoord + pathDelta;
@@ -595,6 +631,44 @@ private IEnumerator DrillLineWithProjectile(
             {
                 HexBlock target = targets[i];
                 if (target == null) continue;
+
+                // ★ 방패 고블린 차단 체크: 타겟 좌표에 방패 고블린이 있으면 드릴 정지
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                    && GoblinSystem.Instance.HasShieldGoblinAt(target.Coord))
+                {
+                    // 투사체를 고블린 위치까지 이동
+                    Vector3 shieldPos = target.transform.position;
+                    if (projectile != null)
+                    {
+                        Vector3 shieldDir = (shieldPos - currentPos).normalized;
+                        float shieldAngle = Mathf.Atan2(shieldDir.y, shieldDir.x) * Mathf.Rad2Deg;
+                        projectile.transform.rotation = Quaternion.Euler(0, 0, shieldAngle - 90f);
+
+                        float shieldDist = Vector3.Distance(currentPos, shieldPos);
+                        float shieldTravelTime = Mathf.Max(shieldDist / projectileSpeed, 0.01f);
+                        float shieldElapsed = 0f;
+                        Vector3 shieldMoveStart = currentPos;
+
+                        while (shieldElapsed < shieldTravelTime)
+                        {
+                            shieldElapsed += Time.deltaTime;
+                            float t = shieldElapsed / shieldTravelTime;
+                            if (projectile != null)
+                                projectile.transform.position = Vector3.Lerp(shieldMoveStart, shieldPos, t);
+                            yield return null;
+                        }
+
+                        // 투사체 파괴
+                        Destroy(projectile);
+                    }
+
+                    // 방패에 드릴 차단 처리 (shieldHp 감소 + 비주얼)
+                    GoblinSystem.Instance.TryBlockDrill(target.Coord);
+
+                    // 파괴 완료 콜백 호출 (열 낙하 트리거용)
+                    onTargetsDestroyed?.Invoke();
+                    yield break; // 이 방향 라인 종료
+                }
 
                 Vector3 targetPos = target.transform.position;
                 lastMoveDir = (targetPos - currentPos).normalized;
@@ -671,11 +745,7 @@ private IEnumerator DrillLineWithProjectile(
                     if (destroyedGemType != GemType.None)
                         GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType);
 
-                    // ★ 블록 제거 즉시 해당 열 낙하+리필 시작 (대기하지 않고 백그라운드 실행)
-                    // Vertical 드릴은 같은 열에서 계속 진행하므로 스킵 (완료 후 일괄 낙하)
-                    // 드릴 발사체가 고블린 충돌을 직접 처리하므로 낙하 충돌 대미지 건너뜀
-                    if (removalSystem != null && direction != DrillDirection.Vertical)
-                        removalSystem.ProcessFallingForColumn(target, skipGoblinCollision: true);
+                    // ★ 블록별 즉시 낙하 제거 → 전체 라인 파괴 완료 후 DrillCoroutine에서 일괄 낙하
                 }
 
                 // 블록 사이 약간의 간격을 두어 "하나씩 뚫어가는" 느낌 연출
@@ -740,9 +810,33 @@ private IEnumerator DrillLineWithProjectile(
                     Vector2 projWorld2D = new Vector2(newPos.x, newPos.y);
                     float hitRadius = hexGrid != null ? hexGrid.HexSize * 0.8f : 40f;
 
+                    // ★ 방패 고블린 차단 체크 (exit phase)
+                    bool shieldBlocked = false;
                     foreach (var goblin in aliveGoblins)
                     {
                         if (goblin.visualObject == null) continue;
+                        if (!goblin.isShielded) continue; // 방패 활성 고블린만
+
+                        Vector3 goblinWorldPos = goblin.visualObject.transform.position;
+                        float dist = Vector2.Distance(
+                            projWorld2D,
+                            new Vector2(goblinWorldPos.x, goblinWorldPos.y));
+
+                        if (dist < hitRadius)
+                        {
+                            // 방패에 드릴 차단
+                            GoblinSystem.Instance.TryBlockDrill(goblin.position);
+                            if (projectile != null) Destroy(projectile);
+                            shieldBlocked = true;
+                            break;
+                        }
+                    }
+                    if (shieldBlocked) yield break;
+
+                    foreach (var goblin in aliveGoblins)
+                    {
+                        if (goblin.visualObject == null) continue;
+                        if (goblin.isShielded) continue; // 방패 활성 고블린은 대미지 제외
                         if (exitDamagedPositions.Contains(goblin.position)) continue;
 
                         Vector3 goblinWorldPos = goblin.visualObject.transform.position;
