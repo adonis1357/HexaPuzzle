@@ -1628,14 +1628,19 @@ namespace JewelsHexaPuzzle.Core
                 GoblinData goblin = kvp.Key;
                 int totalDamage = kvp.Value;
 
-                // ★ 방패 활성 시: 바닥 매칭 또는 바로 아래 매칭 → 방패에 1 대미지, 나머지 차단
+                // ★ 방패 활성 시: 그리드 안에서 바로 아래 매칭만 방패 1 대미지, 나머지 완전 차단
                 if (goblin.isShielded)
                 {
-                    bool isDirectHit = directHitCoords != null && directHitCoords.Contains(goblin.position);
+                    // 방패 고블린이 그리드 밖(확장 영역)에 있으면 매칭 대미지 완전 차단
+                    bool isInsideGrid = hexGrid != null && hexGrid.IsInsideGrid(goblin.position);
+                    if (!isInsideGrid)
+                    {
+                        continue; // 그리드 밖 방패 → 인접 매칭 대미지 무시
+                    }
 
-                    // ★ 방패 아래 방향(+r) 매칭 체크: 고블린 바로 아래 블록이 매칭되면 대미지
+                    // 그리드 안에 있을 때: 바로 아래(+r) 매칭만 방패 대미지
                     bool isBelowHit = false;
-                    if (!isDirectHit && directHitCoords != null)
+                    if (directHitCoords != null)
                     {
                         // flat-top hex 아래 3방향: (0,1), (-1,1), (1,0)
                         HexCoord[] belowDirs = {
@@ -1653,9 +1658,9 @@ namespace JewelsHexaPuzzle.Core
                         }
                     }
 
-                    if (isDirectHit || isBelowHit)
+                    if (isBelowHit)
                         ApplyShieldDamage(goblin, 1);
-                    // 그 외 인접 대미지는 완전 차단
+                    // 그 외 인접/바닥 매칭 대미지는 완전 차단
                     continue;
                 }
 
