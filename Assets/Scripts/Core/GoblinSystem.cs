@@ -1638,9 +1638,10 @@ namespace JewelsHexaPuzzle.Core
                         continue; // 그리드 밖 방패 → 인접 매칭 대미지 무시
                     }
 
-                    // 그리드 안에 있을 때: 바로 아래(+r) 매칭만 방패 대미지
+                    // 그리드 안: 동일 위치 매칭 또는 바로 아래(+r) 매칭 → 방패 1 대미지
+                    bool isDirectHit = directHitCoords != null && directHitCoords.Contains(goblin.position);
                     bool isBelowHit = false;
-                    if (directHitCoords != null)
+                    if (!isDirectHit && directHitCoords != null)
                     {
                         // flat-top hex 아래 3방향: (0,1), (-1,1), (1,0)
                         HexCoord[] belowDirs = {
@@ -1658,7 +1659,7 @@ namespace JewelsHexaPuzzle.Core
                         }
                     }
 
-                    if (isBelowHit)
+                    if (isDirectHit || isBelowHit)
                         ApplyShieldDamage(goblin, 1);
                     // 그 외 인접/바닥 매칭 대미지는 완전 차단
                     continue;
