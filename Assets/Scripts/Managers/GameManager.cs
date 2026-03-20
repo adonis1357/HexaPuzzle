@@ -31,6 +31,7 @@ namespace JewelsHexaPuzzle.Managers
         [SerializeField] private EnemySystem enemySystem;
         private GoblinSystem goblinSystem;
         private MPGaugeUI mpGaugeUI;
+        private SkillTreeUI skillTreeUI;
 
 
         [Header("Managers")]
@@ -88,6 +89,7 @@ namespace JewelsHexaPuzzle.Managers
         public bool IsPaused => isPaused;
         public int CurrentGold => currentGold;
         public bool IsProcessingChainDrill => isProcessingChainDrill;
+        public SkillTreeUI SkillTreeUIRef => skillTreeUI;
 
         // 이벤트
         public event System.Action<GameState> OnGameStateChanged;
@@ -119,6 +121,14 @@ namespace JewelsHexaPuzzle.Managers
                 var mpObj = new GameObject("MPManager");
                 mpObj.transform.SetParent(transform);
                 mpObj.AddComponent<MPManager>();
+            }
+
+            // SkillTreeManager 싱글톤 자동 생성
+            if (SkillTreeManager.Instance == null)
+            {
+                var skillObj = new GameObject("SkillTreeManager");
+                skillObj.transform.SetParent(transform);
+                skillObj.AddComponent<SkillTreeManager>();
             }
 
             AutoFindReferences();
@@ -189,6 +199,14 @@ namespace JewelsHexaPuzzle.Managers
 
                 // 로비 UI 생성
                 CreateLobbyUI(canvas);
+
+                // 스킬 트리 UI 생성
+                if (skillTreeUI == null)
+                {
+                    GameObject skillTreeObj = new GameObject("SkillTreeUI");
+                    skillTreeUI = skillTreeObj.AddComponent<SkillTreeUI>();
+                    skillTreeUI.Initialize(canvas);
+                }
             }
             ShowLobby();
         }
@@ -886,6 +904,13 @@ namespace JewelsHexaPuzzle.Managers
         private Text gameOverScoreText;
         private Text gameOverTitleText; // 타이틀 텍스트 참조 (GAME OVER / GAME END 변경용)
 
+        // ★ 이동횟수 추가 구매 시스템
+        private int continueCount = 0;           // 현재 레벨에서 이동횟수 추가 구매 횟수
+        private const int CONTINUE_MOVES = 5;    // 추가 이동횟수 (고정)
+        private const int CONTINUE_BASE_COST = 100; // 기본 골드 비용
+        private Text continueCostText;           // 구매 버튼 비용 텍스트 참조
+        private Button continueButton;           // 구매 버튼 참조
+
         // 로비 UI 참조
         private GameObject lobbyContainer;
         private RectTransform lobbyScrollContentRt;  // 스크롤 콘텐츠 RectTransform (높이 동적 갱신용)
@@ -1004,41 +1029,107 @@ namespace JewelsHexaPuzzle.Managers
             gameOverMovesText.raycastTarget = false;
             gameOverMovesText.text = "MOVES: 0";
 
-            // === 재시작 버튼 ===
-            GameObject retryObj = new GameObject("RetryButton");
-            retryObj.transform.SetParent(panel.transform, false);
-            RectTransform retryRt = retryObj.AddComponent<RectTransform>();
-            retryRt.anchorMin = new Vector2(0.5f, 0f);
-            retryRt.anchorMax = new Vector2(0.5f, 0f);
-            retryRt.pivot = new Vector2(0.5f, 0f);
-            retryRt.anchoredPosition = new Vector2(0f, 30f);
-            retryRt.sizeDelta = new Vector2(220f, 60f);
+            // === ★ 이동횟수 추가 구매 버튼 ===
+            GameObject continueObj = new GameObject("ContinueButton");
+            continueObj.transform.SetParent(panel.transform, false);
+            RectTransform continueRt = continueObj.AddComponent<RectTransform>();
+            continueRt.anchorMin = new Vector2(0.5f, 0f);
+            continueRt.anchorMax = new Vector2(0.5f, 0f);
+            continueRt.pivot = new Vector2(0.5f, 0f);
+            continueRt.anchoredPosition = new Vector2(0f, 100f);
+            continueRt.sizeDelta = new Vector2(360f, 70f);
 
-            Image retryBg = retryObj.AddComponent<Image>();
-            retryBg.color = new Color(0.2f, 0.6f, 0.9f, 1f);
+            Image continueBg = continueObj.AddComponent<Image>();
+            continueBg.color = new Color(0.9f, 0.65f, 0.1f, 1f); // 골드색
 
-            Button retryBtn = retryObj.AddComponent<Button>();
-            var retryColors = retryBtn.colors;
-            retryColors.highlightedColor = new Color(0.3f, 0.7f, 1f);
-            retryColors.pressedColor = new Color(0.15f, 0.45f, 0.7f);
-            retryBtn.colors = retryColors;
+            continueButton = continueObj.AddComponent<Button>();
+            var continueColors = continueButton.colors;
+            continueColors.highlightedColor = new Color(1f, 0.75f, 0.2f);
+            continueColors.pressedColor = new Color(0.7f, 0.5f, 0.08f);
+            continueColors.disabledColor = new Color(0.4f, 0.4f, 0.4f);
+            continueButton.colors = continueColors;
 
-            GameObject retryTextObj = new GameObject("RetryText");
-            retryTextObj.transform.SetParent(retryObj.transform, false);
-            RectTransform retryTextRt = retryTextObj.AddComponent<RectTransform>();
-            retryTextRt.anchorMin = Vector2.zero;
-            retryTextRt.anchorMax = Vector2.one;
-            retryTextRt.offsetMin = Vector2.zero;
-            retryTextRt.offsetMax = Vector2.zero;
-            Text retryText = retryTextObj.AddComponent<Text>();
-            retryText.font = font;
-            retryText.fontSize = 26;
-            retryText.alignment = TextAnchor.MiddleCenter;
-            retryText.color = Color.white;
-            retryText.raycastTarget = false;
-            retryText.text = "나가기";
+            GameObject continueTextObj = new GameObject("ContinueText");
+            continueTextObj.transform.SetParent(continueObj.transform, false);
+            RectTransform continueTextRt = continueTextObj.AddComponent<RectTransform>();
+            continueTextRt.anchorMin = Vector2.zero;
+            continueTextRt.anchorMax = Vector2.one;
+            continueTextRt.offsetMin = Vector2.zero;
+            continueTextRt.offsetMax = Vector2.zero;
+            continueCostText = continueTextObj.AddComponent<Text>();
+            continueCostText.font = font;
+            continueCostText.fontSize = 24;
+            continueCostText.alignment = TextAnchor.MiddleCenter;
+            continueCostText.color = Color.white;
+            continueCostText.raycastTarget = false;
+            continueCostText.text = $"+{CONTINUE_MOVES} 이동횟수  🪙 {CONTINUE_BASE_COST}G";
 
-            retryBtn.onClick.AddListener(() =>
+            Outline continueBtnOutline = continueTextObj.AddComponent<Outline>();
+            continueBtnOutline.effectColor = new Color(0.3f, 0.2f, 0f, 0.8f);
+            continueBtnOutline.effectDistance = new Vector2(1, -1);
+
+            continueButton.onClick.AddListener(() =>
+            {
+                int cost = GetContinueCost();
+                if (SpendGold(cost))
+                {
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
+                    continueCount++;
+                    // 이동횟수 추가 + 게임 재개
+                    currentTurns += CONTINUE_MOVES;
+                    OnTurnChanged?.Invoke(currentTurns);
+                    UpdateUI();
+                    // 팝업 닫고 Playing 상태로 복귀
+                    gameOverPopupObj.SetActive(false);
+                    Time.timeScale = 1f;
+                    SetGameState(GameState.Playing);
+                    if (inputSystem != null) inputSystem.SetEnabled(true);
+                    Debug.Log($"[GameManager] 이동횟수 +{CONTINUE_MOVES} 구매! 비용={cost}G, 누적 구매={continueCount}회, 남은 턴={currentTurns}");
+                }
+                else
+                {
+                    // 골드 부족 피드백
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayWarningBeep();
+                    Debug.Log($"[GameManager] 골드 부족! 필요={cost}G, 보유={currentGold}G");
+                    StartCoroutine(GoldInsufficientFeedback(continueObj));
+                }
+            });
+
+            // === 나가기 버튼 ===
+            GameObject exitObj = new GameObject("ExitButton");
+            exitObj.transform.SetParent(panel.transform, false);
+            RectTransform exitRt = exitObj.AddComponent<RectTransform>();
+            exitRt.anchorMin = new Vector2(0.5f, 0f);
+            exitRt.anchorMax = new Vector2(0.5f, 0f);
+            exitRt.pivot = new Vector2(0.5f, 0f);
+            exitRt.anchoredPosition = new Vector2(0f, 25f);
+            exitRt.sizeDelta = new Vector2(360f, 60f);
+
+            Image exitBg = exitObj.AddComponent<Image>();
+            exitBg.color = new Color(0.35f, 0.35f, 0.4f, 1f); // 회색
+
+            Button exitBtn = exitObj.AddComponent<Button>();
+            var exitColors = exitBtn.colors;
+            exitColors.highlightedColor = new Color(0.45f, 0.45f, 0.5f);
+            exitColors.pressedColor = new Color(0.25f, 0.25f, 0.3f);
+            exitBtn.colors = exitColors;
+
+            GameObject exitTextObj = new GameObject("ExitText");
+            exitTextObj.transform.SetParent(exitObj.transform, false);
+            RectTransform exitTextRt = exitTextObj.AddComponent<RectTransform>();
+            exitTextRt.anchorMin = Vector2.zero;
+            exitTextRt.anchorMax = Vector2.one;
+            exitTextRt.offsetMin = Vector2.zero;
+            exitTextRt.offsetMax = Vector2.zero;
+            Text exitText = exitTextObj.AddComponent<Text>();
+            exitText.font = font;
+            exitText.fontSize = 24;
+            exitText.alignment = TextAnchor.MiddleCenter;
+            exitText.color = Color.white;
+            exitText.raycastTarget = false;
+            exitText.text = "나가기";
+
+            exitBtn.onClick.AddListener(() =>
             {
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
                 gameOverPopupObj.SetActive(false);
@@ -2956,6 +3047,7 @@ private void InitializeSystems()
                 // 턴 수를 먼저 초기화 (TriggerStartDrop → OnCascadeComplete 콜백에서
                 // currentTurns <= 0 체크 시 GameOver 호출되는 타이밍 버그 방지)
                 currentTurns = initialTurns;
+                continueCount = 0; // ★ 이동횟수 추가 구매 횟수 초기화
                 if (uiManager != null)
                 {
                     uiManager.SetInfiniteMode(false);
@@ -4890,6 +4982,56 @@ private void OnBigBang()
         }
 
         // ============================================================
+        // 이동횟수 추가 구매 시스템
+        // ============================================================
+
+        /// <summary>
+        /// 현재 이동횟수 추가 구매 비용 (100씩 가산: 100, 200, 300...)
+        /// </summary>
+        private int GetContinueCost()
+        {
+            return CONTINUE_BASE_COST * (continueCount + 1);
+        }
+
+        /// <summary>
+        /// GameOver 팝업 표시 시 구매 버튼 비용 텍스트 갱신
+        /// </summary>
+        private void UpdateContinueCostDisplay()
+        {
+            int cost = GetContinueCost();
+            if (continueCostText != null)
+                continueCostText.text = $"+{CONTINUE_MOVES} 이동횟수  {cost}G";
+
+            // 골드 부족 시 버튼 비활성화 표시
+            if (continueButton != null)
+                continueButton.interactable = (currentGold >= cost);
+        }
+
+        /// <summary>
+        /// 골드 부족 시 버튼 흔들림 피드백
+        /// </summary>
+        private IEnumerator GoldInsufficientFeedback(GameObject buttonObj)
+        {
+            if (buttonObj == null) yield break;
+            RectTransform rt = buttonObj.GetComponent<RectTransform>();
+            if (rt == null) yield break;
+
+            Vector2 origPos = rt.anchoredPosition;
+            float shakeDur = 0.3f;
+            float elapsed = 0f;
+            while (elapsed < shakeDur)
+            {
+                if (rt == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float intensity = 6f * (1f - elapsed / shakeDur);
+                rt.anchoredPosition = origPos + new Vector2(
+                    Random.Range(-intensity, intensity), 0f);
+                yield return null;
+            }
+            if (rt != null) rt.anchoredPosition = origPos;
+        }
+
+        // ============================================================
         // 생존 미션 콜백
         // ============================================================
 
@@ -5575,8 +5717,8 @@ private void OnBigBang()
             }
             else
             {
-                // 스테이지 모드: 기존 로직 (점수 0 처리)
-                Debug.Log("Game Over! (점수 0 처리)");
+                // 스테이지 모드: 이동횟수 추가 구매 옵션 제공
+                Debug.Log("Game Over! (이동횟수 추가 구매 가능)");
 
                 UpdateGameOverTitle("GAME OVER", new Color(1f, 0.3f, 0.3f));
 
@@ -5584,6 +5726,9 @@ private void OnBigBang()
                     gameOverScoreText.text = "0";
                 if (gameOverMovesText != null)
                     gameOverMovesText.text = "MOVES: 0";
+
+                // ★ 이동횟수 추가 구매 버튼 비용 갱신
+                UpdateContinueCostDisplay();
 
                 if (uiManager != null)
                     uiManager.ShowGameOverPopup();
@@ -5866,6 +6011,9 @@ private void OnBigBang()
                 );
             }
 
+            // === 스킬 트리 버튼 (좌측 하단, 튜토리얼 초기화 위) ===
+            CreateSkillTreeLobbyButton(lobbyContainer, font);
+
             // === 튜토리얼 초기화 버튼 (좌측 하단) ===
             CreateTutorialResetButton(lobbyContainer, font);
 
@@ -5980,6 +6128,92 @@ private void OnBigBang()
         /// <summary>
         /// 로비 좌측 하단에 튜토리얼 초기화 버튼 생성
         /// </summary>
+        /// <summary>
+        /// 스킬 트리 로비 버튼 (좌측 하단, 튜토리얼 초기화 버튼 위, 육각형)
+        /// </summary>
+        private void CreateSkillTreeLobbyButton(GameObject parent, Font font)
+        {
+            float btnSize = 80f;
+
+            GameObject btnObj = new GameObject("SkillTreeButton");
+            btnObj.transform.SetParent(parent.transform, false);
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0f, 0f);
+            btnRt.anchorMax = new Vector2(0f, 0f);
+            btnRt.pivot = new Vector2(0f, 0f);
+            // 튜토리얼 초기화 버튼(20,20 size 180x45) 위에 배치
+            btnRt.anchoredPosition = new Vector2(20f, 80f);
+            btnRt.sizeDelta = new Vector2(btnSize, btnSize);
+
+            // 육각형 배경
+            Image hexBg = btnObj.AddComponent<Image>();
+            hexBg.sprite = HexBlock.GetHexFlashSprite();
+            hexBg.type = Image.Type.Simple;
+            hexBg.preserveAspect = true;
+            hexBg.color = new Color(0.35f, 0.55f, 0.85f, 0.92f); // 파란 계열
+
+            // 육각형 테두리
+            GameObject borderObj = new GameObject("HexBorder");
+            borderObj.transform.SetParent(btnObj.transform, false);
+            RectTransform borderRt = borderObj.AddComponent<RectTransform>();
+            borderRt.anchorMin = Vector2.zero;
+            borderRt.anchorMax = Vector2.one;
+            borderRt.offsetMin = Vector2.zero;
+            borderRt.offsetMax = Vector2.zero;
+            Image borderImg = borderObj.AddComponent<Image>();
+            borderImg.sprite = HexBlock.GetHexBorderSprite();
+            borderImg.type = Image.Type.Simple;
+            borderImg.preserveAspect = true;
+            borderImg.color = new Color(0.6f, 0.8f, 1f, 0.8f);
+            borderImg.raycastTarget = false;
+
+            // 버튼 컴포넌트
+            Button btn = btnObj.AddComponent<Button>();
+            var colors = btn.colors;
+            colors.highlightedColor = new Color(0.9f, 0.95f, 1f);
+            colors.pressedColor = new Color(0.6f, 0.7f, 0.8f);
+            btn.colors = colors;
+
+            // 아이콘: 별 모양 텍스트 (★)
+            GameObject iconObj = new GameObject("SkillIcon");
+            iconObj.transform.SetParent(btnObj.transform, false);
+            RectTransform iconRt = iconObj.AddComponent<RectTransform>();
+            iconRt.anchoredPosition = new Vector2(0f, 3f);
+            iconRt.sizeDelta = new Vector2(50f, 50f);
+            Text iconText = iconObj.AddComponent<Text>();
+            iconText.font = font;
+            iconText.fontSize = 28;
+            iconText.alignment = TextAnchor.MiddleCenter;
+            iconText.color = new Color(1f, 0.95f, 0.7f, 0.95f);
+            iconText.raycastTarget = false;
+            iconText.text = "\u2605"; // ★
+
+            Outline iconOutline = iconObj.AddComponent<Outline>();
+            iconOutline.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            iconOutline.effectDistance = new Vector2(1f, 1f);
+
+            // "스킬" 라벨 (버튼 아래)
+            GameObject labelObj = new GameObject("SkillLabel");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            RectTransform labelRt = labelObj.AddComponent<RectTransform>();
+            labelRt.anchoredPosition = new Vector2(0f, -btnSize * 0.5f - 12f);
+            labelRt.sizeDelta = new Vector2(80f, 20f);
+            Text labelText = labelObj.AddComponent<Text>();
+            labelText.font = font;
+            labelText.fontSize = 14;
+            labelText.alignment = TextAnchor.MiddleCenter;
+            labelText.color = new Color(0.7f, 0.8f, 1f, 0.85f);
+            labelText.raycastTarget = false;
+            labelText.text = "스킬";
+
+            btn.onClick.AddListener(() =>
+            {
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
+                if (skillTreeUI != null)
+                    skillTreeUI.Show();
+            });
+        }
+
         private void CreateTutorialResetButton(GameObject parent, Font font)
         {
             // 버튼 컨테이너
@@ -6273,6 +6507,10 @@ private void OnBigBang()
             // MP 게이지 숨기기
             if (mpGaugeUI != null)
                 mpGaugeUI.gameObject.SetActive(false);
+
+            // 스킬 트리 페이지 숨기기 (열려있었다면)
+            if (skillTreeUI != null && skillTreeUI.IsVisible)
+                skillTreeUI.Hide();
 
             // 아이템 오버레이 강제 비활성화
             GameObject hammerOverlay = GameObject.Find("HammerOverlay");
@@ -7167,38 +7405,38 @@ private void OnDestroy()
                 // ★ ratio는 더이상 사용 안 함 (미션 잔여량 기반 가중 랜덤으로 대체)
                 // archerRatio/armoredRatio/shieldRatio는 레거시 — SpawnGoblins에서 미션 잔여량만 사용
                 case 16: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 15, maxOnBoard = 8,
-                    archerRatio = 0f, armoredRatio = 0f, shieldRatio = 0.20f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 8, shieldHp = 3 }; // 방패3 + 기본12 = 15
+                    archerRatio = 0f, armoredRatio = 0f, shieldRatio = 0.20f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 방패3 + 기본12 = 15
                 case 17: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 27, maxOnBoard = 9,
-                    archerRatio = 0f, armoredRatio = 0.37f, shieldRatio = 0.15f, archerHp = 1, armoredHp = 16, shieldGoblinHp = 9, shieldHp = 3 }; // 방패4 + 갑옷10 + 기본13 = 27
+                    archerRatio = 0f, armoredRatio = 0.37f, shieldRatio = 0.15f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 방패4 + 갑옷10 + 기본13 = 27
                 case 18: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 5, missionKillCount = 18, maxOnBoard = 10,
-                    archerRatio = 0f, armoredRatio = 0.67f, shieldRatio = 0.33f, archerHp = 1, armoredHp = 17, shieldGoblinHp = 10, shieldHp = 3 }; // 방패6 + 갑옷12 = 18
+                    archerRatio = 0f, armoredRatio = 0.67f, shieldRatio = 0.33f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 방패6 + 갑옷12 = 18
                 case 19: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 5, missionKillCount = 38, maxOnBoard = 11,
-                    archerRatio = 0f, armoredRatio = 0.37f, shieldRatio = 0.21f, archerHp = 1, armoredHp = 18, shieldGoblinHp = 11, shieldHp = 3 }; // 방패8 + 갑옷14 + 기본16 = 38
+                    archerRatio = 0f, armoredRatio = 0.37f, shieldRatio = 0.21f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 방패8 + 갑옷14 + 기본16 = 38
                 case 20: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 6, missionKillCount = 30, maxOnBoard = 12,
-                    archerRatio = 0.17f, armoredRatio = 0.50f, shieldRatio = 0.33f, archerHp = 1, armoredHp = 20, shieldGoblinHp = 12, shieldHp = 3 }; // 방패10 + 갑옷15 + 궁수5 = 30
+                    archerRatio = 0.17f, armoredRatio = 0.50f, shieldRatio = 0.33f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 방패10 + 갑옷15 + 궁수5 = 30
                 // 스테이지 21~30: 챕터 4 — 화산 심장 (4종 전체 혼합)
                 // ★ ratio는 레거시 — SpawnGoblins에서 미션 잔여량 기반 가중 랜덤 사용
-                // HP 점진 강화: armoredHp 20→25, shieldGoblinHp 12→18, shieldHp 3 유지, archerHp 1 유지
+                // HP 고정: 몽둥이5, 갑옷15, 활1, 방패10(내구3)
                 case 21: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 25, maxOnBoard = 9,
-                    archerRatio = 0.12f, armoredRatio = 0.32f, shieldRatio = 0.16f, archerHp = 1, armoredHp = 20, shieldGoblinHp = 13, shieldHp = 3 }; // 기본10 + 갑옷8 + 궁수3 + 방패4 = 25
+                    archerRatio = 0.12f, armoredRatio = 0.32f, shieldRatio = 0.16f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본10 + 갑옷8 + 궁수3 + 방패4 = 25
                 case 22: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 5, missionKillCount = 32, maxOnBoard = 10,
-                    archerRatio = 0.16f, armoredRatio = 0.31f, shieldRatio = 0.16f, archerHp = 1, armoredHp = 21, shieldGoblinHp = 13, shieldHp = 3 }; // 기본12 + 갑옷10 + 궁수5 + 방패5 = 32
+                    archerRatio = 0.16f, armoredRatio = 0.31f, shieldRatio = 0.16f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본12 + 갑옷10 + 궁수5 + 방패5 = 32
                 case 23: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 5, missionKillCount = 32, maxOnBoard = 10,
-                    archerRatio = 0.13f, armoredRatio = 0.38f, shieldRatio = 0.25f, archerHp = 1, armoredHp = 21, shieldGoblinHp = 14, shieldHp = 3 }; // 기본8 + 갑옷12 + 궁수4 + 방패8 = 32
+                    archerRatio = 0.13f, armoredRatio = 0.38f, shieldRatio = 0.25f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본8 + 갑옷12 + 궁수4 + 방패8 = 32
                 case 24: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 5, missionKillCount = 35, maxOnBoard = 11,
-                    archerRatio = 0.20f, armoredRatio = 0.23f, shieldRatio = 0.17f, archerHp = 1, armoredHp = 22, shieldGoblinHp = 14, shieldHp = 3 }; // 기본14 + 갑옷8 + 궁수7 + 방패6 = 35
+                    archerRatio = 0.20f, armoredRatio = 0.23f, shieldRatio = 0.17f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본14 + 갑옷8 + 궁수7 + 방패6 = 35
                 case 25: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 6, missionKillCount = 44, maxOnBoard = 12,
-                    archerRatio = 0.14f, armoredRatio = 0.32f, shieldRatio = 0.18f, archerHp = 1, armoredHp = 23, shieldGoblinHp = 15, shieldHp = 3 }; // 기본16 + 갑옷14 + 궁수6 + 방패8 = 44
+                    archerRatio = 0.14f, armoredRatio = 0.32f, shieldRatio = 0.18f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본16 + 갑옷14 + 궁수6 + 방패8 = 44
                 case 26: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 5, missionKillCount = 40, maxOnBoard = 11,
-                    archerRatio = 0.13f, armoredRatio = 0.45f, shieldRatio = 0.18f, archerHp = 1, armoredHp = 23, shieldGoblinHp = 15, shieldHp = 3 }; // 기본10 + 갑옷18 + 궁수5 + 방패7 = 40
+                    archerRatio = 0.13f, armoredRatio = 0.45f, shieldRatio = 0.18f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본10 + 갑옷18 + 궁수5 + 방패7 = 40
                 case 27: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 6, missionKillCount = 40, maxOnBoard = 12,
-                    archerRatio = 0.15f, armoredRatio = 0.30f, shieldRatio = 0.25f, archerHp = 1, armoredHp = 24, shieldGoblinHp = 16, shieldHp = 3 }; // 기본12 + 갑옷12 + 궁수6 + 방패10 = 40
+                    archerRatio = 0.15f, armoredRatio = 0.30f, shieldRatio = 0.25f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본12 + 갑옷12 + 궁수6 + 방패10 = 40
                 case 28: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 6, missionKillCount = 44, maxOnBoard = 12,
-                    archerRatio = 0.18f, armoredRatio = 0.32f, shieldRatio = 0.18f, archerHp = 1, armoredHp = 24, shieldGoblinHp = 17, shieldHp = 3 }; // 기본14 + 갑옷14 + 궁수8 + 방패8 = 44
+                    archerRatio = 0.18f, armoredRatio = 0.32f, shieldRatio = 0.18f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본14 + 갑옷14 + 궁수8 + 방패8 = 44
                 case 29: return new GoblinStageConfig { minSpawnPerTurn = 3, maxSpawnPerTurn = 6, missionKillCount = 49, maxOnBoard = 13,
-                    archerRatio = 0.14f, armoredRatio = 0.33f, shieldRatio = 0.20f, archerHp = 1, armoredHp = 25, shieldGoblinHp = 17, shieldHp = 3 }; // 기본16 + 갑옷16 + 궁수7 + 방패10 = 49
+                    archerRatio = 0.14f, armoredRatio = 0.33f, shieldRatio = 0.20f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본16 + 갑옷16 + 궁수7 + 방패10 = 49
                 case 30: return new GoblinStageConfig { minSpawnPerTurn = 4, maxSpawnPerTurn = 7, missionKillCount = 56, maxOnBoard = 14,
-                    archerRatio = 0.14f, armoredRatio = 0.32f, shieldRatio = 0.21f, archerHp = 1, armoredHp = 25, shieldGoblinHp = 18, shieldHp = 3 }; // 기본18 + 갑옷18 + 궁수8 + 방패12 = 56
+                    archerRatio = 0.14f, armoredRatio = 0.32f, shieldRatio = 0.21f, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3 }; // 기본18 + 갑옷18 + 궁수8 + 방패12 = 56
                 default: return null;
             }
         }

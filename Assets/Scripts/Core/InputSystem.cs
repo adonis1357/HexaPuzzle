@@ -62,6 +62,14 @@ namespace JewelsHexaPuzzle.Core
         private GameObject comboTargetHighlight;    // 타겟 하이라이트 오브젝트
         private GameObject comboLineObj;            // 연결선 오브젝트
 
+        // 드릴 이동 드래그 상태 (스킬 트리)
+        private bool isDraggingDrillMove = false;         // 드릴 이동 드래그 진행 중
+        private HexBlock drillMoveSource = null;          // 드릴 이동 소스 블록
+        private HexBlock drillMoveTarget = null;          // 드릴 이동 타겟 블록
+        private int drillMoveRange = 0;                   // 현재 허용 이동 범위
+        private List<GameObject> drillMoveHighlights = new List<GameObject>();  // 이동 가능 칸 하이라이트
+        private GameObject drillMoveLineObj = null;        // 드릴 이동 연결선
+
         // 회전 방향 (RotationSystem 연동)
         public bool IsClockwise => rotationSystem != null && rotationSystem.IsClockwise;
 
@@ -242,8 +250,13 @@ private void Update()
                 // 합성 드래그 업데이트
                 UpdateComboDrag(mousePos);
             }
+            else if (Input.GetMouseButton(0) && isPointerDown && isDraggingDrillMove)
+            {
+                // 드릴 이동 드래그 업데이트
+                UpdateDrillMoveDrag(mousePos);
+            }
 
-            if (!isDraggingCombo)
+            if (!isDraggingCombo && !isDraggingDrillMove)
             {
                 UpdateClusterPreview(mousePos);
             }
@@ -259,7 +272,15 @@ private void Update()
                     ClearHighlight();
                     hasValidCluster = false;
                     CancelComboDrag();
+                    CancelDrillMoveDrag();
                     return; // 이 프레임에서는 아무것도 하지 않음 — 다음 프레임부터 HandleEditorPlacement가 처리
+                }
+
+                if (isDraggingDrillMove)
+                {
+                    // 드릴 이동 드래그 종료
+                    FinishDrillMoveDrag();
+                    return;
                 }
 
                 if (isDraggingCombo)
@@ -309,6 +330,8 @@ private void Update()
                 {
                     if (isDraggingCombo)
                         UpdateComboDrag(touch.position);
+                    else if (isDraggingDrillMove)
+                        UpdateDrillMoveDrag(touch.position);
                     else
                         UpdateClusterPreview(touch.position);
                 }
@@ -323,6 +346,13 @@ private void Update()
                         ClearHighlight();
                         hasValidCluster = false;
                         CancelComboDrag();
+                        CancelDrillMoveDrag();
+                        return;
+                    }
+
+                    if (isDraggingDrillMove)
+                    {
+                        FinishDrillMoveDrag();
                         return;
                     }
 
@@ -652,7 +682,6 @@ private void Update()
         /// <summary>터치 시작 시 합성 드래그 시도</summary>
         private void TryStartComboDrag(Vector2 screenPos)
         {
-            if (comboSystem == null) return;
             Vector2 localPos = ScreenToLocalPosition(screenPos);
             HexBlock block = GetBlockAtPosition(localPos);
 
@@ -660,13 +689,16 @@ private void Update()
             {
                 // 인접에 합성 가능한 특수블록이 있는지 미리 확인
                 bool hasComboNeighbor = false;
-                var neighbors = hexGrid.GetNeighbors(block.Coord);
-                foreach (var n in neighbors)
+                if (comboSystem != null)
                 {
-                    if (n.Data != null && IsComboableSpecial(n.Data.specialType))
+                    var neighbors = hexGrid.GetNeighbors(block.Coord);
+                    foreach (var n in neighbors)
                     {
-                        hasComboNeighbor = true;
-                        break;
+                        if (n.Data != null && IsComboableSpecial(n.Data.specialType))
+                        {
+                            hasComboNeighbor = true;
+                            break;
+                        }
                     }
                 }
 
@@ -679,6 +711,13 @@ private void Update()
                     hasValidCluster = false;
                     CreateComboHighlight(block, true);
                     Debug.Log($"[InputSystem] 합성 드래그 시작: {block.Coord} ({block.Data.specialType})");
+                    return;
+                }
+
+                // 합성 대상 없고 드릴 블록이면 → 드릴 이동 드래그 시도 (스킬 해금 시)
+                if (block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill)
+                {
+                    TryStartDrillMoveDrag(block);
                 }
             }
         }
@@ -1076,5 +1115,270 @@ private void Update()
         /// 현재 제한 모드 여부
         /// </summary>
         public bool IsRestrictedMode => restrictedMode;
+
+        // ============================================================
+        // 드릴 이동 드래그 (스킬 트리 연동)
+        // ============================================================
+
+        /// <summary>
+        /// 드릴 이동 드래그 시작 시도 (스킬 해금 시만)
+        /// </summary>
+        private void TryStartDrillMoveDrag(HexBlock drillBlock)
+        {
+            if (drillBlock == null || hexGrid == null) return;
+
+            // 스킬 트리에서 드릴 이동 범위 조회
+            int moveRange = 0;
+            if (SkillTreeManager.Instance != null)
+                moveRange = SkillTreeManager.Instance.GetDrillMoveRange();
+
+            if (moveRange <= 0) return; // 스킬 미해금
+
+            // MP 체크 (드릴 이동은 드릴 발동과 동일 MP 소모)
+            if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill))
+            {
+                Debug.Log("[InputSystem] MP 부족: 드릴 이동 불가");
+                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                return;
+            }
+
+            drillMoveSource = drillBlock;
+            drillMoveTarget = null;
+            drillMoveRange = moveRange;
+            isDraggingDrillMove = true;
+            ClearHighlight();
+            hasValidCluster = false;
+
+            // 이동 가능 칸 하이라이트 표시
+            ShowDrillMoveHighlights();
+            Debug.Log($"[InputSystem] 드릴 이동 드래그 시작: {drillBlock.Coord} (범위: {moveRange}칸)");
+        }
+
+        /// <summary>
+        /// 드릴 이동 가능 칸 하이라이트 표시
+        /// </summary>
+        private void ShowDrillMoveHighlights()
+        {
+            ClearDrillMoveHighlights();
+            if (drillMoveSource == null || hexGrid == null) return;
+
+            // BFS로 이동 범위 내 모든 칸 수집
+            var reachable = GetReachableCells(drillMoveSource.Coord, drillMoveRange);
+
+            foreach (var coord in reachable)
+            {
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block == null) continue;
+                // 드릴 소스 자체는 제외
+                if (coord.Equals(drillMoveSource.Coord)) continue;
+                // MoveBlock/FixedBlock은 이동 불가
+                if (block.Data != null && (block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.MoveBlock ||
+                    block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.FixedBlock))
+                    continue;
+
+                // 하이라이트 오브젝트 생성
+                GameObject highlight = new GameObject("DrillMoveHighlight");
+                highlight.transform.SetParent(block.transform, false);
+                RectTransform hlRt = highlight.AddComponent<RectTransform>();
+                hlRt.anchoredPosition = Vector2.zero;
+                hlRt.sizeDelta = new Vector2(60f, 60f);
+
+                UnityEngine.UI.Image hlImg = highlight.AddComponent<UnityEngine.UI.Image>();
+                hlImg.sprite = HexBlock.GetHexFlashSprite();
+                hlImg.type = UnityEngine.UI.Image.Type.Simple;
+                hlImg.preserveAspect = true;
+                hlImg.color = new Color(0.3f, 0.8f, 1f, 0.35f); // 반투명 하늘색
+                hlImg.raycastTarget = false;
+
+                drillMoveHighlights.Add(highlight);
+            }
+
+            // 소스 블록 강조 (밝은 윤곽)
+            if (drillMoveSource != null)
+                drillMoveSource.SetHighlighted(true);
+        }
+
+        /// <summary>
+        /// BFS로 이동 범위 내 좌표 수집
+        /// </summary>
+        private HashSet<HexCoord> GetReachableCells(HexCoord center, int range)
+        {
+            var result = new HashSet<HexCoord>();
+            var visited = new HashSet<HexCoord>();
+            var queue = new Queue<(HexCoord coord, int dist)>();
+
+            queue.Enqueue((center, 0));
+            visited.Add(center);
+
+            while (queue.Count > 0)
+            {
+                var (coord, dist) = queue.Dequeue();
+                result.Add(coord);
+
+                if (dist >= range) continue;
+
+                var neighbors = hexGrid.GetNeighbors(coord);
+                foreach (var nb in neighbors)
+                {
+                    if (nb != null && !visited.Contains(nb.Coord) && hexGrid.IsValidCoord(nb.Coord))
+                    {
+                        visited.Add(nb.Coord);
+                        queue.Enqueue((nb.Coord, dist + 1));
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 드릴 이동 드래그 업데이트 (마우스/터치 이동 중)
+        /// </summary>
+        private void UpdateDrillMoveDrag(Vector2 screenPos)
+        {
+            if (drillMoveSource == null || hexGrid == null) return;
+
+            Vector2 localPos = ScreenToLocalPosition(screenPos);
+            HexBlock hoverBlock = GetBlockAtPosition(localPos);
+
+            HexBlock newTarget = null;
+            if (hoverBlock != null && hoverBlock != drillMoveSource &&
+                hoverBlock.Data != null &&
+                hoverBlock.Data.specialType != JewelsHexaPuzzle.Data.SpecialBlockType.MoveBlock &&
+                hoverBlock.Data.specialType != JewelsHexaPuzzle.Data.SpecialBlockType.FixedBlock)
+            {
+                // 범위 내인지 확인
+                int dist = drillMoveSource.Coord.DistanceTo(hoverBlock.Coord);
+                if (dist > 0 && dist <= drillMoveRange)
+                    newTarget = hoverBlock;
+            }
+
+            if (newTarget != drillMoveTarget)
+            {
+                // 이전 타겟 하이라이트 제거
+                if (drillMoveLineObj != null) { Destroy(drillMoveLineObj); drillMoveLineObj = null; }
+                if (drillMoveTarget != null) drillMoveTarget.SetHighlighted(false);
+
+                drillMoveTarget = newTarget;
+
+                if (drillMoveTarget != null)
+                {
+                    drillMoveTarget.SetHighlighted(true);
+                    // 연결선 생성
+                    CreateDrillMoveLine();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 드릴 이동 연결선 생성
+        /// </summary>
+        private void CreateDrillMoveLine()
+        {
+            if (drillMoveSource == null || drillMoveTarget == null || hexGrid == null) return;
+
+            drillMoveLineObj = new GameObject("DrillMoveLine");
+            drillMoveLineObj.transform.SetParent(hexGrid.transform, false);
+
+            UnityEngine.UI.Image lineImg = drillMoveLineObj.AddComponent<UnityEngine.UI.Image>();
+            lineImg.color = new Color(0.3f, 0.85f, 1f, 0.7f);
+            lineImg.raycastTarget = false;
+
+            RectTransform lineRt = drillMoveLineObj.GetComponent<RectTransform>();
+
+            Vector2 srcPos = drillMoveSource.GetComponent<RectTransform>().anchoredPosition;
+            Vector2 tgtPos = drillMoveTarget.GetComponent<RectTransform>().anchoredPosition;
+            Vector2 mid = (srcPos + tgtPos) * 0.5f;
+            float dist = Vector2.Distance(srcPos, tgtPos);
+            float angle = Mathf.Atan2(tgtPos.y - srcPos.y, tgtPos.x - srcPos.x) * Mathf.Rad2Deg;
+
+            lineRt.anchoredPosition = mid;
+            lineRt.sizeDelta = new Vector2(dist, 4f);
+            lineRt.localRotation = Quaternion.Euler(0f, 0f, angle);
+        }
+
+        /// <summary>
+        /// 드릴 이동 드래그 종료 — 스왑 + 발동
+        /// </summary>
+        private void FinishDrillMoveDrag()
+        {
+            if (drillMoveSource != null && drillMoveTarget != null && drillSystem != null)
+            {
+                // MP 소모
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(
+                        MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drill),
+                        drillMoveTarget.transform.position);
+
+                // 이동횟수 차감
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+
+                // === 블록 데이터 스왑 ===
+                // Clone하여 안전하게 교환
+                var sourceDataClone = drillMoveSource.Data.Clone();
+                var targetDataClone = drillMoveTarget.Data.Clone();
+
+                // 타겟 블록 데이터를 소스 위치로
+                drillMoveSource.SetBlockData(targetDataClone);
+
+                // 소스(드릴) 데이터를 타겟 위치로
+                drillMoveTarget.SetBlockData(sourceDataClone);
+
+                Debug.Log($"[InputSystem] 드릴 이동 완료: {drillMoveSource.Coord} ↔ {drillMoveTarget.Coord}, 발동 위치: {drillMoveTarget.Coord}");
+
+                // 드릴 발동 (이동된 위치에서)
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
+                drillSystem.ActivateDrill(drillMoveTarget);
+            }
+            else if (drillMoveSource != null && drillMoveTarget == null)
+            {
+                // 드래그 없이 탭 → 기존 위치에서 단독 발동 시도
+                float dragDist = Vector2.Distance(pointerDownPosition, Input.mousePosition);
+                #if !UNITY_EDITOR && !UNITY_STANDALONE
+                if (Input.touchCount > 0)
+                    dragDist = Vector2.Distance(pointerDownPosition, Input.GetTouch(0).position);
+                #endif
+
+                if (dragDist < DRAG_CANCEL_THRESHOLD)
+                {
+                    HexBlock source = drillMoveSource;
+                    CancelDrillMoveDrag();
+                    TryActivateSingleSpecialBlock(source);
+                    return;
+                }
+            }
+
+            CancelDrillMoveDrag();
+        }
+
+        /// <summary>
+        /// 드릴 이동 드래그 취소 — 하이라이트 정리
+        /// </summary>
+        private void CancelDrillMoveDrag()
+        {
+            ClearDrillMoveHighlights();
+
+            if (drillMoveLineObj != null) { Destroy(drillMoveLineObj); drillMoveLineObj = null; }
+            if (drillMoveSource != null) drillMoveSource.SetHighlighted(false);
+            if (drillMoveTarget != null) drillMoveTarget.SetHighlighted(false);
+
+            drillMoveSource = null;
+            drillMoveTarget = null;
+            isDraggingDrillMove = false;
+            drillMoveRange = 0;
+        }
+
+        /// <summary>
+        /// 드릴 이동 하이라이트 오브젝트 정리
+        /// </summary>
+        private void ClearDrillMoveHighlights()
+        {
+            foreach (var hl in drillMoveHighlights)
+            {
+                if (hl != null) Destroy(hl);
+            }
+            drillMoveHighlights.Clear();
+        }
     }
 }

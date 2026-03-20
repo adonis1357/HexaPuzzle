@@ -336,21 +336,27 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     AudioManager.Instance.PlayBombSound();
             }
 
-            // ★ 1칸 폭발 시점: 중심 + ring1 좌표에 고블린 데미지 (누적 일괄 적용)
+            // ★ 1칸 폭발 시점: 중심(3) + ring1(2) + ring2(1) 고블린 데미지 일괄 적용
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
                 var damageMap = new Dictionary<HexCoord, int>();
-                damageMap[bombCoord] = 1;
+                // 중심: 피해 3
+                damageMap[bombCoord] = 3;
+                // 1칸 범위: 피해 2
                 foreach (var coord in ring1Coords)
+                    damageMap[coord] = 2;
+                // 2칸 범위: 피해 1
+                foreach (var coord in ring2Coords)
                 {
-                    if (damageMap.ContainsKey(coord))
-                        damageMap[coord] += 1;
-                    else
+                    if (!damageMap.ContainsKey(coord))
                         damageMap[coord] = 1;
                 }
                 // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
                 var directHitCoords = new HashSet<HexCoord>(damageMap.Keys);
                 GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
+
+                // ★ 넉백: 폭발 범위 내 고블린을 밖으로 밀어냄
+                yield return StartCoroutine(GoblinSystem.Instance.ApplyBombKnockback(bombCoord, ring1Coords, ring2Coords));
             }
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
@@ -415,21 +421,8 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             if (isFirstBomb)
                 StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity * 0.6f, VisualConstants.ShakeLargeDuration * 0.7f));
 
-            // ★ 2칸 폭발 시점: ring2 좌표에 고블린 데미지 (누적 일괄 적용)
-            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
-            {
-                var damageMap = new Dictionary<HexCoord, int>();
-                foreach (var coord in ring2Coords)
-                {
-                    if (damageMap.ContainsKey(coord))
-                        damageMap[coord] += 1;
-                    else
-                        damageMap[coord] = 1;
-                }
-                // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
-                var directHitCoords = new HashSet<HexCoord>(damageMap.Keys);
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
-            }
+            // ★ 2칸 폭발 시점: 고블린 대미지는 1칸 시점에서 ring2까지 일괄 적용 완료
+            // (넉백으로 이동한 고블린에게 중복 대미지 방지)
 
             foreach (var target in ring2Targets)
             {

@@ -3180,6 +3180,10 @@ public void TriggerBigBang()
                 Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
                 // ★ 바닥 매칭 좌표 수집 (방패 고블린용: 자기 자리 블록이 직접 매칭된 경우)
                 HashSet<HexCoord> directHitCoords = new HashSet<HexCoord>();
+                // ★ 깨진 블록으로 매칭된 좌표 (방패는 대미지 불가, 일반 몬스터는 1 대미지)
+                HashSet<HexCoord> crackedDirectHitCoords = new HashSet<HexCoord>();
+
+                // blocksToRemove 순회 (3매칭 일반 블록)
                 foreach (var block in blocksToRemove)
                 {
                     if (block == null || block.Data == null) continue;
@@ -3191,7 +3195,11 @@ public void TriggerBigBang()
                         damageMap[blockCoord] += 1;
                     else
                         damageMap[blockCoord] = 1;
-                    directHitCoords.Add(blockCoord); // 바닥 매칭 좌표 기록
+
+                    if (cracked)
+                        crackedDirectHitCoords.Add(blockCoord);
+                    else
+                        directHitCoords.Add(blockCoord);
 
                     // 인접 6방향: 깨진 블록은 인접 대미지 불가
                     if (!cracked)
@@ -3205,8 +3213,48 @@ public void TriggerBigBang()
                         }
                     }
                 }
-                // 누적된 데미지를 고블린별로 일괄 적용 (바닥 매칭 좌표 전달)
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
+
+                // ★ 4+매칭 합체 시 이미 제거된 깨진 블록도 대미지맵에 포함
+                // (alreadyRemovedCracked는 합체 전에 ClearData 됐지만 좌표는 유효)
+                foreach (var crackedBlock in alreadyRemovedCracked)
+                {
+                    if (crackedBlock == null) continue;
+                    HexCoord coord = crackedBlock.Coord;
+                    if (!damageMap.ContainsKey(coord))
+                        damageMap[coord] = 1;
+                    crackedDirectHitCoords.Add(coord);
+                }
+
+                // ★ 합체에 참여한 정상 블록의 좌표도 directHitCoords에 추가
+                // (blocksToRemove에서 빠졌지만 실제로 제거된 블록)
+                foreach (var match in matches)
+                {
+                    if (match.createdSpecialType == SpecialBlockType.None) continue;
+                    foreach (var block in match.blocks)
+                    {
+                        if (block == null) continue;
+                        HexCoord coord = block.Coord;
+                        // 이미 처리된 블록 건너뛰기
+                        if (directHitCoords.Contains(coord) || crackedDirectHitCoords.Contains(coord)) continue;
+                        if (alreadyRemovedCracked.Contains(block)) continue;
+
+                        if (!damageMap.ContainsKey(coord))
+                            damageMap[coord] = 1;
+                        directHitCoords.Add(coord);
+
+                        // 정상 블록은 인접 대미지도 추가
+                        foreach (var neighbor in coord.GetAllNeighbors())
+                        {
+                            if (damageMap.ContainsKey(neighbor))
+                                damageMap[neighbor] += 1;
+                            else
+                                damageMap[neighbor] = 1;
+                        }
+                    }
+                }
+
+                // 누적된 데미지를 고블린별로 일괄 적용
+                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords, crackedDirectHitCoords);
             }
 
             // 6. 삭제 애니메이션 (축소하며 사라짐) + 파괴 사운드
