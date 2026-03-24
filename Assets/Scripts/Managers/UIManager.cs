@@ -640,9 +640,7 @@ namespace JewelsHexaPuzzle.Managers
             // 타이틀 표시
             if (clearTitleText != null)
             {
-                int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
-                clearTitleText.text = $"STAGE {stage} CLEAR!";
-                clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
+                clearTitleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
             }
 
             // 획득 점수 표시 (카운팅 애니메이션)
@@ -744,9 +742,7 @@ namespace JewelsHexaPuzzle.Managers
             // 타이틀 표시
             if (clearTitleText != null)
             {
-                int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
-                clearTitleText.text = $"STAGE {stage} CLEAR!";
-                clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
+                clearTitleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
             }
 
             // 점수 표시
@@ -2731,6 +2727,8 @@ namespace JewelsHexaPuzzle.Managers
                         shieldImg.raycastTarget = false;
                     }
                 }
+                else if (mission.targetEnemyType == EnemyType.BombGoblin)
+                    iconImage.sprite = GoblinSystem.GetBombGoblinSprite();
                 else if (mission.targetEnemyType == EnemyType.Goblin)
                     iconImage.sprite = GoblinSystem.GetGoblinSprite();
                 else
@@ -4060,6 +4058,11 @@ namespace JewelsHexaPuzzle.Managers
 
         private ItemData itemData;
 
+        // 게이지 바 UI (동적 생성)
+        private Image gaugeBarBg;
+        private Image gaugeBarFill;
+        private bool gaugeBarCreated = false;
+
         public void SetItem(ItemData data)
         {
             itemData = data;
@@ -4081,36 +4084,94 @@ namespace JewelsHexaPuzzle.Managers
                 lockStageText.text = $"stage {data.unlockStage}";
             }
 
-            if (isUnlocked)
+            // 게이지 바 생성 (한 번만)
+            if (!gaugeBarCreated)
+                CreateGaugeBar(data.type);
+
+            // 게이지 값 갱신
+            float gauge = ItemManager.Instance != null ? ItemManager.Instance.GetGauge(data.type) : 0f;
+            UpdateGaugeBar(gauge);
+
+            if (isUnlocked && countText != null)
             {
-                if (countText != null)
-                {
-                    // MP 소모량 표시 (수량 대신)
-                    int cost = MPManager.Instance != null ? MPManager.Instance.GetItemCost(data.type) : 0;
-                    countText.text = cost > 0 ? cost.ToString() : "+";
-                }
+                // 게이지 % 표시
+                countText.text = $"{Mathf.FloorToInt(gauge * 100)}%";
             }
 
             if (button != null)
             {
-                // MP 기반 활성화 체크
-                bool hasEnoughMP = MPManager.Instance != null ? MPManager.Instance.CanUseItem(data.type) : true;
-                button.interactable = isUnlocked && hasEnoughMP;
+                // 게이지 기반 활성화: 100% 충전 시만 사용 가능
+                bool canUse = ItemManager.Instance != null ? ItemManager.Instance.CanUseItem(data.type) : false;
+                button.interactable = isUnlocked && canUse;
+
+                // 비활성 시 반투명 처리
+                if (iconImage != null)
+                {
+                    Color c = iconImage.color;
+                    c.a = (isUnlocked && canUse) ? 1f : 0.4f;
+                    iconImage.color = c;
+                }
             }
+        }
+
+        /// <summary>게이지 바 동적 생성 — 버튼 하단 가로 바</summary>
+        private void CreateGaugeBar(ItemType type)
+        {
+            gaugeBarCreated = true;
+            RectTransform btnRt = GetComponent<RectTransform>();
+            if (btnRt == null) return;
+
+            // 배경
+            GameObject bgObj = new GameObject("GaugeBarBg");
+            bgObj.transform.SetParent(transform, false);
+            RectTransform bgRt = bgObj.AddComponent<RectTransform>();
+            bgRt.anchorMin = new Vector2(0f, 0f);
+            bgRt.anchorMax = new Vector2(1f, 0f);
+            bgRt.pivot = new Vector2(0.5f, 0f);
+            bgRt.anchoredPosition = new Vector2(0f, -4f);
+            bgRt.sizeDelta = new Vector2(0f, 6f);
+            gaugeBarBg = bgObj.AddComponent<Image>();
+            gaugeBarBg.color = new Color(0.15f, 0.15f, 0.2f, 0.7f);
+            gaugeBarBg.raycastTarget = false;
+
+            // 채움 바
+            GameObject fillObj = new GameObject("GaugeBarFill");
+            fillObj.transform.SetParent(bgObj.transform, false);
+            RectTransform fillRt = fillObj.AddComponent<RectTransform>();
+            fillRt.anchorMin = new Vector2(0f, 0f);
+            fillRt.anchorMax = new Vector2(0f, 1f); // 가로 크기를 fillAmount로 제어
+            fillRt.pivot = new Vector2(0f, 0.5f);
+            fillRt.anchoredPosition = Vector2.zero;
+            fillRt.sizeDelta = new Vector2(0f, 0f);
+            gaugeBarFill = fillObj.AddComponent<Image>();
+            gaugeBarFill.raycastTarget = false;
+
+            // 아이템 연결 색상 사용
+            GemType linkedGem = ItemManager.GetLinkedGemType(type);
+            gaugeBarFill.color = (linkedGem != GemType.None) ? GemColors.GetColor(linkedGem) : Color.white;
+        }
+
+        /// <summary>게이지 바 채움 갱신 (0~1)</summary>
+        private void UpdateGaugeBar(float gauge)
+        {
+            if (gaugeBarFill == null) return;
+            RectTransform fillRt = gaugeBarFill.GetComponent<RectTransform>();
+            if (fillRt == null || gaugeBarBg == null) return;
+
+            RectTransform bgRt = gaugeBarBg.GetComponent<RectTransform>();
+            // anchorMax.x로 채움 비율 제어
+            fillRt.anchorMax = new Vector2(Mathf.Clamp01(gauge), 1f);
         }
 
         public void OnItemClicked()
         {
-            if (itemData != null && itemData.count > 0)
+            if (itemData != null)
             {
-                // 아이템 사용
-                ItemManager itemManager = FindObjectOfType<ItemManager>();
-                itemManager?.UseItem(itemData.type);
-            }
-            else
-            {
-                // 구매 UI 표시
-                Debug.Log($"Open purchase for {itemData?.type}");
+                // 게이지 기반 아이템 사용
+                if (ItemManager.Instance != null && ItemManager.Instance.CanUseItem(itemData.type))
+                {
+                    ItemManager.Instance.UseItem(itemData.type);
+                }
             }
         }
     }

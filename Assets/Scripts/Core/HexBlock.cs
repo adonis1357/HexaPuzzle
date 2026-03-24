@@ -51,6 +51,11 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite shadowSporeOverlaySprite;
         private static Sprite chaosOverlordOverlaySprite;
         private static Sprite crackedOverlaySprite;
+        private static Sprite goblinBombOverlaySprite;
+
+        // 고블린 폭탄 오버레이 UI
+        private Image goblinBombImage;
+        private Text goblinBombCountdownText;
         private static Sprite shellOverlaySprite;
 
         private const float BORDER_WIDTH = 10f;
@@ -1166,6 +1171,7 @@ public void SetBlockData(BlockData data)
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
             if (drillIndicator != null) drillIndicator.enabled = false;
+            HideGoblinBombOverlay();
         }
 
 public void UpdateVisuals()
@@ -1207,6 +1213,8 @@ public void UpdateVisuals()
 
                 // 심한 크랙 오버레이
                 UpdateOverlay();
+                // 쉘 블록에는 폭탄 표시 제거
+                HideGoblinBombOverlay();
                 return;
             }
 
@@ -1231,6 +1239,9 @@ public void UpdateVisuals()
             // 특수 블록 아이콘/추가 시각 처리 (통합)
             UpdateSpecialIndicator();
             UpdateOverlay();
+
+            // 고블린 폭탄 오버레이
+            UpdateGoblinBombOverlay();
         }
 
 /// <summary>
@@ -2214,6 +2225,144 @@ public void SetPendingActivation()
                 borderImage.enabled = true;
                 borderImage.color = new Color(0.95f, 0.72f, 0.68f, 0.8f);
             }
+        }
+
+        // ============================================================
+        // 고블린 폭탄 오버레이 (블록 일체형)
+        // ============================================================
+
+        /// <summary>
+        /// 고블린 폭탄 오버레이 업데이트: hasGoblinBomb이면 아이콘+카운트다운 표시
+        /// </summary>
+        private void UpdateGoblinBombOverlay()
+        {
+            if (blockData == null || !blockData.hasGoblinBomb)
+            {
+                HideGoblinBombOverlay();
+                return;
+            }
+
+            // 이미지 생성 (최초 1회)
+            if (goblinBombImage == null)
+            {
+                CreateGoblinBombOverlay();
+            }
+
+            goblinBombImage.enabled = true;
+
+            // 카운트다운에 따른 색상 변경 (긴급도 표시)
+            if (blockData.goblinBombCountdown <= 1)
+                goblinBombImage.color = new Color(1f, 0.3f, 0.15f, 0.95f); // 빨간색 경고
+            else
+                goblinBombImage.color = new Color(0.15f, 0.12f, 0.1f, 0.9f); // 검정 폭탄
+
+            if (goblinBombCountdownText != null)
+            {
+                goblinBombCountdownText.enabled = true;
+                goblinBombCountdownText.text = blockData.goblinBombCountdown.ToString();
+                goblinBombCountdownText.color = blockData.goblinBombCountdown <= 1
+                    ? new Color(1f, 1f, 0.3f, 1f)  // 노란색 긴급
+                    : Color.white;
+            }
+        }
+
+        /// <summary>
+        /// 고블린 폭탄 오버레이 숨김
+        /// </summary>
+        private void HideGoblinBombOverlay()
+        {
+            if (goblinBombImage != null) goblinBombImage.enabled = false;
+            if (goblinBombCountdownText != null) goblinBombCountdownText.enabled = false;
+        }
+
+        /// <summary>
+        /// 고블린 폭탄 오버레이 UI 요소 생성 (블록의 자식으로)
+        /// </summary>
+        private void CreateGoblinBombOverlay()
+        {
+            // 폭탄 아이콘
+            GameObject bombObj = new GameObject("GoblinBombOverlay");
+            bombObj.transform.SetParent(transform, false);
+            RectTransform brt = bombObj.AddComponent<RectTransform>();
+            brt.anchoredPosition = Vector2.zero;
+            float size = 30f; // 블록 위에 겹치는 작은 아이콘
+            brt.sizeDelta = new Vector2(size, size);
+            brt.localScale = Vector3.one;
+
+            goblinBombImage = bombObj.AddComponent<Image>();
+            if (goblinBombOverlaySprite == null)
+                goblinBombOverlaySprite = CreateGoblinBombSprite();
+            goblinBombImage.sprite = goblinBombOverlaySprite;
+            goblinBombImage.raycastTarget = false;
+
+            // 카운트다운 텍스트
+            GameObject textObj = new GameObject("GoblinBombCountdown");
+            textObj.transform.SetParent(bombObj.transform, false);
+            RectTransform trt = textObj.AddComponent<RectTransform>();
+            trt.anchoredPosition = Vector2.zero;
+            trt.sizeDelta = new Vector2(size, size);
+
+            goblinBombCountdownText = textObj.AddComponent<Text>();
+            goblinBombCountdownText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (goblinBombCountdownText.font == null)
+                goblinBombCountdownText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            goblinBombCountdownText.fontSize = 18;
+            goblinBombCountdownText.alignment = TextAnchor.MiddleCenter;
+            goblinBombCountdownText.fontStyle = FontStyle.Bold;
+            goblinBombCountdownText.color = Color.white;
+            goblinBombCountdownText.raycastTarget = false;
+
+            Outline outline = textObj.AddComponent<Outline>();
+            outline.effectColor = new Color(0.05f, 0f, 0f, 1f);
+            outline.effectDistance = new Vector2(1f, -1f);
+        }
+
+        /// <summary>
+        /// 고블린 폭탄 오버레이용 프로시저럴 스프라이트 (둥근 검정 폭탄)
+        /// </summary>
+        private static Sprite CreateGoblinBombSprite()
+        {
+            int sz = 64;
+            Texture2D tex = new Texture2D(sz, sz, TextureFormat.RGBA32, false);
+            Color[] px = new Color[sz * sz];
+            float c = sz / 2f;
+            float r = sz * 0.38f;
+
+            for (int y = 0; y < sz; y++)
+            {
+                for (int x = 0; x < sz; x++)
+                {
+                    float dx = x - c, dy = y - c;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (d < r)
+                    {
+                        float grad = 1f - (d / r) * 0.3f;
+                        px[y * sz + x] = new Color(0.15f * grad, 0.12f * grad, 0.1f * grad, 0.9f);
+                    }
+                    else if (d < r + 2f)
+                    {
+                        px[y * sz + x] = new Color(0.8f, 0.15f, 0.1f, 0.9f);
+                    }
+                    else
+                    {
+                        px[y * sz + x] = Color.clear;
+                    }
+                }
+            }
+
+            // 도화선
+            int fuseY0 = (int)(c + r * 0.65f);
+            int fuseY1 = Mathf.Min(sz - 3, (int)(c + r * 1.1f));
+            for (int y = fuseY0; y < fuseY1; y++)
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int px2 = (int)c + dx;
+                    if (px2 >= 0 && px2 < sz) px[y * sz + px2] = new Color(0.6f, 0.4f, 0.1f, 1f);
+                }
+
+            tex.SetPixels(px);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, sz, sz), new Vector2(0.5f, 0.5f));
         }
 }
 }

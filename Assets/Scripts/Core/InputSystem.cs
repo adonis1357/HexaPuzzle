@@ -61,6 +61,9 @@ namespace JewelsHexaPuzzle.Core
         private GameObject comboSourceHighlight;    // 소스 하이라이트 오브젝트
         private GameObject comboTargetHighlight;    // 타겟 하이라이트 오브젝트
         private GameObject comboLineObj;            // 연결선 오브젝트
+        private bool comboAlsoDrillMove = false;   // 합성 모드에서 드릴 이동도 가능한 상태
+        private HexBlock comboDrillMoveTarget = null; // 합성 모드 중 드릴 이동 타겟
+        private int comboDrillMoveRange = 0;       // 합성 모드 중 드릴 이동 범위
 
         // 드릴 이동 드래그 상태 (스킬 트리)
         private bool isDraggingDrillMove = false;         // 드릴 이동 드래그 진행 중
@@ -706,10 +709,39 @@ private void Update()
                 {
                     comboSource = block;
                     comboTarget = null;
+                    comboDrillMoveTarget = null;
                     isDraggingCombo = true;
                     ClearHighlight();
                     hasValidCluster = false;
                     CreateComboHighlight(block, true);
+
+                    // ★ 드릴 블록이면 합성 모드에서도 이동 하이라이트 동시 표시
+                    comboAlsoDrillMove = false;
+                    comboDrillMoveRange = 0;
+                    if (block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill)
+                    {
+                        int moveRange = 0;
+                        if (SkillTreeManager.Instance != null)
+                            moveRange = SkillTreeManager.Instance.GetDrillMoveRange();
+                        if (moveRange > 0)
+                        {
+                            // MP 확인 (이동 가능한지만 체크, 소모는 실행 시)
+                            bool canAfford = MPManager.Instance == null ||
+                                MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill);
+                            if (canAfford)
+                            {
+                                comboAlsoDrillMove = true;
+                                comboDrillMoveRange = moveRange;
+                                // 드릴 이동 하이라이트를 기존 메서드 재활용해서 표시
+                                drillMoveSource = block;
+                                drillMoveRange = moveRange;
+                                ShowDrillMoveHighlights();
+                                drillMoveSource = null; // 실제 드릴 이동 모드가 아니므로 리셋
+                                Debug.Log($"[InputSystem] 합성+이동 동시 모드: {block.Coord} (이동범위: {moveRange}칸)");
+                            }
+                        }
+                    }
+
                     Debug.Log($"[InputSystem] 합성 드래그 시작: {block.Coord} ({block.Data.specialType})");
                     return;
                 }
@@ -722,7 +754,7 @@ private void Update()
             }
         }
 
-        /// <summary>드래그 중 인접 특수블록 감지</summary>
+        /// <summary>드래그 중 인접 특수블록 또는 드릴 이동 타겟 감지</summary>
         private void UpdateComboDrag(Vector2 screenPos)
         {
             if (comboSource == null || comboSystem == null) return;
@@ -730,21 +762,39 @@ private void Update()
             Vector2 localPos = ScreenToLocalPosition(screenPos);
             HexBlock hoverBlock = GetBlockAtPosition(localPos);
 
-            HexBlock newTarget = null;
+            // 1) 합성 타겟 감지 (인접 특수블록)
+            HexBlock newComboTarget = null;
             if (hoverBlock != null && hoverBlock != comboSource &&
                 hoverBlock.Data != null && IsComboableSpecial(hoverBlock.Data.specialType) &&
                 comboSource.Coord.DistanceTo(hoverBlock.Coord) == 1)
             {
-                newTarget = hoverBlock;
+                newComboTarget = hoverBlock;
             }
 
-            if (newTarget != comboTarget)
+            // 2) 드릴 이동 타겟 감지 (비특수 블록, 범위 내)
+            HexBlock newDrillTarget = null;
+            if (comboAlsoDrillMove && newComboTarget == null &&
+                hoverBlock != null && hoverBlock != comboSource && hoverBlock.Data != null)
             {
-                // 이전 타겟 하이라이트 제거
+                // 특수블록이 아닌 일반 블록 (또는 MoveBlock/FixedBlock 제외)
+                bool isNonComboBlock = !IsComboableSpecial(hoverBlock.Data.specialType);
+                bool isNotFixed = hoverBlock.Data.specialType != JewelsHexaPuzzle.Data.SpecialBlockType.MoveBlock &&
+                                  hoverBlock.Data.specialType != JewelsHexaPuzzle.Data.SpecialBlockType.FixedBlock;
+                if (isNonComboBlock && isNotFixed)
+                {
+                    int dist = comboSource.Coord.DistanceTo(hoverBlock.Coord);
+                    if (dist > 0 && dist <= comboDrillMoveRange)
+                        newDrillTarget = hoverBlock;
+                }
+            }
+
+            // 합성 타겟 업데이트
+            if (newComboTarget != comboTarget)
+            {
                 if (comboTargetHighlight != null) { Destroy(comboTargetHighlight); comboTargetHighlight = null; }
                 if (comboLineObj != null) { Destroy(comboLineObj); comboLineObj = null; }
 
-                comboTarget = newTarget;
+                comboTarget = newComboTarget;
 
                 if (comboTarget != null)
                 {
@@ -752,9 +802,31 @@ private void Update()
                     CreateComboLine();
                 }
             }
+
+            // 드릴 이동 타겟 업데이트 (합성 타겟이 있으면 드릴 이동은 해제)
+            if (comboTarget != null) newDrillTarget = null;
+            if (newDrillTarget != comboDrillMoveTarget)
+            {
+                // 이전 드릴 이동 하이라이트 제거
+                if (drillMoveLineObj != null) { Destroy(drillMoveLineObj); drillMoveLineObj = null; }
+                if (comboDrillMoveTarget != null) comboDrillMoveTarget.SetHighlighted(false);
+
+                comboDrillMoveTarget = newDrillTarget;
+
+                if (comboDrillMoveTarget != null)
+                {
+                    comboDrillMoveTarget.SetHighlighted(true);
+                    // 연결선 생성 (drillMoveSource를 일시적으로 설정)
+                    drillMoveSource = comboSource;
+                    drillMoveTarget = comboDrillMoveTarget;
+                    CreateDrillMoveLine();
+                    drillMoveSource = null;
+                    drillMoveTarget = null;
+                }
+            }
         }
 
-        /// <summary>드래그 종료 시 합성 실행 또는 단독 발동</summary>
+        /// <summary>드래그 종료 시 합성/드릴이동 실행 또는 단독 발동</summary>
         private void FinishComboDrag()
         {
             if (comboSource != null && comboTarget != null && comboSystem != null)
@@ -793,7 +865,36 @@ private void Update()
                 }
                 CancelComboDrag();
             }
-            else if (comboSource != null && comboTarget == null)
+            else if (comboSource != null && comboDrillMoveTarget != null && comboAlsoDrillMove && drillSystem != null)
+            {
+                // ★ 합성 모드에서 드릴 이동 타겟으로 드래그 → 드릴 이동 실행
+                HexBlock source = comboSource;
+                HexBlock target = comboDrillMoveTarget;
+
+                // MP 소모
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(
+                        MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drill),
+                        target.transform.position);
+
+                // 이동횟수 차감
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+
+                // 블록 데이터 스왑
+                var sourceDataClone = source.Data.Clone();
+                var targetDataClone = target.Data.Clone();
+                source.SetBlockData(targetDataClone);
+                target.SetBlockData(sourceDataClone);
+
+                Debug.Log($"[InputSystem] 합성모드→드릴 이동: {source.Coord} ↔ {target.Coord}, 발동 위치: {target.Coord}");
+
+                // 드릴 발동 (이동된 위치에서)
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayDrillSound();
+                drillSystem.ActivateDrill(target);
+
+                CancelComboDrag();
+            }
+            else if (comboSource != null && comboTarget == null && comboDrillMoveTarget == null)
             {
                 // 드래그 없이 같은 자리에서 탭 → 단독 발동 시도
                 float dragDist = Vector2.Distance(pointerDownPosition, Input.mousePosition);
@@ -931,6 +1032,17 @@ private void Update()
         /// <summary>합성 드래그 취소</summary>
         private void CancelComboDrag()
         {
+            // 드릴 이동 관련 정리 (합성+이동 동시 모드)
+            if (comboAlsoDrillMove)
+            {
+                ClearDrillMoveHighlights();
+                if (drillMoveLineObj != null) { Destroy(drillMoveLineObj); drillMoveLineObj = null; }
+                if (comboDrillMoveTarget != null) comboDrillMoveTarget.SetHighlighted(false);
+            }
+            comboDrillMoveTarget = null;
+            comboAlsoDrillMove = false;
+            comboDrillMoveRange = 0;
+
             comboSource = null;
             comboTarget = null;
             isDraggingCombo = false;

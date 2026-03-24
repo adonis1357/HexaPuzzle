@@ -247,10 +247,11 @@ namespace JewelsHexaPuzzle.Core
 
         public void ActivateBomb(HexBlock bombBlock)
         {
+            Debug.Log($"[폭탄진입] ActivateBomb 호출됨, bombBlock={bombBlock}, Data={bombBlock?.Data}, specialType={bombBlock?.Data?.specialType}");
             if (bombBlock == null) return;
             if (bombBlock.Data == null || bombBlock.Data.specialType != SpecialBlockType.Bomb)
                 return;
-            Debug.Log($"[BombBlockSystem] Activating bomb at {bombBlock.Coord}");
+            Debug.Log($"[폭탄진입] BombCoroutine 시작 at {bombBlock.Coord}");
             StartCoroutine(BombCoroutine(bombBlock));
         }
 
@@ -287,38 +288,45 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             List<HexBlock> ring1Targets = new List<HexBlock>();
             List<HexBlock> ring2Targets = new List<HexBlock>();
             HashSet<HexCoord> visitedCoords = new HashSet<HexCoord>();
-            HashSet<HexCoord> ring1Coords = new HashSet<HexCoord>(); // 1칸 범위 좌표 (블록 유무 무관)
-            HashSet<HexCoord> ring2Coords = new HashSet<HexCoord>(); // 2칸 범위 좌표 (블록 유무 무관)
+            HashSet<HexCoord> ring1Coords = new HashSet<HexCoord>(); // 1칸 범위 좌표 (스폰 영역 포함)
+            HashSet<HexCoord> ring2Coords = new HashSet<HexCoord>(); // 2칸 범위 좌표 (스폰 영역 포함)
             visitedCoords.Add(bombCoord);
 
             if (hexGrid != null)
             {
-                // 1칸 인접
-                var ring1 = hexGrid.GetNeighbors(bombCoord);
-                foreach (var neighbor in ring1)
+                // 1칸 인접: 순수 좌표 연산으로 스폰 영역까지 포함
+                var ring1NeighborCoords = bombCoord.GetAllNeighbors();
+                foreach (var neighborCoord in ring1NeighborCoords)
                 {
-                    if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
+                    if (visitedCoords.Contains(neighborCoord)) continue;
+                    visitedCoords.Add(neighborCoord);
+                    ring1Coords.Add(neighborCoord);
+
+                    // 그리드 내 블록이면 파괴 타겟에 추가
+                    if (hexGrid.IsValidCoord(neighborCoord))
                     {
-                        visitedCoords.Add(neighbor.Coord);
-                        ring1Coords.Add(neighbor.Coord);
-                        if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
-                            ring1Targets.Add(neighbor);
+                        var block = hexGrid.GetBlock(neighborCoord);
+                        if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                            ring1Targets.Add(block);
                     }
                 }
 
-                // 2칸 인접
-                foreach (var ring1Block in ring1)
+                // 2칸 인접: ring1 좌표 각각의 이웃 (순수 좌표 연산)
+                foreach (var ring1Coord in ring1NeighborCoords)
                 {
-                    if (ring1Block == null) continue;
-                    var ring2 = hexGrid.GetNeighbors(ring1Block.Coord);
-                    foreach (var neighbor in ring2)
+                    var ring2NeighborCoords = ring1Coord.GetAllNeighbors();
+                    foreach (var neighborCoord in ring2NeighborCoords)
                     {
-                        if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
+                        if (visitedCoords.Contains(neighborCoord)) continue;
+                        visitedCoords.Add(neighborCoord);
+                        ring2Coords.Add(neighborCoord);
+
+                        // 그리드 내 블록이면 파괴 타겟에 추가
+                        if (hexGrid.IsValidCoord(neighborCoord))
                         {
-                            visitedCoords.Add(neighbor.Coord);
-                            ring2Coords.Add(neighbor.Coord);
-                            if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
-                                ring2Targets.Add(neighbor);
+                            var block = hexGrid.GetBlock(neighborCoord);
+                            if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                                ring2Targets.Add(block);
                         }
                     }
                 }
@@ -336,28 +344,32 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     AudioManager.Instance.PlayBombSound();
             }
 
-            // ★ 1칸 폭발 시점: 중심(3) + ring1(2) + ring2(1) 고블린 데미지 일괄 적용
+            // ★ 1칸 폭발 시점: 폭탄 데미지 (중심3, ring1=2, ring2=1) 즉시 적용
+            // 블록 파괴 데미지(+1)는 블록 파괴 후 별도 적용
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                var damageMap = new Dictionary<HexCoord, int>();
-                // 중심: 피해 3
-                damageMap[bombCoord] = 3;
-                // 1칸 범위: 피해 2
+                var bombDamageMap = new Dictionary<HexCoord, int>();
+                // 중심: 폭탄 데미지 3 (블록 파괴 데미지 +1은 별도 적용)
+                bombDamageMap[bombCoord] = 3;
+                // 1칸 범위: 폭탄 데미지 2
                 foreach (var coord in ring1Coords)
-                    damageMap[coord] = 2;
-                // 2칸 범위: 피해 1
+                    bombDamageMap[coord] = 2;
+                // 2칸 범위: 폭탄 데미지 1
                 foreach (var coord in ring2Coords)
                 {
-                    if (!damageMap.ContainsKey(coord))
-                        damageMap[coord] = 1;
+                    if (!bombDamageMap.ContainsKey(coord))
+                        bombDamageMap[coord] = 1;
                 }
                 // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
-                var directHitCoords = new HashSet<HexCoord>(damageMap.Keys);
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
-
-                // ★ 넉백: 폭발 범위 내 고블린을 밖으로 밀어냄
-                yield return StartCoroutine(GoblinSystem.Instance.ApplyBombKnockback(bombCoord, ring1Coords, ring2Coords));
+                var directHitCoords = new HashSet<HexCoord>(bombDamageMap.Keys);
+                GoblinSystem.Instance.ApplyBatchDamage(bombDamageMap, directHitCoords);
+                // ★ 넉백은 모든 블록 파괴 완료 후 일괄 실행 (아래 참조)
             }
+
+            // ★ 블록 파괴 좌표 수집 (블록 파괴 데미지 +1 적용용)
+            // 직격 위치도 폭탄 블록이 ClearData되었으므로 블록 파괴 데미지 대상
+            HashSet<HexCoord> destroyedBlockCoords = new HashSet<HexCoord>();
+            destroyedBlockCoords.Add(bombCoord);
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
@@ -409,6 +421,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                                 RemovalCondition.Normal, target.transform.position);
                     }
 
+                    destroyedBlockCoords.Add(target.Coord);
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos, isFirstBomb)));
                 }
@@ -469,6 +482,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                                 RemovalCondition.Normal, target.transform.position);
                     }
 
+                    destroyedBlockCoords.Add(target.Coord);
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos, isFirstBomb)));
                 }
@@ -478,15 +492,119 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             foreach (var co in destroyCoroutines)
                 yield return co;
 
+            // ★ 블록 파괴 데미지 (+1): 몬스터가 서 있는 칸의 블록이 파괴된 경우 추가 적용
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive && destroyedBlockCoords.Count > 0)
+            {
+                var blockDestroyDamageMap = new Dictionary<HexCoord, int>();
+                foreach (var coord in destroyedBlockCoords)
+                    blockDestroyDamageMap[coord] = 1;
+                var blockDirectHits = new HashSet<HexCoord>(destroyedBlockCoords);
+                GoblinSystem.Instance.ApplyBatchDamage(blockDestroyDamageMap, blockDirectHits);
+            }
+
+            // ★ 넉백: 블록 파괴 완료 직후 실행 (이동 연출 포함 코루틴)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(bombCoord));
+            }
+
             int totalScore = 400 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:400 + blockTierSum:{blockScoreSum})");
-
-            // 미션 카운팅은 파괴 루프에서 OnSingleGemDestroyedForMission()으로 개별 처리
-
 
             OnBombComplete?.Invoke(totalScore);
             activeBlocks.Remove(bombBlock);
             activeBombCount--;
+        }
+
+        // ============================================================
+        // 폭탄 넉백 — 폭탄 범위 밖(3칸째) 블록 위로 이동
+        // ============================================================
+
+        /// <summary>
+        /// 폭발 범위 내 몬스터를 폭탄 중심에서 3칸째 위치(범위 밖 첫 칸)로 이동.
+        /// 목적지 = bombPos + 방향 × 3. 그리드 밖이면 즉사.
+        /// </summary>
+        private IEnumerator ApplyBombKnockbackAll(HexCoord bombPos, List<HexCoord> coords)
+        {
+            if (hexGrid == null || GoblinSystem.Instance == null) yield break;
+
+            var processed = new HashSet<GoblinData>();
+
+            foreach (var coord in coords)
+            {
+                GoblinData goblin = GoblinSystem.Instance.GetGoblinAt(coord);
+                if (goblin == null || !goblin.isAlive || goblin.visualObject == null) continue;
+                if (processed.Contains(goblin)) continue;
+                processed.Add(goblin);
+
+                // === 넉백: 폭탄→몬스터 직선 방향으로 bombPos에서 3칸째로 밀어냄 ===
+                HexCoord offset = coord - bombPos;
+                HexCoord destination;
+
+                if (offset.q == 0 && offset.r == 0)
+                {
+                    // 직격: 6방향 랜덤, bombPos + dir×3
+                    HexCoord randDir = HexCoord.Directions[Random.Range(0, 6)];
+                    destination = bombPos + new HexCoord(randDir.q * 3, randDir.r * 3);
+                }
+                else
+                {
+                    // 면으로 이어진 직선 판별: offset이 6방향 단위벡터의 정수배인지
+                    HexCoord unitDir = new HexCoord(0, 0);
+                    bool isStraight = false;
+                    foreach (var d in HexCoord.Directions)
+                    {
+                        if (d.q != 0 && offset.q % d.q == 0)
+                        {
+                            int n = offset.q / d.q;
+                            if (n > 0 && offset.r == d.r * n) { unitDir = d; isStraight = true; break; }
+                        }
+                        else if (d.q == 0 && offset.q == 0 && d.r != 0 && offset.r % d.r == 0)
+                        {
+                            int n = offset.r / d.r;
+                            if (n > 0) { unitDir = d; isStraight = true; break; }
+                        }
+                    }
+
+                    if (isStraight)
+                    {
+                        // 직선: bombPos + 단위방향 × 3 (폭발 범위 바깥 첫 칸)
+                        destination = bombPos + new HexCoord(unitDir.q * 3, unitDir.r * 3);
+                    }
+                    else
+                    {
+                        // 꺾임: 실제 벡터 방향 그대로 연장 (coord + offset)
+                        destination = coord + offset;
+                    }
+                }
+
+                // 경계 체크
+                // 목적지 경계 판정
+                int boundResult = GoblinSystem.Instance.CheckBoundsType(destination);
+                if (boundResult == 2)
+                {
+                    // 좌/우/하단 밖 → 즉사
+                    Vector2 deathWorldPos = hexGrid.CalculateFlatTopHexPosition(destination);
+                    yield return StartCoroutine(GoblinSystem.Instance.AnimateKnockback(goblin, deathWorldPos));
+                    GoblinSystem.Instance.KillGoblinByKnockback(goblin);
+                    continue;
+                }
+
+                // 목적지에 블록이 있으면 이동 불가 → 스킵
+                if (hexGrid.IsInsideGrid(destination))
+                {
+                    HexBlock block = hexGrid.GetBlock(destination);
+                    if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                        continue;
+                }
+
+                // 이동
+                goblin.position = destination;
+                Vector2 worldPos = hexGrid.CalculateFlatTopHexPosition(destination);
+                yield return StartCoroutine(GoblinSystem.Instance.AnimateKnockback(goblin, worldPos));
+
+                Debug.Log($"[BombKnockback] {coord} → {destination} (offset={offset})");
+            }
         }
 
         /// <summary>

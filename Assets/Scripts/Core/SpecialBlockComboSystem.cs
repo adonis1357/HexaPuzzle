@@ -759,6 +759,12 @@ namespace JewelsHexaPuzzle.Core
             foreach (var co in drillCoroutines)
                 yield return co;
 
+            // ★ 폭탄 넉백: 폭발 범위 내 몬스터 밀어냄
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(pos));
+            }
+
             // 점수 (기본 700 + 블록 점수)
             int totalScore = 700 + blockScoreSum;
             Debug.Log($"[ComboSystem] DrillBomb complete. Score={totalScore}");
@@ -1029,6 +1035,39 @@ namespace JewelsHexaPuzzle.Core
             // 모든 파괴 애니메이션 완료 대기
             foreach (var co in allDestroyCoroutines)
                 yield return co;
+
+            // ★ 폭탄×폭탄 전용 데미지: 0칸=8, 1칸=4, 2칸=3, 3칸=2, 4칸=1
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                var bbDamageMap = new Dictionary<HexCoord, int>();
+                var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
+                foreach (var g in aliveGoblins)
+                {
+                    int gdq = g.position.q - pos.q;
+                    int gdr = g.position.r - pos.r;
+                    int gds = -gdq - gdr;
+                    int gdist = Mathf.Max(Mathf.Abs(gdq), Mathf.Max(Mathf.Abs(gdr), Mathf.Abs(gds)));
+                    int dmg = 0;
+                    switch (gdist)
+                    {
+                        case 0: dmg = 8; break;
+                        case 1: dmg = 4; break;
+                        case 2: dmg = 3; break;
+                        case 3: dmg = 2; break;
+                        case 4: dmg = 1; break;
+                    }
+                    if (dmg > 0 && !bbDamageMap.ContainsKey(g.position))
+                        bbDamageMap[g.position] = dmg;
+                }
+                if (bbDamageMap.Count > 0)
+                {
+                    var directHits = new HashSet<HexCoord>(bbDamageMap.Keys);
+                    GoblinSystem.Instance.ApplyBatchDamage(bbDamageMap, directHits);
+                }
+
+                // ★ 폭탄×폭탄 넉백: 범위 4칸, 목적지 = bombPos + 방향 × 5
+                yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(pos, 4));
+            }
 
             // 점수
             int totalScore = 800 + blockScoreSum;
@@ -1873,6 +1912,12 @@ namespace JewelsHexaPuzzle.Core
                     StartCoroutine(BombBlastShockwave(bombWorldPos, comboColor));
                     Debug.Log($"[ComboSystem] DroneBomb: 폭발 범위 내 고블린 {blastDamageCount}마리 추가 대미지");
                 }
+            }
+
+            // ★ 폭탄 넉백: 폭발 범위 내 몬스터 밀어냄
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(bombPos));
             }
 
             int totalScore = 600 + blockScoreSum;

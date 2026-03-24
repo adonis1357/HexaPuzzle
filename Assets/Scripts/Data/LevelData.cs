@@ -14,7 +14,7 @@ namespace JewelsHexaPuzzle.Data
         public string levelName;                   // 표시 이름
         public string subtitle;                    // 부제목
         public GameMode gameMode;                  // Stage 또는 Infinite
-        public int difficulty;                     // 난이도 (1~5)
+        public DifficultyType difficultyType;          // 난이도 (Easy/Normal/Hard)
         public bool isLocked;                      // 잠금 상태
         public int unlockRequirement;              // 해금 조건 (선행 레벨 ID, 0이면 즉시 해금)
 

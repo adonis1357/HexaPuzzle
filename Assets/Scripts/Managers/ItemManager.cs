@@ -46,6 +46,71 @@ namespace JewelsHexaPuzzle.Managers
         private Dictionary<ItemType, int> itemCounts = new Dictionary<ItemType, int>();
 
         // ============================================================
+        // 게이지 시스템: 블록 매칭으로 아이템 게이지 충전
+        // ============================================================
+
+        /// <summary>아이템별 게이지 (0f~1f)</summary>
+        private Dictionary<ItemType, float> itemGauges = new Dictionary<ItemType, float>();
+
+        /// <summary>게이지 변경 이벤트 (타입, 현재 게이지)</summary>
+        public event System.Action<ItemType, float> OnGaugeChanged;
+
+        /// <summary>아이템 ↔ GemType 1:1 매핑</summary>
+        private static readonly Dictionary<ItemType, GemType> itemToGem = new Dictionary<ItemType, GemType>
+        {
+            { ItemType.Hammer, GemType.Red },
+            { ItemType.Bomb, GemType.Blue },
+            { ItemType.SixWayLaser, GemType.Green },
+            { ItemType.ReverseRotation, GemType.Yellow }
+        };
+
+        /// <summary>GemType → ItemType 역매핑</summary>
+        private static readonly Dictionary<GemType, ItemType> gemToItem = new Dictionary<GemType, ItemType>
+        {
+            { GemType.Red, ItemType.Hammer },
+            { GemType.Blue, ItemType.Bomb },
+            { GemType.Green, ItemType.SixWayLaser },
+            { GemType.Yellow, ItemType.ReverseRotation }
+        };
+
+        /// <summary>블록 매칭 시 호출 — 해당 색상의 아이템 게이지 증가</summary>
+        public void AddGauge(GemType color, int count)
+        {
+            if (!gemToItem.ContainsKey(color)) return;
+            ItemType type = gemToItem[color];
+            float current = GetGauge(type);
+            float increment = count * 0.1f; // 1개당 10%
+            float newValue = Mathf.Clamp01(current + increment);
+            itemGauges[type] = newValue;
+            OnGaugeChanged?.Invoke(type, newValue);
+        }
+
+        /// <summary>아이템 게이지 값 반환 (0f~1f)</summary>
+        public float GetGauge(ItemType type)
+        {
+            return itemGauges.ContainsKey(type) ? itemGauges[type] : 0f;
+        }
+
+        /// <summary>게이지가 100%인지 확인</summary>
+        public bool IsGaugeFull(ItemType type)
+        {
+            return GetGauge(type) >= 1f;
+        }
+
+        /// <summary>게이지 초기화 (아이템 사용 후)</summary>
+        public void ResetGauge(ItemType type)
+        {
+            itemGauges[type] = 0f;
+            OnGaugeChanged?.Invoke(type, 0f);
+        }
+
+        /// <summary>아이템에 연결된 GemType 반환</summary>
+        public static GemType GetLinkedGemType(ItemType type)
+        {
+            return itemToGem.ContainsKey(type) ? itemToGem[type] : GemType.None;
+        }
+
+        // ============================================================
         // 게임당 사용 제한 시스템
         // ============================================================
         private Dictionary<ItemType, int> perGameUsageCount = new Dictionary<ItemType, int>();
@@ -97,7 +162,12 @@ namespace JewelsHexaPuzzle.Managers
 
             // Awake에서 먼저 로드 (GameManager.Start보다 앞서 데이터 준비)
             LoadItemCounts();
-            Debug.Log($"[ItemManager] Awake: 아이템 수량 로드 완료 (PlayerPrefs)");
+
+            // 게이지 초기화
+            foreach (var kvp in itemToGem)
+                itemGauges[kvp.Key] = 0f;
+
+            Debug.Log($"[ItemManager] Awake: 아이템 수량 로드 + 게이지 초기화 완료");
         }
 
         private void Start()
@@ -216,6 +286,11 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public bool CanUseItem(ItemType type)
         {
+            // 게이지 기반: 100% 충전 시에만 사용 가능
+            if (itemToGem.ContainsKey(type))
+                return IsGaugeFull(type);
+
+            // 게이지 미적용 아이템(TurnPlus5 등): 기존 수량 기반
             int count = GetItemCount(type);
             if (count <= 0) return false;
 
@@ -241,11 +316,20 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void ConsumeItem(ItemType type)
         {
-            // 보유 수량 감소
-            if (itemCounts.ContainsKey(type) && itemCounts[type] > 0)
+            // 게이지 기반 아이템: 게이지 초기화
+            if (itemToGem.ContainsKey(type))
             {
-                itemCounts[type]--;
-                SaveItemCounts();
+                ResetGauge(type);
+                Debug.Log($"[ItemManager] {type} 게이지 소모 → 0%");
+            }
+            else
+            {
+                // 게이지 미적용 아이템: 기존 수량 감소
+                if (itemCounts.ContainsKey(type) && itemCounts[type] > 0)
+                {
+                    itemCounts[type]--;
+                    SaveItemCounts();
+                }
             }
 
             // 게임당 사용 횟수 증가
@@ -257,7 +341,7 @@ namespace JewelsHexaPuzzle.Managers
             OnItemCountChanged?.Invoke(type, GetItemCount(type));
             UpdateItemUI();
 
-            Debug.Log($"[ItemManager] {type} 소모됨. 보유: {GetItemCount(type)}, 이번게임 사용: {perGameUsageCount[type]}/{perGameUsageLimit}");
+            Debug.Log($"[ItemManager] {type} 소모됨. 게이지: {GetGauge(type):P0}, 이번게임 사용: {perGameUsageCount[type]}/{perGameUsageLimit}");
         }
 
         // ============================================================
@@ -299,17 +383,10 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void UseItem(ItemType type)
         {
-            // 수량 확인
-            if (!itemCounts.ContainsKey(type) || itemCounts[type] <= 0)
-            {
-                Debug.Log($"No {type} available");
-                return;
-            }
-
-            // 게임당 사용 제한 확인
+            // 게이지/수량 확인
             if (!CanUseItem(type))
             {
-                Debug.Log($"[ItemManager] {type} 게임당 사용 제한 초과");
+                Debug.Log($"[ItemManager] {type} 사용 불가 (게이지 미충전 또는 제한 초과)");
                 return;
             }
 

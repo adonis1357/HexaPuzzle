@@ -26,6 +26,12 @@ namespace JewelsHexaPuzzle.Core
         private bool colorMode = false;
         private GemType activeGemType = GemType.None;
 
+        // 몬스터 모드 상태
+        private bool monsterMode = false;
+        private GameObject monsterButton;
+        private Image monsterButtonBg;
+        private Image monsterButtonOutline;
+
         // Canvas UI 참조 — 특수 블록 버튼
         private GameObject panelContainer;
         private GameObject[] specialBlockButtons;
@@ -183,6 +189,9 @@ namespace JewelsHexaPuzzle.Core
 
             // === 색상 변경 버튼 생성 (특수 블록 버튼 아래) ===
             CreateColorBlockButtons(leftmostX, lowestY, btnHexH);
+
+            // === 몬스터 배치 버튼 생성 (색상 버튼 아래) ===
+            CreateMonsterButton(leftmostX, lowestY, btnHexH);
         }
 
         private void CreateSpecialBlockButton(int index, Vector2 position)
@@ -390,6 +399,176 @@ namespace JewelsHexaPuzzle.Core
             colorButtonOutlines[index] = outImg;
         }
 
+        // ============================================================
+        // 몬스터 배치 버튼 생성
+        // ============================================================
+
+        private void CreateMonsterButton(float leftmostX, float lowestY, float specialBtnHexH)
+        {
+            float hSize = hexGrid != null ? hexGrid.HexSize : 50f;
+            float sqrt3 = Mathf.Sqrt(3f);
+
+            // 골드 추가 버튼과 동일한 좌표 계산 (GameManager.CreateGoldAddButton 참조)
+            float goldBtnSize = 77f;
+            float gridLeft = -(hSize * 1.5f * 5f);
+            float goldX = gridLeft / 2f - 80f + 15f;
+            float goldBtnHexH = goldBtnSize * sqrt3 / 2f;
+            float goldY = hSize * sqrt3 * (-5f) - goldBtnHexH * 0.3f - 5f - 100f;
+
+            // 골드 버튼 바로 아래에 배치 (간격 8px)
+            float monsterBtnX = goldX;
+            float monsterBtnY = goldY - goldBtnHexH / 2f - 8f - COLOR_BTN_SIZE * sqrt3 / 4f;
+
+            // panelContainer 자식으로 배치 (hudElements 통해 표시/숨김 관리됨)
+            string btnName = "TestBtn_Monster";
+            GameObject btnObj = new GameObject(btnName);
+            btnObj.transform.SetParent(panelContainer.transform, false);
+
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(monsterBtnX, monsterBtnY);
+            btnRt.sizeDelta = new Vector2(COLOR_BTN_SIZE, COLOR_BTN_SIZE);
+
+            // 배경 (육각형) — 비활성 시 보라 계열
+            Color monsterInactiveColor = new Color(0.55f, 0.30f, 0.65f, 0.90f);
+            Image bgImage = btnObj.AddComponent<Image>();
+            bgImage.sprite = HexBlock.GetHexFlashSprite();
+            bgImage.type = Image.Type.Simple;
+            bgImage.preserveAspect = true;
+            bgImage.color = monsterInactiveColor;
+
+            // 테두리
+            GameObject outlineObj = new GameObject("Outline");
+            outlineObj.transform.SetParent(btnObj.transform, false);
+            RectTransform outRt = outlineObj.AddComponent<RectTransform>();
+            outRt.anchorMin = Vector2.zero; outRt.anchorMax = Vector2.one;
+            outRt.offsetMin = Vector2.zero; outRt.offsetMax = Vector2.zero;
+            Image outImg = outlineObj.AddComponent<Image>();
+            outImg.sprite = HexBlock.GetHexBorderSprite();
+            outImg.type = Image.Type.Simple;
+            outImg.preserveAspect = true;
+            outImg.color = INACTIVE_BORDER;
+            outImg.raycastTarget = false;
+
+            // 라벨 텍스트
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            Text label = labelObj.AddComponent<Text>();
+            label.text = "몬스터";
+            label.font = font;
+            label.fontSize = 11;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = new Color(1f, 1f, 1f, 0.85f);
+            label.raycastTarget = false;
+            label.fontStyle = FontStyle.Bold;
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(1f, 0f);
+            labelRt.anchoredPosition = new Vector2(0f, 10f);
+            labelRt.sizeDelta = new Vector2(0f, 16f);
+
+            // Button 컴포넌트
+            Button btn = btnObj.AddComponent<Button>();
+            var bc = btn.colors;
+            bc.normalColor = Color.white;
+            bc.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+            bc.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
+            btn.colors = bc;
+            btn.onClick.AddListener(OnMonsterButtonClicked);
+
+            monsterButton = btnObj;
+            monsterButtonBg = bgImage;
+            monsterButtonOutline = outImg;
+        }
+
+        // ============================================================
+        // 몬스터 버튼 클릭 → 모드 토글
+        // ============================================================
+
+        private void OnMonsterButtonClicked()
+        {
+            // 이미 활성 → 비활성화
+            if (monsterMode)
+            {
+                DeactivateMode();
+                return;
+            }
+
+            // 다른 모드 해제
+            editorMode = false;
+            activeBlockType = SpecialBlockType.None;
+            activeButtonIndex = -1;
+            colorMode = false;
+            activeGemType = GemType.None;
+            activeColorButtonIndex = -1;
+
+            monsterMode = true;
+            LastModeChangeFrame = Time.frameCount;
+
+            UpdateAllButtonVisuals();
+            Debug.Log($"[EditorTestSystem] 몬스터 모드 활성화 frame={Time.frameCount}");
+        }
+
+        // ============================================================
+        // 몬스터 순환 배치 처리
+        // ============================================================
+
+        /// <summary>
+        /// 몬스터 모드에서 블록 클릭 시 순환 배치.
+        /// 순서: 몽둥이(1) → 갑옷(2) → 궁수(3) → 방패(4) → 제거(0) → 반복
+        /// </summary>
+        private bool TryPlaceMonster(HexBlock block)
+        {
+            if (block == null)
+            {
+                // 빈 공간 → 비활성화
+                DeactivateMode();
+                return true;
+            }
+
+            if (GoblinSystem.Instance == null)
+            {
+                Debug.LogWarning("[EditorTestSystem] GoblinSystem이 없어 몬스터를 배치할 수 없습니다.");
+                return false;
+            }
+
+            HexCoord coord = block.Coord;
+            int currentType = GoblinSystem.Instance.EditorGetGoblinType(coord);
+
+            // 순환: 0→1(몽둥이) → 2(갑옷) → 3(궁수) → 4(방패) → 0(제거)
+            int nextType = (currentType + 1) % 5;
+
+            if (nextType == 0)
+            {
+                // 제거
+                GoblinSystem.Instance.EditorRemoveGoblin(coord);
+                Debug.Log($"[EditorTestSystem] 몬스터 제거: ({coord})");
+            }
+            else
+            {
+                bool isArmored = (nextType == 2);
+                bool isArcher = (nextType == 3);
+                bool isShield = (nextType == 4);
+                GoblinSystem.Instance.EditorSpawnGoblin(coord, isArmored, isArcher, isShield);
+
+                string typeName;
+                switch (nextType)
+                {
+                    case 1: typeName = "몽둥이"; break;
+                    case 2: typeName = "갑옷"; break;
+                    case 3: typeName = "궁수"; break;
+                    case 4: typeName = "방패"; break;
+                    default: typeName = "???"; break;
+                }
+                Debug.Log($"[EditorTestSystem] 몬스터 배치: ({coord}) → {typeName}");
+            }
+
+            return true;
+        }
+
         private Sprite GetIconSpriteForType(SpecialBlockType type, int index)
         {
             switch (type)
@@ -424,10 +603,11 @@ namespace JewelsHexaPuzzle.Core
                 return;
             }
 
-            // 색상 모드가 활성 상태면 먼저 해제
+            // 다른 모드가 활성 상태면 먼저 해제
             colorMode = false;
             activeGemType = GemType.None;
             activeColorButtonIndex = -1;
+            monsterMode = false;
 
             editorMode = true;
             activeBlockType = clickedType;
@@ -456,10 +636,11 @@ namespace JewelsHexaPuzzle.Core
                 return;
             }
 
-            // 특수 블록 모드가 활성 상태면 먼저 해제
+            // 다른 모드가 활성 상태면 먼저 해제
             editorMode = false;
             activeBlockType = SpecialBlockType.None;
             activeButtonIndex = -1;
+            monsterMode = false;
 
             colorMode = true;
             activeGemType = clickedGem;
@@ -532,6 +713,19 @@ namespace JewelsHexaPuzzle.Core
                         ? Vector3.one * 1.15f : Vector3.one;
                 }
             }
+
+            // 몬스터 버튼 업데이트
+            if (monsterButton != null)
+            {
+                Color monsterInactiveColor = new Color(0.55f, 0.30f, 0.65f, 0.90f);
+                Color monsterActiveColor = new Color(0.80f, 0.50f, 0.90f, 1f);
+
+                if (monsterButtonBg != null)
+                    monsterButtonBg.color = monsterMode ? monsterActiveColor : monsterInactiveColor;
+                if (monsterButtonOutline != null)
+                    monsterButtonOutline.color = monsterMode ? ACTIVE_BORDER : INACTIVE_BORDER;
+                monsterButton.transform.localScale = monsterMode ? Vector3.one * 1.15f : Vector3.one;
+            }
         }
 
         public void DeactivateMode()
@@ -543,6 +737,8 @@ namespace JewelsHexaPuzzle.Core
             colorMode = false;
             activeGemType = GemType.None;
             activeColorButtonIndex = -1;
+
+            monsterMode = false;
 
             LastModeChangeFrame = Time.frameCount;
 
@@ -575,6 +771,16 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
+            // 몬스터 버튼 초기화
+            if (monsterButton != null)
+            {
+                if (monsterButtonBg != null)
+                    monsterButtonBg.color = new Color(0.55f, 0.30f, 0.65f, 0.90f);
+                if (monsterButtonOutline != null)
+                    monsterButtonOutline.color = INACTIVE_BORDER;
+                monsterButton.transform.localScale = Vector3.one;
+            }
+
             Debug.Log("[EditorTestSystem] 비활성화");
         }
 
@@ -588,10 +794,15 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         public bool TryPlaceOnBlock(HexBlock block)
         {
-            if (!editorMode && !colorMode)
+            if (!editorMode && !colorMode && !monsterMode)
             {
-                Debug.LogWarning("[EditorTestSystem] TryPlaceOnBlock 호출되었으나 editorMode/colorMode 모두 false");
+                Debug.LogWarning("[EditorTestSystem] TryPlaceOnBlock 호출되었으나 모든 모드 false");
                 return false;
+            }
+
+            if (monsterMode)
+            {
+                return TryPlaceMonster(block);
             }
 
             if (block != null)
@@ -672,7 +883,7 @@ namespace JewelsHexaPuzzle.Core
         // 공개 프로퍼티
         // ============================================================
 
-        public bool IsEditorModeActive => editorMode || colorMode;
+        public bool IsEditorModeActive => editorMode || colorMode || monsterMode;
         public SpecialBlockType ActiveBlockType => activeBlockType;
         public GemType ActiveGemType => activeGemType;
         public bool IsColorMode => colorMode;

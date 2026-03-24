@@ -257,6 +257,12 @@ namespace JewelsHexaPuzzle.Core
                 drillSystem = FindObjectOfType<DrillBlockSystem>();
             if (bombSystem == null)
                 bombSystem = FindObjectOfType<BombBlockSystem>();
+            if (bombSystem == null)
+            {
+                // 씬에 BombBlockSystem이 없으면 자동 생성
+                bombSystem = gameObject.AddComponent<BombBlockSystem>();
+                Debug.LogWarning("[BlockRemovalSystem] BombBlockSystem이 씬에 없어 자동 생성됨");
+            }
             if (donutSystem == null)
                 donutSystem = FindObjectOfType<DonutBlockSystem>();
             if (xBlockSystem == null)
@@ -472,14 +478,21 @@ namespace JewelsHexaPuzzle.Core
                     break;
 
                 case SpecialBlockType.Bomb:
+                    Debug.Log($"[폭탄실행] BlockRemovalSystem.Bomb case 진입, block={block?.Coord}, bombSystem={bombSystem != null}");
                     if (bombSystem != null)
                     {
                         if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
+                        Debug.Log($"[폭탄실행] bombSystem.ActivateBomb 호출 직전");
                         bombSystem.ActivateBomb(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
                         while (bombSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
                         if (bombSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Bomb timeout! ForceReset"); bombSystem.ForceReset(); }
+                        Debug.Log($"[폭탄실행] bombSystem.ActivateBomb 완료");
+                    }
+                    else
+                    {
+                        Debug.LogError($"[폭탄실행] bombSystem이 NULL! BombBlockSystem 컴포넌트가 씬에 없음");
                     }
                     break;
 
@@ -630,8 +643,11 @@ namespace JewelsHexaPuzzle.Core
                 UpdateElectricArcs(electricObjects, t);
                 UpdateLightningArcs(arcLines, t);
 
-                float spawnPulse = 1f + 0.1f * Mathf.Sin(t * Mathf.PI * 10f);
-                spawnBlock.transform.localScale = Vector3.one * spawnPulse;
+                if (spawnBlock != null)
+                {
+                    float spawnPulse = 1f + 0.1f * Mathf.Sin(t * Mathf.PI * 10f);
+                    spawnBlock.transform.localScale = Vector3.one * spawnPulse;
+                }
 
                 yield return null;
             }
@@ -652,8 +668,11 @@ namespace JewelsHexaPuzzle.Core
                         SetBlockAnchoredPosition(kvp.Key, slotPos);
                 }
             }
-            spawnBlock.transform.localScale = Vector3.one;
-            spawnBlock.transform.localRotation = Quaternion.identity;
+            if (spawnBlock != null)
+            {
+                spawnBlock.transform.localScale = Vector3.one;
+                spawnBlock.transform.localRotation = Quaternion.identity;
+            }
             // ★ 스폰 블록도 슬롯 위치로 복원
             if (slotPositions.TryGetValue(spawnBlock, out Vector2 spawnSlotPos))
                 SetBlockAnchoredPosition(spawnBlock, spawnSlotPos);
@@ -676,6 +695,13 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private void CreateSpecialBlock(HexBlock block, SpecialBlockType type, DrillDirection direction, GemType gemType)
         {
+            // 특수 블록 생성 시 고블린 폭탄 제거
+            if (block.Data != null && block.Data.hasGoblinBomb)
+            {
+                block.Data.hasGoblinBomb = false;
+                block.Data.goblinBombCountdown = 0;
+            }
+
             switch (type)
             {
                 case SpecialBlockType.Drill:
@@ -3141,13 +3167,29 @@ public void TriggerBigBang()
             // 5d. 미션 시스템 보고: 각 기본 블록 파괴 시 개별 보고 (Stage/Infinite 모두 지원)
             // ClearData() 전에 호출해야 gemType이 유효함
             // 깨진 블록(isCracked) 및 껍데기 블록(isShell)은 미션 카운트에서 제외
+            // + 아이템 게이지 충전
+            Dictionary<GemType, int> gemCountsForGauge = new Dictionary<GemType, int>();
             foreach (var block in blocksToRemove)
             {
                 if (block != null && block.Data != null && block.Data.gemType != GemType.None
                     && !block.Data.isCracked && !block.Data.isShell)
                 {
                     GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+
+                    // 게이지 충전용 색상별 카운트 수집
+                    GemType gt = block.Data.gemType;
+                    if (gemCountsForGauge.ContainsKey(gt))
+                        gemCountsForGauge[gt]++;
+                    else
+                        gemCountsForGauge[gt] = 1;
                 }
+            }
+
+            // 아이템 게이지 일괄 충전
+            if (ItemManager.Instance != null)
+            {
+                foreach (var kvp in gemCountsForGauge)
+                    ItemManager.Instance.AddGauge(kvp.Key, kvp.Value);
             }
 
             // 5e. 모든 블록이 깨져서 특수 블록 생성이 차단된 경우 메시지 표시

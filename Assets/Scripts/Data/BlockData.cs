@@ -29,6 +29,16 @@ namespace JewelsHexaPuzzle.Data
     }
 
     /// <summary>
+    /// 스테이지 난이도 - 쉬움/보통/어려움 3단계
+    /// </summary>
+    public enum DifficultyType
+    {
+        Easy = 0,    // 쉬움 (초록 별 1개)
+        Normal = 1,  // 보통 (노란 별 2개)
+        Hard = 2     // 어려움 (빨간 별 3개)
+    }
+
+    /// <summary>
     /// 보석(젬) 타입 - 블록의 색상 종류
     /// 퍼즐 게임에서 같은 색상 3개를 모아 매칭하는 기본 단위입니다.
     /// 기본 5색(빨~보라) + 확장 6색(주황~자수정) + 특수 1색(회색)으로 구성됩니다.
@@ -100,7 +110,8 @@ namespace JewelsHexaPuzzle.Data
         Goblin = 10,            // 고블린: 빈 공간에서 소환, 블록을 공격해 금간 블록으로 만듦 | 별칭: 고블린
         ArmoredGoblin = 11,     // 갑옷 고블린: HP가 높고 갑옷으로 무장한 고블린 | 별칭: 갑옷
         ArcherGoblin = 12,      // 활 고블린: 상단 고정 배치, 매턴 화살로 블록에 크랙 | 별칭: 활
-        ShieldGoblin = 13       // 방패 고블린: 드릴 차단 방패 장착, 3회 차단 후 파괴 | 별칭: 방패고블린
+        ShieldGoblin = 13,      // 방패 고블린: 드릴 차단 방패 장착, 3회 차단 후 파괴 | 별칭: 방패고블린
+        BombGoblin = 14         // 폭탄 고블린: 카운트다운 후 광역 폭발, 블록 대량 파괴 | 별칭: 폭탄고블린
     }
 
     /// <summary>
@@ -220,6 +231,10 @@ namespace JewelsHexaPuzzle.Data
         public bool isCracked;                  // 깨진 블록 여부 (고블린 공격으로 금간 상태)
         public bool isShell;                    // 껍데기 블록 여부 (두 번째 공격으로 테두리만 남은 상태, 매칭 불가, 낙하 장애물)
 
+        // ── 고블린 폭탄 시스템 필드 ──
+        public bool hasGoblinBomb;              // 고블린 폭탄이 설치된 블록인지
+        public int goblinBombCountdown;         // 폭탄 카운트다운 (0이면 폭발)
+
         // ── 적군 시스템 필드 ──
         public EnemyType enemyType;             // 이 블록에 붙어있는 적군 종류
         public int enemyShieldCount;            // 반사방패 내구도 (남은 보호막 횟수)
@@ -310,6 +325,8 @@ namespace JewelsHexaPuzzle.Data
             cloned.chaosHitCount = this.chaosHitCount;
             cloned.isCracked = this.isCracked;
             cloned.isShell = this.isShell;
+            cloned.hasGoblinBomb = this.hasGoblinBomb;
+            cloned.goblinBombCountdown = this.goblinBombCountdown;
             return cloned;
         }
 

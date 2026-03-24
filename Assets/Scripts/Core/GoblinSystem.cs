@@ -39,6 +39,7 @@ namespace JewelsHexaPuzzle.Core
         public int armoredHp = 15;       // 갑옷 HP (기본보다 높음, 방어형)
         public int shieldGoblinHp = 10;  // 방패 고블린 HP
         public int shieldHp = 3;         // 방패 내구도 (드릴 3회 차단 후 파괴)
+        public int bombGoblinHp = 10;    // 폭탄 고블린 HP
     }
 
     /// <summary>
@@ -59,6 +60,8 @@ namespace JewelsHexaPuzzle.Core
         public bool isArcher = false;   // 궁수 고블린 여부
         public bool isArmored = false;  // 갑옷 고블린 여부
         public bool isShieldType = false;      // 방패 고블린 타입 (파괴 후에도 유지, 킬 추적용)
+        public bool isBomb = false;            // 폭탄 고블린 여부
+        public int bombTurnCounter = 0;        // 폭탄 고블린 턴 카운터 (3턴마다 설치)
         public bool isShielded = false;        // 현재 방패 활성 여부
         public int shieldHp = 3;              // 방패 내구도
         public int shieldTurnCounter = 0;     // 2턴 행동 카운터
@@ -102,12 +105,14 @@ namespace JewelsHexaPuzzle.Core
         private int armoredKills = 0;
         private int archerKills = 0;
         private int shieldKills = 0;
+        private int bombKills = 0;
 
         // ★ 타입별 소환 카운터 (kills+alive 대신 확실한 소환 수 추적)
         private int regularSpawned = 0;
         private int armoredSpawned = 0;
         private int archerSpawned = 0;
         private int shieldSpawned = 0;
+        private int bombSpawned = 0;
 
         // 낙하 충돌 대미지로 사망한 고블린 대기열 (ProcessFalling 완료 후 처리)
         private List<GoblinData> pendingFallDeaths = new List<GoblinData>();
@@ -117,6 +122,7 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite archerGoblinSprite;
         private static Sprite armoredGoblinSprite;
         private static Sprite shieldGoblinSprite;
+        private static Sprite bombGoblinSprite;
         private static Sprite shieldSprite;
         private static Sprite stuckDrillSprite;
         private static Sprite portalSprite;
@@ -139,8 +145,8 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
         // 이벤트
         // ============================================================
-        /// <summary>고블린 제거 시 호출 (totalKills, isArmored, isArcher, isShieldType)</summary>
-        public event System.Action<int, bool, bool, bool> OnGoblinKilled;
+        /// <summary>고블린 제거 시 호출 (totalKills, isArmored, isArcher, isShieldType, isBomb)</summary>
+        public event System.Action<int, bool, bool, bool, bool> OnGoblinKilled;
 
         /// <summary>현재 보드 위 고블린 수</summary>
         public int AliveCount => goblins.Count(g => g.isAlive);
@@ -156,7 +162,8 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private void IncrementTypeKill(GoblinData goblin)
         {
-            if (goblin.isArcher) archerKills++;
+            if (goblin.isBomb) bombKills++;
+            else if (goblin.isArcher) archerKills++;
             else if (goblin.isArmored) armoredKills++;
             else if (goblin.isShieldType) shieldKills++;
             else regularKills++;
@@ -166,7 +173,7 @@ namespace JewelsHexaPuzzle.Core
         /// StageManager에서 특정 고블린 타입의 미션 목표 수를 조회.
         /// 해당 타입 미션이 없으면 0 반환 (→ 소환하지 않음).
         /// </summary>
-        private int GetMissionTargetForType(bool isArmored, bool isArcher, bool isShieldType = false)
+        private int GetMissionTargetForType(bool isArmored, bool isArcher, bool isShieldType = false, bool isBomb = false)
         {
             if (GameManager.Instance == null)
             {
@@ -185,13 +192,14 @@ namespace JewelsHexaPuzzle.Core
             {
                 Debug.LogWarning($"[GoblinSystem] GetMissionTargetForType: missions null 또는 빈 배열 (length={missions?.Length})");
                 // ★ 폴백: missionKillCount 기반 (미션 데이터 로드 실패 시)
-                if (currentConfig != null && !isArmored && !isArcher && !isShieldType)
+                if (currentConfig != null && !isArmored && !isArcher && !isShieldType && !isBomb)
                     return currentConfig.missionKillCount;
                 return 0;
             }
 
             EnemyType targetType;
-            if (isArcher) targetType = EnemyType.ArcherGoblin;
+            if (isBomb) targetType = EnemyType.BombGoblin;
+            else if (isArcher) targetType = EnemyType.ArcherGoblin;
             else if (isArmored) targetType = EnemyType.ArmoredGoblin;
             else if (isShieldType) targetType = EnemyType.ShieldGoblin;
             else targetType = EnemyType.Goblin;
@@ -254,11 +262,16 @@ namespace JewelsHexaPuzzle.Core
             armoredKills = 0;
             archerKills = 0;
             shieldKills = 0;
+            bombKills = 0;
             regularSpawned = 0;
             armoredSpawned = 0;
             archerSpawned = 0;
             shieldSpawned = 0;
+            bombSpawned = 0;
             MissionComplete = false;
+
+            // 기존 폭탄 정리 (그리드 블록 데이터에서 제거)
+            CleanupAllGoblinBombs();
 
             // 기존 고블린 정리
             CleanupAll();
@@ -278,12 +291,116 @@ namespace JewelsHexaPuzzle.Core
                     Destroy(goblin.visualObject);
             }
             goblins.Clear();
+            CleanupAllGoblinBombs();
         }
 
         private void OnDestroy()
         {
             if (Instance == this)
                 Instance = null;
+        }
+
+        // ============================================================
+        // 에디터 전용: 고블린 즉시 생성/제거 (EditorTestSystem에서 호출)
+        // ============================================================
+
+        /// <summary>
+        /// 에디터에서 특정 좌표에 고블린을 즉시 배치한다.
+        /// GoblinSystem이 초기화되지 않았으면 더미 config로 자동 초기화.
+        /// </summary>
+        public void EditorSpawnGoblin(HexCoord position, bool isArmored, bool isArcher, bool isShieldType)
+        {
+            if (hexGrid == null)
+                hexGrid = FindObjectOfType<HexGrid>();
+            if (hexGrid == null) return;
+
+            // GoblinSystem이 비활성 상태면 더미 config로 초기화
+            if (currentConfig == null)
+            {
+                var dummyConfig = new GoblinStageConfig
+                {
+                    minSpawnPerTurn = 0,
+                    maxSpawnPerTurn = 0,
+                    missionKillCount = 99,
+                    maxOnBoard = 20
+                };
+                Initialize(hexGrid, dummyConfig);
+            }
+
+            // 해당 위치에 이미 고블린이 있으면 먼저 제거
+            EditorRemoveGoblin(position);
+
+            // 고블린 데이터 생성
+            var goblin = new GoblinData();
+            goblin.position = position;
+            goblin.isArmored = isArmored;
+            goblin.isArcher = isArcher;
+            goblin.isShieldType = isShieldType;
+            goblin.isShielded = isShieldType;
+
+            // 타입별 HP 설정
+            if (isArcher)
+            {
+                goblin.hp = currentConfig.archerHp;
+                goblin.maxHp = currentConfig.archerHp;
+            }
+            else if (isArmored)
+            {
+                goblin.hp = currentConfig.armoredHp;
+                goblin.maxHp = currentConfig.armoredHp;
+            }
+            else if (isShieldType)
+            {
+                goblin.hp = currentConfig.shieldGoblinHp;
+                goblin.maxHp = currentConfig.shieldGoblinHp;
+                goblin.shieldHp = currentConfig.shieldHp;
+            }
+            else
+            {
+                goblin.hp = 5;
+                goblin.maxHp = 5;
+            }
+
+            goblins.Add(goblin);
+
+            // 비주얼 즉시 생성 (포털 이펙트 없이)
+            Vector2 worldPos = hexGrid.CalculateFlatTopHexPosition(position);
+            CreateGoblinVisual(goblin, worldPos);
+            if (goblin.visualObject != null)
+                goblin.visualObject.GetComponent<RectTransform>().localScale = Vector3.one;
+
+            UpdateHPBar(goblin);
+            Debug.Log($"[GoblinSystem] 에디터 배치: ({position}) armored={isArmored} archer={isArcher} shield={isShieldType} HP={goblin.hp}");
+        }
+
+        /// <summary>
+        /// 에디터에서 특정 좌표의 고블린을 즉시 제거한다.
+        /// </summary>
+        public void EditorRemoveGoblin(HexCoord position)
+        {
+            var goblin = goblins.Find(g => g.isAlive && g.position == position);
+            if (goblin == null) return;
+
+            goblin.isAlive = false;
+            if (goblin.visualObject != null)
+                Destroy(goblin.visualObject);
+            goblins.Remove(goblin);
+            Debug.Log($"[GoblinSystem] 에디터 제거: ({position})");
+        }
+
+        /// <summary>
+        /// 에디터에서 특정 좌표에 있는 고블린의 타입을 조회한다.
+        /// 반환: 0=없음, 1=몽둥이, 2=갑옷, 3=궁수, 4=방패, 5=폭탄
+        /// </summary>
+        public int EditorGetGoblinType(HexCoord position)
+        {
+            var goblin = goblins.Find(g => g.isAlive && g.position == position);
+            if (goblin == null) return 0;
+            if (goblin.isBomb) return 5;
+            if (goblin.isArmored) return 2;
+            if (goblin.isArcher) return 3;
+            if (goblin.isShieldType) return 4;
+            return 1; // 몽둥이
         }
 
         // ============================================================
@@ -299,10 +416,19 @@ namespace JewelsHexaPuzzle.Core
         {
             if (currentConfig == null || hexGrid == null) yield break;
 
-            // 1단계: 기존 근접 고블린 이동 (블록 공격+파괴 통합) — 궁수는 이동하지 않음
+            // 0단계: 고블린 폭탄 카운트다운 감소 + 폭발 (매 턴 시작 시)
+            yield return StartCoroutine(DecrementBombCountdowns());
+
+            // 1단계: 근접 고블린 이동 (블록 공격+파괴 통합) — 궁수/폭탄 고블린 제외
             yield return StartCoroutine(MoveAllGoblins());
 
             // ★ 이동 후 위치 겹침 검증 + 해소
+            ResolveOverlappingPositions();
+
+            // 1.5단계: 폭탄 고블린 페이즈 (공격 없이 이동만 + 3턴마다 폭탄 설치)
+            yield return StartCoroutine(BombGoblinPhase());
+
+            // ★ 설치 후 위치 겹침 검증
             ResolveOverlappingPositions();
 
             // 2단계: 궁수 고블린 공격 (2턴마다)
@@ -448,8 +574,24 @@ namespace JewelsHexaPuzzle.Core
                         skippedShieldGoblins.Add(goblin);
                 }
             }
+
+            // 폭탄 고블린은 모든 턴에서 MoveAllGoblins에서 제외 (공격하지 않고 이동만 — BombGoblinPhase에서 통합 처리)
+            var skippedBombGoblins = new List<GoblinData>();
+            foreach (var goblin in aliveGoblins)
+            {
+                if (goblin.isBomb)
+                    skippedBombGoblins.Add(goblin);
+            }
+
+            // 폭탄 고블린 턴 카운터 증가 (설치 턴 여부 판단 후 증가)
+            foreach (var goblin in aliveGoblins)
+            {
+                if (goblin.isBomb)
+                    goblin.bombTurnCounter++;
+            }
+
             // 스킵 대상을 이동 목록에서 제외
-            aliveGoblins = aliveGoblins.Where(g => !skippedShieldGoblins.Contains(g)).ToList();
+            aliveGoblins = aliveGoblins.Where(g => !skippedShieldGoblins.Contains(g) && !skippedBombGoblins.Contains(g)).ToList();
             if (aliveGoblins.Count == 0) yield break;
 
             // ──────────────────────────────────────────────
@@ -462,9 +604,11 @@ namespace JewelsHexaPuzzle.Core
             Dictionary<GoblinData, HexBlock> attackTargetBlocks = new Dictionary<GoblinData, HexBlock>();
 
             // 이미 선점된 좌표 추적 (고블린끼리 같은 곳 이동 방지)
-            // ★ 이동하지 않는 고블린(궁수, 스킵된 방패)의 위치를 미리 선점
+            // ★ 이동하지 않는 고블린(궁수, 스킵된 방패, 설치 턴 폭탄)의 위치를 미리 선점
             HashSet<HexCoord> reservedCoords = new HashSet<HexCoord>();
             foreach (var g in skippedShieldGoblins)
+                reservedCoords.Add(g.position);
+            foreach (var g in skippedBombGoblins)
                 reservedCoords.Add(g.position);
             // 궁수 고블린도 자리 선점 (이동 안 하므로)
             foreach (var g in goblins.Where(g => g.isAlive && g.isArcher))
@@ -935,6 +1079,7 @@ namespace JewelsHexaPuzzle.Core
             int armoredTarget = GetMissionTargetForType(true, false);
             int archerTarget = GetMissionTargetForType(false, true);
             int shieldTarget = GetMissionTargetForType(false, false, true);
+            int bombTarget = GetMissionTargetForType(false, false, false, true);
 
             // ★★★ 핵심 수정: 소환 카운터 기반 잔여 계산 (kills+alive 대신 spawned 사용)
             // kills+alive는 타이밍에 따라 totalSpawned와 불일치 가능 → 초과 소환 원인
@@ -942,7 +1087,8 @@ namespace JewelsHexaPuzzle.Core
             int armoredRemaining = Mathf.Max(0, armoredTarget - armoredSpawned);
             int archerRemaining = Mathf.Max(0, archerTarget - archerSpawned);
             int shieldRemaining = Mathf.Max(0, shieldTarget - shieldSpawned);
-            int totalRemaining = regularRemaining + armoredRemaining + archerRemaining + shieldRemaining;
+            int bombRemaining = Mathf.Max(0, bombTarget - bombSpawned);
+            int totalRemaining = regularRemaining + armoredRemaining + archerRemaining + shieldRemaining + bombRemaining;
 
             // ★ 미션 기반 하드캡: totalSpawned 기반 (확실한 소환 수 추적)
             int totalMissionTarget = GetTotalMissionTarget();
@@ -962,7 +1108,7 @@ namespace JewelsHexaPuzzle.Core
 
             Debug.Log($"[GoblinSystem] 소환 제한: 미션합={totalMissionTarget}, 총소환={totalSpawned}, " +
                       $"기본({regularSpawned}/{regularTarget}) 갑옷({armoredSpawned}/{armoredTarget}) " +
-                      $"활({archerSpawned}/{archerTarget}) 방패({shieldSpawned}/{shieldTarget})");
+                      $"활({archerSpawned}/{archerTarget}) 방패({shieldSpawned}/{shieldTarget}) 폭탄({bombSpawned}/{bombTarget})");
 
             int spawnCount = Random.Range(currentConfig.minSpawnPerTurn, currentConfig.maxSpawnPerTurn + 1);
             spawnCount = Mathf.Min(spawnCount, boardSlots);        // 보드 최대 수 초과 방지
@@ -970,7 +1116,7 @@ namespace JewelsHexaPuzzle.Core
 
             if (spawnCount <= 0) yield break;
 
-            Debug.Log($"[GoblinSystem] 소환 계획: {spawnCount}마리 (몽둥이잔여={regularRemaining}, 갑옷잔여={armoredRemaining}, 활잔여={archerRemaining}, 방패잔여={shieldRemaining})");
+            Debug.Log($"[GoblinSystem] 소환 계획: {spawnCount}마리 (몽둥이잔여={regularRemaining}, 갑옷잔여={armoredRemaining}, 활잔여={archerRemaining}, 방패잔여={shieldRemaining}, 폭탄잔여={bombRemaining})");
 
             // 소환 가능 위치 분류: 궁수는 가장 윗줄(row=3)만, 근접/갑옷은 아래 2줄
             var allExtended = hexGrid.GetExtendedTopCoords();
@@ -1012,6 +1158,7 @@ namespace JewelsHexaPuzzle.Core
                 bool isArcher = false;
                 bool isArmored = false;
                 bool isShieldType = false;
+                bool isBombType = false;
                 int goblinHp = 5; // 몽둥이 기본 HP
                 int spawnShieldHp = currentConfig.shieldHp;
 
@@ -1024,66 +1171,82 @@ namespace JewelsHexaPuzzle.Core
                 foreach (var c in shuffledLower) { if (!usedPositions.Contains(c)) availableLower++; }
 
                 // 잔여량 합계로 가중 랜덤 → 미션 비율 정확 매칭
-                int totalPool = regularRemaining + armoredRemaining + archerRemaining + shieldRemaining;
+                int totalPool = regularRemaining + armoredRemaining + archerRemaining + shieldRemaining + bombRemaining;
                 if (totalPool <= 0) break; // 미션 수량 모두 소환 완료
 
                 float roll = Random.value * totalPool;
                 float threshold = 0f;
 
-                // 방패 → 갑옷 → 궁수 → 기본 순서로 체크 (빈 슬롯 필요 조건 포함)
-                threshold += shieldRemaining;
-                if (roll < threshold && shieldRemaining > 0 && availableBottom > 0)
+                // 폭탄 → 방패 → 갑옷 → 궁수 → 기본 순서로 체크 (빈 슬롯 필요 조건 포함)
+                threshold += bombRemaining;
+                if (roll < threshold && bombRemaining > 0 && (availableLower > 0 || availableTop > 0))
                 {
-                    isShieldType = true;
-                    goblinHp = currentConfig.shieldGoblinHp;
-                    shieldRemaining--;
+                    isBombType = true;
+                    goblinHp = currentConfig.bombGoblinHp;
+                    bombRemaining--;
                 }
                 else
                 {
-                    threshold += armoredRemaining;
-                    if (roll < threshold && armoredRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                    threshold += shieldRemaining;
+                    if (roll < threshold && shieldRemaining > 0 && availableBottom > 0)
                     {
-                        isArmored = true;
-                        goblinHp = currentConfig.armoredHp;
-                        armoredRemaining--;
+                        isShieldType = true;
+                        goblinHp = currentConfig.shieldGoblinHp;
+                        shieldRemaining--;
                     }
                     else
                     {
-                        threshold += archerRemaining;
-                        if (roll < threshold && archerRemaining > 0 && availableTop > 0)
+                        threshold += armoredRemaining;
+                        if (roll < threshold && armoredRemaining > 0 && (availableLower > 0 || availableTop > 0))
                         {
-                            isArcher = true;
-                            goblinHp = currentConfig.archerHp;
-                            archerRemaining--;
-                        }
-                        else if (regularRemaining > 0 && (availableLower > 0 || availableTop > 0))
-                        {
-                            regularRemaining--;
+                            isArmored = true;
+                            goblinHp = currentConfig.armoredHp;
+                            armoredRemaining--;
                         }
                         else
                         {
-                            // 위치 부족으로 특정 타입 스킵된 경우, 남은 타입 중 소환 가능한 것 선택
-                            if (shieldRemaining > 0 && availableBottom > 0)
-                            {
-                                isShieldType = true;
-                                goblinHp = currentConfig.shieldGoblinHp;
-                                shieldRemaining--;
-                            }
-                            else if (armoredRemaining > 0 && (availableLower > 0 || availableTop > 0))
-                            {
-                                isArmored = true;
-                                goblinHp = currentConfig.armoredHp;
-                                armoredRemaining--;
-                            }
-                            else if (archerRemaining > 0 && availableTop > 0)
+                            threshold += archerRemaining;
+                            if (roll < threshold && archerRemaining > 0 && availableTop > 0)
                             {
                                 isArcher = true;
                                 goblinHp = currentConfig.archerHp;
                                 archerRemaining--;
                             }
+                            else if (regularRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                            {
+                                regularRemaining--;
+                            }
                             else
                             {
-                                continue; // 전체 소환 불가
+                                // 위치 부족으로 특정 타입 스킵된 경우, 남은 타입 중 소환 가능한 것 선택
+                                if (bombRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                                {
+                                    isBombType = true;
+                                    goblinHp = currentConfig.bombGoblinHp;
+                                    bombRemaining--;
+                                }
+                                else if (shieldRemaining > 0 && availableBottom > 0)
+                                {
+                                    isShieldType = true;
+                                    goblinHp = currentConfig.shieldGoblinHp;
+                                    shieldRemaining--;
+                                }
+                                else if (armoredRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                                {
+                                    isArmored = true;
+                                    goblinHp = currentConfig.armoredHp;
+                                    armoredRemaining--;
+                                }
+                                else if (archerRemaining > 0 && availableTop > 0)
+                                {
+                                    isArcher = true;
+                                    goblinHp = currentConfig.archerHp;
+                                    archerRemaining--;
+                                }
+                                else
+                                {
+                                    continue; // 전체 소환 불가
+                                }
                             }
                         }
                     }
@@ -1139,6 +1302,8 @@ namespace JewelsHexaPuzzle.Core
                     isAlive = true,
                     isArcher = isArcher,
                     isArmored = isArmored,
+                    isBomb = isBombType,
+                    bombTurnCounter = 1, // ★ 1로 초기화: 소환 턴은 일반 이동, 3턴째에 첫 설치
                     isShieldType = isShieldType,
                     isShielded = isShieldType,
                     shieldHp = isShieldType ? spawnShieldHp : 0,
@@ -1149,11 +1314,12 @@ namespace JewelsHexaPuzzle.Core
                 goblins.Add(newGoblin);
                 totalSpawned++;
                 // ★ 타입별 소환 카운터 증가 (미션 초과 소환 방지의 핵심)
-                if (isArcher) archerSpawned++;
+                if (isBombType) bombSpawned++;
+                else if (isArcher) archerSpawned++;
                 else if (isArmored) armoredSpawned++;
                 else if (isShieldType) shieldSpawned++;
                 else regularSpawned++;
-                string typeStr = isArcher ? "궁수" : isArmored ? "갑옷" : isShieldType ? "방패" : "기본";
+                string typeStr = isBombType ? "폭탄" : isArcher ? "궁수" : isArmored ? "갑옷" : isShieldType ? "방패" : "기본";
                 Debug.Log($"[GoblinSystem] {typeStr} 고블린 소환 at ({coord}), HP={goblinHp}, 누적소환={totalSpawned}");
                 spawnCoroutines.Add(StartCoroutine(SpawnSingleGoblin(newGoblin)));
             }
@@ -1163,7 +1329,7 @@ namespace JewelsHexaPuzzle.Core
 
             int totalMT = GetTotalMissionTarget();
             Debug.Log($"[GoblinSystem] {spawnCoroutines.Count}마리 소환 완료 | 보드 {AliveCount}/{currentConfig.maxOnBoard} | " +
-                      $"누적소환 {totalSpawned}/{totalMT} (기본{regularSpawned} 갑옷{armoredSpawned} 활{archerSpawned} 방패{shieldSpawned})");
+                      $"누적소환 {totalSpawned}/{totalMT} (기본{regularSpawned} 갑옷{armoredSpawned} 활{archerSpawned} 방패{shieldSpawned} 폭탄{bombSpawned})");
         }
 
         private IEnumerator SpawnSingleGoblin(GoblinData goblin)
@@ -1301,6 +1467,12 @@ namespace JewelsHexaPuzzle.Core
                 if (shieldGoblinSprite == null)
                     shieldGoblinSprite = CreateShieldGoblinSprite(256);
                 selectedSprite = shieldGoblinSprite;
+            }
+            else if (goblin.isBomb)
+            {
+                if (bombGoblinSprite == null)
+                    bombGoblinSprite = CreateBombGoblinSprite(256);
+                selectedSprite = bombGoblinSprite;
             }
             else
             {
@@ -1662,7 +1834,7 @@ namespace JewelsHexaPuzzle.Core
                 goblin.isAlive = false;
                 totalKills++;
                 IncrementTypeKill(goblin);
-                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType);
+                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb);
                 StartCoroutine(DeathAnimation(goblin));
             }
         }
@@ -1698,7 +1870,7 @@ namespace JewelsHexaPuzzle.Core
                 GoblinData goblin = kvp.Key;
                 int totalDamage = kvp.Value;
 
-                // ★ 방패 활성 시: 동일 위치의 정상 블록 매칭만 방패 1 대미지
+                // ★ 방패 활성 시: 직접 타격이면 누적 데미지 전체를 방패에 전달
                 if (goblin.isShielded)
                 {
                     bool isDirectHit = directHitCoords != null && directHitCoords.Contains(goblin.position);
@@ -1706,8 +1878,8 @@ namespace JewelsHexaPuzzle.Core
 
                     if (isDirectHit)
                     {
-                        // 정상 블록 매칭 → 방패 대미지
-                        ApplyShieldDamage(goblin, 1);
+                        // 직접 타격 → 전체 데미지를 방패에 전달 (폭탄 등 다중 데미지 반영)
+                        ApplyShieldDamage(goblin, totalDamage);
                     }
                     else if (isCrackedHit)
                     {
@@ -1744,7 +1916,7 @@ namespace JewelsHexaPuzzle.Core
                     goblin.isAlive = false;
                     totalKills++;
                     IncrementTypeKill(goblin);
-                    OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType);
+                    OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb);
                     StartCoroutine(DeathAnimation(goblin));
                 }
             }
@@ -1774,122 +1946,470 @@ namespace JewelsHexaPuzzle.Core
             return goblins.Where(g => g.isAlive && g.position.q == q).ToList();
         }
 
-        // ============================================================
-        // 폭탄 넉백 시스템
-        // ============================================================
+        /// <summary>
+        /// 특정 좌표에 있는 살아있는 고블린 반환 (없으면 null)
+        /// </summary>
+        public GoblinData GetGoblinAt(HexCoord coord)
+        {
+            return goblins.FirstOrDefault(g => g.isAlive && g.position == coord);
+        }
 
         /// <summary>
-        /// 폭탄 폭발 시 범위 내 고블린을 밖으로 밀어냄.
-        /// ring1: 인접 1칸 좌표, ring2: 인접 2칸 좌표.
-        /// 면 연결 ring2 고블린: 직선 방향으로 밀어냄.
-        /// 면 비연결 ring2 고블린: 가장 가까운 직선 방향으로 4번째 칸까지 이동.
+        /// 폭탄 넉백: 폭발 범위 내 모든 몬스터를 폭탄→몬스터 정확한 직선상으로 밀어냄.
+        /// explodeRange: 폭발 범위 (기본 2, 폭탄×폭탄은 4)
+        /// 목적지 = bombPos + 방향 × (explodeRange + 1)
         /// </summary>
-        public IEnumerator ApplyBombKnockback(HexCoord bombCoord, HashSet<HexCoord> ring1Coords, HashSet<HexCoord> ring2Coords)
+        public IEnumerator KnockbackFromBomb(HexCoord bombPos, int explodeRange = 2)
         {
             if (hexGrid == null) yield break;
 
-            var knockbackTargets = new List<(GoblinData goblin, HexCoord targetPos)>();
-            var occupiedPositions = new HashSet<HexCoord>();
+            // 이동 완료된 몬스터 좌표 추적 (겹침 방지)
+            var movedPositions = new HashSet<HexCoord>();
 
-            // 넉백 대상이 아닌 고블린 위치를 먼저 점유로 등록
-            foreach (var g in goblins.Where(g => g.isAlive))
+            var snapshot = new List<GoblinData>(goblins);
+
+            // 넉백 동시 실행용 코루틴 리스트
+            var knockbackCoroutines = new List<Coroutine>();
+
+            foreach (var goblin in snapshot)
             {
-                bool inRange = g.position == bombCoord
-                    || ring1Coords.Contains(g.position)
-                    || ring2Coords.Contains(g.position);
-                if (!inRange)
-                    occupiedPositions.Add(g.position);
-            }
+                if (goblin == null || !goblin.isAlive || goblin.visualObject == null) continue;
 
-            // 넉백 대상 수집 — 중심 → ring1 → ring2 순서
-            var aliveInRange = goblins.Where(g => g.isAlive && (
-                g.position == bombCoord
-                || ring1Coords.Contains(g.position)
-                || ring2Coords.Contains(g.position)
-            )).ToList();
+                HexCoord origPos = goblin.position;
 
-            foreach (var goblin in aliveInRange)
-            {
-                HexCoord offset = goblin.position - bombCoord;
-                HexCoord bestDir = FindNearestHexDirection(offset);
+                // cube distance
+                int dq = origPos.q - bombPos.q;
+                int dr = origPos.r - bombPos.r;
+                int ds = -dq - dr;
+                int dist = (Mathf.Abs(dq) + Mathf.Abs(dr) + Mathf.Abs(ds)) / 2;
 
-                // 넉백 거리 결정
-                int knockbackDistance;
-                if (goblin.position == bombCoord)
+                if (dist > explodeRange) continue;
+
+                // === 직선 방향 설정 (hex line lerp) ===
+                float aq = bombPos.q, ar = bombPos.r, aS = -aq - ar;
+                float bq, br, bS;
+
+                if (dist == 0)
                 {
-                    // 중심: 3칸 밀어냄
-                    knockbackDistance = 3;
-                }
-                else if (ring1Coords.Contains(goblin.position))
-                {
-                    // 1칸 범위: 2칸 밀어냄 (총 3칸 위치)
-                    knockbackDistance = 2;
+                    HexCoord randDir = HexCoord.Directions[Random.Range(0, 6)];
+                    bq = bombPos.q + randDir.q;
+                    br = bombPos.r + randDir.r;
+                    bS = -bq - br;
+                    dist = 1;
                 }
                 else
                 {
-                    // 2칸 범위
-                    bool isStraightLine = IsStraightLineFromBomb(offset);
-                    if (isStraightLine)
+                    bq = origPos.q;
+                    br = origPos.r;
+                    bS = -bq - br;
+                }
+
+                // === 목적지 = bombPos + 방향 × (explodeRange+1) 직접 계산 ===
+                int destMultiplier = explodeRange + 1;
+                float t3 = (float)destMultiplier / dist;
+                float destQ = aq + (bq - aq) * t3;
+                float destR = ar + (br - ar) * t3;
+                float destS = aS + (bS - aS) * t3;
+                HexCoord targetDest = HexRoundCube(destQ, destR, destS);
+
+                int targetBound = CheckBoundsType(targetDest);
+
+                if (targetBound == 0)
+                {
+                    // 그리드 내부: 블록 존재 + 미점유 확인
+                    bool canMove = false;
+                    if (hexGrid.IsValidCoord(targetDest))
                     {
-                        // 면 연결: 2칸 밀어냄 (총 4칸 위치)
-                        knockbackDistance = 2;
+                        HexBlock block = hexGrid.GetBlock(targetDest);
+                        if (block != null)
+                        {
+                            bool occupied = movedPositions.Contains(targetDest);
+                            if (!occupied)
+                            {
+                                foreach (var g in goblins)
+                                {
+                                    if (g != null && g.isAlive && g != goblin && g.position == targetDest)
+                                    { occupied = true; break; }
+                                }
+                            }
+                            canMove = !occupied;
+                        }
+                    }
+
+                    if (canMove)
+                    {
+                        goblin.position = targetDest;
+                        movedPositions.Add(targetDest);
+                        Vector2 destWorldPos = hexGrid.CalculateFlatTopHexPosition(targetDest);
+                        knockbackCoroutines.Add(StartCoroutine(KnockbackFlyTo(goblin, destWorldPos)));
+                    }
+                    // 블록 없거나 점유 → 이동 불가, 제자리 유지
+                }
+                else if (targetBound == 1)
+                {
+                    // 소환지역: 해당 위치로 이동
+                    goblin.position = targetDest;
+                    movedPositions.Add(targetDest);
+                    Vector2 spawnWorldPos = hexGrid.CalculateFlatTopHexPosition(targetDest);
+                    knockbackCoroutines.Add(StartCoroutine(KnockbackFlyTo(goblin, spawnWorldPos)));
+                }
+                else
+                {
+                    // 완전 밖(boundResult==2): 방향 역추적으로 마지막 유효 좌표 찾기
+                    HexCoord lastValid = origPos;
+                    for (int n = 1; n <= destMultiplier; n++)
+                    {
+                        float tn = (float)n / dist;
+                        float lnQ = aq + (bq - aq) * tn;
+                        float lnR = ar + (br - ar) * tn;
+                        float lnS = aS + (bS - aS) * tn;
+                        HexCoord step = HexRoundCube(lnQ, lnR, lnS);
+                        int stepBound = CheckBoundsType(step);
+                        if (stepBound == 2) break;
+                        lastValid = step;
+                    }
+
+                    // 목적지(targetDest)의 월드 좌표를 hex→world 변환으로 직접 계산
+                    // flat-top hex: worldX = hexSize * 1.5 * q, worldY = hexSize * sqrt(3) * (r + q*0.5)
+                    float hs = hexGrid.HexSize;
+                    float destWX = hs * 1.5f * targetDest.q;
+                    float destWY = hs * Mathf.Sqrt(3f) * (targetDest.r + targetDest.q * 0.5f);
+                    // bombPos 기준 오프셋 → 현재 위치에서의 상대 이동량으로 변환
+                    float origWX = hs * 1.5f * origPos.q;
+                    float origWY = hs * Mathf.Sqrt(3f) * (origPos.r + origPos.q * 0.5f);
+                    RectTransform grt = goblin.visualObject.GetComponent<RectTransform>();
+                    Vector2 flyTarget = (grt != null) ? grt.anchoredPosition + new Vector2(destWX - origWX, -(destWY - origWY)) : Vector2.zero;
+                    knockbackCoroutines.Add(StartCoroutine(KnockbackFlyAndDie(goblin, flyTarget)));
+                }
+            }
+
+            // 모든 넉백 연출 동시 진행 후 완료 대기
+            foreach (var co in knockbackCoroutines)
+                yield return co;
+        }
+
+        /// <summary>
+        /// 넉백 이동 연출: 현재 위치 → 목적지로 0.2초 비행
+        /// </summary>
+        private IEnumerator KnockbackFlyTo(GoblinData goblin, Vector2 targetPos)
+        {
+            if (goblin == null || goblin.visualObject == null) yield break;
+
+            RectTransform rt = goblin.visualObject.GetComponent<RectTransform>();
+            if (rt == null) yield break;
+
+            Vector2 startPos = rt.anchoredPosition;
+            float duration = 0.2f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                // EaseOutCubic
+                float ease = 1f - (1f - t) * (1f - t) * (1f - t);
+                rt.anchoredPosition = Vector2.Lerp(startPos, targetPos, ease);
+                yield return null;
+            }
+            rt.anchoredPosition = targetPos;
+        }
+
+        /// <summary>
+        /// 넉백 즉사 연출: bombPos + 방향×N 월드 좌표까지 0.3초 이동 후 사망 처리.
+        /// </summary>
+        private IEnumerator KnockbackFlyAndDie(GoblinData goblin, Vector2 targetWorldPos)
+        {
+            if (goblin == null || goblin.visualObject == null) yield break;
+
+            RectTransform rt = goblin.visualObject.GetComponent<RectTransform>();
+            if (rt == null) yield break;
+
+            Vector2 startPos = rt.anchoredPosition;
+            float duration = 0.3f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                rt.anchoredPosition = Vector2.Lerp(startPos, targetWorldPos, t);
+                yield return null;
+            }
+            rt.anchoredPosition = targetWorldPos;
+
+            KillGoblinByKnockback(goblin);
+        }
+
+        /// <summary>
+        /// Cube 좌표 float → 가장 가까운 정수 hex 좌표 반올림.
+        /// q+r+s=0 제약 유지: 반올림 오차가 가장 큰 성분을 나머지 둘로 보정.
+        /// </summary>
+        private HexCoord HexRoundCube(float q, float r, float s)
+        {
+            int rq = Mathf.RoundToInt(q);
+            int rr = Mathf.RoundToInt(r);
+            int rs = Mathf.RoundToInt(s);
+
+            float diffQ = Mathf.Abs(rq - q);
+            float diffR = Mathf.Abs(rr - r);
+            float diffS = Mathf.Abs(rs - s);
+
+            if (diffQ > diffR && diffQ > diffS)
+                rq = -rr - rs;
+            else if (diffR > diffS)
+                rr = -rq - rs;
+            // else rs = -rq - rr (불필요 — axial은 q,r만 사용)
+
+            return new HexCoord(rq, rr);
+        }
+
+        // ============================================================
+        // 폭탄 넉백 시스템 (레거시 — 코루틴 기반)
+        // ============================================================
+
+        /// <summary>
+        /// 폭탄 폭발 완료 후 범위 내 모든 고블린(4종 예외 없음)을 밖으로 밀어냄.
+        /// 가까운 몬스터부터 순차 처리. 연쇄 넉백 지원.
+        /// 그리드 상단 밖→스폰 영역, 좌/우/하단 밖→즉시 사망.
+        /// 중복 호출 방지 플래그 포함.
+        /// </summary>
+        private bool isKnockbackRunning = false;
+
+        public IEnumerator ApplyBombKnockback(HexCoord bombCoord, HashSet<HexCoord> ring1Coords, HashSet<HexCoord> ring2Coords)
+        {
+            if (hexGrid == null) yield break;
+            if (isKnockbackRunning) yield break; // 중복 호출 방지
+            isKnockbackRunning = true;
+
+            try
+            {
+                // ★ 4종 모두 예외 없이 수집 (isArcher, isArmored, isShielded 등 조건 무시)
+                var allInRange = goblins.Where(g => g.isAlive && (
+                    g.position == bombCoord
+                    || ring1Coords.Contains(g.position)
+                    || ring2Coords.Contains(g.position)
+                )).ToList();
+
+                if (allInRange.Count == 0) yield break;
+
+                Debug.Log($"[GoblinSystem] 넉백 대상: {allInRange.Count}마리 (범위 내 전체)");
+
+                // 거리순 정렬 (가까운 몬스터부터 처리)
+                allInRange.Sort((a, b) =>
+                {
+                    int distA = GetBombDistance(a.position, bombCoord, ring1Coords, ring2Coords);
+                    int distB = GetBombDistance(b.position, bombCoord, ring1Coords, ring2Coords);
+                    return distA.CompareTo(distB);
+                });
+
+                int totalKnocked = 0;
+
+                foreach (var goblin in allInRange)
+                {
+                    if (!goblin.isAlive) continue; // 데미지로 이미 사망한 경우
+
+                    // 넉백 방향 결정
+                    HexCoord offset = goblin.position - bombCoord;
+                    int currentDist = GetBombDistance(goblin.position, bombCoord, ring1Coords, ring2Coords);
+                    HexCoord dir;
+
+                    if (currentDist == 0)
+                    {
+                        // 직격(0칸): 그리드 안쪽으로 밀릴 수 있는 유효 방향 우선 랜덤
+                        dir = PickValidKnockbackDirection(bombCoord);
                     }
                     else
                     {
-                        // 면 비연결: 4번째 칸까지 이동
-                        knockbackDistance = 4;
+                        // 1칸/2칸: 폭탄→몬스터 방향
+                        dir = FindNearestHexDirection(offset);
                     }
-                }
 
-                // 넉백 목적지 계산 — 장애물(그리드 경계, 다른 고블린, 블록) 있으면 그 전에 멈춤
-                HexCoord targetPos = goblin.position;
-                for (int step = 1; step <= knockbackDistance; step++)
-                {
-                    HexCoord nextPos = targetPos + bestDir;
-
-                    // 그리드 확장 범위 체크 (그리드 + 3줄)
-                    if (Mathf.Abs(nextPos.q) > hexGrid.GridRadius) break;
-                    int rMin = hexGrid.GetTopR(nextPos.q);
-                    int rMax = Mathf.Min(hexGrid.GridRadius, -nextPos.q + hexGrid.GridRadius);
-                    if (nextPos.r < rMin - 3 || nextPos.r > rMax + 1) break;
-
-                    // 다른 고블린이 이미 점유 중이면 멈춤
-                    if (occupiedPositions.Contains(nextPos)) break;
-
-                    // 그리드 안쪽이면 블록 체크 (블록 있으면 멈춤)
-                    if (hexGrid.IsInsideGrid(nextPos))
+                    // 넉백 목적지 거리 계산 (폭탄 중심 기준)
+                    // - 직격(0칸): 랜덤 방향 3칸째 (3칸 이동)
+                    // - 1칸: 4칸째 (3칸 이동)
+                    // - 2칸 직선: 4칸째 (2칸 이동)
+                    // - 2칸 꺾임: 5칸째 (3칸 이동)
+                    int targetDistFromBomb;
+                    if (currentDist == 0)
                     {
-                        HexBlock block = hexGrid.GetBlock(nextPos);
-                        if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                        targetDistFromBomb = 3;
+                    }
+                    else if (currentDist == 1)
+                    {
+                        targetDistFromBomb = 4;
+                    }
+                    else
+                    {
+                        // 2칸: 직선/꺾임 판별
+                        bool isStraight = IsStraightHexLine(offset);
+                        targetDistFromBomb = isStraight ? 4 : 5;
+                    }
+                    // 이동 칸 수 = 목적지까지 거리 - 현재 거리
+                    int neededDistance = targetDistFromBomb - currentDist;
+                    if (neededDistance <= 0) neededDistance = 1;
+
+                    // 목표 위치 계산 (블록 장애물만 체크, 고블린은 연쇄 대상)
+                    HexCoord targetPos = goblin.position;
+                    bool hitOutOfBounds = false;
+                    HexCoord outOfBoundsPos = targetPos;
+
+                    for (int step = 0; step < neededDistance; step++)
+                    {
+                        HexCoord nextPos = targetPos + dir;
+
+                        // 경계 판정: 그리드 밖인지, 어느 방향 밖인지
+                        int boundResult = CheckBoundsType(nextPos);
+                        if (boundResult == 2)
+                        {
+                            // 좌/우/하단 밖 → 즉시 사망 처리 대상
+                            hitOutOfBounds = true;
+                            outOfBoundsPos = nextPos;
                             break;
+                        }
+                        // boundResult == 1 (상단 스폰 영역)은 유효 → 계속 진행
+
+                        // 그리드 안쪽이면 블록 체크 (블록 있으면 멈춤)
+                        if (hexGrid.IsInsideGrid(nextPos))
+                        {
+                            HexBlock block = hexGrid.GetBlock(nextPos);
+                            if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                                break;
+                        }
+
+                        targetPos = nextPos;
                     }
 
-                    targetPos = nextPos;
+                    // 좌/우/하단 밖으로 밀려남 → 넉백 애니메이션 후 사망
+                    if (hitOutOfBounds)
+                    {
+                        Vector2 deathWorldPos = hexGrid.CalculateFlatTopHexPosition(outOfBoundsPos);
+                        yield return StartCoroutine(AnimateKnockback(goblin, deathWorldPos));
+                        KillGoblinByKnockback(goblin);
+                        totalKnocked++;
+                        Debug.Log($"[GoblinSystem] 넉백 사망: ({goblin.position}) → 그리드 밖 ({outOfBoundsPos})");
+                        continue;
+                    }
+
+                    if (targetPos == goblin.position) continue;
+
+                    // 연쇄 넉백: 목표 위치에 다른 몬스터가 있으면 같은 방향으로 1칸 추가
+                    var blockingGoblin = goblins.FirstOrDefault(g =>
+                        g.isAlive && g != goblin && g.position == targetPos);
+
+                    if (blockingGoblin != null)
+                    {
+                        HexCoord chainTarget = targetPos + dir;
+                        int chainBound = CheckBoundsType(chainTarget);
+
+                        bool canChain = true;
+
+                        // 블록 체크
+                        if (canChain && hexGrid.IsInsideGrid(chainTarget))
+                        {
+                            HexBlock block = hexGrid.GetBlock(chainTarget);
+                            if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                                canChain = false;
+                        }
+
+                        // 또 다른 고블린 체크
+                        if (canChain && goblins.Any(g =>
+                            g.isAlive && g != blockingGoblin && g != goblin && g.position == chainTarget))
+                            canChain = false;
+
+                        if (canChain && chainBound == 2)
+                        {
+                            // 연쇄 대상이 그리드 밖(좌/우/하단)으로 밀려남 → 사망
+                            Vector2 chainDeathPos = hexGrid.CalculateFlatTopHexPosition(chainTarget);
+                            yield return StartCoroutine(AnimateKnockback(blockingGoblin, chainDeathPos));
+                            KillGoblinByKnockback(blockingGoblin);
+                            totalKnocked++;
+                            Debug.Log($"[GoblinSystem] 연쇄 넉백 사망: ({targetPos}) → ({chainTarget})");
+                        }
+                        else if (canChain)
+                        {
+                            // 연쇄 넉백: 방해 몬스터를 먼저 1칸 밀어냄
+                            blockingGoblin.position = chainTarget;
+                            Vector2 chainWorldPos = hexGrid.CalculateFlatTopHexPosition(chainTarget);
+                            yield return StartCoroutine(AnimateKnockback(blockingGoblin, chainWorldPos));
+                            totalKnocked++;
+                            Debug.Log($"[GoblinSystem] 연쇄 넉백: ({targetPos}) → ({chainTarget})");
+                        }
+                        else
+                        {
+                            // 연쇄 불가 → 한 칸 앞에서 멈춤
+                            targetPos = targetPos - dir;
+                            if (targetPos == goblin.position) continue;
+                        }
+                    }
+
+                    // 메인 넉백 애니메이션
+                    goblin.position = targetPos;
+                    Vector2 worldPos = hexGrid.CalculateFlatTopHexPosition(targetPos);
+                    yield return StartCoroutine(AnimateKnockback(goblin, worldPos));
+                    totalKnocked++;
                 }
 
-                // 실제로 이동할 곳이 있으면 넉백 등록
-                if (targetPos != goblin.position)
-                {
-                    knockbackTargets.Add((goblin, targetPos));
-                    occupiedPositions.Add(targetPos);
-                }
+                if (totalKnocked > 0)
+                    Debug.Log($"[GoblinSystem] 폭탄 넉백 완료: {totalKnocked}마리 처리");
             }
-
-            if (knockbackTargets.Count == 0) yield break;
-
-            // 넉백 애니메이션 동시 실행
-            List<Coroutine> knockbackCoroutines = new List<Coroutine>();
-            foreach (var (goblin, targetPos) in knockbackTargets)
+            finally
             {
-                goblin.position = targetPos;
-                Vector2 worldPos = hexGrid.CalculateFlatTopHexPosition(targetPos);
-                knockbackCoroutines.Add(StartCoroutine(AnimateKnockback(goblin, worldPos)));
+                isKnockbackRunning = false;
             }
+        }
 
-            foreach (var co in knockbackCoroutines)
-                yield return co;
+        /// <summary>
+        /// 넉백으로 그리드 밖에 밀려난 고블린을 즉시 사망 처리.
+        /// </summary>
+        public void KillGoblinByKnockback(GoblinData goblin)
+        {
+            if (!goblin.isAlive) return;
+            goblin.hp = 0;
+            goblin.isAlive = false;
+            totalKills++;
+            IncrementTypeKill(goblin);
+            OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb);
+            StartCoroutine(DeathAnimation(goblin));
+        }
 
-            Debug.Log($"[GoblinSystem] 폭탄 넉백 완료: {knockbackTargets.Count}마리 밀어냄");
+        /// <summary>
+        /// 좌표의 경계 타입을 판정.
+        /// 반환: 0=그리드 내부 또는 유효 범위, 1=상단 스폰 영역, 2=좌/우/하단 밖 (사망 영역)
+        /// </summary>
+        public int CheckBoundsType(HexCoord pos)
+        {
+            if (hexGrid == null) return 2;
+            int radius = hexGrid.GridRadius;
+
+            // q 범위 벗어남 → 좌/우 밖
+            if (Mathf.Abs(pos.q) > radius) return 2;
+
+            int rMin = hexGrid.GetTopR(pos.q);
+            int rMax = Mathf.Min(radius, -pos.q + radius);
+
+            // 그리드 내부
+            if (pos.r >= rMin && pos.r <= rMax) return 0;
+
+            // 상단 밖 (r < rMin): 스폰 영역 (rMin - 3까지 유효)
+            if (pos.r < rMin && pos.r >= rMin - 3) return 1;
+
+            // 상단 더 바깥 (rMin - 3보다 위) → 스폰 영역 최상단으로 간주
+            if (pos.r < rMin - 3) return 1;
+
+            // 하단 밖 (r > rMax) → 사망
+            return 2;
+        }
+
+        /// <summary>
+        /// 폭탄 중심으로부터의 거리 (0=중심, 1=ring1, 2=ring2)
+        /// </summary>
+        private int GetBombDistance(HexCoord pos, HexCoord bombCoord,
+            HashSet<HexCoord> ring1Coords, HashSet<HexCoord> ring2Coords)
+        {
+            if (pos == bombCoord) return 0;
+            if (ring1Coords.Contains(pos)) return 1;
+            if (ring2Coords.Contains(pos)) return 2;
+            return 3;
         }
 
         /// <summary>
@@ -1932,23 +2452,66 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 오프셋이 폭탄에서 직선(6방향 중 하나의 2배)인지 판정.
-        /// 직선이면 면으로 연결된 ring2 좌표.
+        /// axial 오프셋이 6방향 단위벡터의 정수배인지 판별.
+        /// 정확히 직선이면 true, 꺾인 칸이면 false.
+        /// 예: (2,0), (0,-2), (-1,1)*2 등은 직선. (1,-2), (2,-1) 등은 꺾임.
         /// </summary>
-        private bool IsStraightLineFromBomb(HexCoord offset)
+        private bool IsStraightHexLine(HexCoord offset)
         {
+            if (offset.q == 0 && offset.r == 0) return true;
+
             foreach (var dir in HexCoord.Directions)
             {
-                if (offset.q == dir.q * 2 && offset.r == dir.r * 2)
-                    return true;
+                // offset = dir * n (n > 0) 인지 확인
+                if (dir.q != 0)
+                {
+                    if (offset.q % dir.q == 0)
+                    {
+                        int n = offset.q / dir.q;
+                        if (n > 0 && offset.r == dir.r * n)
+                            return true;
+                    }
+                }
+                else if (dir.r != 0)
+                {
+                    if (offset.r % dir.r == 0)
+                    {
+                        int n = offset.r / dir.r;
+                        if (n > 0 && offset.q == 0)
+                            return true;
+                    }
+                }
             }
             return false;
         }
 
         /// <summary>
+        /// 직격(0칸) 넉백용: 그리드 밖으로 나가지 않는 유효 방향 우선 랜덤 선택.
+        /// 유효 방향이 없으면 완전 랜덤 (이탈 시 즉사 처리는 호출자에서 수행).
+        /// </summary>
+        private HexCoord PickValidKnockbackDirection(HexCoord bombCoord)
+        {
+            var validDirs = new List<HexCoord>();
+            foreach (var d in HexCoord.Directions)
+            {
+                // 3칸째 목적지가 사망 영역이 아닌지 확인
+                HexCoord dest = bombCoord + new HexCoord(d.q * 3, d.r * 3);
+                int bound = CheckBoundsType(dest);
+                if (bound != 2) // 0(그리드 내부) 또는 1(스폰 영역) → 유효
+                    validDirs.Add(d);
+            }
+
+            if (validDirs.Count > 0)
+                return validDirs[Random.Range(0, validDirs.Count)];
+
+            // 유효 방향 없으면 완전 랜덤
+            return HexCoord.Directions[Random.Range(0, 6)];
+        }
+
+        /// <summary>
         /// 넉백 애니메이션: 빠르게 튕겨나가는 포물선 느낌
         /// </summary>
-        private IEnumerator AnimateKnockback(GoblinData goblin, Vector2 targetPos)
+        public IEnumerator AnimateKnockback(GoblinData goblin, Vector2 targetPos)
         {
             if (goblin.visualObject == null) yield break;
 
@@ -2873,6 +3436,106 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 폭탄 고블린 스프라이트 — 빨간색+검은색 계열, 폭탄 장식
+        /// </summary>
+        private static Sprite CreateBombGoblinSprite(int size)
+        {
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+
+            Color[] clear = new Color[size * size];
+            for (int i = 0; i < clear.Length; i++) clear[i] = Color.clear;
+            tex.SetPixels(clear);
+
+            int cx = size / 2;
+            int cy = size / 2;
+
+            // === 몸체 (진한 빨간-갈색 계열) ===
+            int bodyRadius = (int)(size * 0.35f);
+            Color bodyColor = new Color(0.55f, 0.15f, 0.1f);
+            Color bodyDark = new Color(0.35f, 0.08f, 0.05f);
+            Color bodyLight = new Color(0.7f, 0.25f, 0.15f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - cx;
+                    float dy = y - cy;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (dist < bodyRadius)
+                    {
+                        float shade = Mathf.Clamp01((dx + dy) / (bodyRadius * 2f) + 0.5f);
+                        tex.SetPixel(x, y, Color.Lerp(bodyLight, bodyDark, shade));
+                    }
+                    else if (dist < bodyRadius + 2f)
+                    {
+                        float alpha = 1f - (dist - bodyRadius) / 2f;
+                        tex.SetPixel(x, y, new Color(bodyDark.r, bodyDark.g, bodyDark.b, alpha));
+                    }
+                }
+            }
+
+            // === 뾰족한 귀 ===
+            Color earColor = new Color(0.4f, 0.1f, 0.05f);
+            DrawTriangle(tex, cx - bodyRadius + 5, cy + bodyRadius - 10,
+                         cx - bodyRadius - 15, cy + bodyRadius + 25,
+                         cx - bodyRadius + 20, cy + bodyRadius + 5, earColor);
+            DrawTriangle(tex, cx + bodyRadius - 5, cy + bodyRadius - 10,
+                         cx + bodyRadius + 15, cy + bodyRadius + 25,
+                         cx + bodyRadius - 20, cy + bodyRadius + 5, earColor);
+
+            // === 눈 (흰색 + 빨간 눈동자 — 광기 표현) ===
+            int eyeRadius = (int)(size * 0.07f);
+            int eyeOffsetX = (int)(size * 0.12f);
+            int eyeOffsetY = (int)(size * 0.06f);
+            DrawFilledCircle(tex, cx - eyeOffsetX, cy + eyeOffsetY, eyeRadius, Color.white);
+            DrawFilledCircle(tex, cx - eyeOffsetX + 2, cy + eyeOffsetY, eyeRadius / 2, new Color(0.9f, 0.15f, 0.1f));
+            DrawFilledCircle(tex, cx + eyeOffsetX, cy + eyeOffsetY, eyeRadius, Color.white);
+            DrawFilledCircle(tex, cx + eyeOffsetX + 2, cy + eyeOffsetY, eyeRadius / 2, new Color(0.9f, 0.15f, 0.1f));
+
+            // === 입 (사악한 미소) ===
+            Color mouthColor = new Color(0.2f, 0.05f, 0.02f);
+            for (int i = -12; i <= 12; i++)
+            {
+                int mx = cx + i;
+                int my = cy - (int)(size * 0.08f) + Mathf.Abs(i) / 4;
+                if (mx >= 0 && mx < size && my >= 0 && my < size) tex.SetPixel(mx, my, mouthColor);
+                if (mx >= 0 && mx < size && my - 1 >= 0) tex.SetPixel(mx, my - 1, mouthColor);
+            }
+
+            // === 이빨 ===
+            Color toothColor = new Color(0.95f, 0.95f, 0.85f);
+            int toothY = cy - (int)(size * 0.08f) - 2;
+            DrawTriangle(tex, cx - 5, toothY, cx - 2, toothY - 7, cx + 1, toothY, toothColor);
+            DrawTriangle(tex, cx + 3, toothY, cx + 6, toothY - 7, cx + 9, toothY, toothColor);
+
+            // === 폭탄 (왼손 위에 둥근 검은 폭탄) ===
+            int bombCx = cx - bodyRadius + 5;
+            int bombCy = cy + bodyRadius + 15;
+            int bombRadius = (int)(size * 0.12f);
+            DrawFilledCircle(tex, bombCx, bombCy, bombRadius, new Color(0.15f, 0.12f, 0.1f));
+            DrawFilledCircle(tex, bombCx - 2, bombCy + 2, bombRadius - 3, new Color(0.25f, 0.2f, 0.18f));
+            // 도화선 (위로 향하는 짧은 선)
+            Color fuseColor = new Color(0.8f, 0.6f, 0.2f);
+            for (int j = 0; j < 12; j++)
+            {
+                int fx = bombCx + j / 4;
+                int fy = bombCy + bombRadius + j;
+                if (fx >= 0 && fx < size && fy >= 0 && fy < size) tex.SetPixel(fx, fy, fuseColor);
+                if (fx + 1 < size && fy >= 0 && fy < size) tex.SetPixel(fx + 1, fy, fuseColor);
+            }
+            // 불꽃 (도화선 끝)
+            Color sparkColor = new Color(1f, 0.7f, 0.2f);
+            int sparkY = bombCy + bombRadius + 12;
+            DrawFilledCircle(tex, bombCx + 3, sparkY, 4, sparkColor);
+            DrawFilledCircle(tex, bombCx + 3, sparkY, 2, new Color(1f, 1f, 0.5f));
+
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>
         /// 방패 스프라이트 — 둥근 사각형, 메탈릭 회색 + 금속 테두리 + 십자 문양
         /// </summary>
         private static Sprite CreateShieldSprite(int size)
@@ -3223,7 +3886,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 totalKills++;
                 IncrementTypeKill(goblin);
-                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType);
+                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb);
                 if (goblin.visualObject != null)
                     deathCoroutines.Add(StartCoroutine(DeathAnimation(goblin)));
             }
@@ -3274,6 +3937,16 @@ namespace JewelsHexaPuzzle.Core
             if (shieldGoblinSprite == null)
                 shieldGoblinSprite = CreateShieldGoblinSprite(256);
             return shieldGoblinSprite;
+        }
+
+        /// <summary>
+        /// 폭탄 고블린 스프라이트 외부 접근용 (미션 아이콘 등)
+        /// </summary>
+        public static Sprite GetBombGoblinSprite()
+        {
+            if (bombGoblinSprite == null)
+                bombGoblinSprite = CreateBombGoblinSprite(256);
+            return bombGoblinSprite;
         }
 
         /// <summary>
@@ -3566,25 +4239,76 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 드릴이 방패 고블린 위치에 도달했을 때 호출.
-        /// 방패에 드릴을 박고 내구도 감소. 방패 파괴 시 isShielded = false.
-        /// 반환: true면 드릴이 차단됨 (관통 불가), false면 방패 없음.
+        /// 특정 좌표의 방패 고블린 내구도를 반환. 방패 고블린이 없으면 0.
         /// </summary>
-        public bool TryBlockDrill(HexCoord position)
+        public int GetShieldHpAt(HexCoord coord)
+        {
+            var goblin = goblins.FirstOrDefault(g => g.isAlive && g.isShielded && g.position == coord);
+            return goblin != null ? goblin.shieldHp : 0;
+        }
+
+        /// <summary>
+        /// 드릴이 방패 고블린 위치에 도달했을 때 호출.
+        /// 드릴은 2발이 방패에 박힘. 방패 내구도가 충분하면 완전 차단.
+        /// 방패 내구도가 부족하면(1남음) 1발로 방패 파괴 후 나머지 1발 관통.
+        /// 반환: 0=방패 없음, 1=완전 차단(드릴 정지), 2=관통(방패 파괴 후 드릴 계속 진행)
+        /// </summary>
+        public int TryBlockDrill(HexCoord position)
         {
             var goblin = goblins.FirstOrDefault(g => g.isAlive && g.isShielded && g.position == position);
-            if (goblin == null) return false;
-
-            // 드릴은 박힌 비주얼 추가
-            StartCoroutine(AddStuckDrillVisual(goblin));
+            if (goblin == null) return 0;
 
             // ★ 방패가 드릴을 막았을 때 고블린 전체 들썩임 연출
             StartCoroutine(ShieldJoltEffect(goblin));
 
-            // 방패에 1 대미지
+            int remaining = goblin.shieldHp;
+
+            if (remaining >= 2)
+            {
+                // 방패 내구도 충분: 드릴 2발 박힘, 완전 차단
+                StartCoroutine(AddStuckDrillVisual(goblin));
+                StartCoroutine(AddStuckDrillVisual(goblin));
+                ApplyShieldDamage(goblin, 2);
+                return 1; // 완전 차단
+            }
+            else
+            {
+                // 방패 내구도 1: 1발 박힌 후 방패 파괴, 나머지 1발 관통
+                StartCoroutine(AddStuckDrillVisual(goblin));
+                ApplyShieldDamage(goblin, 1); // 방패 파괴됨 (isShielded = false)
+                // ★ 관통 시 본체에 1 대미지 추가 적용 (방패 없으므로 직접 HP 감소)
+                ApplyDamageAtPosition(goblin.position, 1);
+                return 2; // 관통
+            }
+        }
+
+        /// <summary>
+        /// 발동 위치의 방패 고블린에 단일 드릴 타격 1회 적용.
+        /// TryBlockDrill과 달리 항상 1회만 타격하며, 순차 처리를 위해 사용.
+        /// 반환: 0=방패 없음, 1=방패가 타격 흡수(아직 존재), 2=방패 파괴됨
+        /// </summary>
+        public int ApplySingleDrillToShield(HexCoord position)
+        {
+            var goblin = goblins.FirstOrDefault(g => g.isAlive && g.isShielded && g.position == position);
+            if (goblin == null) return 0;
+
+            // 방패가 드릴을 막았을 때 고블린 들썩임 + 드릴 박힘 연출
+            StartCoroutine(ShieldJoltEffect(goblin));
+            StartCoroutine(AddStuckDrillVisual(goblin));
+
+            bool willBreak = goblin.shieldHp <= 1;
             ApplyShieldDamage(goblin, 1);
 
-            return true;
+            if (willBreak)
+            {
+                Debug.Log($"[GoblinSystem] 단일 드릴 타격 → 방패 파괴! ({position})");
+                return 2; // 방패 파괴됨
+            }
+            else
+            {
+                Debug.Log($"[GoblinSystem] 단일 드릴 타격 → 방패 흡수 (남은HP={goblin.shieldHp}) ({position})");
+                return 1; // 방패 건재
+            }
         }
 
         /// <summary>
@@ -4226,6 +4950,292 @@ namespace JewelsHexaPuzzle.Core
             }
 
             if (flash != null) Destroy(flash);
+        }
+
+        // ============================================================
+        // 폭탄 고블린 시스템 (블록 일체형 GoblinBomb)
+        // 폭탄은 BlockData.hasGoblinBomb 필드로 블록에 직접 설치.
+        // 회전/낙하/매칭/특수 블록 생성 시 자동으로 블록과 함께 이동/제거됨.
+        // ============================================================
+
+        /// <summary>
+        /// 폭탄 고블린 통합 페이즈: 블록이 있는 곳으로 이동 (공격 없음).
+        /// - 설치 턴 ((bombTurnCounter-1) % 3 == 0): 현재 블록에 폭탄 설치
+        /// - 비설치 턴: 1칸 이동만
+        /// </summary>
+        private IEnumerator BombGoblinPhase()
+        {
+            var aliveBombGoblins = goblins.Where(g => g.isAlive && g.isBomb).ToList();
+            if (aliveBombGoblins.Count == 0) yield break;
+
+            // 현재 점유 좌표 (모든 생존 고블린)
+            HashSet<HexCoord> occupiedCoords = new HashSet<HexCoord>();
+            foreach (var g in goblins.Where(g => g.isAlive))
+                occupiedCoords.Add(g.position);
+
+            foreach (var goblin in aliveBombGoblins)
+            {
+                bool isInstallTurn = (goblin.bombTurnCounter - 1) % 3 == 0;
+
+                // 설치 턴: 현재 블록에 폭탄 설치 (그리드 내부 + 블록 존재 시)
+                if (isInstallTurn)
+                {
+                    InstallGoblinBombOnBlock(goblin);
+                }
+
+                // 이동: 1칸 (설치 여부 무관, 블록이 있는 곳으로 이동 가능)
+                HexCoord moveTarget = FindBombGoblinMoveTarget(goblin, occupiedCoords);
+                if (moveTarget != goblin.position)
+                {
+                    occupiedCoords.Remove(goblin.position);
+                    goblin.position = moveTarget;
+                    occupiedCoords.Add(moveTarget);
+
+                    Vector2 worldPos = hexGrid.CalculateFlatTopHexPosition(moveTarget);
+                    yield return StartCoroutine(AnimateGoblinMove(goblin, worldPos));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 폭탄 고블린 이동 타겟 결정.
+        /// ★ 블록이 있는 셀도 이동 가능 (공격 없이 블록 위에 서는 형태).
+        /// 우선순위: 그리드 내부(블록 있는 곳) > 그리드 내부 빈 칸 > 그리드 외부.
+        /// 아래 방향 우선.
+        /// </summary>
+        private HexCoord FindBombGoblinMoveTarget(GoblinData goblin, HashSet<HexCoord> occupiedCoords)
+        {
+            System.Func<HexCoord, bool> isOccByOther = (coord) =>
+                occupiedCoords.Contains(coord) && coord != goblin.position;
+
+            // 아래 3방향
+            HexCoord[] downDirs = {
+                new HexCoord(0, 1),
+                new HexCoord(-1, 1),
+                new HexCoord(1, 0)
+            };
+            if (Random.value > 0.5f)
+            {
+                var temp = downDirs[1];
+                downDirs[1] = downDirs[2];
+                downDirs[2] = temp;
+            }
+            // 옆/위 방향
+            HexCoord[] sideDirs = {
+                new HexCoord(-1, 0),
+                new HexCoord(1, -1),
+                new HexCoord(0, -1)
+            };
+            var shuffledSide = sideDirs.OrderBy(x => Random.value).ToArray();
+            var allDirs = downDirs.Concat(shuffledSide);
+
+            // ★ 1차: 그리드 내부 셀 (블록이 있어도 이동 가능, 다른 고블린만 회피)
+            foreach (var dir in allDirs)
+            {
+                HexCoord target = goblin.position + dir;
+                if (!hexGrid.IsInsideGrid(target)) continue;
+                if (isOccByOther(target)) continue;
+                return target;
+            }
+
+            // ★ 2차: 그리드 외부 셀 (소환 영역 등, 최후의 수단)
+            foreach (var dir in allDirs)
+            {
+                HexCoord target = goblin.position + dir;
+                if (hexGrid.IsInsideGrid(target)) continue;
+                if (isOccByOther(target)) continue;
+                // 확장 범위 내인지만 체크
+                if (Mathf.Abs(target.q) > hexGrid.GridRadius) continue;
+                int rMin = hexGrid.GetTopR(target.q);
+                int rMax = Mathf.Min(hexGrid.GridRadius, -target.q + hexGrid.GridRadius);
+                if (target.r < rMin - 3 || target.r > rMax) continue;
+                return target;
+            }
+
+            return goblin.position;
+        }
+
+        /// <summary>
+        /// 고블린 폭탄을 현재 서 있는 블록에 설치 (BlockData에 기록).
+        /// 블록이 없거나 이미 폭탄이 있으면 설치 스킵.
+        /// </summary>
+        private void InstallGoblinBombOnBlock(GoblinData goblin)
+        {
+            if (hexGrid == null) return;
+            if (!hexGrid.IsInsideGrid(goblin.position)) return;
+
+            HexBlock block = hexGrid.GetBlock(goblin.position);
+            if (block == null || block.Data == null) return;
+            if (block.Data.gemType == GemType.None) return;
+            if (block.Data.hasGoblinBomb) return; // 이미 폭탄 있는 블록
+
+            // 블록 데이터에 폭탄 설치
+            block.Data.hasGoblinBomb = true;
+            block.Data.goblinBombCountdown = 3;
+            block.UpdateVisuals();
+
+            Debug.Log($"[GoblinSystem] 폭탄 설치: ({goblin.position.q}, {goblin.position.r}), 카운트다운=3");
+
+            // 설치 흔들림
+            if (hexGrid != null)
+                StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity * 0.5f, VisualConstants.ShakeSmallDuration * 0.5f));
+        }
+
+        /// <summary>
+        /// 매 턴 시작 시: 그리드 전체 블록 스캔 → hasGoblinBomb인 블록 카운트다운 감소.
+        /// 0에 도달하면 폭발 (중심+6이웃 = 7칸 → 깨진 회색 블록).
+        /// </summary>
+        private IEnumerator DecrementBombCountdowns()
+        {
+            if (hexGrid == null) yield break;
+
+            List<HexCoord> toExplode = new List<HexCoord>();
+
+            // 그리드 전체 스캔
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null) continue;
+                if (!block.Data.hasGoblinBomb) continue;
+
+                block.Data.goblinBombCountdown--;
+                block.UpdateVisuals(); // 카운트다운 텍스트 갱신
+
+                if (block.Data.goblinBombCountdown <= 0)
+                {
+                    toExplode.Add(block.Coord);
+                }
+            }
+
+            // 폭발 처리
+            foreach (var coord in toExplode)
+            {
+                yield return StartCoroutine(ExplodeBombAt(coord));
+            }
+        }
+
+        /// <summary>
+        /// 폭탄 폭발: 중심 좌표 + 6 이웃 (7칸) → 깨진 회색(쉘) 블록으로 변환.
+        /// </summary>
+        private IEnumerator ExplodeBombAt(HexCoord center)
+        {
+            if (hexGrid == null) yield break;
+
+            Debug.Log($"[GoblinSystem] 고블린 폭탄 폭발: ({center.q}, {center.r})");
+
+            // 중심 블록의 폭탄 플래그 제거
+            HexBlock centerBlock = hexGrid.GetBlock(center);
+            if (centerBlock != null && centerBlock.Data != null)
+            {
+                centerBlock.Data.hasGoblinBomb = false;
+                centerBlock.Data.goblinBombCountdown = 0;
+            }
+
+            // 대상 좌표: 중심 + 6방향 이웃
+            List<HexCoord> targetCoords = new List<HexCoord>();
+            if (hexGrid.IsInsideGrid(center)) targetCoords.Add(center);
+            HexCoord[] neighbors = center.GetAllNeighbors();
+            foreach (var n in neighbors)
+            {
+                if (hexGrid.IsInsideGrid(n))
+                    targetCoords.Add(n);
+            }
+
+            // ── 1. 경고 플래시 ──
+            Transform parent = hexGrid.GridContainer;
+            float hexSize = hexGrid.HexSize;
+            List<GameObject> warningFlashes = new List<GameObject>();
+
+            foreach (var coord in targetCoords)
+            {
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block == null) continue;
+                RectTransform blockRt = block.GetComponent<RectTransform>();
+                if (blockRt == null) continue;
+
+                GameObject wf = new GameObject("GoblinBombFlash");
+                wf.transform.SetParent(parent, false);
+                RectTransform wrt = wf.AddComponent<RectTransform>();
+                wrt.anchoredPosition = blockRt.anchoredPosition;
+                wrt.sizeDelta = new Vector2(hexSize * 1.2f, hexSize * 1.2f);
+
+                Image wimg = wf.AddComponent<Image>();
+                wimg.sprite = HexBlock.GetHexFlashSprite();
+                wimg.color = new Color(1f, 0.3f, 0.1f, 0f);
+                wimg.raycastTarget = false;
+                warningFlashes.Add(wf);
+            }
+
+            float warnDuration = 0.35f;
+            float warnElapsed = 0f;
+            while (warnElapsed < warnDuration)
+            {
+                warnElapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(warnElapsed / warnDuration);
+                float alpha = t < 0.4f
+                    ? VisualConstants.EaseOutCubic(t / 0.4f) * 0.7f
+                    : 0.7f * (1f - VisualConstants.EaseInQuad((t - 0.4f) / 0.6f));
+
+                foreach (var wf in warningFlashes)
+                {
+                    if (wf == null) continue;
+                    var img = wf.GetComponent<Image>();
+                    if (img != null) img.color = new Color(1f, 0.3f, 0.1f, alpha);
+                }
+                yield return null;
+            }
+            foreach (var wf in warningFlashes)
+                if (wf != null) Destroy(wf);
+
+            // ── 2. 블록을 쉘로 변환 (순차) ──
+            int converted = 0;
+            foreach (var coord in targetCoords)
+            {
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.isShell) continue;
+
+                // 쉘로 변환 + 폭탄 제거
+                block.Data.isShell = true;
+                block.Data.isCracked = true;
+                block.Data.specialType = SpecialBlockType.None;
+                block.Data.tier = BlockTier.Normal;
+                block.Data.hasGoblinBomb = false;
+                block.Data.goblinBombCountdown = 0;
+                block.UpdateVisuals();
+                converted++;
+
+                StartCoroutine(ShellConvertFlash(block));
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayShellConvertSound();
+
+                yield return new WaitForSeconds(0.03f);
+            }
+
+            // ── 3. 화면 흔들림 + 사운드 ──
+            if (hexGrid != null)
+                StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity * 2f, VisualConstants.ShakeSmallDuration * 1.5f));
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            yield return new WaitForSeconds(0.15f);
+            Debug.Log($"[GoblinSystem] 고블린 폭탄 폭발 완료: {converted}개 블록 → 쉘");
+        }
+
+        /// <summary>
+        /// 그리드 전체 블록에서 hasGoblinBomb 제거 (초기화/정리용)
+        /// </summary>
+        private void CleanupAllGoblinBombs()
+        {
+            if (hexGrid == null) return;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block != null && block.Data != null)
+                {
+                    block.Data.hasGoblinBomb = false;
+                    block.Data.goblinBombCountdown = 0;
+                }
+            }
         }
     }
 }

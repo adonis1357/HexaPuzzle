@@ -35,6 +35,10 @@ namespace JewelsHexaPuzzle.UI
         private Dictionary<SkillType, Image> skillNodeBorders = new Dictionary<SkillType, Image>();
         private Dictionary<SkillType, Text> skillNodeTexts = new Dictionary<SkillType, Text>();
 
+        // 자물쇠 아이콘 (잠긴/열린 두 버전)
+        private Dictionary<SkillType, GameObject> lockedLockIcons = new Dictionary<SkillType, GameObject>();
+        private Dictionary<SkillType, GameObject> openLockIcons = new Dictionary<SkillType, GameObject>();
+
         // 연결 라인
         private List<GameObject> connectionLines = new List<GameObject>();
 
@@ -310,6 +314,31 @@ namespace JewelsHexaPuzzle.UI
                 // 스킬 노드 생성
                 CreateSkillNode(nodesContainer.transform, skill, new Vector2(x, y));
             }
+
+            // === 자물쇠 아이콘 생성 (노드와 별개로 nodesContainer 자식) ===
+            // connectionLines[i-1]이 skill[i-1]→skill[i]를 연결
+            for (int i = 0; i < allSkills.Count; i++)
+            {
+                var skill = allSkills[i];
+                Vector2 lockPos;
+
+                if (i > 0 && connectionLines.Count >= i)
+                {
+                    // 연결 라인의 오른쪽 끝점 + 8px
+                    RectTransform lineRt = connectionLines[i - 1].GetComponent<RectTransform>();
+                    float lineRightX = lineRt.anchoredPosition.x + lineRt.sizeDelta.x * 0.5f;
+                    float lineY = lineRt.anchoredPosition.y;
+                    lockPos = new Vector2(lineRightX + 17f, lineY);
+                }
+                else
+                {
+                    // 첫 번째 노드: 노드 왼쪽 끝에서 왼쪽으로 배치
+                    float nodeX = startX;
+                    lockPos = new Vector2(nodeX - NODE_SIZE * 0.5f - 5f, y);
+                }
+
+                CreateLockIconPair(nodesContainer.transform, skill.skillType, lockPos);
+            }
         }
 
         private void CreateSkillNode(Transform parent, SkillNodeData skillData, Vector2 position)
@@ -393,6 +422,110 @@ namespace JewelsHexaPuzzle.UI
             skillNodeBgs[skillData.skillType] = hexBg;
             skillNodeBorders[skillData.skillType] = borderImg;
             skillNodeTexts[skillData.skillType] = nameText;
+        }
+
+        /// <summary>
+        /// 자물쇠 아이콘 한 쌍 생성 (잠긴 + 열린)
+        /// 부모는 nodesContainer (노드 바깥 독립 배치)
+        /// lockPos = 연결 라인 오른쪽 끝점 + 8px 위치
+        /// </summary>
+        private void CreateLockIconPair(Transform parent, SkillType skillType, Vector2 lockPos)
+        {
+            // 공통 크기
+            Vector2 iconSize = new Vector2(28f, 34f);
+
+            // ── 잠긴 자물쇠 (Locked) ── 흰색 α0.7, 닫힌 고리
+            Color lockedColor = new Color(1f, 1f, 1f, 0.7f);
+            GameObject lockedRoot = CreateSingleLockIcon(parent, "LockedLock", lockPos, iconSize, lockedColor, false);
+            lockedLockIcons[skillType] = lockedRoot;
+
+            // ── 열린 자물쇠 (Available/Unlocked) ── 초록 α0.7, 열린 고리
+            Color openColor = new Color(0.3f, 0.9f, 0.4f, 0.7f);
+            GameObject openRoot = CreateSingleLockIcon(parent, "OpenLock", lockPos, iconSize, openColor, true);
+            openLockIcons[skillType] = openRoot;
+        }
+
+        /// <summary>
+        /// 단일 자물쇠 아이콘 생성 (몸통 + 열쇠구멍 + 고리)
+        /// isOpen=true면 오른쪽 고리가 위로 들림
+        /// </summary>
+        private GameObject CreateSingleLockIcon(Transform parent, string name, Vector2 pos, Vector2 size, Color color, bool isOpen)
+        {
+            // 루트
+            GameObject root = new GameObject(name);
+            root.transform.SetParent(parent, false);
+            RectTransform rt = root.AddComponent<RectTransform>();
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = size;
+
+            // 몸통 (사각형)
+            GameObject body = new GameObject("Body");
+            body.transform.SetParent(root.transform, false);
+            RectTransform bodyRt = body.AddComponent<RectTransform>();
+            bodyRt.anchoredPosition = new Vector2(0f, -4f);
+            bodyRt.sizeDelta = new Vector2(20f, 16f);
+            Image bodyImg = body.AddComponent<Image>();
+            bodyImg.color = color;
+            bodyImg.raycastTarget = false;
+
+            // 열쇠구멍 (원)
+            Color holeColor = new Color(0.15f, 0.13f, 0.2f, 0.9f);
+            GameObject keyhole = new GameObject("Keyhole");
+            keyhole.transform.SetParent(body.transform, false);
+            RectTransform khRt = keyhole.AddComponent<RectTransform>();
+            khRt.anchoredPosition = new Vector2(0f, 1.5f);
+            khRt.sizeDelta = new Vector2(5f, 5f);
+            Image khImg = keyhole.AddComponent<Image>();
+            khImg.color = holeColor;
+            khImg.raycastTarget = false;
+
+            // 열쇠구멍 슬롯
+            GameObject keySlot = new GameObject("KeySlot");
+            keySlot.transform.SetParent(body.transform, false);
+            RectTransform ksRt = keySlot.AddComponent<RectTransform>();
+            ksRt.anchoredPosition = new Vector2(0f, -2.5f);
+            ksRt.sizeDelta = new Vector2(2.5f, 5f);
+            Image ksImg = keySlot.AddComponent<Image>();
+            ksImg.color = holeColor;
+            ksImg.raycastTarget = false;
+
+            // 고리 (U자형)
+            float shW = 14f, shH = 10f, bar = 2.5f, shY = 4f;
+            float openLift = isOpen ? 6f : 0f;
+
+            // 왼쪽 바
+            GameObject leftBar = new GameObject("ShackleL");
+            leftBar.transform.SetParent(root.transform, false);
+            RectTransform lbRt = leftBar.AddComponent<RectTransform>();
+            lbRt.anchoredPosition = new Vector2(-shW * 0.5f + bar * 0.5f, shY);
+            lbRt.sizeDelta = new Vector2(bar, shH);
+            Image lbImg = leftBar.AddComponent<Image>();
+            lbImg.color = color;
+            lbImg.raycastTarget = false;
+
+            // 오른쪽 바 (열린 상태면 위로 들림)
+            GameObject rightBar = new GameObject("ShackleR");
+            rightBar.transform.SetParent(root.transform, false);
+            RectTransform rbRt = rightBar.AddComponent<RectTransform>();
+            rbRt.anchoredPosition = new Vector2(shW * 0.5f - bar * 0.5f, shY + openLift);
+            rbRt.sizeDelta = new Vector2(bar, shH);
+            Image rbImg = rightBar.AddComponent<Image>();
+            rbImg.color = color;
+            rbImg.raycastTarget = false;
+
+            // 상단 바
+            GameObject topBar = new GameObject("ShackleT");
+            topBar.transform.SetParent(root.transform, false);
+            RectTransform tbRt = topBar.AddComponent<RectTransform>();
+            float topY = shY + (isOpen ? openLift : 0f) + shH * 0.5f - bar * 0.5f;
+            tbRt.anchoredPosition = new Vector2(0f, topY);
+            tbRt.sizeDelta = new Vector2(shW, bar);
+            Image tbImg = topBar.AddComponent<Image>();
+            tbImg.color = color;
+            tbImg.raycastTarget = false;
+
+            root.SetActive(false);
+            return root;
         }
 
         /// <summary>
@@ -973,6 +1106,16 @@ namespace JewelsHexaPuzzle.UI
                         if (border != null) border.color = new Color(0.4f, 0.35f, 0.45f, 0.5f);
                         break;
                 }
+
+                // 자물쇠 아이콘 표시/숨기기
+                // Locked → 잠긴 자물쇠, Available → 열린 자물쇠, Unlocked → 없음
+                bool showLocked = (state == SkillState.Locked);
+                bool showOpen = (state == SkillState.Available);
+
+                if (lockedLockIcons.ContainsKey(type) && lockedLockIcons[type] != null)
+                    lockedLockIcons[type].SetActive(showLocked);
+                if (openLockIcons.ContainsKey(type) && openLockIcons[type] != null)
+                    openLockIcons[type].SetActive(showOpen);
             }
         }
 
