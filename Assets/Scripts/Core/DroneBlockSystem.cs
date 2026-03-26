@@ -101,19 +101,19 @@ namespace JewelsHexaPuzzle.Core
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
                 return;
 
-            // 활 고블린 우선 직접 타격: 낙하 면역이므로 본체를 직접 공격해야 함
+            // ★ 우선순위 타겟팅: GoblinBomb → 궁수 → 방패 → 갑옷 → 일반 → 스마트 블록
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                GoblinData targetArcher = FindBestArcherTarget();
-                if (targetArcher != null)
+                var priorityTarget = FindPriorityGoblinTarget();
+                if (priorityTarget != null)
                 {
-                    Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 활 고블린 직접 타격 ({targetArcher.position})");
-                    ActivateDroneToGoblin(droneBlock, targetArcher.position);
+                    Debug.Log($"[DroneBlockSystem] 우선순위 타겟: {priorityTarget.Value.type} at {priorityTarget.Value.coord}");
+                    ActivateDroneToGoblin(droneBlock, priorityTarget.Value.coord);
                     return;
                 }
             }
 
-            Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord}");
+            Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 스마트 블록 타겟");
             StartCoroutine(DroneCoroutine(droneBlock, null));
         }
 
@@ -180,19 +180,24 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
-            // 고블린이 사라졌으면 좌표 기반 위치로 폴백
+            // 고블린이 사라졌거나 비주얼이 없으면 → 블록 타겟으로 폴백
             if (!goblinFound)
             {
-                if (hexGrid != null)
-                    goblinWorldPos = (Vector3)hexGrid.CalculateFlatTopHexPosition(goblinPos);
-                else
+                Debug.Log($"[DroneBlockSystem] 고블린 직접 타격 실패 ({goblinPos}): 고블린 없음 → 블록 타겟으로 전환");
+                HexBlock fallbackTarget = FindTargetBlock(droneBlock);
+                if (fallbackTarget != null)
                 {
-                    // 폴백 실패: 점수만 지급하고 종료
-                    OnDroneComplete?.Invoke(150);
+                    // 블록 타겟 코루틴으로 전환 (현재 코루틴 종료)
                     activeBlocks.Remove(droneBlock);
                     activeDroneCount--;
+                    StartCoroutine(DroneCoroutine(droneBlock, fallbackTarget));
                     yield break;
                 }
+                // 블록 타겟도 없으면 소멸
+                OnDroneComplete?.Invoke(150);
+                activeBlocks.Remove(droneBlock);
+                activeDroneCount--;
+                yield break;
             }
 
             // 4. 드론 비행
@@ -467,15 +472,125 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private HexBlock FindTargetBlock(HexBlock droneBlock)
         {
-            // 고블린이 살아있으면 스마트 타겟팅 우선
-            if (GoblinSystem.Instance != null && GoblinSystem.Instance.AliveCount > 0)
+            // 점수 기반 타겟팅 (고블린 유무 모두 대응)
+            HexBlock scoreTarget = FindBestTargetByScore(droneBlock);
+            if (scoreTarget != null) return scoreTarget;
+
+            // 폴백: 기존 우선순위 기반
+            return FindPriorityTargetBlock(droneBlock);
+        }
+
+        // ============================================================
+        // 점수 기반 드론 타겟팅
+        // ============================================================
+
+        /// <summary>몬스터 타입별 기본 점수</summary>
+        private static int GetGoblinScore(GoblinData g)
+        {
+            if (g == null || !g.isAlive) return 0;
+            if (g.isBomb) return 5;
+            if (g.isShielded) return 4;
+            if (g.isArcher) return 3;
+            if (g.isArmored) return 2;
+            return 1; // Regular
+        }
+
+        /// <summary>GoblinBomb 점수 = 6</summary>
+        private const int GOBLIN_BOMB_SCORE = 6;
+
+        /// <summary>
+        /// 모든 블록에 대해 ScoreForBlock을 계산하고 최고 점수 블록 반환.
+        /// 동점 처리: 하단 행 → 외곽(|q| 큰) → 왼쪽(q 작은)
+        /// </summary>
+        private HexBlock FindBestTargetByScore(HexBlock droneBlock)
+        {
+            if (hexGrid == null) return null;
+
+            HexBlock bestBlock = null;
+            int bestScore = 0;
+            int bestR = int.MinValue;   // 하단 행 우선 (r 큰 값)
+            int bestAbsQ = -1;          // 외곽 우선 (|q| 큰 값)
+            int bestQ = int.MaxValue;   // 왼쪽 우선 (q 작은 값)
+
+            foreach (var block in hexGrid.GetAllBlocks())
             {
-                HexBlock smartTarget = FindSmartTargetBlock(droneBlock);
-                if (smartTarget != null) return smartTarget;
+                if (block == null || block.Data == null) continue;
+                if (block.Data.gemType == GemType.None) continue;
+                if (block.Data.gemType == GemType.Gray) continue;
+                if (block == droneBlock) continue;
+                if (block.Data.specialType == SpecialBlockType.Drone) continue;
+
+                int score = ScoreForBlock(block.Coord);
+
+                // 동점 처리
+                bool isBetter = false;
+                if (score > bestScore)
+                    isBetter = true;
+                else if (score == bestScore && score > 0)
+                {
+                    int r = block.Coord.r;
+                    int absQ = Mathf.Abs(block.Coord.q);
+                    int q = block.Coord.q;
+
+                    if (r > bestR)
+                        isBetter = true;
+                    else if (r == bestR && absQ > bestAbsQ)
+                        isBetter = true;
+                    else if (r == bestR && absQ == bestAbsQ && q < bestQ)
+                        isBetter = true;
+                }
+
+                if (isBetter)
+                {
+                    bestBlock = block;
+                    bestScore = score;
+                    bestR = block.Coord.r;
+                    bestAbsQ = Mathf.Abs(block.Coord.q);
+                    bestQ = block.Coord.q;
+                }
             }
 
-            // 고블린 없거나 스마트 타겟 실패 시 기존 우선순위 기반
-            return FindPriorityTargetBlock(droneBlock);
+            if (bestBlock != null)
+                Debug.Log($"[DroneScore] 최적 타겟: {bestBlock.Coord} 점수={bestScore}");
+
+            return bestBlock;
+        }
+
+        /// <summary>
+        /// 특정 블록 좌표를 타격했을 때 얻는 총 점수.
+        /// 직접 타격 점수 + 낙하 대미지 점수.
+        /// </summary>
+        public int ScoreForBlock(HexCoord targetCoord)
+        {
+            int score = 0;
+
+            if (GoblinSystem.Instance == null || hexGrid == null) return 0;
+
+            // GoblinBomb 직접 타격
+            HexBlock targetBlock = hexGrid.GetBlock(targetCoord);
+            if (targetBlock != null && targetBlock.Data != null && targetBlock.Data.hasGoblinBomb)
+                score += GOBLIN_BOMB_SCORE;
+
+            // 직접 타격: 해당 좌표에 몬스터가 있으면
+            GoblinData directGoblin = GoblinSystem.Instance.GetGoblinAt(targetCoord);
+            if (directGoblin != null)
+                score += GetGoblinScore(directGoblin);
+
+            // 낙하 대미지: targetCoord 위쪽 블록이 낙하하면서 맞는 몬스터
+            // hex 좌표에서 "위"는 r이 감소하는 방향 (flat-top: (0,-1) 또는 자체 열)
+            // 같은 열(q)에서 r < targetCoord.r 인 블록들이 낙하 후보
+            var allGoblins = GoblinSystem.Instance.GetAliveGoblins();
+            foreach (var g in allGoblins)
+            {
+                if (g == directGoblin) continue; // 직접 타격은 이미 계산됨
+                if (g.isArcher) continue;         // 궁수는 낙하 면역
+
+                // 같은 열에서 targetCoord보다 위(r 작음)에 있는 몬스터는 블록 낙하로 데미지 가능
+                if (g.position.q == targetCoord.q && g.position.r < targetCoord.r)
+                    score += GetGoblinScore(g);
+            }
+
+            return score;
         }
 
         /// <summary>
@@ -490,7 +605,6 @@ namespace JewelsHexaPuzzle.Core
                 .ToList();
             if (archers.Count == 0) return null;
 
-            // HP가 낮은 활 고블린 우선 (처치 가능성↑), 동률 시 왼쪽(q 작은것)
             GoblinData best = archers[0];
             for (int i = 1; i < archers.Count; i++)
             {
@@ -499,6 +613,88 @@ namespace JewelsHexaPuzzle.Core
                     best = a;
             }
             return best;
+        }
+
+        /// <summary>
+        /// 드론 우선순위 타겟팅:
+        /// 1순위=GoblinBomb(카운트다운 가장 적은 것), 2순위=궁수, 3순위=방패(방패 본체 좌표),
+        /// 4순위=갑옷(HP 낮은 순), 5순위=일반(HP 낮은 순)
+        /// </summary>
+        private struct DroneTarget
+        {
+            public string type;
+            public HexCoord coord;
+        }
+
+        private DroneTarget? FindPriorityGoblinTarget()
+        {
+            if (GoblinSystem.Instance == null || hexGrid == null) return null;
+
+            var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
+            if (aliveGoblins.Count == 0) return null;
+
+            // 비주얼이 있는(화면에 보이는) 고블린만 타겟 대상
+            var visibleGoblins = aliveGoblins.Where(g => g.visualObject != null).ToList();
+
+            // 1순위: GoblinBomb (블록에 설치된 폭탄) — 카운트다운 가장 적은 것
+            HexBlock bestBomb = null;
+            int bestCountdown = int.MaxValue;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block != null && block.Data != null && block.Data.hasGoblinBomb)
+                {
+                    if (block.Data.goblinBombCountdown < bestCountdown)
+                    {
+                        bestCountdown = block.Data.goblinBombCountdown;
+                        bestBomb = block;
+                    }
+                }
+            }
+            if (bestBomb != null)
+                return new DroneTarget { type = "GoblinBomb", coord = bestBomb.Coord };
+
+            // 2순위: 궁수 고블린
+            GoblinData bestArcher = FindBestArcherTarget();
+            if (bestArcher != null)
+                return new DroneTarget { type = "Archer", coord = bestArcher.position };
+
+            // 3순위: 방패 고블린 — 방패 고블린 본체 좌표로 직접 타격
+            GoblinData bestShield = null;
+            foreach (var g in visibleGoblins)
+            {
+                if (!g.isAlive || !g.isShielded) continue;
+                if (bestShield == null || g.shieldHp < bestShield.shieldHp
+                    || (g.shieldHp == bestShield.shieldHp && g.position.q < bestShield.position.q))
+                    bestShield = g;
+            }
+            if (bestShield != null)
+                return new DroneTarget { type = "Shield", coord = bestShield.position };
+
+            // 4순위: 갑옷 고블린 (HP 낮은 순)
+            GoblinData bestArmored = null;
+            foreach (var g in visibleGoblins)
+            {
+                if (!g.isAlive || !g.isArmored) continue;
+                if (bestArmored == null || g.hp < bestArmored.hp
+                    || (g.hp == bestArmored.hp && g.position.q < bestArmored.position.q))
+                    bestArmored = g;
+            }
+            if (bestArmored != null)
+                return new DroneTarget { type = "Armored", coord = bestArmored.position };
+
+            // 5순위: 일반 고블린 (HP 낮은 순)
+            GoblinData bestRegular = null;
+            foreach (var g in visibleGoblins)
+            {
+                if (!g.isAlive || g.isArcher || g.isArmored || g.isShielded || g.isBomb) continue;
+                if (bestRegular == null || g.hp < bestRegular.hp
+                    || (g.hp == bestRegular.hp && g.position.q < bestRegular.position.q))
+                    bestRegular = g;
+            }
+            if (bestRegular != null)
+                return new DroneTarget { type = "Regular", coord = bestRegular.position };
+
+            return null;
         }
 
         /// <summary>
@@ -1402,20 +1598,26 @@ namespace JewelsHexaPuzzle.Core
 
             if (hexGrid == null) { VisualConstants.EndScreenShake(); yield break; }
             Transform gridTrans = hexGrid.transform;
-            Vector3 origPos = gridTrans.localPosition;
+            Vector3 origPos = Vector3.zero;
             float t = 0f;
 
-            while (t < duration)
+            try
             {
-                t += Time.deltaTime;
-                float decay = 1f - (t / duration);
-                float offsetX = Random.Range(-intensity, intensity) * decay;
-                float offsetY = Random.Range(-intensity, intensity) * decay;
-                gridTrans.localPosition = origPos + new Vector3(offsetX, offsetY, 0f);
-                yield return null;
+                while (t < duration)
+                {
+                    t += Time.deltaTime;
+                    float decay = 1f - (t / duration);
+                    float offsetX = Random.Range(-intensity, intensity) * decay;
+                    float offsetY = Random.Range(-intensity, intensity) * decay;
+                    gridTrans.localPosition = origPos + new Vector3(offsetX, offsetY, 0f);
+                    yield return null;
+                }
             }
-            gridTrans.localPosition = origPos;
-            VisualConstants.EndScreenShake();
+            finally
+            {
+                gridTrans.localPosition = Vector3.zero;
+                VisualConstants.EndScreenShake();
+            }
         }
 
         // ============================================================

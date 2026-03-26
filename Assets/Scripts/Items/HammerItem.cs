@@ -20,12 +20,13 @@ namespace JewelsHexaPuzzle.Items
         [SerializeField] private InputSystem inputSystem;
 
         [Header("Settings")]
-        [SerializeField] private Color activeOverlayColor = new Color(0.2f, 0.85f, 0.3f, 0.25f);
+        [SerializeField] private Color activeOverlayColor = new Color(1f, 0f, 0f, 0.15f);
 
         private bool isActive = false;
         private bool isProcessing = false;
 
         public bool IsActive => isActive;
+        public Button HammerButton => hammerButton;
 
         // 이펙트 부모
         private Transform effectParent;
@@ -38,8 +39,9 @@ namespace JewelsHexaPuzzle.Items
         private Coroutine idleAnimCoroutine;
 
         // 버튼 기본 색상 (활성화 색상의 어두운 버전)
-        private Color btnOriginalColor = new Color(0.12f, 0.51f, 0.18f, 0.92f);
-        private static readonly Color BtnActiveColor = new Color(0.2f, 0.85f, 0.3f, 1f);
+        // HammerGauge가 색상을 관리하므로 여기서는 건드리지 않음
+        private Color btnOriginalColor = new Color(0.93f, 0.18f, 0.18f, 1f);  // Red 블록색
+        private static readonly Color BtnActiveColor = new Color(0.93f, 0.18f, 0.18f, 1f);
         private void Start()
         {
             AutoFindReferences();
@@ -50,12 +52,7 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 초기 색상을 비활성화 색상으로 설정
-            if (hammerButton != null)
-            {
-                var img = hammerButton.GetComponent<Image>();
-                if (img != null) img.color = btnOriginalColor;
-            }
+            // 버튼 초기 색상은 HammerGauge가 관리 (여기서 덮어쓰지 않음)
         }
 
         private void AutoFindReferences()
@@ -142,8 +139,7 @@ namespace JewelsHexaPuzzle.Items
             // 버튼 활성화 펄스
             if (hammerButton != null)
             {
-                var img = hammerButton.GetComponent<Image>();
-                if (img != null) img.color = BtnActiveColor;
+                // 색상은 HammerGauge가 관리
                 StartCoroutine(ButtonActivatePulse());
             }
 
@@ -188,6 +184,10 @@ namespace JewelsHexaPuzzle.Items
             {
                 StartCoroutine(ButtonDeactivateAnim());
             }
+
+            // ★ 망치 취소 → Ready 복귀 (게이지 유지)
+            if (HammerGauge.Instance != null)
+                HammerGauge.Instance.OnHammerCancelled();
 
             Debug.Log("[HammerItem] Deactivated");
         }
@@ -242,7 +242,7 @@ namespace JewelsHexaPuzzle.Items
 
             var img = glow.AddComponent<Image>();
             img.raycastTarget = false;
-            img.color = new Color(0.2f, 0.85f, 0.3f, 0.5f);
+            img.color = new Color(0.9f, 0.15f, 0.15f, 0.5f);
 
             RectTransform rt = glow.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(60f, 60f);
@@ -256,7 +256,7 @@ namespace JewelsHexaPuzzle.Items
                 float eased = VisualConstants.EaseOutCubic(t);
                 float scale = 1f + eased * 1.5f;
                 rt.sizeDelta = new Vector2(60f * scale, 60f * scale);
-                img.color = new Color(0.2f, 0.85f, 0.3f, 0.5f * (1f - t));
+                img.color = new Color(0.9f, 0.15f, 0.15f, 0.5f * (1f - t));
                 yield return null;
             }
             Destroy(glow);
@@ -277,20 +277,7 @@ namespace JewelsHexaPuzzle.Items
                     hammerIcon.transform.localScale = Vector3.one * breathScale;
                 }
 
-                // 버튼 색상 글로우 펄스: 밝기 변동
-                if (hammerButton != null)
-                {
-                    float glowT = 0.5f + 0.5f * Mathf.Sin(phase * Mathf.PI * 2f / 1.2f);
-                    float brightness = Mathf.Lerp(0.85f, 1f, glowT);
-                    var img = hammerButton.GetComponent<Image>();
-                    if (img != null)
-                        img.color = new Color(
-                            BtnActiveColor.r * brightness,
-                            BtnActiveColor.g * brightness,
-                            BtnActiveColor.b * brightness,
-                            BtnActiveColor.a
-                        );
-                }
+                // 버튼 색상은 HammerGauge가 관리 (여기서 변경하지 않음)
 
                 yield return null;
             }
@@ -316,15 +303,12 @@ namespace JewelsHexaPuzzle.Items
                 float scale = 1f - 0.1f * Mathf.Sin(t * Mathf.PI);
                 btnTransform.localScale = Vector3.one * scale;
 
-                // 색상 보간
-                if (btnImg != null)
-                    btnImg.color = Color.Lerp(startColor, btnOriginalColor, VisualConstants.EaseOutCubic(t));
+                // 색상은 HammerGauge가 관리
 
                 yield return null;
             }
 
             btnTransform.localScale = Vector3.one;
-            if (btnImg != null) btnImg.color = btnOriginalColor;
         }
 
         /// <summary>오버레이 알파 페이드</summary>
@@ -383,6 +367,18 @@ namespace JewelsHexaPuzzle.Items
             }
 
             HexBlock clickedBlock = FindBlockAtPosition(screenPos);
+
+            // 클릭 위치의 HexCoord 확인 (몬스터 타격용)
+            HexCoord? clickedCoord = null;
+            if (clickedBlock != null)
+                clickedCoord = clickedBlock.Coord;
+
+            // ★ 몬스터 직접 타격: 해당 좌표에 몬스터가 있으면 1 데미지
+            if (clickedCoord.HasValue && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                GoblinSystem.Instance.ApplyDamageAtPosition(clickedCoord.Value, 1);
+            }
+
             if (clickedBlock != null && clickedBlock.Data != null && clickedBlock.Data.gemType != GemType.None)
             {
                 isProcessing = true;
@@ -471,6 +467,10 @@ namespace JewelsHexaPuzzle.Items
             if (inputSystem != null && GameManager.Instance != null &&
                 GameManager.Instance.CurrentState == GameState.Playing)
                 inputSystem.SetEnabled(true);
+
+            // ★ 망치 사용 완료 → 게이지 초기화
+            if (HammerGauge.Instance != null)
+                HammerGauge.Instance.OnHammerUsed();
         }
 
         // ============================================================

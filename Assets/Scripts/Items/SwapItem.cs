@@ -24,7 +24,7 @@ namespace JewelsHexaPuzzle.Items
         [SerializeField] private InputSystem inputSystem;
 
         [Header("Settings")]
-        [SerializeField] private Color activeOverlayColor = new Color(0.4f, 0.7f, 1f, 0.25f);
+        [SerializeField] private Color activeOverlayColor = new Color(0f, 1f, 0f, 0.15f);
 
         private bool isActive = false;
         private bool isProcessing = false;
@@ -64,12 +64,7 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 초기 색상을 비활성화 색상으로 설정
-            if (swapButton != null)
-            {
-                var img = swapButton.GetComponent<Image>();
-                if (img != null) img.color = btnOriginalColor;
-            }
+            // 버튼 색상은 SwapGauge가 관리
         }
 
         private void AutoFindReferences()
@@ -157,7 +152,7 @@ namespace JewelsHexaPuzzle.Items
             if (swapButton != null)
             {
                 var img = swapButton.GetComponent<Image>();
-                if (img != null) img.color = BtnActiveColor;
+                // 색상은 SwapGauge가 관리
                 StartCoroutine(ButtonActivatePulse());
             }
 
@@ -734,14 +729,12 @@ namespace JewelsHexaPuzzle.Items
                 float scale = 1f - 0.1f * Mathf.Sin(t * Mathf.PI);
                 btnTransform.localScale = Vector3.one * scale;
 
-                if (btnImg != null)
-                    btnImg.color = Color.Lerp(startColor, btnOriginalColor, VisualConstants.EaseOutCubic(t));
+                // 색상은 SwapGauge가 관리
 
                 yield return null;
             }
 
             btnTransform.localScale = Vector3.one;
-            if (btnImg != null) btnImg.color = btnOriginalColor;
         }
 
         // ============================================================

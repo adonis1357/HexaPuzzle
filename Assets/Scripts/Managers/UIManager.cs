@@ -43,6 +43,8 @@ namespace JewelsHexaPuzzle.Managers
 
         [Header("Item Buttons")]
         [SerializeField] private ItemButtonUI[] itemButtons;
+        /// <summary>아이템 버튼 배열 외부 접근</summary>
+        public ItemButtonUI[] ItemButtons => itemButtons;
 
         [Header("Popups")]
         [SerializeField] private GameObject pausePopup;
@@ -536,10 +538,12 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void UpdateItemButtons(ItemData[] items)
         {
+            Debug.Log($"[아이템진단4] UpdateItemButtons 호출됨 itemButtons={(itemButtons != null ? itemButtons.Length.ToString() : "null")} items={items?.Length}");
             if (itemButtons == null) return;
 
             for (int i = 0; i < itemButtons.Length; i++)
             {
+                Debug.Log($"[아이템진단4] 버튼[{i}]={itemButtons[i]} null={itemButtons[i] == null}");
                 if (i < items.Length)
                 {
                     itemButtons[i].SetItem(items[i]);
@@ -4058,14 +4062,22 @@ namespace JewelsHexaPuzzle.Managers
 
         private ItemData itemData;
 
+        /// <summary>이 버튼에 연결된 아이템 타입</summary>
+        public ItemType CurrentItemType => itemData != null ? itemData.type : (ItemType)0;
+        /// <summary>내부 Button 컴포넌트 참조</summary>
+        public Button ButtonComponent => button;
+
         // 게이지 바 UI (동적 생성)
         private Image gaugeBarBg;
         private Image gaugeBarFill;
+        private Text gaugeCountText;
         private bool gaugeBarCreated = false;
+        private bool wasGaugeFull = false;
 
         public void SetItem(ItemData data)
         {
             itemData = data;
+            Debug.Log($"[아이템진단3] SetItem 호출됨 item={data.type} button={button} iconImage={iconImage}");
 
             if (iconImage != null && data.icon != null)
             {
@@ -4084,32 +4096,73 @@ namespace JewelsHexaPuzzle.Managers
                 lockStageText.text = $"stage {data.unlockStage}";
             }
 
-            // 게이지 바 생성 (한 번만)
-            if (!gaugeBarCreated)
-                CreateGaugeBar(data.type);
+            // 역회전: 게이지 없이 항상 활성화
+            bool isReverseRotation = (data.type == ItemType.ReverseRotation);
 
-            // 게이지 값 갱신
-            float gauge = ItemManager.Instance != null ? ItemManager.Instance.GetGauge(data.type) : 0f;
-            UpdateGaugeBar(gauge);
-
-            if (isUnlocked && countText != null)
+            if (isReverseRotation)
             {
-                // 게이지 % 표시
-                countText.text = $"{Mathf.FloorToInt(gauge * 100)}%";
-            }
+                if (gaugeBarBg != null) gaugeBarBg.gameObject.SetActive(false);
+                if (gaugeBarFill != null) gaugeBarFill.gameObject.SetActive(false);
+                if (gaugeCountText != null) gaugeCountText.gameObject.SetActive(false);
 
-            if (button != null)
-            {
-                // 게이지 기반 활성화: 100% 충전 시만 사용 가능
-                bool canUse = ItemManager.Instance != null ? ItemManager.Instance.CanUseItem(data.type) : false;
-                button.interactable = isUnlocked && canUse;
+                if (isUnlocked && countText != null)
+                    countText.text = "∞";
 
-                // 비활성 시 반투명 처리
-                if (iconImage != null)
+                if (button != null)
                 {
-                    Color c = iconImage.color;
-                    c.a = (isUnlocked && canUse) ? 1f : 0.4f;
-                    iconImage.color = c;
+                    button.interactable = isUnlocked;
+                    if (iconImage != null)
+                    {
+                        Color c = iconImage.color;
+                        c.a = isUnlocked ? 1f : 0.4f;
+                        iconImage.color = c;
+                    }
+                }
+            }
+            else
+            {
+                // 게이지 바 생성 (한 번만)
+                if (!gaugeBarCreated)
+                    CreateGaugeBar(data.type);
+
+                // 카운트 기반 갱신
+                int gaugeCount = ItemManager.Instance != null ? ItemManager.Instance.GetGaugeCount(data.type) : 0;
+                float gauge = gaugeCount / 10f;
+                UpdateGaugeBar(gauge);
+
+                // 게이지 카운트 텍스트
+                if (gaugeCountText != null)
+                    gaugeCountText.text = $"{gaugeCount}/10";
+
+                if (isUnlocked && countText != null)
+                    countText.text = $"{gaugeCount}/10";
+
+                bool canUse = ItemManager.Instance != null ? ItemManager.Instance.CanUseItem(data.type) : false;
+
+                // HammerGauge가 Hammer 버튼의 interactable을 관리하므로 여기서 덮어쓰지 않음
+                bool hammerGaugeManaged = (data.type == ItemType.Hammer && JewelsHexaPuzzle.Items.HammerGauge.Instance != null);
+
+                if (button != null && !hammerGaugeManaged)
+                {
+                    button.interactable = isUnlocked && canUse;
+
+                    if (iconImage != null)
+                    {
+                        Color c = iconImage.color;
+                        c.a = (isUnlocked && canUse) ? 1f : 0.4f;
+                        iconImage.color = c;
+                    }
+                }
+
+                // 활성화 연출: 카운트가 10에 도달한 순간
+                if (canUse && !wasGaugeFull)
+                {
+                    wasGaugeFull = true;
+                    StartCoroutine(GaugeFullActivationEffect());
+                }
+                else if (!canUse)
+                {
+                    wasGaugeFull = false;
                 }
             }
         }
@@ -4149,6 +4202,50 @@ namespace JewelsHexaPuzzle.Managers
             // 아이템 연결 색상 사용
             GemType linkedGem = ItemManager.GetLinkedGemType(type);
             gaugeBarFill.color = (linkedGem != GemType.None) ? GemColors.GetColor(linkedGem) : Color.white;
+
+            // 카운트 텍스트 (게이지 바 위)
+            GameObject textObj = new GameObject("GaugeCountText");
+            textObj.transform.SetParent(bgObj.transform, false);
+            RectTransform textRt = textObj.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = Vector2.zero;
+            textRt.offsetMax = Vector2.zero;
+            gaugeCountText = textObj.AddComponent<Text>();
+            gaugeCountText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gaugeCountText.fontSize = 8;
+            gaugeCountText.alignment = TextAnchor.MiddleCenter;
+            gaugeCountText.color = Color.white;
+            gaugeCountText.raycastTarget = false;
+            gaugeCountText.text = "0/10";
+        }
+
+        /// <summary>게이지 100% 도달 시 활성화 연출 (3회 플래시 + 스케일 펄스)</summary>
+        private IEnumerator GaugeFullActivationEffect()
+        {
+            if (iconImage == null) yield break;
+
+            Color originalColor = iconImage.color;
+            RectTransform rt = GetComponent<RectTransform>();
+            Vector3 originalScale = rt != null ? rt.localScale : Vector3.one;
+
+            // 3회 플래시 + 펄스
+            for (int i = 0; i < 3; i++)
+            {
+                // 플래시 ON
+                iconImage.color = Color.white;
+                if (rt != null) rt.localScale = originalScale * 1.2f;
+                yield return new WaitForSeconds(0.1f);
+
+                // 플래시 OFF
+                iconImage.color = originalColor;
+                if (rt != null) rt.localScale = originalScale;
+                yield return new WaitForSeconds(0.05f);
+            }
+
+            // 최종 복원
+            iconImage.color = originalColor;
+            if (rt != null) rt.localScale = originalScale;
         }
 
         /// <summary>게이지 바 채움 갱신 (0~1)</summary>

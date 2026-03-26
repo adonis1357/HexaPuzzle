@@ -306,12 +306,12 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             // ★ 드릴 시작 지점 열 낙하는 전체 라인 파괴 완료 후 일괄 처리
 
             // ============================================================
-            // [3b단계] 발동 위치에 방패 고블린이 있는 경우: 순차 처리
-            // - 방패 HP >= 2: 양방향 드릴 모두 방패에 박힘 (각 1씩 = 총 2 데미지)
-            // - 방패 HP == 1: 위쪽(negative) 드릴이 방패 파괴 → 아래쪽(positive) 드릴 계속
+            // [3b단계] 발동 위치에 방패 고블린이 있는 경우: 순차 처리 (케이스 B)
+            // - 방패 HP >= 2: 양방향 드릴 모두 방패에 박힘 (각 1씩 = 총 내구도 2 감소, 본체 데미지 없음)
+            // - 방패 HP == 1: 위쪽 드릴이 방패에 박혀 방패 파괴 → 아래쪽 드릴이 본체 통과 1 데미지 후 계속 진행
             // ============================================================
             bool shieldBlockedAll = false;    // 양방향 모두 차단됨
-            bool shieldBlockedFirst = false;  // 위쪽(negative)만 차단, 아래쪽(positive) 계속
+            bool shieldBlockedFirst = false;  // 위쪽(negative)만 차단, 아래쪽(positive) 발사
 
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
                 && GoblinSystem.Instance.HasShieldGoblinAt(startCoord))
@@ -336,15 +336,27 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                     // yield return으로 방패 파괴 상태 반영 대기
                     yield return null;
 
-                    // 아래쪽 드릴(positive): 방패 없어짐 → 고블린 본체에 드릴 관통 대미지
+                    // 아래쪽 드릴(positive): 방패 없어짐 → 고블린 본체에 스킬 데미지 (통과)
                     if (GoblinSystem.Instance.HasGoblinAt(startCoord))
                     {
-                        GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, 2);
-                        Debug.Log($"[DrillBlockSystem] 아래쪽 드릴 → 고블린 본체에 2 대미지");
+                        int shieldPassDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                        GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, shieldPassDmg);
+                        Debug.Log($"[DrillBlockSystem] 아래쪽 드릴 → 고블린 본체에 {shieldPassDmg} 데미지");
                     }
 
                     shieldBlockedFirst = true;
                 }
+            }
+
+            // ★ 발동 위치에 방패가 아닌 몬스터가 있으면 드릴 관통 데미지 (스킬 강화)
+            if (!shieldBlockedAll && !shieldBlockedFirst
+                && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                && GoblinSystem.Instance.HasGoblinAt(startCoord)
+                && !GoblinSystem.Instance.HasShieldGoblinAt(startCoord))
+            {
+                int startDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, startDmg);
+                Debug.Log($"[DrillBlockSystem] 발동 위치 몬스터에 {startDmg} 데미지: {startCoord}");
             }
 
             // 양방향 모두 차단된 경우: 짧은 이펙트 후 조기 종료
@@ -753,37 +765,12 @@ private IEnumerator DrillLineWithProjectile(
                         }
                     }
 
-                    // 방패에 드릴 차단 처리 (2발 박힘 → 내구도 감소)
-                    int blockResult = GoblinSystem.Instance.TryBlockDrill(target.Coord);
-
-                    if (blockResult == 1)
-                    {
-                        // 완전 차단: 투사체 파괴, 이 방향 라인 종료
-                        if (projectile != null) Destroy(projectile);
-                        onTargetsDestroyed?.Invoke();
-                        yield break;
-                    }
-                    else if (blockResult == 2)
-                    {
-                        // 관통: 방패 파괴됨, 드릴은 같은 방향으로 계속 진행
-                        currentPos = shieldPos;
-                        damagedGoblinPositions.Add(target.Coord); // 이미 대미지 적용됨
-                        // 이 블록도 파괴 처리 (방패 뒤의 블록)
-                        if (target.Data != null && target.Data.gemType != GemType.None)
-                        {
-                            GemType destroyedGemType = target.Data.gemType;
-                            Color blockColor = GemColors.GetColor(destroyedGemType);
-                            float drillAngle = GetDirectionAngle(direction, positive);
-                            destroyCoroutines.Add(StartCoroutine(DestroyBlockWithDebris(target, blockColor, drillAngle, showEffects)));
-                            if (showEffects)
-                                StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
-                            if (destroyedGemType != GemType.None)
-                                GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType);
-                        }
-                        yield return new WaitForSeconds(drillSpeed);
-                        continue; // 다음 타겟으로 계속 진행
-                    }
-                    // blockResult == 0: 방패 없음 (경쟁 조건으로 이미 파괴됨), 일반 처리 계속
+                    // ★ 케이스 A: 측면 타격 — 방패 내구도 1 감소, 본체 데미지 없음, 드릴 차단
+                    GoblinSystem.Instance.ApplySingleDrillToShield(target.Coord);
+                    Debug.Log($"[DrillBlockSystem] 측면 방패 타격: {target.Coord} → 내구도 1 감소, 드릴 차단");
+                    if (projectile != null) Destroy(projectile);
+                    onTargetsDestroyed?.Invoke();
+                    yield break;
                 }
 
                 Vector3 targetPos = target.transform.position;
@@ -812,13 +799,14 @@ private IEnumerator DrillLineWithProjectile(
 
                 currentPos = targetPos;
 
-                // ★ 투사체가 고블린 좌표에 도달 시 2 대미지 (드릴 관통)
+                // ★ 투사체가 고블린 좌표에 도달 시 데미지 (드릴 관통, 스킬 강화 적용)
                 if (pathGoblinPositions.Count > 0 && pathGoblinPositions.Contains(target.Coord)
                     && !damagedGoblinPositions.Contains(target.Coord))
                 {
                     damagedGoblinPositions.Add(target.Coord);
+                    int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
                     if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
-                        GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, 2);
+                        GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
                 }
 
                 // 안전 검사: 다른 드릴/폭탄 등이 동시에 이 블록을 처리했을 수 있음
@@ -868,15 +856,16 @@ private IEnumerator DrillLineWithProjectile(
                 yield return new WaitForSeconds(drillSpeed);
             }
 
-            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 2 대미지 적용
+            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 데미지 적용 (스킬 강화)
             if (pathGoblinPositions.Count > 0 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
+                int drillDmgPass = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
                 foreach (var gPos in pathGoblinPositions)
                 {
                     if (!damagedGoblinPositions.Contains(gPos))
                     {
                         damagedGoblinPositions.Add(gPos);
-                        GoblinSystem.Instance.ApplyDamageAtPosition(gPos, 2);
+                        GoblinSystem.Instance.ApplyDamageAtPosition(gPos, drillDmgPass);
                     }
                 }
             }
@@ -967,7 +956,8 @@ private IEnumerator DrillLineWithProjectile(
 
                         if (dist < hitRadius)
                         {
-                            GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, 2);
+                            int exitDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                            GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, exitDmg);
                             exitDamagedPositions.Add(goblin.position);
                         }
                     }
@@ -1681,38 +1671,37 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         /// <param name="duration">흔들림 지속 시간(초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 첫 번째 흔들림이면 현재 위치를 "원래 위치"로 저장
-            if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
+            shakeOriginalPos = Vector3.zero;
             shakeCount++;
 
             float elapsed = 0f;
-
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                // 시간이 지날수록 흔들림이 약해짐 (EaseInQuad 감쇠)
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            // 흔들림 카운터 감소. 마지막 흔들림이 끝나면 원래 위치로 복원
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                shakeCount--;
+                if (shakeCount <= 0)
+                {
+                    shakeCount = 0;
+                    target.localPosition = Vector3.zero;
+                }
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================

@@ -844,22 +844,26 @@ namespace JewelsHexaPuzzle.Core
 
         private IEnumerator AnimateGoblinMove(GoblinData goblin, Vector2 targetPos)
         {
-            if (goblin.visualObject == null) yield break;
+            if (goblin == null || goblin.visualObject == null) yield break;
 
             RectTransform rt = goblin.visualObject.GetComponent<RectTransform>();
+            if (rt == null) yield break;
+
             Vector2 startPos = rt.anchoredPosition;
             float duration = 0.3f;
             float elapsed = 0f;
 
             while (elapsed < duration)
             {
+                if (goblin.visualObject == null || rt == null) yield break;
                 elapsed += Time.deltaTime;
                 float t = VisualConstants.EaseOutCubic(Mathf.Clamp01(elapsed / duration));
                 rt.anchoredPosition = Vector2.Lerp(startPos, targetPos, t);
                 yield return null;
             }
 
-            rt.anchoredPosition = targetPos;
+            if (rt != null)
+                rt.anchoredPosition = targetPos;
         }
 
         // ============================================================
@@ -1022,32 +1026,37 @@ namespace JewelsHexaPuzzle.Core
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 첫 번째 흔들림이면 현재 위치를 "원래 위치"로 저장
+            // 항상 Vector3.zero를 기준으로
             if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
+                shakeOriginalPos = Vector3.zero;
             shakeCount++;
 
             float elapsed = 0f;
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                // 시간이 지날수록 흔들림이 약해짐 (EaseInQuad 감쇠)
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    // 시간이 지날수록 흔들림이 약해짐 (EaseInQuad 감쇠)
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            // 흔들림 카운터 감소. 마지막 흔들림이 끝나면 원래 위치로 복원
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                // 흔들림 카운터 감소. 마지막 흔들림이 끝나면 원래 위치로 복원
+                shakeCount--;
+                if (shakeCount <= 0)
+                {
+                    shakeCount = 0;
+                    target.localPosition = Vector3.zero;
+                }
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -2004,8 +2013,11 @@ namespace JewelsHexaPuzzle.Core
                     bS = -bq - br;
                 }
 
-                // === 목적지 = bombPos + 방향 × (explodeRange+1) 직접 계산 ===
-                int destMultiplier = explodeRange + 1;
+                // === 목적지 = bombPos + 방향 × (explodeRange+1+스킬보너스) 직접 계산 ===
+                int skillBonus = 0;
+                if (SkillTreeManager.Instance != null)
+                    skillBonus = SkillTreeManager.Instance.GetBombKnockbackBonus();
+                int destMultiplier = explodeRange + 1 + skillBonus;
                 float t3 = (float)destMultiplier / dist;
                 float destQ = aq + (bq - aq) * t3;
                 float destR = ar + (br - ar) * t3;
@@ -4248,9 +4260,9 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 드릴이 방패 고블린 위치에 도달했을 때 호출.
-        /// 드릴은 2발이 방패에 박힘. 방패 내구도가 충분하면 완전 차단.
-        /// 방패 내구도가 부족하면(1남음) 1발로 방패 파괴 후 나머지 1발 관통.
+        /// 드릴이 방패 고블린 위치에 도달했을 때 호출 (측면 타격).
+        /// 드릴 1발 = 방패 내구도 1 감소. 완전 차단(드릴 정지).
+        /// 방패 내구도가 1이면 파괴 후 드릴 계속 진행.
         /// 반환: 0=방패 없음, 1=완전 차단(드릴 정지), 2=관통(방패 파괴 후 드릴 계속 진행)
         /// </summary>
         public int TryBlockDrill(HexCoord position)
@@ -4258,27 +4270,23 @@ namespace JewelsHexaPuzzle.Core
             var goblin = goblins.FirstOrDefault(g => g.isAlive && g.isShielded && g.position == position);
             if (goblin == null) return 0;
 
-            // ★ 방패가 드릴을 막았을 때 고블린 전체 들썩임 연출
             StartCoroutine(ShieldJoltEffect(goblin));
+            StartCoroutine(AddStuckDrillVisual(goblin));
 
-            int remaining = goblin.shieldHp;
+            bool willBreak = goblin.shieldHp <= 1;
 
-            if (remaining >= 2)
+            // 드릴 1발 = 방패 내구도 1 감소
+            ApplyShieldDamage(goblin, 1);
+
+            if (willBreak)
             {
-                // 방패 내구도 충분: 드릴 2발 박힘, 완전 차단
-                StartCoroutine(AddStuckDrillVisual(goblin));
-                StartCoroutine(AddStuckDrillVisual(goblin));
-                ApplyShieldDamage(goblin, 2);
-                return 1; // 완전 차단
+                // 방패 파괴 → 드릴 관통
+                return 2;
             }
             else
             {
-                // 방패 내구도 1: 1발 박힌 후 방패 파괴, 나머지 1발 관통
-                StartCoroutine(AddStuckDrillVisual(goblin));
-                ApplyShieldDamage(goblin, 1); // 방패 파괴됨 (isShielded = false)
-                // ★ 관통 시 본체에 1 대미지 추가 적용 (방패 없으므로 직접 HP 감소)
-                ApplyDamageAtPosition(goblin.position, 1);
-                return 2; // 관통
+                // 방패 유지 → 드릴 차단
+                return 1;
             }
         }
 

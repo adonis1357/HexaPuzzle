@@ -344,26 +344,27 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     AudioManager.Instance.PlayBombSound();
             }
 
-            // ★ 1칸 폭발 시점: 폭탄 데미지 (중심3, ring1=2, ring2=1) 즉시 적용
-            // 블록 파괴 데미지(+1)는 블록 파괴 후 별도 적용
+            // ★ 폭탄 데미지: 기본(중심2, ring1=1, ring2=0) + 스킬 보너스(N)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
+                int dmgBonus = 0;
+                if (SkillTreeManager.Instance != null)
+                    dmgBonus = SkillTreeManager.Instance.GetBombDamageBonus();
+
                 var bombDamageMap = new Dictionary<HexCoord, int>();
-                // 중심: 폭탄 데미지 3 (블록 파괴 데미지 +1은 별도 적용)
-                bombDamageMap[bombCoord] = 3;
-                // 1칸 범위: 폭탄 데미지 2
+                bombDamageMap[bombCoord] = 2 + dmgBonus;          // 중심
                 foreach (var coord in ring1Coords)
-                    bombDamageMap[coord] = 2;
-                // 2칸 범위: 폭탄 데미지 1
+                    bombDamageMap[coord] = 1 + dmgBonus;          // 1칸
                 foreach (var coord in ring2Coords)
                 {
                     if (!bombDamageMap.ContainsKey(coord))
-                        bombDamageMap[coord] = 1;
+                    {
+                        int r2dmg = 0 + dmgBonus;
+                        if (r2dmg > 0) bombDamageMap[coord] = r2dmg; // 0이면 데미지 없음
+                    }
                 }
-                // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
                 var directHitCoords = new HashSet<HexCoord>(bombDamageMap.Keys);
                 GoblinSystem.Instance.ApplyBatchDamage(bombDamageMap, directHitCoords);
-                // ★ 넉백은 모든 블록 파괴 완료 후 일괄 실행 (아래 참조)
             }
 
             // ★ 블록 파괴 좌표 수집 (블록 파괴 데미지 +1 적용용)
@@ -1052,35 +1053,37 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
+            shakeOriginalPos = Vector3.zero; // 기본 위치 고정
             shakeCount++;
 
             float elapsed = 0f;
-
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                shakeCount--;
+                if (shakeCount <= 0)
+                {
+                    shakeCount = 0;
+                    target.localPosition = Vector3.zero;
+                }
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1139,34 +1142,38 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
         private IEnumerator ZoomPunch(float targetScale)
         {
-            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
             bool isOwner = VisualConstants.TryBeginZoomPunch();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 origScale = target.localScale;
+            Vector3 origScale = Vector3.one; // 기본 스케일 고정
             Vector3 punchScale = origScale * targetScale;
 
-            float elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
-                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
-            }
+                float elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchInDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                    target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
 
-            elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                    target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
+            }
+            finally
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
-                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
+                target.localScale = Vector3.one;
+                VisualConstants.EndZoomPunch();
             }
-
-            target.localScale = origScale;
-            VisualConstants.EndZoomPunch();
         }
 
         private IEnumerator DestroyFlashOverlay(HexBlock block)

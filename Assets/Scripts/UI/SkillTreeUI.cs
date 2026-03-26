@@ -268,8 +268,6 @@ namespace JewelsHexaPuzzle.UI
 
         private void CreateSkillNodes()
         {
-            var allSkills = SkillTreeDefinition.GetAllSkills();
-
             // 노드 컨테이너 (중앙 정렬)
             GameObject nodesContainer = new GameObject("SkillNodesContainer");
             nodesContainer.transform.SetParent(rootContainer.transform, false);
@@ -278,16 +276,47 @@ namespace JewelsHexaPuzzle.UI
             containerRt.anchorMax = new Vector2(0.5f, 0.5f);
             containerRt.pivot = new Vector2(0.5f, 0.5f);
             containerRt.anchoredPosition = new Vector2(0f, 60f);
-            containerRt.sizeDelta = new Vector2(800f, 400f);
+            containerRt.sizeDelta = new Vector2(800f, 500f);
 
-            // 드릴 스킬 체인: 좌→우 배치
-            // 첫 노드는 좌측 시작, 이후 오른쪽으로 진행
-            float startX = -(NODE_SPACING_X);  // 왼쪽부터
-            float y = 0f;
+            float startX = -(NODE_SPACING_X);
+            float drillY = 260f;       // 드릴 이동 체인
+            float drillDmgY = 120f;    // 드릴 강화 체인
+            float bombMoveY = -20f;    // 폭탄 이동 체인
+            float bombKnockY = -160f;  // 폭탄 넉백 체인
+            float bombDmgY = -300f;    // 폭탄 데미지 체인
 
-            // "드릴" 카테고리 라벨
-            GameObject catLabel = new GameObject("DrillCategoryLabel");
-            catLabel.transform.SetParent(nodesContainer.transform, false);
+            // === 드릴 이동 스킬 체인 ===
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillSkills(),
+                startX, drillY, "◆ 드릴 이동", new Color(0.7f, 0.85f, 1f, 0.9f));
+
+            // === 드릴 강화 스킬 체인 ===
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillDamageSkills(),
+                startX, drillDmgY, "◆ 드릴 강화", new Color(0.5f, 0.75f, 1f, 0.9f));
+
+            // === 폭탄 이동 스킬 체인 ===
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombSkills(),
+                startX, bombMoveY, "◆ 폭탄 이동", new Color(1f, 0.7f, 0.4f, 0.9f));
+
+            // === 폭탄 넉백 스킬 체인 ===
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombKnockbackSkills(),
+                startX, bombKnockY, "◆ 폭탄 넉백", new Color(1f, 0.55f, 0.3f, 0.9f));
+
+            // === 폭탄 데미지 스킬 체인 ===
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombDamageSkills(),
+                startX, bombDmgY, "◆ 폭탄 데미지", new Color(1f, 0.3f, 0.15f, 0.9f));
+        }
+
+        /// <summary>
+        /// 스킬 체인 한 줄 생성 (노드 + 연결 라인 + 자물쇠 + 카테고리 라벨)
+        /// </summary>
+        private void CreateSkillChain(Transform parent, List<SkillNodeData> skills,
+            float startX, float y, string labelText, Color labelColor)
+        {
+            if (skills == null || skills.Count == 0) return;
+
+            // 카테고리 라벨
+            GameObject catLabel = new GameObject($"CategoryLabel_{labelText}");
+            catLabel.transform.SetParent(parent, false);
             RectTransform catRt = catLabel.AddComponent<RectTransform>();
             catRt.anchoredPosition = new Vector2(startX - NODE_SIZE * 0.5f - 20f, y + NODE_SIZE * 0.5f + 30f);
             catRt.sizeDelta = new Vector2(200f, 30f);
@@ -295,49 +324,48 @@ namespace JewelsHexaPuzzle.UI
             catText.font = font;
             catText.fontSize = 20;
             catText.alignment = TextAnchor.MiddleLeft;
-            catText.color = new Color(0.7f, 0.85f, 1f, 0.9f);
+            catText.color = labelColor;
             catText.raycastTarget = false;
-            catText.text = "◆ 드릴 스킬";
+            catText.text = labelText;
 
-            for (int i = 0; i < allSkills.Count; i++)
+            // 이 체인의 연결 라인 시작 인덱스 기억
+            int lineStartIdx = connectionLines.Count;
+
+            for (int i = 0; i < skills.Count; i++)
             {
-                var skill = allSkills[i];
+                var skill = skills[i];
                 float x = startX + i * NODE_SPACING_X;
 
-                // 연결 라인 (이전 노드와)
                 if (i > 0)
                 {
                     float prevX = startX + (i - 1) * NODE_SPACING_X;
-                    CreateConnectionLine(nodesContainer.transform, prevX, y, x, y);
+                    CreateConnectionLine(parent, prevX, y, x, y);
                 }
 
-                // 스킬 노드 생성
-                CreateSkillNode(nodesContainer.transform, skill, new Vector2(x, y));
+                CreateSkillNode(parent, skill, new Vector2(x, y));
             }
 
-            // === 자물쇠 아이콘 생성 (노드와 별개로 nodesContainer 자식) ===
-            // connectionLines[i-1]이 skill[i-1]→skill[i]를 연결
-            for (int i = 0; i < allSkills.Count; i++)
+            // 자물쇠 아이콘
+            for (int i = 0; i < skills.Count; i++)
             {
-                var skill = allSkills[i];
+                var skill = skills[i];
                 Vector2 lockPos;
 
-                if (i > 0 && connectionLines.Count >= i)
+                int lineIdx = lineStartIdx + (i - 1);
+                if (i > 0 && lineIdx >= 0 && lineIdx < connectionLines.Count)
                 {
-                    // 연결 라인의 오른쪽 끝점 + 8px
-                    RectTransform lineRt = connectionLines[i - 1].GetComponent<RectTransform>();
+                    RectTransform lineRt = connectionLines[lineIdx].GetComponent<RectTransform>();
                     float lineRightX = lineRt.anchoredPosition.x + lineRt.sizeDelta.x * 0.5f;
                     float lineY = lineRt.anchoredPosition.y;
                     lockPos = new Vector2(lineRightX + 17f, lineY);
                 }
                 else
                 {
-                    // 첫 번째 노드: 노드 왼쪽 끝에서 왼쪽으로 배치
                     float nodeX = startX;
                     lockPos = new Vector2(nodeX - NODE_SIZE * 0.5f - 5f, y);
                 }
 
-                CreateLockIconPair(nodesContainer.transform, skill.skillType, lockPos);
+                CreateLockIconPair(parent, skill.skillType, lockPos);
             }
         }
 
@@ -372,8 +400,12 @@ namespace JewelsHexaPuzzle.UI
             borderImg.color = Color.white;
             borderImg.raycastTarget = false;
 
-            // === 아이콘 (드릴 프로시저럴) ===
-            CreateDrillIcon(nodeObj.transform, skillData);
+            // === 아이콘 (스킬 타입별 프로시저럴) ===
+            int typeVal = (int)skillData.skillType;
+            if (typeVal >= 200 && typeVal <= 499)
+                CreateBombIcon(nodeObj.transform, skillData);  // 폭탄 이동 + 넉백 + 데미지
+            else
+                CreateDrillIcon(nodeObj.transform, skillData);  // 드릴 이동 + 드릴 강화(500~)
 
             // === 스킬 이름 텍스트 (노드 아래) ===
             GameObject nameObj = new GameObject("SkillName");
@@ -574,6 +606,61 @@ namespace JewelsHexaPuzzle.UI
             Outline rangeOutline = rangeObj.AddComponent<Outline>();
             rangeOutline.effectColor = new Color(0f, 0f, 0f, 0.6f);
             rangeOutline.effectDistance = new Vector2(1f, 1f);
+        }
+
+        /// <summary>
+        /// 폭탄 아이콘 프로시저럴 생성 (원형 + 도화선)
+        /// </summary>
+        private void CreateBombIcon(Transform parent, SkillNodeData skillData)
+        {
+            // 폭탄 본체 (원형)
+            GameObject body = new GameObject("BombBody");
+            body.transform.SetParent(parent, false);
+            Image bodyImg = body.AddComponent<Image>();
+            bodyImg.color = new Color(0.95f, 0.55f, 0.15f, 0.95f);
+            bodyImg.raycastTarget = false;
+            RectTransform bodyRt = body.GetComponent<RectTransform>();
+            bodyRt.anchoredPosition = new Vector2(0f, -2f);
+            bodyRt.sizeDelta = new Vector2(28f, 28f);
+
+            // 도화선 (위로 삐져나온 선)
+            GameObject fuse = new GameObject("BombFuse");
+            fuse.transform.SetParent(parent, false);
+            Image fuseImg = fuse.AddComponent<Image>();
+            fuseImg.color = new Color(0.8f, 0.7f, 0.3f, 0.9f);
+            fuseImg.raycastTarget = false;
+            RectTransform fuseRt = fuse.GetComponent<RectTransform>();
+            fuseRt.anchoredPosition = new Vector2(6f, 14f);
+            fuseRt.sizeDelta = new Vector2(3f, 12f);
+            fuseRt.localRotation = Quaternion.Euler(0f, 0f, -20f);
+
+            // 불꽃 (도화선 끝 작은 원)
+            GameObject spark = new GameObject("BombSpark");
+            spark.transform.SetParent(parent, false);
+            Image sparkImg = spark.AddComponent<Image>();
+            sparkImg.color = new Color(1f, 0.9f, 0.3f, 0.9f);
+            sparkImg.raycastTarget = false;
+            RectTransform sparkRt = spark.GetComponent<RectTransform>();
+            sparkRt.anchoredPosition = new Vector2(8f, 22f);
+            sparkRt.sizeDelta = new Vector2(6f, 6f);
+
+            // 이동 범위 텍스트 (드릴과 동일 패턴)
+            int range = skillData.drillMoveRange;
+            if (range > 0)
+            {
+                GameObject rangeObj = new GameObject("MoveRange");
+                rangeObj.transform.SetParent(parent, false);
+                RectTransform rangeRt = rangeObj.AddComponent<RectTransform>();
+                rangeRt.anchoredPosition = new Vector2(0f, -18f);
+                rangeRt.sizeDelta = new Vector2(40f, 18f);
+                Text rangeText = rangeObj.AddComponent<Text>();
+                rangeText.font = font;
+                rangeText.fontSize = 14;
+                rangeText.alignment = TextAnchor.MiddleCenter;
+                rangeText.color = new Color(1f, 0.85f, 0.5f, 0.9f);
+                rangeText.raycastTarget = false;
+                rangeText.text = $"{range}칸";
+            }
         }
 
         // ============================================================

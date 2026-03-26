@@ -1378,142 +1378,151 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 드론+드론 합성: 우선순위 기반으로 3개 타겟을 순차 타격.
-        /// 각 타격마다 드론 비행 + 티어 강등 적용.
+        /// 드론+드론 합성: 5회 우선순위 기반 몬스터 직접 타격.
+        /// 블록 파괴 없이 GoblinBomb → 궁수 → 방패 → 갑옷 → 일반 순서로 타격.
+        /// 몬스터가 부족하면 남은 드론은 스마트 블록 타겟.
         /// </summary>
         private IEnumerator DroneDroneCombo(HexCoord pos, Vector3 worldPos, GemType color)
         {
             SetupEffectParent();
 
             Color comboColor = GemColors.GetColor(color);
-            int blockScoreSum = 0;
-            var gemCountsByColor = new Dictionary<GemType, int>();
 
-            // 히트스톱 + 줌펀치
             StartCoroutine(HitStop(VisualConstants.HitStopDurationMedium));
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
-            // 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDroneSound();
 
-            // 5개 드론 동시 비행 타격
             int strikes = 5;
-            HashSet<HexBlock> alreadyStruck = new HashSet<HexBlock>();
 
-            // ★ 1순위: 활 고블린 직접 타격 (낙하 면역이므로 직접 타격만 유효)
-            List<GoblinData> archerTargets = new List<GoblinData>();
+            // ★ 점수 기반 몬스터 직접 타격 (상위 5마리)
+            List<HexCoord> goblinTargets = new List<HexCoord>();
+            List<HexBlock> blockTargets = new List<HexBlock>();
+            HashSet<HexCoord> usedGoblinCoords = new HashSet<HexCoord>();
+
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                var archers = GoblinSystem.Instance.GetAliveGoblins()
-                    .Where(g => g.isAlive && g.isArcher)
-                    .OrderBy(g => g.hp).ThenBy(g => g.position.q).ToList();
+                var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
 
-                // ★ 아처 HP만큼 드론 배정 → 제거 가능 수량 보장
-                foreach (var archer in archers)
+                // 점수 기반 정렬: BombGoblin(5) > Shield(4) > Archer(3) > Armored(2) > Regular(1)
+                // GoblinBomb은 블록 기반이므로 별도 수집
+                if (hexGrid != null)
                 {
-                    int dronesToAssign = Mathf.Min(archer.hp, strikes - archerTargets.Count);
-                    for (int d = 0; d < dronesToAssign; d++)
-                        archerTargets.Add(archer);
-                    if (archerTargets.Count >= strikes) break;
+                    var bombs = new List<HexBlock>();
+                    foreach (var block in hexGrid.GetAllBlocks())
+                    {
+                        if (block != null && block.Data != null && block.Data.hasGoblinBomb)
+                            bombs.Add(block);
+                    }
+                    bombs.Sort((a, b) => a.Data.goblinBombCountdown.CompareTo(b.Data.goblinBombCountdown));
+                    foreach (var bomb in bombs)
+                    {
+                        if (goblinTargets.Count >= strikes) break;
+                        goblinTargets.Add(bomb.Coord);
+                        usedGoblinCoords.Add(bomb.Coord);
+                    }
+                }
+
+                // 몬스터를 점수 내림차순 정렬 후 수집
+                var sortedGoblins = aliveGoblins
+                    .OrderByDescending(g => GoblinScoreForDroneDrone(g))
+                    .ThenBy(g => g.hp)
+                    .ThenBy(g => g.position.q)
+                    .ToList();
+
+                foreach (var g in sortedGoblins)
+                {
+                    if (goblinTargets.Count >= strikes) break;
+                    if (usedGoblinCoords.Contains(g.position)) continue;
+                    // 궁수: HP만큼 배정
+                    if (g.isArcher)
+                    {
+                        int assign = Mathf.Min(g.hp, strikes - goblinTargets.Count);
+                        for (int d = 0; d < assign; d++)
+                            goblinTargets.Add(g.position);
+                    }
+                    else
+                    {
+                        goblinTargets.Add(g.position);
+                    }
+                    usedGoblinCoords.Add(g.position);
                 }
             }
 
-            int remainingStrikes = strikes - archerTargets.Count;
-
-            // 2순위: 블록 타겟 (스마트 타겟팅 / 미션 기반)
-            List<HexBlock> blockTargets = new List<HexBlock>();
-            bool useSmartTargeting = GoblinSystem.Instance != null
-                && GoblinSystem.Instance.IsActive
-                && GoblinSystem.Instance.AliveCount > 0;
-
+            // 남은 드론은 블록 타겟 (점수 기반)
+            int remainingStrikes = strikes - goblinTargets.Count;
+            HashSet<HexBlock> alreadyStruck = new HashSet<HexBlock>();
             for (int i = 0; i < remainingStrikes; i++)
             {
-                HexBlock target = null;
-
-                if (useSmartTargeting)
-                    target = FindSmartDroneComboTarget(alreadyStruck);
-
-                // 스마트 타겟 없으면 미션/우선순위 기반 폴백
-                if (target == null)
-                    target = FindBestDroneComboTarget(pos, alreadyStruck);
-
+                HexBlock target = FindSmartDroneComboTarget(alreadyStruck);
+                if (target == null) target = FindBestDroneComboTarget(pos, alreadyStruck);
                 if (target == null) break;
                 alreadyStruck.Add(target);
                 blockTargets.Add(target);
-
-                // 점수 수집
-                if (target.Data != null && target.Data.specialType == SpecialBlockType.None)
-                {
-                    blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
-                    CollectGemCount(target, gemCountsByColor);
-                }
             }
 
-            int totalDrones = archerTargets.Count + blockTargets.Count;
+            int totalDrones = goblinTargets.Count + blockTargets.Count;
             if (totalDrones == 0)
             {
-                Debug.Log("[ComboSystem] DroneDrone: 타겟 없음, 종료");
                 OnComboComplete?.Invoke(400);
                 yield break;
             }
 
-            // 드론 비행: 아처 타겟 → 블록 타겟 순서로 동시 발사
-            List<Coroutine> flyCoroutines = new List<Coroutine>();
+            // 드론 비행
             int droneIndex = 0;
 
-            // 아처 타겟 비행
-            foreach (var archer in archerTargets)
+            foreach (var coord in goblinTargets)
             {
-                Vector3 archerWorldPos = GetArcherWorldPos(archer);
+                Vector3 targetWorldPos = hexGrid != null
+                    ? (Vector3)hexGrid.CalculateFlatTopHexPosition(coord)
+                    : worldPos;
+                // 고블린 비주얼이 있으면 해당 위치 사용
+                if (GoblinSystem.Instance != null)
+                {
+                    var g = GoblinSystem.Instance.GetGoblinAt(coord);
+                    if (g != null && g.visualObject != null)
+                        targetWorldPos = g.visualObject.transform.position;
+                }
                 float delay = droneIndex * 0.06f;
                 if (droneSystem != null)
-                    flyCoroutines.Add(StartCoroutine(droneSystem.PlayDroneFlyEffectWithDelay(worldPos, archerWorldPos, comboColor, delay)));
+                    StartCoroutine(droneSystem.PlayDroneFlyEffectWithDelay(worldPos, targetWorldPos, comboColor, delay));
                 droneIndex++;
             }
 
-            // 블록 타겟 비행
             foreach (var target in blockTargets)
             {
-                Vector3 targetPos = target.transform.position;
                 float delay = droneIndex * 0.06f;
                 if (droneSystem != null)
-                    flyCoroutines.Add(StartCoroutine(droneSystem.PlayDroneFlyEffectWithDelay(worldPos, targetPos, comboColor, delay)));
+                    StartCoroutine(droneSystem.PlayDroneFlyEffectWithDelay(worldPos, target.transform.position, comboColor, delay));
                 droneIndex++;
             }
 
-            // 모든 드론 비행 완료 대기 (이륙0.264 + 호버0.198 + 비행0.396 + 딜레이)
             float maxWait = (totalDrones - 1) * 0.06f + 0.86f;
             yield return new WaitForSeconds(maxWait);
 
-            // 동시 타격 적용
+            // 동시 타격
             StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
-            // 아처 직접 타격 (1 대미지 + 플래시)
-            foreach (var archer in archerTargets)
+            // 몬스터 직접 타격 (1 대미지 → 방패는 ApplyDamageAtPosition 내부에서 방패 처리)
+            foreach (var coord in goblinTargets)
             {
                 if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
                 {
-                    GoblinSystem.Instance.ApplyDamageAtPosition(archer.position, 1);
-                    Vector3 archerWorldPos = GetArcherWorldPos(archer);
-                    StartCoroutine(DestroyFlash(archerWorldPos, comboColor));
+                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, 1);
+                    Vector3 hitPos = hexGrid != null
+                        ? (Vector3)hexGrid.CalculateFlatTopHexPosition(coord)
+                        : worldPos;
+                    StartCoroutine(DestroyFlash(hitPos, comboColor));
                 }
-                Debug.Log($"[ComboSystem] DroneDrone: 활 고블린 직접 타격 ({archer.position}) 1 대미지");
             }
 
-            // 블록 타격
-            for (int i = 0; i < blockTargets.Count; i++)
+            // 블록 타격 (폴백)
+            foreach (var target in blockTargets)
             {
-                HexBlock target = blockTargets[i];
                 if (target == null || target.Data == null) continue;
-
-                HexCoord targetCoord = target.Coord;
-
-                // 타격 플래시
                 StartCoroutine(DestroyFlash(target.transform.position, comboColor));
-
-                // 타격 효과
-                if (target.Data != null && target.Data.specialType != SpecialBlockType.None &&
+                if (target.Data.specialType != SpecialBlockType.None &&
                     target.Data.specialType != SpecialBlockType.FixedBlock)
                 {
                     target.SetPendingActivation();
@@ -1523,18 +1532,14 @@ namespace JewelsHexaPuzzle.Core
                 {
                     ApplyDroneStrikeCombo(target);
                 }
-
-                // 타겟 위치 고블린 충돌 대미지
                 if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
-                    GoblinSystem.Instance.ApplyDamageAtPosition(targetCoord, 1);
+                    GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, 1);
             }
 
             yield return new WaitForSeconds(0.1f);
 
-            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
-
-            int totalScore = 500 + blockScoreSum;
-            Debug.Log($"[ComboSystem] DroneDrone complete. Archers={archerTargets.Count}, Blocks={blockTargets.Count}, Score={totalScore}");
+            int totalScore = 500;
+            Debug.Log($"[ComboSystem] DroneDrone: 몬스터직접={goblinTargets.Count}, 블록={blockTargets.Count}, Score={totalScore}");
             OnComboComplete?.Invoke(totalScore);
         }
 
@@ -2010,9 +2015,9 @@ namespace JewelsHexaPuzzle.Core
                 droneBlocks.Add(block);
             }
 
-            // ★ 낙하 대미지 포함 총 대미지 기준 통합 타겟 목록 생성
-            // 각 타겟별로 (블록 파괴 → 낙하 대미지 + 충돌 대미지) vs (고블린 직접 타격 = 1)
-            // 대미지 내림차순 정렬, 동률 시 고블린 직접 타격 우선
+            // ★ 타겟 목록 생성: DroneBlockSystem의 우선순위 타겟팅 사용
+            // 각 드론마다 DroneBlockSystem.ActivateDrone()을 호출하면 내부에서
+            // FindPriorityGoblinTarget → 스마트 블록 순으로 타겟 선정
             var damageTargets = BuildDroneTargetsByDamage(new HashSet<HexBlock>(droneBlocks));
 
             if (damageTargets.Count > 0)
@@ -3147,6 +3152,19 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// <summary>
+        /// 드론×드론 몬스터 점수: BombGoblin=5, Shield=4, Archer=3, Armored=2, Regular=1
+        /// </summary>
+        private static int GoblinScoreForDroneDrone(GoblinData g)
+        {
+            if (g == null || !g.isAlive) return 0;
+            if (g.isBomb) return 5;
+            if (g.isShielded) return 4;
+            if (g.isArcher) return 3;
+            if (g.isArmored) return 2;
+            return 1;
+        }
+
         /// 드론×드론 콤보 스마트 타겟: 블록 단위 최적 공격 대상 선택.
         /// 아처 고블린 제외 (낙하 면역, DroneDroneCombo에서 직접 타격 처리).
         /// 킬 우선순위: 처치 가능 고블린 수 최우선.
@@ -3540,29 +3558,34 @@ namespace JewelsHexaPuzzle.Core
             Transform target = hexGrid != null ? hexGrid.transform : transform;
 
             if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
+                shakeOriginalPos = Vector3.zero;
             shakeCount++;
 
             float elapsed = 0f;
 
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                shakeCount--;
+                if (shakeCount <= 0)
+                {
+                    shakeCount = 0;
+                    target.localPosition = Vector3.zero;
+                }
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         /// <summary>
@@ -3598,31 +3621,36 @@ namespace JewelsHexaPuzzle.Core
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 origScale = target.localScale;
+            Vector3 origScale = Vector3.one;
             Vector3 punchScale = origScale * targetScale;
 
             // 줌인
             float elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
-                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
-            }
+                while (elapsed < VisualConstants.ZoomPunchInDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                    target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
 
-            // 줌아웃
-            elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                // 줌아웃
+                elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                    target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
+            }
+            finally
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
-                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
+                target.localScale = Vector3.one;
+                VisualConstants.EndZoomPunch();
             }
-
-            target.localScale = origScale;
-            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

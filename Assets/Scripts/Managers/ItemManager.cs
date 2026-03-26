@@ -46,61 +46,90 @@ namespace JewelsHexaPuzzle.Managers
         private Dictionary<ItemType, int> itemCounts = new Dictionary<ItemType, int>();
 
         // ============================================================
-        // 게이지 시스템: 블록 매칭으로 아이템 게이지 충전
+        // 게이지 시스템: 블록 제거로 아이템 카운트 충전 (10개=100%)
+        // 망치=Green, 스왑=Red, 라인드로우=Purple, 역회전=게이지 없음
         // ============================================================
 
-        /// <summary>아이템별 게이지 (0f~1f)</summary>
-        private Dictionary<ItemType, float> itemGauges = new Dictionary<ItemType, float>();
+        /// <summary>아이템별 충전 카운트 (0~10)</summary>
+        private int hammerCount = 0;
+        private int swapCount = 0;  // Bomb = 스왑
+        private int lineCount = 0;  // SixWayLaser = 라인드로우
 
-        /// <summary>게이지 변경 이벤트 (타입, 현재 게이지)</summary>
+        private const int GAUGE_MAX = 10;
+
+        /// <summary>게이지 변경 이벤트 (타입, 현재 게이지 0f~1f)</summary>
         public event System.Action<ItemType, float> OnGaugeChanged;
 
-        /// <summary>아이템 ↔ GemType 1:1 매핑</summary>
+        /// <summary>아이템 ↔ GemType 매핑 (역회전 제외)</summary>
         private static readonly Dictionary<ItemType, GemType> itemToGem = new Dictionary<ItemType, GemType>
         {
-            { ItemType.Hammer, GemType.Red },
-            { ItemType.Bomb, GemType.Blue },
-            { ItemType.SixWayLaser, GemType.Green },
-            { ItemType.ReverseRotation, GemType.Yellow }
+            { ItemType.Hammer, GemType.Green },
+            { ItemType.Bomb, GemType.Red },
+            { ItemType.SixWayLaser, GemType.Purple }
         };
 
-        /// <summary>GemType → ItemType 역매핑</summary>
-        private static readonly Dictionary<GemType, ItemType> gemToItem = new Dictionary<GemType, ItemType>
+        /// <summary>블록 제거 시 호출 — 해당 색상의 아이템 카운트 증가</summary>
+        public void OnBlockRemoved(GemType type)
         {
-            { GemType.Red, ItemType.Hammer },
-            { GemType.Blue, ItemType.Bomb },
-            { GemType.Green, ItemType.SixWayLaser },
-            { GemType.Yellow, ItemType.ReverseRotation }
-        };
+            Debug.Log($"[아이템진단2] ItemManager.OnBlockRemoved 호출됨 type={type} hammer={hammerCount} swap={swapCount} line={lineCount}");
+            bool changed = false;
+            if (type == GemType.Green)
+            {
+                if (hammerCount < GAUGE_MAX) { hammerCount++; changed = true; }
+                if (hammerCount >= GAUGE_MAX) hammerCount = GAUGE_MAX;
+                if (changed) OnGaugeChanged?.Invoke(ItemType.Hammer, GetGauge(ItemType.Hammer));
+            }
+            else if (type == GemType.Red)
+            {
+                if (swapCount < GAUGE_MAX) { swapCount++; changed = true; }
+                if (swapCount >= GAUGE_MAX) swapCount = GAUGE_MAX;
+                if (changed) OnGaugeChanged?.Invoke(ItemType.Bomb, GetGauge(ItemType.Bomb));
+            }
+            else if (type == GemType.Purple)
+            {
+                if (lineCount < GAUGE_MAX) { lineCount++; changed = true; }
+                if (lineCount >= GAUGE_MAX) lineCount = GAUGE_MAX;
+                if (changed) OnGaugeChanged?.Invoke(ItemType.SixWayLaser, GetGauge(ItemType.SixWayLaser));
+            }
+        }
 
-        /// <summary>블록 매칭 시 호출 — 해당 색상의 아이템 게이지 증가</summary>
+        /// <summary>레거시 호환: AddGauge → OnBlockRemoved 위임</summary>
         public void AddGauge(GemType color, int count)
         {
-            if (!gemToItem.ContainsKey(color)) return;
-            ItemType type = gemToItem[color];
-            float current = GetGauge(type);
-            float increment = count * 0.1f; // 1개당 10%
-            float newValue = Mathf.Clamp01(current + increment);
-            itemGauges[type] = newValue;
-            OnGaugeChanged?.Invoke(type, newValue);
+            for (int i = 0; i < count; i++)
+                OnBlockRemoved(color);
         }
 
         /// <summary>아이템 게이지 값 반환 (0f~1f)</summary>
         public float GetGauge(ItemType type)
         {
-            return itemGauges.ContainsKey(type) ? itemGauges[type] : 0f;
+            if (type == ItemType.Hammer) return hammerCount / (float)GAUGE_MAX;
+            if (type == ItemType.Bomb) return swapCount / (float)GAUGE_MAX;
+            if (type == ItemType.SixWayLaser) return lineCount / (float)GAUGE_MAX;
+            return 0f;
+        }
+
+        /// <summary>아이템 카운트 raw 반환 (0~10)</summary>
+        public int GetGaugeCount(ItemType type)
+        {
+            if (type == ItemType.Hammer) return hammerCount;
+            if (type == ItemType.Bomb) return swapCount;
+            if (type == ItemType.SixWayLaser) return lineCount;
+            return 0;
         }
 
         /// <summary>게이지가 100%인지 확인</summary>
         public bool IsGaugeFull(ItemType type)
         {
-            return GetGauge(type) >= 1f;
+            return GetGaugeCount(type) >= GAUGE_MAX;
         }
 
         /// <summary>게이지 초기화 (아이템 사용 후)</summary>
         public void ResetGauge(ItemType type)
         {
-            itemGauges[type] = 0f;
+            if (type == ItemType.Hammer) hammerCount = 0;
+            else if (type == ItemType.Bomb) swapCount = 0;
+            else if (type == ItemType.SixWayLaser) lineCount = 0;
             OnGaugeChanged?.Invoke(type, 0f);
         }
 
@@ -163,9 +192,10 @@ namespace JewelsHexaPuzzle.Managers
             // Awake에서 먼저 로드 (GameManager.Start보다 앞서 데이터 준비)
             LoadItemCounts();
 
-            // 게이지 초기화
-            foreach (var kvp in itemToGem)
-                itemGauges[kvp.Key] = 0f;
+            // 게이지 카운트 초기화
+            hammerCount = 0;
+            swapCount = 0;
+            lineCount = 0;
 
             Debug.Log($"[ItemManager] Awake: 아이템 수량 로드 + 게이지 초기화 완료");
         }
@@ -174,8 +204,30 @@ namespace JewelsHexaPuzzle.Managers
         {
             InitializeItems();
 
+            // ★ 진단용: 3초 후 망치 게이지 강제 100%
+            Invoke("ForceActivateTest", 3f);
+
             if (blockRemovalSystem == null)
                 blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+        }
+
+        /// <summary>진단용: 망치 게이지 강제 충전 후 UI 갱신 시도</summary>
+        private void ForceActivateTest()
+        {
+            hammerCount = GAUGE_MAX;
+            Debug.Log($"[아이템진단5] ForceActivateTest 실행: hammerCount={hammerCount}, IsGaugeFull={IsGaugeFull(ItemType.Hammer)}");
+            OnGaugeChanged?.Invoke(ItemType.Hammer, 1f);
+
+            // UIManager 아이템 버튼 강제 갱신
+            if (uiManager != null && items != null)
+            {
+                Debug.Log($"[아이템진단5] UIManager.UpdateItemButtons 강제 호출");
+                uiManager.UpdateItemButtons(items);
+            }
+            else
+            {
+                Debug.LogWarning($"[아이템진단5] uiManager={uiManager} items={items}");
+            }
         }
 
         /// <summary>
@@ -286,6 +338,10 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public bool CanUseItem(ItemType type)
         {
+            // 역회전: 항상 사용 가능 (게이지 없음)
+            if (type == ItemType.ReverseRotation)
+                return true;
+
             // 게이지 기반: 100% 충전 시에만 사용 가능
             if (itemToGem.ContainsKey(type))
                 return IsGaugeFull(type);
@@ -316,8 +372,13 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void ConsumeItem(ItemType type)
         {
+            // 역회전: 소모 없음 (게이지/수량 모두 불필요)
+            if (type == ItemType.ReverseRotation)
+            {
+                Debug.Log($"[ItemManager] {type} 사용 (소모 없음)");
+            }
             // 게이지 기반 아이템: 게이지 초기화
-            if (itemToGem.ContainsKey(type))
+            else if (itemToGem.ContainsKey(type))
             {
                 ResetGauge(type);
                 Debug.Log($"[ItemManager] {type} 게이지 소모 → 0%");
@@ -482,9 +543,11 @@ namespace JewelsHexaPuzzle.Managers
             }
 
             // 아이템 소모는 개별 아이템 스크립트의 ConsumeItem()에서 처리
-            // (여기서 중복 차감하면 2번 빠지는 버그 발생)
-            // 혹시 개별 스크립트가 ConsumeItem을 안 한 경우 대비 보정
             UpdateItemUI();
+
+            // ★ 새 독립 게이지 컨트롤러에 사용 알림
+            if (JewelsHexaPuzzle.UI.ItemGaugeController.Instance != null)
+                JewelsHexaPuzzle.UI.ItemGaugeController.Instance.OnItemUsed(type);
 
             // 상태 초기화
             activeItem = null;

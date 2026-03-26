@@ -1082,33 +1082,38 @@ namespace JewelsHexaPuzzle.Core
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 첫 번째 흔들림일 때만 원래 위치 저장 (중첩 시 원래 위치 보존)
+            // 항상 Vector3.zero를 기준으로 (중첩 시 원래 위치 보존)
             if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
+                shakeOriginalPos = Vector3.zero;
             shakeCount++;
 
             float elapsed = 0f;
 
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float decay = 1f - VisualConstants.EaseInQuad(t);  // 시간에 따라 감쇠 (1→0)
-                // 랜덤 방향으로 흔들되, 시간이 지나면서 흔들림 폭이 줄어듦
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);  // 시간에 따라 감쇠 (1→0)
+                    // 랜덤 방향으로 흔들되, 시간이 지나면서 흔들림 폭이 줄어듦
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            shakeCount--;
-            // 모든 흔들림이 끝나면 정확히 원래 위치로 복원
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                shakeCount--;
+                // 모든 흔들림이 끝나면 정확히 원래 위치로 복원
+                if (shakeCount <= 0)
+                {
+                    shakeCount = 0;
+                    target.localPosition = Vector3.zero;
+                }
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1219,31 +1224,36 @@ namespace JewelsHexaPuzzle.Core
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 origScale = target.localScale;        // 원래 크기 저장
+            Vector3 origScale = Vector3.one;               // 항상 Vector3.one 기준
             Vector3 punchScale = origScale * targetScale;  // 확대 목표 크기
 
             // 1단계: 빠르게 확대 (ZoomPunchInDuration 동안)
             float elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
-                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
-            }
+                while (elapsed < VisualConstants.ZoomPunchInDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                    target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
 
-            // 2단계: 부드럽게 원래 크기로 복귀 (ZoomPunchOutDuration 동안)
-            elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                // 2단계: 부드럽게 원래 크기로 복귀 (ZoomPunchOutDuration 동안)
+                elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                    target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
+            }
+            finally
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
-                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
+                target.localScale = Vector3.one;  // 원래 크기 확실히 복원
+                VisualConstants.EndZoomPunch();
             }
-
-            target.localScale = origScale;  // 원래 크기 확실히 복원
-            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

@@ -176,6 +176,50 @@ namespace JewelsHexaPuzzle.Managers
             return 0;
         }
 
+        /// <summary>
+        /// 현재 해금된 폭탄 이동 최대 범위 반환 (0 = 미해금)
+        /// </summary>
+        public int GetBombMoveRange()
+        {
+            if (IsSkillUnlocked(SkillType.BombMove3)) return 3;
+            if (IsSkillUnlocked(SkillType.BombMove2)) return 2;
+            if (IsSkillUnlocked(SkillType.BombMove1)) return 1;
+            return 0;
+        }
+
+        /// <summary>
+        /// 현재 해금된 폭탄 넉백 추가 거리 반환 (0 = 미해금)
+        /// </summary>
+        public int GetBombKnockbackBonus()
+        {
+            if (IsSkillUnlocked(SkillType.BombKnockback3)) return 3;
+            if (IsSkillUnlocked(SkillType.BombKnockback2)) return 2;
+            if (IsSkillUnlocked(SkillType.BombKnockback1)) return 1;
+            return 0;
+        }
+
+        /// <summary>
+        /// 현재 해금된 폭탄 데미지 추가량 반환 (0 = 미해금)
+        /// </summary>
+        public int GetBombDamageBonus()
+        {
+            if (IsSkillUnlocked(SkillType.BombDamage3)) return 3;
+            if (IsSkillUnlocked(SkillType.BombDamage2)) return 2;
+            if (IsSkillUnlocked(SkillType.BombDamage1)) return 1;
+            return 0;
+        }
+
+        /// <summary>
+        /// 현재 해금된 드릴 추가 발사체 수 (0~3)
+        /// </summary>
+        public int GetDrillDamageBonus()
+        {
+            if (IsSkillUnlocked(SkillType.DrillDamage3)) return 3;
+            if (IsSkillUnlocked(SkillType.DrillDamage2)) return 2;
+            if (IsSkillUnlocked(SkillType.DrillDamage1)) return 1;
+            return 0;
+        }
+
         // ============================================================
         // 초기화 (에디터 디버그)
         // ============================================================

@@ -73,6 +73,14 @@ namespace JewelsHexaPuzzle.Core
         private List<GameObject> drillMoveHighlights = new List<GameObject>();  // 이동 가능 칸 하이라이트
         private GameObject drillMoveLineObj = null;        // 드릴 이동 연결선
 
+        // 폭탄 이동 드래그 상태 (드릴과 동일 패턴)
+        private bool isDraggingBombMove = false;
+        private HexBlock bombMoveSource = null;
+        private HexBlock bombMoveTarget = null;
+        private int bombMoveRange = 0;
+        private List<GameObject> bombMoveHighlights = new List<GameObject>();
+        private GameObject bombMoveLineObj = null;
+
         // 회전 방향 (RotationSystem 연동)
         public bool IsClockwise => rotationSystem != null && rotationSystem.IsClockwise;
 
@@ -255,11 +263,14 @@ private void Update()
             }
             else if (Input.GetMouseButton(0) && isPointerDown && isDraggingDrillMove)
             {
-                // 드릴 이동 드래그 업데이트
                 UpdateDrillMoveDrag(mousePos);
             }
+            else if (Input.GetMouseButton(0) && isPointerDown && isDraggingBombMove)
+            {
+                UpdateBombMoveDrag(mousePos);
+            }
 
-            if (!isDraggingCombo && !isDraggingDrillMove)
+            if (!isDraggingCombo && !isDraggingDrillMove && !isDraggingBombMove)
             {
                 UpdateClusterPreview(mousePos);
             }
@@ -276,12 +287,18 @@ private void Update()
                     hasValidCluster = false;
                     CancelComboDrag();
                     CancelDrillMoveDrag();
-                    return; // 이 프레임에서는 아무것도 하지 않음 — 다음 프레임부터 HandleEditorPlacement가 처리
+                    CancelBombMoveDrag();
+                    return;
+                }
+
+                if (isDraggingBombMove)
+                {
+                    FinishBombMoveDrag();
+                    return;
                 }
 
                 if (isDraggingDrillMove)
                 {
-                    // 드릴 이동 드래그 종료
                     FinishDrillMoveDrag();
                     return;
                 }
@@ -335,6 +352,8 @@ private void Update()
                         UpdateComboDrag(touch.position);
                     else if (isDraggingDrillMove)
                         UpdateDrillMoveDrag(touch.position);
+                    else if (isDraggingBombMove)
+                        UpdateBombMoveDrag(touch.position);
                     else
                         UpdateClusterPreview(touch.position);
                 }
@@ -350,6 +369,13 @@ private void Update()
                         hasValidCluster = false;
                         CancelComboDrag();
                         CancelDrillMoveDrag();
+                        CancelBombMoveDrag();
+                        return;
+                    }
+
+                    if (isDraggingBombMove)
+                    {
+                        FinishBombMoveDrag();
                         return;
                     }
 
@@ -746,10 +772,14 @@ private void Update()
                     return;
                 }
 
-                // 합성 대상 없고 드릴 블록이면 → 드릴 이동 드래그 시도 (스킬 해금 시)
+                // 합성 대상 없고 드릴/폭탄 블록이면 → 이동 드래그 시도 (스킬 해금 시)
                 if (block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill)
                 {
                     TryStartDrillMoveDrag(block);
+                }
+                else if (block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb)
+                {
+                    TryStartBombMoveDrag(block);
                 }
             }
         }
@@ -1491,6 +1521,201 @@ private void Update()
                 if (hl != null) Destroy(hl);
             }
             drillMoveHighlights.Clear();
+        }
+
+        // ============================================================
+        // 폭탄 이동 드래그 (드릴 이동과 동일 패턴)
+        // ============================================================
+
+        private void TryStartBombMoveDrag(HexBlock bombBlock)
+        {
+            if (bombBlock == null || hexGrid == null) return;
+
+            int moveRange = 0;
+            if (SkillTreeManager.Instance != null)
+                moveRange = SkillTreeManager.Instance.GetBombMoveRange();
+
+            if (moveRange <= 0) return;
+
+            if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb))
+            {
+                Debug.Log("[InputSystem] MP 부족: 폭탄 이동 불가");
+                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                return;
+            }
+
+            bombMoveSource = bombBlock;
+            bombMoveTarget = null;
+            bombMoveRange = moveRange;
+            isDraggingBombMove = true;
+            ClearHighlight();
+            hasValidCluster = false;
+
+            ShowBombMoveHighlights();
+            Debug.Log($"[InputSystem] 폭탄 이동 드래그 시작: {bombBlock.Coord} (범위: {moveRange}칸)");
+        }
+
+        private void ShowBombMoveHighlights()
+        {
+            ClearBombMoveHighlights();
+            if (bombMoveSource == null || hexGrid == null) return;
+
+            var reachable = GetReachableCells(bombMoveSource.Coord, bombMoveRange);
+
+            foreach (var coord in reachable)
+            {
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block == null) continue;
+                if (coord.Equals(bombMoveSource.Coord)) continue;
+                if (block.Data != null && (block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.MoveBlock ||
+                    block.Data.specialType == JewelsHexaPuzzle.Data.SpecialBlockType.FixedBlock))
+                    continue;
+
+                GameObject highlight = new GameObject("BombMoveHighlight");
+                highlight.transform.SetParent(block.transform, false);
+                RectTransform hlRt = highlight.AddComponent<RectTransform>();
+                hlRt.anchoredPosition = Vector2.zero;
+                hlRt.sizeDelta = new Vector2(60f, 60f);
+
+                UnityEngine.UI.Image hlImg = highlight.AddComponent<UnityEngine.UI.Image>();
+                hlImg.sprite = HexBlock.GetHexFlashSprite();
+                hlImg.type = UnityEngine.UI.Image.Type.Simple;
+                hlImg.preserveAspect = true;
+                hlImg.color = new Color(1f, 0.5f, 0.2f, 0.35f); // 반투명 주황색
+                hlImg.raycastTarget = false;
+
+                bombMoveHighlights.Add(highlight);
+            }
+
+            if (bombMoveSource != null)
+                bombMoveSource.SetHighlighted(true);
+        }
+
+        private void UpdateBombMoveDrag(Vector2 screenPos)
+        {
+            if (bombMoveSource == null || hexGrid == null) return;
+
+            Vector2 localPos = ScreenToLocalPosition(screenPos);
+            HexBlock hoverBlock = GetBlockAtPosition(localPos);
+
+            HexBlock newTarget = null;
+            if (hoverBlock != null && hoverBlock != bombMoveSource &&
+                hoverBlock.Data != null &&
+                hoverBlock.Data.specialType != JewelsHexaPuzzle.Data.SpecialBlockType.MoveBlock &&
+                hoverBlock.Data.specialType != JewelsHexaPuzzle.Data.SpecialBlockType.FixedBlock)
+            {
+                int dist = bombMoveSource.Coord.DistanceTo(hoverBlock.Coord);
+                if (dist > 0 && dist <= bombMoveRange)
+                    newTarget = hoverBlock;
+            }
+
+            if (newTarget != bombMoveTarget)
+            {
+                if (bombMoveLineObj != null) { Destroy(bombMoveLineObj); bombMoveLineObj = null; }
+                if (bombMoveTarget != null) bombMoveTarget.SetHighlighted(false);
+
+                bombMoveTarget = newTarget;
+
+                if (bombMoveTarget != null)
+                {
+                    bombMoveTarget.SetHighlighted(true);
+                    CreateBombMoveLine();
+                }
+            }
+        }
+
+        private void CreateBombMoveLine()
+        {
+            if (bombMoveSource == null || bombMoveTarget == null || hexGrid == null) return;
+
+            bombMoveLineObj = new GameObject("BombMoveLine");
+            bombMoveLineObj.transform.SetParent(hexGrid.transform, false);
+
+            UnityEngine.UI.Image lineImg = bombMoveLineObj.AddComponent<UnityEngine.UI.Image>();
+            lineImg.color = new Color(1f, 0.5f, 0.2f, 0.7f); // 주황색
+            lineImg.raycastTarget = false;
+
+            RectTransform lineRt = bombMoveLineObj.GetComponent<RectTransform>();
+
+            Vector2 srcPos = bombMoveSource.GetComponent<RectTransform>().anchoredPosition;
+            Vector2 tgtPos = bombMoveTarget.GetComponent<RectTransform>().anchoredPosition;
+            Vector2 mid = (srcPos + tgtPos) * 0.5f;
+            float dist = Vector2.Distance(srcPos, tgtPos);
+            float angle = Mathf.Atan2(tgtPos.y - srcPos.y, tgtPos.x - srcPos.x) * Mathf.Rad2Deg;
+
+            lineRt.anchoredPosition = mid;
+            lineRt.sizeDelta = new Vector2(dist, 4f);
+            lineRt.localRotation = Quaternion.Euler(0f, 0f, angle);
+        }
+
+        private void FinishBombMoveDrag()
+        {
+            if (bombMoveSource != null && bombMoveTarget != null && bombSystem != null)
+            {
+                // MP 소모
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(
+                        MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb),
+                        bombMoveTarget.transform.position);
+
+                // 이동횟수 차감
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+
+                // 블록 데이터 스왑
+                var sourceDataClone = bombMoveSource.Data.Clone();
+                var targetDataClone = bombMoveTarget.Data.Clone();
+
+                bombMoveSource.SetBlockData(targetDataClone);
+                bombMoveTarget.SetBlockData(sourceDataClone);
+
+                Debug.Log($"[InputSystem] 폭탄 이동 완료: {bombMoveSource.Coord} ↔ {bombMoveTarget.Coord}, 발동 위치: {bombMoveTarget.Coord}");
+
+                // 폭탄 발동 (이동된 위치에서)
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayBombSound();
+                bombSystem.ActivateBomb(bombMoveTarget);
+            }
+            else if (bombMoveSource != null && bombMoveTarget == null)
+            {
+                float dragDist = Vector2.Distance(pointerDownPosition, Input.mousePosition);
+                #if !UNITY_EDITOR && !UNITY_STANDALONE
+                if (Input.touchCount > 0)
+                    dragDist = Vector2.Distance(pointerDownPosition, Input.GetTouch(0).position);
+                #endif
+
+                if (dragDist < DRAG_CANCEL_THRESHOLD)
+                {
+                    HexBlock source = bombMoveSource;
+                    CancelBombMoveDrag();
+                    TryActivateSingleSpecialBlock(source);
+                    return;
+                }
+            }
+
+            CancelBombMoveDrag();
+        }
+
+        private void CancelBombMoveDrag()
+        {
+            ClearBombMoveHighlights();
+
+            if (bombMoveLineObj != null) { Destroy(bombMoveLineObj); bombMoveLineObj = null; }
+            if (bombMoveSource != null) bombMoveSource.SetHighlighted(false);
+            if (bombMoveTarget != null) bombMoveTarget.SetHighlighted(false);
+
+            bombMoveSource = null;
+            bombMoveTarget = null;
+            isDraggingBombMove = false;
+            bombMoveRange = 0;
+        }
+
+        private void ClearBombMoveHighlights()
+        {
+            foreach (var hl in bombMoveHighlights)
+            {
+                if (hl != null) Destroy(hl);
+            }
+            bombMoveHighlights.Clear();
         }
     }
 }

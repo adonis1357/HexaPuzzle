@@ -131,6 +131,26 @@ namespace JewelsHexaPuzzle.Managers
                 skillObj.AddComponent<SkillTreeManager>();
             }
 
+            // 아이템 게이지 싱글톤 자동 생성
+            if (JewelsHexaPuzzle.Items.HammerGauge.Instance == null)
+            {
+                var obj = new GameObject("HammerGaugeController");
+                obj.transform.SetParent(transform);
+                obj.AddComponent<JewelsHexaPuzzle.Items.HammerGauge>();
+            }
+            if (JewelsHexaPuzzle.Items.SwapGauge.Instance == null)
+            {
+                var obj = new GameObject("SwapGaugeController");
+                obj.transform.SetParent(transform);
+                obj.AddComponent<JewelsHexaPuzzle.Items.SwapGauge>();
+            }
+            if (JewelsHexaPuzzle.Items.LineGauge.Instance == null)
+            {
+                var obj = new GameObject("LineGaugeController");
+                obj.transform.SetParent(transform);
+                obj.AddComponent<JewelsHexaPuzzle.Items.LineGauge>();
+            }
+
             AutoFindReferences();
             InitializeSystems();
             LoadGold();
@@ -3072,6 +3092,14 @@ private void InitializeSystems()
             if (MPManager.Instance != null)
                 MPManager.Instance.ResetMP();
 
+            // 아이템 게이지 초기화
+            if (JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
+                JewelsHexaPuzzle.Items.HammerGauge.Instance.ResetGauge();
+            if (JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
+                JewelsHexaPuzzle.Items.SwapGauge.Instance.ResetGauge();
+            if (JewelsHexaPuzzle.Items.LineGauge.Instance != null)
+                JewelsHexaPuzzle.Items.LineGauge.Instance.ResetGauge();
+
             // 무한모드: 생존 미션 시스템으로 시작
             if (currentGameMode == GameMode.Infinite)
             {
@@ -3793,6 +3821,14 @@ private void OnCascadeComplete()
                 try { enemySystem.OnTurnEnd(); }
                 catch (System.Exception e) { Debug.LogError($"[GameManager] enemySystem.OnTurnEnd 예외: {e.Message}\n{e.StackTrace}"); }
             }
+
+            // ★ 아이템 게이지: 턴 종료 시 +3 충전
+            if (JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
+                JewelsHexaPuzzle.Items.HammerGauge.Instance.OnTurnEnd();
+            if (JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
+                JewelsHexaPuzzle.Items.SwapGauge.Instance.OnTurnEnd();
+            if (JewelsHexaPuzzle.Items.LineGauge.Instance != null)
+                JewelsHexaPuzzle.Items.LineGauge.Instance.OnTurnEnd();
 
             // 무한모드: 미션 턴 종료 → 게임오버 체크 → 적군 스폰
             if (currentGameMode == GameMode.Infinite)
