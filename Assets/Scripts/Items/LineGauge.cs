@@ -12,14 +12,21 @@ namespace JewelsHexaPuzzle.Items
         public enum GaugeState { Inactive, Ready, UseReady }
 
         private static readonly Color COLOR_INACTIVE  = new Color(0.2f, 0f, 0.3f, 1f);
-        private static readonly Color COLOR_GAUGE     = new Color(0.7f, 0.2f, 1f, 1f);
         private static readonly Color COLOR_READY     = new Color(0.7f, 0.2f, 1f, 1f);
         private static readonly Color COLOR_USE_READY = new Color(0.7f, 0.2f, 1f, 1f);
         private static readonly Color COLOR_FLASH     = Color.white;
 
-        private const int MAX = 20;
+        private const int CHARGE_PER_USE = 10;
         private int gauge = 0;
+        private int usesAvailable = 0;
         private GaugeState currentState = GaugeState.Inactive;
+
+        private int GetMaxGauge()
+        {
+            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetLineLevel() : 0;
+            return CHARGE_PER_USE * (1 + level);
+        }
+        private int CalculateUses() => gauge / CHARGE_PER_USE;
 
         private static readonly Color COLOR_OUTLINE_ACTIVE = new Color(1f, 0.9f, 0f, 1f);
         private static readonly Color COLOR_OUTLINE_OFF = new Color(0f, 0f, 0f, 0f);
@@ -159,8 +166,10 @@ namespace JewelsHexaPuzzle.Items
 
         public void OnItemUsed()
         {
-            gauge = 0;
-            SetState(GaugeState.Inactive);
+            gauge = Mathf.Max(0, gauge - CHARGE_PER_USE);
+            usesAvailable = CalculateUses();
+            if (usesAvailable >= 1) SetState(GaugeState.Ready);
+            else SetState(GaugeState.Inactive);
         }
 
         public void OnItemCancelled()
@@ -171,7 +180,7 @@ namespace JewelsHexaPuzzle.Items
 
         public void ResetGauge()
         {
-            gauge = 0;
+            gauge = 0; usesAvailable = 0;
             currentState = GaugeState.Inactive;
             if (itemButton != null) itemButton.interactable = false;
             RefreshUI();
@@ -180,17 +189,15 @@ namespace JewelsHexaPuzzle.Items
         public void AddGauge(int amount)
         {
             if (currentState != GaugeState.Inactive) return;
-            gauge = Mathf.Min(gauge + amount, MAX);
-            if (gauge >= MAX)
+            int maxG = GetMaxGauge();
+            gauge = Mathf.Min(gauge + amount, maxG);
+            usesAvailable = CalculateUses();
+            if (usesAvailable >= 1 && currentState == GaugeState.Inactive)
             {
-                gauge = MAX;
                 SetState(GaugeState.Ready);
                 StartCoroutine(FlashEffect());
             }
-            else
-            {
-                RefreshUI();
-            }
+            else { RefreshUI(); }
         }
 
         public void OnTurnEnd() { AddGauge(3); }
@@ -210,7 +217,8 @@ namespace JewelsHexaPuzzle.Items
         private void RefreshUI()
         {
             if (buttonImage == null) return;
-            float ratio = gauge / (float)MAX;
+            int maxG = GetMaxGauge();
+            float ratio = maxG > 0 ? gauge / (float)maxG : 0f;
             switch (currentState)
             {
                 case GaugeState.Inactive:

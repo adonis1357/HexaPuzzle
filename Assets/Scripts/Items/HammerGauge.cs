@@ -16,21 +16,27 @@ namespace JewelsHexaPuzzle.Items
 
         public enum HammerState { Inactive, Ready, UseReady }
 
-        // ============================================================
-        // 색상 상수 (수정 시 여기만 변경)
-        // ============================================================
+        // 색상 상수
         private static readonly Color COLOR_INACTIVE  = new Color(0.3f, 0f, 0f, 1f);
-        private static readonly Color COLOR_GAUGE     = new Color(1f, 0.2f, 0.2f, 1f);
         private static readonly Color COLOR_READY     = new Color(1f, 0.2f, 0.2f, 1f);
         private static readonly Color COLOR_USE_READY = new Color(1f, 0.2f, 0.2f, 1f);
         private static readonly Color COLOR_FLASH     = Color.white;
 
-        // ============================================================
         // 상태
-        // ============================================================
-        private const int MAX = 20;
+        private const int CHARGE_PER_USE = 10; // 1회 사용 = 10 충전
         private int gauge = 0;
+        private int usesAvailable = 0; // 현재 사용 가능 횟수
         private HammerState currentState = HammerState.Inactive;
+
+        /// <summary>스킬 레벨 기반 최대 게이지 (10/20/30/40)</summary>
+        private int GetMaxGauge()
+        {
+            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
+            return CHARGE_PER_USE * (1 + level); // Lv0=10, Lv1=20, Lv2=30, Lv3=40
+        }
+
+        /// <summary>현재 사용 가능 횟수 (gauge / CHARGE_PER_USE)</summary>
+        private int CalculateUses() => gauge / CHARGE_PER_USE;
 
         private static readonly Color COLOR_OUTLINE_ACTIVE = new Color(1f, 0.9f, 0f, 1f);
         private static readonly Color COLOR_OUTLINE_OFF = new Color(0f, 0f, 0f, 0f);
@@ -214,8 +220,13 @@ namespace JewelsHexaPuzzle.Items
 
         public void OnHammerUsed()
         {
-            gauge = 0;
-            SetState(HammerState.Inactive);
+            gauge = Mathf.Max(0, gauge - CHARGE_PER_USE);
+            usesAvailable = CalculateUses();
+
+            if (usesAvailable >= 1)
+                SetState(HammerState.Ready); // 아직 사용 가능 횟수 남음
+            else
+                SetState(HammerState.Inactive);
         }
 
         public void OnHammerCancelled()
@@ -228,6 +239,7 @@ namespace JewelsHexaPuzzle.Items
         public void ResetGauge()
         {
             gauge = 0;
+            usesAvailable = 0;
             currentState = HammerState.Inactive;
             if (hammerButton != null) hammerButton.interactable = false;
             RefreshUI();
@@ -241,11 +253,12 @@ namespace JewelsHexaPuzzle.Items
         {
             if (currentState != HammerState.Inactive) return;
 
-            gauge = Mathf.Min(gauge + amount, MAX);
+            int maxG = GetMaxGauge();
+            gauge = Mathf.Min(gauge + amount, maxG);
+            usesAvailable = CalculateUses();
 
-            if (gauge >= MAX)
+            if (usesAvailable >= 1 && currentState == HammerState.Inactive)
             {
-                gauge = MAX;
                 SetState(HammerState.Ready);
                 StartCoroutine(FlashEffect());
             }
@@ -285,26 +298,27 @@ namespace JewelsHexaPuzzle.Items
         {
             if (buttonImage == null) return;
 
-            float ratio = gauge / (float)MAX;
+            int maxG = GetMaxGauge();
+            float ratio = maxG > 0 ? gauge / (float)maxG : 0f;
 
             switch (currentState)
             {
                 case HammerState.Inactive:
                     buttonImage.fillAmount = ratio;
-                    buttonImage.color = COLOR_READY; // 채워지는 부분은 꽉 찼을 때와 동일한 색상
+                    buttonImage.color = COLOR_READY;
                     if (hammerButton != null) hammerButton.interactable = false;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
                     break;
 
                 case HammerState.Ready:
-                    buttonImage.fillAmount = 1f;
+                    buttonImage.fillAmount = Mathf.Max(ratio, (float)usesAvailable / Mathf.Max(1, maxG / CHARGE_PER_USE));
                     buttonImage.color = COLOR_READY;
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
                     break;
 
                 case HammerState.UseReady:
-                    buttonImage.fillAmount = 1f;
+                    buttonImage.fillAmount = Mathf.Max(ratio, (float)usesAvailable / Mathf.Max(1, maxG / CHARGE_PER_USE));
                     buttonImage.color = COLOR_USE_READY;
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;

@@ -38,9 +38,24 @@ namespace JewelsHexaPuzzle.Data
         BombDamage3 = 402,     // 폭탄 전 범위 데미지 +3
 
         // === 드릴 강화 스킬 체인 ===
-        DrillDamage1 = 500,    // 드릴 발사체 +1 (총 3방향)
-        DrillDamage2 = 501,    // 드릴 발사체 +2 (총 4방향)
-        DrillDamage3 = 502,    // 드릴 발사체 +3 (총 5방향)
+        DrillDamage1 = 500,    // 드릴 몬스터 데미지 +1
+        DrillDamage2 = 501,    // 드릴 몬스터 데미지 +2
+        DrillDamage3 = 502,    // 드릴 몬스터 데미지 +3
+
+        // === 망치 아이템 레벨 체인 ===
+        HammerLevel1 = 700,
+        HammerLevel2 = 701,
+        HammerLevel3 = 702,
+
+        // === 스왑 아이템 레벨 체인 ===
+        SwapLevel1 = 800,
+        SwapLevel2 = 801,
+        SwapLevel3 = 802,
+
+        // === 라인 아이템 레벨 체인 ===
+        LineLevel1 = 900,
+        LineLevel2 = 901,
+        LineLevel3 = 902,
     }
 
     /// <summary>
@@ -154,6 +169,33 @@ namespace JewelsHexaPuzzle.Data
                 int v = (int)s.skillType;
                 if (v >= 500 && v <= 599) result.Add(s);
             }
+            return result;
+        }
+
+        /// <summary>망치 아이템 스킬만 반환</summary>
+        public static List<SkillNodeData> GetHammerSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 700 && v <= 799) result.Add(s); }
+            return result;
+        }
+
+        /// <summary>스왑 아이템 스킬만 반환</summary>
+        public static List<SkillNodeData> GetSwapSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 800 && v <= 899) result.Add(s); }
+            return result;
+        }
+
+        /// <summary>라인 아이템 스킬만 반환</summary>
+        public static List<SkillNodeData> GetLineSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 900 && v <= 999) result.Add(s); }
             return result;
         }
 
@@ -377,6 +419,75 @@ namespace JewelsHexaPuzzle.Data
                     nodeColor = new Color(0.1f, 0.45f, 0.95f),
                     iconSymbol = "⇉⇉⇉",
                     drillMoveRange = 3
+                },
+
+                // === 망치 아이템 레벨 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.HammerLevel1, skillName = "망치 Lv.1",
+                    description = "망치 아이템 레벨 1 해금.", usageDescription = "망치 기본 해금",
+                    skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
+                    nodeColor = new Color(0.9f, 0.2f, 0.2f), iconSymbol = "🔨", drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.HammerLevel2, skillName = "망치 Lv.2",
+                    description = "망치 아이템 레벨 2 강화.", usageDescription = "망치 강화",
+                    skillPointCost = 2, goldCost = 500, prerequisite = SkillType.HammerLevel1,
+                    nodeColor = new Color(0.8f, 0.15f, 0.15f), iconSymbol = "🔨🔨", drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.HammerLevel3, skillName = "망치 Lv.3",
+                    description = "망치 아이템 레벨 3 최대 강화.", usageDescription = "망치 최대 강화",
+                    skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.HammerLevel2,
+                    nodeColor = new Color(0.7f, 0.1f, 0.1f), iconSymbol = "🔨🔨🔨", drillMoveRange = 3
+                },
+
+                // === 스왑 아이템 레벨 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.SwapLevel1, skillName = "스왑 Lv.1",
+                    description = "스왑 아이템 레벨 1 해금.", usageDescription = "스왑 기본 해금",
+                    skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
+                    nodeColor = new Color(0.2f, 0.8f, 0.3f), iconSymbol = "↔", drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.SwapLevel2, skillName = "스왑 Lv.2",
+                    description = "스왑 아이템 레벨 2 강화.", usageDescription = "스왑 강화",
+                    skillPointCost = 2, goldCost = 500, prerequisite = SkillType.SwapLevel1,
+                    nodeColor = new Color(0.15f, 0.7f, 0.25f), iconSymbol = "↔↔", drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.SwapLevel3, skillName = "스왑 Lv.3",
+                    description = "스왑 아이템 레벨 3 최대 강화.", usageDescription = "스왑 최대 강화",
+                    skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.SwapLevel2,
+                    nodeColor = new Color(0.1f, 0.6f, 0.2f), iconSymbol = "↔↔↔", drillMoveRange = 3
+                },
+
+                // === 라인 아이템 레벨 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.LineLevel1, skillName = "라인 Lv.1",
+                    description = "라인드로우 아이템 레벨 1 해금.", usageDescription = "라인 기본 해금",
+                    skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
+                    nodeColor = new Color(0.6f, 0.2f, 0.9f), iconSymbol = "━", drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.LineLevel2, skillName = "라인 Lv.2",
+                    description = "라인드로우 아이템 레벨 2 강화.", usageDescription = "라인 강화",
+                    skillPointCost = 2, goldCost = 500, prerequisite = SkillType.LineLevel1,
+                    nodeColor = new Color(0.5f, 0.15f, 0.8f), iconSymbol = "━━", drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.LineLevel3, skillName = "라인 Lv.3",
+                    description = "라인드로우 아이템 레벨 3 최대 강화.", usageDescription = "라인 최대 강화",
+                    skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.LineLevel2,
+                    nodeColor = new Color(0.4f, 0.1f, 0.7f), iconSymbol = "━━━", drillMoveRange = 3
                 },
             };
         }

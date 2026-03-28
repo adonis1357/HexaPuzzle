@@ -878,7 +878,7 @@ private IEnumerator DrillLineWithProjectile(
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            // --- 투사체 퇴장: 백그라운드에서 실행 (DrillCoroutine 완료를 차단하지 않음) ---
+            // --- 투사체 퇴장 ---
             if (lastMoveDir == Vector3.zero)
                 lastMoveDir = initDir;
             if (projectile != null)
@@ -886,6 +886,11 @@ private IEnumerator DrillLineWithProjectile(
 
         }
 
+        // ============================================================
+        // 쿠션 반사: 경계 도달 시 반사 방향으로 새 드릴 라인 발사
+        // ============================================================
+
+        /// <summary>
         /// <summary>
         /// 투사체 퇴장 애니메이션 (백그라운드 실행 — DrillCoroutine 완료를 차단하지 않음)
         /// 화면 밖으로 이동하면서 고블린 충돌 감지
@@ -1012,9 +1017,14 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
         /// </summary>
         private GameObject CreateProjectileWithAngle(Vector3 worldPos, float worldAngleDeg, Color color)
         {
+            // effectParent가 없으면 재설정 시도
+            if (effectParent == null) SetupEffectParent();
+
             // 최상위 투사체 오브젝트 생성
             GameObject obj = new GameObject("DrillProjectile");
-            obj.transform.SetParent(effectParent != null ? effectParent : hexGrid.transform, false);
+            Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : null);
+            if (parent != null)
+                obj.transform.SetParent(parent, true); // worldPositionStays=true로 변경
             obj.transform.position = worldPos;
             // 이동 방향에 맞게 회전 (-90도 보정: 스프라이트의 "위"가 진행 방향)
             obj.transform.rotation = Quaternion.Euler(0, 0, worldAngleDeg - 90f);

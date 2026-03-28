@@ -4564,7 +4564,7 @@ private void OnBigBang()
             int drillCount = Mathf.Min(count, candidates.Count);
             DrillDirection[] directions = { DrillDirection.Vertical, DrillDirection.Slash, DrillDirection.BackSlash };
 
-            // 순차적으로 드릴 변환 (연출 효과)
+            // 순차적으로 드릴 변환 (1개마다 이동횟수 UI 1씩 감소)
             for (int i = 0; i < drillCount; i++)
             {
                 HexBlock block = candidates[i];
@@ -4574,6 +4574,10 @@ private void OnBigBang()
                 block.Data.drillDirection = directions[Random.Range(0, directions.Length)];
                 block.UpdateVisuals();
 
+                // 이동횟수 1 감소 + UI 갱신
+                currentTurns = Mathf.Max(0, currentTurns - 1);
+                OnTurnChanged?.Invoke(currentTurns);
+
                 // 스케일 팝 애니메이션
                 StartCoroutine(DrillSpawnPopAnimation(block.transform));
 
@@ -4581,7 +4585,7 @@ private void OnBigBang()
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayButtonClick();
 
-                yield return new WaitForSeconds(0.08f);
+                yield return new WaitForSeconds(0.15f);
             }
 
             if (drillCount > 0)
@@ -7094,15 +7098,15 @@ private void OnDestroy()
         /// 고블린 제거 시 미션 시스템에 보고
         /// blockRemovalSystem.OnEnemyRemoved 이벤트를 통해 StageManager에 전달
         /// </summary>
-        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb)
+        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer)
         {
-            string typeName = isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
+            string typeName = isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
             Debug.Log($"[GameManager] {typeName} 고블린 제거 미션 보고: 총 {totalKills}킬");
 
             // StageManager에 고블린 타입 정보 전달
             if (stageManager != null)
             {
-                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb);
+                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer);
 
                 // 미션 완료 시 추가 소환 중단
                 if (stageManager.IsMissionComplete() && goblinSystem != null)
@@ -7215,7 +7219,28 @@ private void OnDestroy()
                 case 49: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 6,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 }; // 기본2 + 갑옷2 + 궁수2 + 방패2 + 폭탄4 = 12
                 case 50: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 21, maxOnBoard = 6,
-                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 }; // 기본1 + 갑옷4 + 궁수2 + 방패3 + 폭탄4 = 14
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                // 스테이지 51~60: 챕터 6 — 치유의 늪 (힐러 등장)
+                case 51: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 8, maxOnBoard = 4,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 52: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 53: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 54: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 10, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 55: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 12, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 56: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 11, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 57: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 11, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 58: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 12, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 59: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 13, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 60: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 7,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
                 default: return null;
             }
         }

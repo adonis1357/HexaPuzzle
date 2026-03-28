@@ -111,7 +111,8 @@ namespace JewelsHexaPuzzle.Data
         ArmoredGoblin = 11,     // 갑옷 고블린: HP가 높고 갑옷으로 무장한 고블린 | 별칭: 갑옷
         ArcherGoblin = 12,      // 활 고블린: 상단 고정 배치, 매턴 화살로 블록에 크랙 | 별칭: 활
         ShieldGoblin = 13,      // 방패 고블린: 드릴 차단 방패 장착, 3회 차단 후 파괴 | 별칭: 방패고블린
-        BombGoblin = 14         // 폭탄 고블린: 카운트다운 후 광역 폭발, 블록 대량 파괴 | 별칭: 폭탄고블린
+        BombGoblin = 14,        // 폭탄 고블린: 카운트다운 후 광역 폭발, 블록 대량 파괴 | 별칭: 폭탄고블린
+        HealerGoblin = 15      // 힐러 고블린: 피해 입은 아군 회복, 소환 영역에서 활동 | 별칭: 힐러
     }
 
     /// <summary>

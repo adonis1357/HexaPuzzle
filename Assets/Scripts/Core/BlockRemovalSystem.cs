@@ -1745,9 +1745,26 @@ private List<HexBlock> CollectAndClearPendingSpecials()
             return result;
         }
 
+        // ============================================================
+        // 낙하 일시 중단 (드릴 쿠션 등 발사체 진행 중 낙하 방지)
+        // ============================================================
+        private bool isFallingSuspended = false;
+
+        /// <summary>낙하 일시 중단 — 드릴 발사체 진행 중 호출</summary>
+        public void SuspendFalling() { isFallingSuspended = true; }
+
+        /// <summary>낙하 재개 — 모든 드릴 발사체 완료 후 호출</summary>
+        public void ResumeFalling() { isFallingSuspended = false; }
+
+        public bool IsFallingSuspended => isFallingSuspended;
+
 private IEnumerator ProcessFalling()
         {
             if (hexGrid == null || columnCache == null) yield break;
+
+            // 낙하 일시 중단 중이면 대기
+            while (isFallingSuspended)
+                yield return null;
 
             List<FallAnimation> existingAnimations = new List<FallAnimation>();
             List<FallAnimation> newBlockAnimations = new List<FallAnimation>();
@@ -3090,6 +3107,11 @@ public void TriggerBigBang()
             HashSet<HexBlock> allAffected = new HashSet<HexBlock>(blocksToRemove);
             foreach (var sp in newlyCreatedSpecials)
                 allAffected.Add(sp);
+            // ★ 이미 제거된 깨진 블록도 인접 검사에 포함 (인접 회색 블록 제거용)
+            foreach (var cb in alreadyRemovedCracked)
+            {
+                if (cb != null) allAffected.Add(cb);
+            }
 
             // 인접 대미지 면 라인 이펙트용: (대미지 받는 블록, 대미지 준 블록 좌표) 기록
             List<(HexBlock damaged, HexCoord sourceCoord)> adjacentDamageEdges = new List<(HexBlock, HexCoord)>();
@@ -3248,38 +3270,50 @@ public void TriggerBigBang()
                 }
             }
 
-            // 5f. 매칭 제거 시 인접 고블린 데미지 (좌표별 누적)
+            // 5f. 매칭 데미지 — 직격 + 인접 (블록 타입별 분리 처리)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                // 제거되는 블록의 좌표 + 인접 좌표의 데미지를 누적 수집
-                // 깨진 블록(isCracked)은 인접 대미지를 주지 않음
-                // 단, 몬스터가 서있는 자리의 깨진 블록은 매칭 대미지를 줌
-                Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
-                // ★ 바닥 매칭 좌표 수집 (방패 고블린용: 자기 자리 블록이 직접 매칭된 경우)
-                HashSet<HexCoord> directHitCoords = new HashSet<HexCoord>();
-                // ★ 깨진 블록으로 매칭된 좌표 (방패는 대미지 불가, 일반 몬스터는 1 대미지)
-                HashSet<HexCoord> crackedDirectHitCoords = new HashSet<HexCoord>();
+                // 모든 제거 대상 블록을 하나로 합침 (blocksToRemove + alreadyRemovedCracked + 합체 블록)
+                var allRemovedBlocks = new List<HexBlock>(blocksToRemove);
+                foreach (var cb in alreadyRemovedCracked)
+                {
+                    if (cb != null && !allRemovedBlocks.Contains(cb))
+                        allRemovedBlocks.Add(cb);
+                }
+                foreach (var match in matches)
+                {
+                    if (match.createdSpecialType == SpecialBlockType.None) continue;
+                    foreach (var block in match.blocks)
+                    {
+                        if (block != null && !allRemovedBlocks.Contains(block))
+                            allRemovedBlocks.Add(block);
+                    }
+                }
 
-                // blocksToRemove 순회 (3매칭 일반 블록)
-                foreach (var block in blocksToRemove)
+                // 좌표별 데미지 누적 (같은 몬스터가 여러 블록에 인접하면 각 1씩 누적)
+                Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
+                // 방패 내구도 감소 좌표 (일반 블록 직격만 해당)
+                HashSet<HexCoord> shieldDamageCoords = new HashSet<HexCoord>();
+
+                foreach (var block in allRemovedBlocks)
                 {
                     if (block == null || block.Data == null) continue;
                     HexCoord blockCoord = block.Coord;
-                    bool cracked = block.Data.isCracked;
+                    bool isCracked = block.Data.isCracked || block.Data.isShell;
 
-                    // 블록 위치 자체: 깨진 블록이어도 해당 자리 몬스터에는 대미지
+                    // === 규칙 1: 직격 — 매칭된 블록 위치에 몬스터가 있으면 ===
+                    // 일반 블록: 본체 1 + 방패 내구도 1
+                    // 깨진 블록: 본체 1 + 방패 내구도 감소 없음
                     if (damageMap.ContainsKey(blockCoord))
                         damageMap[blockCoord] += 1;
                     else
                         damageMap[blockCoord] = 1;
 
-                    if (cracked)
-                        crackedDirectHitCoords.Add(blockCoord);
-                    else
-                        directHitCoords.Add(blockCoord);
+                    if (!isCracked)
+                        shieldDamageCoords.Add(blockCoord); // 일반 블록 직격만 방패 내구도 감소
 
-                    // 인접 6방향: 깨진 블록은 인접 대미지 불가
-                    if (!cracked)
+                    // === 규칙 2: 인접 — 일반 블록만 인접 6방향 데미지 ===
+                    if (!isCracked)
                     {
                         foreach (var neighbor in blockCoord.GetAllNeighbors())
                         {
@@ -3287,51 +3321,34 @@ public void TriggerBigBang()
                                 damageMap[neighbor] += 1;
                             else
                                 damageMap[neighbor] = 1;
+                            // 인접 데미지는 방패 내구도 감소 없음 (shieldDamageCoords에 추가 안 함)
                         }
                     }
+                    // 깨진 블록: 인접 데미지 없음 (블록 제거만 처리)
                 }
 
-                // ★ 4+매칭 합체 시 이미 제거된 깨진 블록도 대미지맵에 포함
-                // (alreadyRemovedCracked는 합체 전에 ClearData 됐지만 좌표는 유효)
-                foreach (var crackedBlock in alreadyRemovedCracked)
+                // === 데미지 적용 ===
+                foreach (var kvp in damageMap)
                 {
-                    if (crackedBlock == null) continue;
-                    HexCoord coord = crackedBlock.Coord;
-                    if (!damageMap.ContainsKey(coord))
-                        damageMap[coord] = 1;
-                    crackedDirectHitCoords.Add(coord);
-                }
+                    HexCoord coord = kvp.Key;
+                    int totalDmg = kvp.Value;
 
-                // ★ 합체에 참여한 정상 블록의 좌표도 directHitCoords에 추가
-                // (blocksToRemove에서 빠졌지만 실제로 제거된 블록)
-                foreach (var match in matches)
-                {
-                    if (match.createdSpecialType == SpecialBlockType.None) continue;
-                    foreach (var block in match.blocks)
+                    var goblin = GoblinSystem.Instance.GetGoblinAt(coord);
+                    if (goblin == null) continue;
+
+                    // 방패 고블린: 방패 내구도가 모두 깎이기 전까지 본체 HP 보호
+                    if (goblin.isShielded)
                     {
-                        if (block == null) continue;
-                        HexCoord coord = block.Coord;
-                        // 이미 처리된 블록 건너뛰기
-                        if (directHitCoords.Contains(coord) || crackedDirectHitCoords.Contains(coord)) continue;
-                        if (alreadyRemovedCracked.Contains(block)) continue;
-
-                        if (!damageMap.ContainsKey(coord))
-                            damageMap[coord] = 1;
-                        directHitCoords.Add(coord);
-
-                        // 정상 블록은 인접 대미지도 추가
-                        foreach (var neighbor in coord.GetAllNeighbors())
-                        {
-                            if (damageMap.ContainsKey(neighbor))
-                                damageMap[neighbor] += 1;
-                            else
-                                damageMap[neighbor] = 1;
-                        }
+                        // 일반 블록 직격 위치면 방패 내구도 1 감소
+                        if (shieldDamageCoords.Contains(coord))
+                            GoblinSystem.Instance.ApplyShieldDamagePublic(coord, 1);
+                        // 방패 활성 중에는 본체 데미지 차단
+                        continue;
                     }
-                }
 
-                // 누적된 데미지를 고블린별로 일괄 적용
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords, crackedDirectHitCoords);
+                    // 일반 몬스터 / 방패 파괴된 고블린: 본체에 데미지
+                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, totalDmg);
+                }
             }
 
             // 6. 삭제 애니메이션 (축소하며 사라짐) + 파괴 사운드

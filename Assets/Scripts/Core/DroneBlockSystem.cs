@@ -485,14 +485,11 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>몬스터 타입별 기본 점수</summary>
+        /// <summary>GoblinData.DroneTargetScore 중앙화 프로퍼티 사용</summary>
         private static int GetGoblinScore(GoblinData g)
         {
             if (g == null || !g.isAlive) return 0;
-            if (g.isBomb) return 5;
-            if (g.isShielded) return 4;
-            if (g.isArcher) return 3;
-            if (g.isArmored) return 2;
-            return 1; // Regular
+            return g.DroneTargetScore;
         }
 
         /// <summary>GoblinBomb 점수 = 6</summary>
@@ -582,8 +579,8 @@ namespace JewelsHexaPuzzle.Core
             var allGoblins = GoblinSystem.Instance.GetAliveGoblins();
             foreach (var g in allGoblins)
             {
-                if (g == directGoblin) continue; // 직접 타격은 이미 계산됨
-                if (g.isArcher) continue;         // 궁수는 낙하 면역
+                if (g == directGoblin) continue;
+                if (g.IsImmuneToFallDamage) continue; // 낙하 면역 (궁수, 힐러 등)
 
                 // 같은 열에서 targetCoord보다 위(r 작음)에 있는 몬스터는 블록 낙하로 데미지 가능
                 if (g.position.q == targetCoord.q && g.position.r < targetCoord.r)

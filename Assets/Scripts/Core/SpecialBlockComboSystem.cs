@@ -411,11 +411,11 @@ namespace JewelsHexaPuzzle.Core
                         }
                     }
 
-                    // ★ 드릴 투사체 발사 (병렬) — normalTargets 비어있어도 항상 발사
-                    // → exit phase에서 그리드 밖 고블린(상단 스폰 영역)에 월드좌표 기반 충돌 적용
+                    // ★ 드릴 투사체 발사 (순차 0.05초 간격)
                     allCoroutines.Add(StartCoroutine(
                         drillSystem.DrillLineWithProjectilePublic(
                             worldPos, normalTargets, axis, positive, comboColor, pos, true)));
+                    yield return new WaitForSeconds(0.05f);
                 }
             }
 
@@ -425,8 +425,6 @@ namespace JewelsHexaPuzzle.Core
             // 사운드
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayBombSound();
-
-            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             // 모든 투사체 코루틴 완료 대기
             foreach (var co in allCoroutines)
@@ -732,13 +730,13 @@ namespace JewelsHexaPuzzle.Core
                         }
                     }
 
-                    // ★ filteredTargets 비어있어도 항상 투사체 발사
-                    // → exit phase에서 그리드 밖 고블린(상단 스폰 영역)에 월드좌표 기반 충돌 적용
+                    // ★ 순차 발사 (0.05초 간격)
                     {
                         Vector3 launchWorldPos = GetWorldPosition(launchCoord);
                         drillCoroutines.Add(StartCoroutine(
                             drillSystem.DrillLineWithProjectilePublic(
                                 launchWorldPos, filteredTargets, drillDir, positive, comboColor, launchCoord, true)));
+                        yield return new WaitForSeconds(0.05f);
                     }
                 }
             }
@@ -1695,19 +1693,17 @@ namespace JewelsHexaPuzzle.Core
                     }
                 }
 
-                // ★ normalTargets가 비어있어도 항상 투사체 발사
-                // → exit phase에서 그리드 밖 고블린(상단 스폰 영역)에 월드좌표 기반 충돌 적용
+                // ★ 순차 발사 (0.05초 간격)
                 allCoroutines.Add(StartCoroutine(
                     drillSystem.DrillLineWithProjectilePublic(
                         drillWorldPos, normalTargets, drillDir, positive, comboColor, drillPos, true)));
+                yield return new WaitForSeconds(0.05f);
             }
 
             StartCoroutine(ScreenShake(VisualConstants.ShakeLargeIntensity, VisualConstants.ShakeLargeDuration));
 
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDrillSound();
-
-            // 미션 카운팅은 CollectGemCount()에서 OnSingleGemDestroyedForMission()으로 개별 처리
 
             foreach (var co in allCoroutines)
                 yield return co;
@@ -3155,14 +3151,11 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>
         /// 드론×드론 몬스터 점수: BombGoblin=5, Shield=4, Archer=3, Armored=2, Regular=1
         /// </summary>
+        /// <summary>GoblinData.DroneTargetScore 중앙화 프로퍼티 사용</summary>
         private static int GoblinScoreForDroneDrone(GoblinData g)
         {
             if (g == null || !g.isAlive) return 0;
-            if (g.isBomb) return 5;
-            if (g.isShielded) return 4;
-            if (g.isArcher) return 3;
-            if (g.isArmored) return 2;
-            return 1;
+            return g.DroneTargetScore;
         }
 
         /// 드론×드론 콤보 스마트 타겟: 블록 단위 최적 공격 대상 선택.

@@ -156,6 +156,9 @@ namespace JewelsHexaPuzzle.Data
             // --- 레벨 31~50: Stage 모드 (폭염의 화약고 — 폭탄고블린 등장) ---
             RegisterStages31To50();
 
+            // --- 레벨 51~60: Stage 모드 (치유의 늪 — 힐러고블린 등장) ---
+            RegisterStages51To60();
+
             // --- 마지막 레벨: Infinite 모드 (무한 도전) — 항상 스테이지 레벨 뒤에 배치 ---
             RegisterInfiniteLevel();
         }
@@ -494,6 +497,71 @@ namespace JewelsHexaPuzzle.Data
                 );
 
                 // 난이도 패턴: 쉬움→보통→보통→어려움→어려움 (5레벨 반복)
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"STAGE {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        private static void RegisterStages51To60()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.15f, 0.55f, 0.25f),  // 51: 치유의 늪 초록
+                new Color(0.18f, 0.58f, 0.28f),  // 52
+                new Color(0.20f, 0.62f, 0.30f),  // 53
+                new Color(0.22f, 0.66f, 0.32f),  // 54
+                new Color(0.25f, 0.70f, 0.35f),  // 55
+                new Color(0.20f, 0.60f, 0.30f),  // 56
+                new Color(0.18f, 0.55f, 0.28f),  // 57
+                new Color(0.15f, 0.50f, 0.25f),  // 58
+                new Color(0.12f, 0.45f, 0.22f),  // 59
+                new Color(0.10f, 0.40f, 0.20f)   // 60
+            };
+
+            string[] subtitles = new string[]
+            {
+                "힐러2 + 기본3 + 갑옷2 + 폭탄1",                  // 51: Easy
+                "힐러2 + 갑옷3 + 방패2 + 폭탄2",                  // 52: Normal
+                "힐러3 + 폭탄3 + 궁수2 + 기본1",                  // 53: Normal
+                "힐러2 + 폭탄4 + 방패2 + 갑옷2",                  // 54: Hard
+                "힐러3 + 폭탄4 + 방패2 + 궁수2 + 갑옷1",          // 55: Hard
+                "힐러2 + 기본3 + 갑옷2 + 궁수2 + 폭탄2",          // 56: Easy
+                "힐러2 + 폭탄4 + 갑옷3 + 방패2",                  // 57: Normal
+                "힐러3 + 폭탄4 + 궁수3 + 방패2",                  // 58: Normal
+                "힐러3 + 폭탄5 + 갑옷3 + 방패2",                  // 59: Hard
+                "★ 힐러4 + 폭탄5 + 갑옷3 + 방패3 + 궁수2"         // 60: Hard
+            };
+
+            for (int i = 51; i <= 60; i++)
+            {
+                int idx = i - 51;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
                 DifficultyType[] diffPattern = {
                     DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
                     DifficultyType.Hard, DifficultyType.Hard

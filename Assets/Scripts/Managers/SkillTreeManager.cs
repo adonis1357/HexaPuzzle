@@ -220,6 +220,34 @@ namespace JewelsHexaPuzzle.Managers
             return 0;
         }
 
+
+        /// <summary>망치 아이템 레벨 (0=미해금, 1~3)</summary>
+        public int GetHammerLevel()
+        {
+            if (IsSkillUnlocked(SkillType.HammerLevel3)) return 3;
+            if (IsSkillUnlocked(SkillType.HammerLevel2)) return 2;
+            if (IsSkillUnlocked(SkillType.HammerLevel1)) return 1;
+            return 0;
+        }
+
+        /// <summary>스왑 아이템 레벨 (0=미해금, 1~3)</summary>
+        public int GetSwapLevel()
+        {
+            if (IsSkillUnlocked(SkillType.SwapLevel3)) return 3;
+            if (IsSkillUnlocked(SkillType.SwapLevel2)) return 2;
+            if (IsSkillUnlocked(SkillType.SwapLevel1)) return 1;
+            return 0;
+        }
+
+        /// <summary>라인 아이템 레벨 (0=미해금, 1~3)</summary>
+        public int GetLineLevel()
+        {
+            if (IsSkillUnlocked(SkillType.LineLevel3)) return 3;
+            if (IsSkillUnlocked(SkillType.LineLevel2)) return 2;
+            if (IsSkillUnlocked(SkillType.LineLevel1)) return 1;
+            return 0;
+        }
+
         // ============================================================
         // 초기화 (에디터 디버그)
         // ============================================================

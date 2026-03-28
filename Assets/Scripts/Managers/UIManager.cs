@@ -2707,9 +2707,15 @@ namespace JewelsHexaPuzzle.Managers
             {
                 // 적군 타입별 아이콘 분기
                 if (mission.targetEnemyType == EnemyType.ArcherGoblin)
+                {
                     iconImage.sprite = GoblinSystem.GetArcherGoblinSprite();
+                    iconImage.color = Color.white;
+                }
                 else if (mission.targetEnemyType == EnemyType.ArmoredGoblin)
+                {
                     iconImage.sprite = GoblinSystem.GetArmoredGoblinSprite();
+                    iconImage.color = Color.white;
+                }
                 else if (mission.targetEnemyType == EnemyType.ShieldGoblin)
                 {
                     iconImage.sprite = GoblinSystem.GetShieldGoblinSprite();
@@ -2730,14 +2736,48 @@ namespace JewelsHexaPuzzle.Managers
                         shieldImg.color = Color.white;
                         shieldImg.raycastTarget = false;
                     }
+                    iconImage.color = Color.white;
                 }
                 else if (mission.targetEnemyType == EnemyType.BombGoblin)
+                {
                     iconImage.sprite = GoblinSystem.GetBombGoblinSprite();
-                else if (mission.targetEnemyType == EnemyType.Goblin)
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.HealerGoblin)
+                {
+                    // 힐러: 일반 고블린 스프라이트 + 연두색 틴트 + 십자 마크
                     iconImage.sprite = GoblinSystem.GetGoblinSprite();
+                    iconImage.color = new Color(0.3f, 0.9f, 0.4f, 1f);
+
+                    // 십자 마크 오버레이
+                    GameObject crossH = new GameObject("HealCrossH");
+                    crossH.transform.SetParent(iconImage.transform, false);
+                    RectTransform chRt = crossH.AddComponent<RectTransform>();
+                    chRt.anchoredPosition = new Vector2(0f, 4f);
+                    chRt.sizeDelta = new Vector2(20f, 6f);
+                    Image chImg = crossH.AddComponent<Image>();
+                    chImg.color = new Color(1f, 1f, 1f, 0.9f);
+                    chImg.raycastTarget = false;
+
+                    GameObject crossV = new GameObject("HealCrossV");
+                    crossV.transform.SetParent(iconImage.transform, false);
+                    RectTransform cvRt = crossV.AddComponent<RectTransform>();
+                    cvRt.anchoredPosition = new Vector2(0f, 4f);
+                    cvRt.sizeDelta = new Vector2(6f, 20f);
+                    Image cvImg = crossV.AddComponent<Image>();
+                    cvImg.color = new Color(1f, 1f, 1f, 0.9f);
+                    cvImg.raycastTarget = false;
+                }
+                else if (mission.targetEnemyType == EnemyType.Goblin)
+                {
+                    iconImage.sprite = GoblinSystem.GetGoblinSprite();
+                    iconImage.color = Color.white;
+                }
                 else
+                {
                     iconImage.sprite = CreateEnemyIcon();
-                iconImage.color = Color.white;
+                    iconImage.color = Color.white;
+                }
             }
             else if (mType == MissionType.AchieveCombo)
             {

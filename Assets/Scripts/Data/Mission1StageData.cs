@@ -66,7 +66,17 @@ namespace JewelsHexaPuzzle.Managers
                 { 47, GetStage47() },
                 { 48, GetStage48() },
                 { 49, GetStage49() },
-                { 50, GetStage50() }
+                { 50, GetStage50() },
+                { 51, GetStage51() },
+                { 52, GetStage52() },
+                { 53, GetStage53() },
+                { 54, GetStage54() },
+                { 55, GetStage55() },
+                { 56, GetStage56() },
+                { 57, GetStage57() },
+                { 58, GetStage58() },
+                { 59, GetStage59() },
+                { 60, GetStage60() }
             };
         }
 
@@ -2387,6 +2397,289 @@ namespace JewelsHexaPuzzle.Managers
                 tutorialFlags = new TutorialFlag[0]
             };
 
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 51: 힐러2 + 기본3 + 갑옷2 + 폭탄1 = 8
+        // 턴 30 | 미션처치 8
+        // ============================================================
+        private static StageData GetStage51()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 51,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 30,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 1, description = "폭탄 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 52: 힐러2 + 갑옷3 + 방패2 + 폭탄2 = 9
+        // 턴 27 | 미션처치 9
+        // ============================================================
+        private static StageData GetStage52()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 52,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 27,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 53: 힐러3 + 폭탄3 + 궁수2 + 기본1 = 9
+        // 턴 26 | 미션처치 9
+        // ============================================================
+        private static StageData GetStage53()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 53,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 26,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 1, description = "고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 3, description = "힐러 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 54: 힐러2 + 폭탄4 + 방패2 + 갑옷2 = 10
+        // 턴 22 | 미션처치 10
+        // ============================================================
+        private static StageData GetStage54()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 54,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 22,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 55: 힐러3 + 폭탄4 + 방패2 + 궁수2 + 갑옷1 = 12
+        // 턴 20 | 미션처치 12
+        // ============================================================
+        private static StageData GetStage55()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 55,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 20,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 1, description = "갑옷 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 3, description = "힐러 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 56: 힐러2 + 기본3 + 갑옷2 + 궁수2 + 폭탄2 = 11
+        // 턴 30 | 미션처치 11
+        // ============================================================
+        private static StageData GetStage56()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 56,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 30,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 57: 힐러2 + 폭탄4 + 갑옷3 + 방패2 = 11
+        // 턴 25 | 미션처치 11
+        // ============================================================
+        private static StageData GetStage57()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 57,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 25,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 58: 힐러3 + 폭탄4 + 궁수3 + 방패2 = 12
+        // 턴 24 | 미션처치 12
+        // ============================================================
+        private static StageData GetStage58()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 58,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 24,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 3, description = "힐러 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 59: 힐러3 + 폭탄5 + 갑옷3 + 방패2 = 13
+        // 턴 20 | 미션처치 13
+        // ============================================================
+        private static StageData GetStage59()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 59,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 20,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 3, description = "힐러 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 60: 힐러4 + 폭탄5 + 갑옷3 + 방패3 + 궁수2 = 17
+        // 턴 18 | 미션처치 17
+        // ============================================================
+        private static StageData GetStage60()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 60,
+                chapterNumber = 6,
+                chapterName = "치유의 늪",
+                turnLimit = 18,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 4, description = "힐러 고블린 4마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
             return stage;
         }
 

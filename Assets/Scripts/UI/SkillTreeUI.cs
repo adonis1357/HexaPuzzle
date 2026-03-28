@@ -276,34 +276,34 @@ namespace JewelsHexaPuzzle.UI
             containerRt.anchorMax = new Vector2(0.5f, 0.5f);
             containerRt.pivot = new Vector2(0.5f, 0.5f);
             containerRt.anchoredPosition = new Vector2(0f, 60f);
-            containerRt.sizeDelta = new Vector2(800f, 500f);
+            containerRt.sizeDelta = new Vector2(800f, 1200f);
 
             float startX = -(NODE_SPACING_X);
-            float drillY = 260f;       // 드릴 이동 체인
-            float drillDmgY = 120f;    // 드릴 강화 체인
-            float bombMoveY = -20f;    // 폭탄 이동 체인
-            float bombKnockY = -160f;  // 폭탄 넉백 체인
-            float bombDmgY = -300f;    // 폭탄 데미지 체인
+            float drillY = 400f;
+            float drillDmgY = 260f;
+            float bombMoveY = 120f;
+            float bombKnockY = -20f;
+            float bombDmgY = -160f;
+            float hammerY = -300f;
+            float swapY = -440f;
+            float lineY = -580f;
 
-            // === 드릴 이동 스킬 체인 ===
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillSkills(),
                 startX, drillY, "◆ 드릴 이동", new Color(0.7f, 0.85f, 1f, 0.9f));
-
-            // === 드릴 강화 스킬 체인 ===
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillDamageSkills(),
                 startX, drillDmgY, "◆ 드릴 강화", new Color(0.5f, 0.75f, 1f, 0.9f));
-
-            // === 폭탄 이동 스킬 체인 ===
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombSkills(),
                 startX, bombMoveY, "◆ 폭탄 이동", new Color(1f, 0.7f, 0.4f, 0.9f));
-
-            // === 폭탄 넉백 스킬 체인 ===
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombKnockbackSkills(),
                 startX, bombKnockY, "◆ 폭탄 넉백", new Color(1f, 0.55f, 0.3f, 0.9f));
-
-            // === 폭탄 데미지 스킬 체인 ===
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombDamageSkills(),
                 startX, bombDmgY, "◆ 폭탄 데미지", new Color(1f, 0.3f, 0.15f, 0.9f));
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetHammerSkills(),
+                startX, hammerY, "◆ 망치", new Color(0.9f, 0.25f, 0.25f, 0.9f));
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetSwapSkills(),
+                startX, swapY, "◆ 스왑", new Color(0.25f, 0.85f, 0.35f, 0.9f));
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetLineSkills(),
+                startX, lineY, "◆ 라인", new Color(0.6f, 0.25f, 0.9f, 0.9f));
         }
 
         /// <summary>
