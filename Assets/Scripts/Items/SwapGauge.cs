@@ -16,20 +16,16 @@ namespace JewelsHexaPuzzle.Items
         private static readonly Color COLOR_USE_READY = new Color(0.2f, 1f, 0.2f, 1f);
         private static readonly Color COLOR_FLASH     = Color.white;
 
-        private const int CHARGE_PER_USE = 50;
-        private int gauge = 0;
-        private int usesAvailable = 0;
-        private GaugeState currentState = GaugeState.Inactive;
-
-        private int GetMaxGauge()
-        {
-            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetSwapLevel() : 0;
-            return CHARGE_PER_USE * (1 + level);
-        }
-        private int CalculateUses() => gauge / CHARGE_PER_USE;
-
         private static readonly Color COLOR_OUTLINE_ACTIVE = new Color(1f, 0.9f, 0f, 1f);
         private static readonly Color COLOR_OUTLINE_OFF = new Color(0f, 0f, 0f, 0f);
+
+        private const int LAYER_SIZE = 50;
+
+        // 레이어 시스템 (HammerGauge와 동일)
+        private int gaugeLayer = 0;       // 0~4 (완성된 레이어 수)
+        private int gaugeInLayer = 0;     // 0~49 (현재 레이어 내 진행률)
+
+        private GaugeState currentState = GaugeState.Inactive;
 
         private Button itemButton;
         private SwapItem swapItem;
@@ -53,7 +49,8 @@ namespace JewelsHexaPuzzle.Items
 
         private void Start()
         {
-            gauge = 0;
+            gaugeLayer = 0;
+            gaugeInLayer = 0;
             currentState = GaugeState.Inactive;
             ApplyInactiveColorImmediate();
             StartCoroutine(AutoInitCoroutine());
@@ -212,8 +209,7 @@ namespace JewelsHexaPuzzle.Items
         private void UpdateLayerText()
         {
             if (layerText == null) return;
-            int layers = gauge / CHARGE_PER_USE;
-            layerText.text = layers <= 0 ? "" : layers.ToString();
+            layerText.text = gaugeLayer <= 0 ? "" : gaugeLayer.ToString();
         }
 
         private void SetState(GaugeState newState)
@@ -241,11 +237,9 @@ namespace JewelsHexaPuzzle.Items
 
         public void OnItemUsed()
         {
-            gauge = Mathf.Max(0, gauge - CHARGE_PER_USE);
-            usesAvailable = CalculateUses();
-            int maxG = GetMaxGauge();
-            if (gauge >= maxG && usesAvailable >= 1) SetState(GaugeState.Ready);
-            else SetState(GaugeState.Inactive);
+            gaugeLayer = Mathf.Max(0, gaugeLayer - 1);
+            gaugeInLayer = 0;
+            SetState(gaugeLayer >= 1 ? GaugeState.Ready : GaugeState.Inactive);
         }
 
         public void OnItemCancelled()
@@ -256,24 +250,50 @@ namespace JewelsHexaPuzzle.Items
 
         public void ResetGauge()
         {
-            gauge = 0; usesAvailable = 0;
+            gaugeLayer = 0;
+            gaugeInLayer = 0;
             currentState = GaugeState.Inactive;
             if (itemButton != null) itemButton.interactable = false;
             RefreshUI();
         }
 
+        // ============================================================
+        // 게이지 충전: 레이어 시스템 (HammerGauge와 동일)
+        // ============================================================
+
         public void AddGauge(int amount)
         {
-            if (currentState != GaugeState.Inactive) return;
-            int maxG = GetMaxGauge();
-            gauge = Mathf.Min(gauge + amount, maxG);
-            usesAvailable = CalculateUses();
-            if (gauge >= maxG && currentState == GaugeState.Inactive)
+            if (currentState != GaugeState.Inactive && currentState != GaugeState.Ready) return;
+
+            int maxLayer = GetCurrentMaxLayer();
+
+            // 이미 최대 레이어이면 더 이상 증가 안 함
+            if (gaugeLayer >= maxLayer) return;
+
+            gaugeInLayer += amount;
+
+            // 레이어 승격 처리
+            while (gaugeInLayer >= LAYER_SIZE && gaugeLayer < maxLayer)
+            {
+                gaugeInLayer -= LAYER_SIZE;
+                gaugeLayer++;
+            }
+
+            // 최대 레이어 도달 시 잔여 게이지 초기화
+            if (gaugeLayer >= maxLayer)
+            {
+                gaugeInLayer = 0;
+            }
+
+            if (gaugeLayer >= 1 && currentState == GaugeState.Inactive)
             {
                 SetState(GaugeState.Ready);
                 StartCoroutine(FlashEffect());
             }
-            else { RefreshUI(); }
+            else
+            {
+                RefreshUI();
+            }
         }
 
         public void OnTurnEnd() { AddGauge(5); }
@@ -290,21 +310,28 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
+        // ============================================================
+        // UI
+        // ============================================================
+
         private void RefreshUI()
         {
             if (buttonImage == null) return;
-            int maxG = GetMaxGauge();
-            float ratio = maxG > 0 ? gauge / (float)maxG : 0f;
+
             switch (currentState)
             {
                 case GaugeState.Inactive:
-                    buttonImage.fillAmount = ratio;
+                    buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
                     buttonImage.color = COLOR_READY;
                     if (itemButton != null) itemButton.interactable = JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode();
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
                     break;
                 case GaugeState.Ready:
-                    buttonImage.fillAmount = 1f;
+                    int maxLayer = GetCurrentMaxLayer();
+                    if (gaugeLayer >= maxLayer)
+                        buttonImage.fillAmount = 1f;
+                    else
+                        buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
                     buttonImage.color = COLOR_READY;
                     if (itemButton != null) itemButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
@@ -331,27 +358,30 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
-        public int CurrentGauge => gauge;
+        public int GaugeLayer => gaugeLayer;
+        public int GaugeInLayer => gaugeInLayer;
+        public int TotalGauge => gaugeLayer * LAYER_SIZE + gaugeInLayer;
+        public int CurrentGauge => TotalGauge;
         public GaugeState CurrentState => currentState;
 
-        /// <summary>에디터 테스트용: gauge를 CHARGE_PER_USE만큼 증가. 풀이면 0으로 초기화</summary>
+        /// <summary>에디터 테스트용: gaugeLayer 1 증가. 풀이면 0으로 초기화</summary>
         public void AddGaugeEditor()
         {
-            int maxG = GetMaxGauge();
-            bool isFull = gauge >= maxG;
+            int maxLayer = GetCurrentMaxLayer();
+            bool isFull = gaugeLayer >= maxLayer && gaugeInLayer == 0;
             if (isFull)
             {
-                Debug.Log($"[EditorGauge] 스왑 게이지 풀 → 초기화 (gauge: {gauge} → 0)");
-                gauge = 0;
-                usesAvailable = 0;
+                Debug.Log($"[EditorGauge] 스왑 게이지 풀 → 초기화 (gaugeLayer: {gaugeLayer} → 0)");
+                gaugeLayer = 0;
+                gaugeInLayer = 0;
                 SetState(GaugeState.Inactive);
             }
             else
             {
-                Debug.Log($"[EditorGauge] 스왑 게이지 증가 — gauge: {gauge} → {Mathf.Min(gauge + CHARGE_PER_USE, maxG)}");
-                gauge = Mathf.Min(gauge + CHARGE_PER_USE, maxG);
-                usesAvailable = CalculateUses();
-                if (gauge >= CHARGE_PER_USE && currentState == GaugeState.Inactive)
+                Debug.Log($"[EditorGauge] 스왑 게이지 증가 — gaugeLayer: {gaugeLayer} → {Mathf.Min(gaugeLayer + 1, maxLayer)}");
+                gaugeLayer = Mathf.Min(gaugeLayer + 1, maxLayer);
+                gaugeInLayer = 0;
+                if (gaugeLayer >= 1 && currentState == GaugeState.Inactive)
                     SetState(GaugeState.Ready);
                 else
                     RefreshUI();
