@@ -203,7 +203,7 @@ namespace JewelsHexaPuzzle.Items
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(1f, 1f);
             rt.sizeDelta = new Vector2(30f, 30f);
-            rt.anchoredPosition = new Vector2(-11f, -8f);
+            rt.anchoredPosition = new Vector2(-21f, -12f);
         }
 
         private void UpdateLayerText()
@@ -211,10 +211,8 @@ namespace JewelsHexaPuzzle.Items
             if (layerText == null) return;
             if (gaugeLayer <= 0)
                 layerText.text = "";
-            else if (currentState == GaugeState.Inactive)
-                layerText.text = gaugeLayer.ToString();
             else
-                layerText.text = $"{gaugeLayer}/{GetCurrentMaxLayer()}";
+                layerText.text = gaugeLayer.ToString();
         }
 
         private void SetState(GaugeState newState)
