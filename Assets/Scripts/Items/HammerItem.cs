@@ -44,6 +44,7 @@ namespace JewelsHexaPuzzle.Items
         private HexCoord dragCenter;
         private int currentDragLevel = 0;
         private List<GameObject> previewOverlays = new List<GameObject>();
+        private Vector3 dragStartScreenPos;
 
         private void Start()
         {
@@ -319,6 +320,7 @@ namespace JewelsHexaPuzzle.Items
 
             if (Input.GetMouseButtonDown(0))
             {
+                dragStartScreenPos = Input.mousePosition;
                 HandleDragStart(Input.mousePosition);
             }
             else if (isDragging && Input.GetMouseButton(0))
@@ -337,10 +339,11 @@ namespace JewelsHexaPuzzle.Items
             int gl = HammerGauge.Instance != null ? HammerGauge.Instance.GaugeLayer : 0;
             int hammerLevel = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
 
-            if (axialDist >= 3 && gl >= 3 && hammerLevel >= 2) return 3;
-            if (axialDist >= 2 && gl >= 2 && hammerLevel >= 1) return 2;
-            if (gl >= 1) return 1;
-            return 1; // 최소 레벨1
+            // 거리 0이면 클릭 → 별도 처리 (여기선 해당 안 됨)
+            if (axialDist >= 3 && gl >= 4 && hammerLevel >= 3) return 3;
+            if (axialDist >= 2 && gl >= 3 && hammerLevel >= 2) return 2;
+            if (axialDist >= 1 && gl >= 2 && hammerLevel >= 1) return 1;
+            return -1; // 조건 미충족 → 취소
         }
 
         /// <summary>레벨별 파괴 대상 좌표 목록 반환</summary>
@@ -350,6 +353,11 @@ namespace JewelsHexaPuzzle.Items
 
             switch (level)
             {
+                case 0:
+                    // 단순 클릭: 중심 1칸만
+                    coords.Add(center);
+                    break;
+
                 case 1:
                     // 중심 + axial 거리 1 이내 = 7칸
                     foreach (var c in HexCoord.GetHexesInRadius(center, 1))
@@ -381,7 +389,8 @@ namespace JewelsHexaPuzzle.Items
         /// <summary>레벨별 게이지 레이어 소모량</summary>
         private int GetLayerCost(int level)
         {
-            return level;
+            // level 0: 1 소모, level 1: 2 소모, level 2: 3 소모, level 3: 4 소모
+            return level + 1;
         }
 
         private void HandleDragStart(Vector2 screenPos)
@@ -408,7 +417,7 @@ namespace JewelsHexaPuzzle.Items
                 dragCenterBlock = clickedBlock;
                 dragCenter = clickedBlock.Coord;
                 isDragging = true;
-                currentDragLevel = DetermineDragLevel(0);
+                currentDragLevel = 0; // 시작 시점은 클릭 레벨 (1칸)
                 ShowPreview(dragCenter, currentDragLevel);
             }
             else
@@ -429,12 +438,28 @@ namespace JewelsHexaPuzzle.Items
                 axialDist = dragCenter.DistanceTo(currentBlock.Coord);
             }
 
-            int newLevel = DetermineDragLevel(axialDist);
+            int newLevel;
+            if (axialDist == 0)
+            {
+                newLevel = 0; // 클릭 레벨
+            }
+            else
+            {
+                newLevel = DetermineDragLevel(axialDist);
+            }
 
             if (newLevel != currentDragLevel)
             {
                 currentDragLevel = newLevel;
-                ShowPreview(dragCenter, currentDragLevel);
+                if (currentDragLevel == -1)
+                {
+                    // 조건 미충족: 미리보기 제거
+                    ClearPreview();
+                }
+                else
+                {
+                    ShowPreview(dragCenter, currentDragLevel);
+                }
             }
         }
 
@@ -450,9 +475,35 @@ namespace JewelsHexaPuzzle.Items
                 return;
             }
 
-            int level = currentDragLevel;
             HexBlock centerBlock = dragCenterBlock;
             HexCoord center = dragCenter;
+
+            // 종료 지점 블록 감지 → axial 거리 계산
+            HexBlock endBlock = FindBlockAtPosition(Input.mousePosition);
+            int axialDist = 0;
+            if (endBlock != null && endBlock.Data != null)
+            {
+                axialDist = center.DistanceTo(endBlock.Coord);
+            }
+
+            int level;
+            if (axialDist == 0)
+            {
+                // 단순 클릭: 중심 1칸 파괴
+                level = 0;
+            }
+            else
+            {
+                level = DetermineDragLevel(axialDist);
+                if (level == -1)
+                {
+                    // 조건 미충족: 사용 취소. UseReady 상태 유지. FlashBlockRed 피드백만 표시.
+                    StartCoroutine(FlashBlockRed(centerBlock));
+                    dragCenterBlock = null;
+                    currentDragLevel = 0;
+                    return;
+                }
+            }
 
             // 몬스터 직접 타격
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
@@ -468,6 +519,17 @@ namespace JewelsHexaPuzzle.Items
 
             dragCenterBlock = null;
             currentDragLevel = 0;
+        }
+
+        private IEnumerator FlashBlockRed(HexBlock block)
+        {
+            if (block == null) yield break;
+            var img = block.GetComponent<Image>();
+            if (img == null) yield break;
+            Color orig = img.color;
+            img.color = new Color(1f, 0.2f, 0.2f, 1f);
+            yield return new WaitForSeconds(0.15f);
+            if (block != null && img != null) img.color = orig;
         }
 
         // ============================================================
