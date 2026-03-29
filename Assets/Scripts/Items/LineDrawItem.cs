@@ -513,10 +513,6 @@ namespace JewelsHexaPuzzle.Items
                 // 2개 이상 → 제거 실행
                 Debug.Log($"[LineDrawItem] Chain complete: {chain.Count} blocks");
 
-                // 게이지 즉시 차감 (사용 결정 시점)
-                if (LineGauge.Instance != null)
-                    LineGauge.Instance.OnItemUsed();
-
                 // Deactivate()가 chain을 클리어하므로 먼저 복사
                 List<HexBlock> blocksToRemove = new List<HexBlock>(chain);
                 GemType removedColor = chainColor;
