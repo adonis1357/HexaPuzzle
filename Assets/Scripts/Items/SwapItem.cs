@@ -438,7 +438,13 @@ namespace JewelsHexaPuzzle.Items
         private IEnumerator ExecuteSwap(HexBlock blockA, HexBlock blockB)
         {
             isProcessing = true;
-            Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord}");
+
+            // 레벨별 게이지 소모
+            int swapLevel = SwapGauge.Instance != null ? SwapGauge.Instance.GetUseReadyLevel() : 0;
+            if (SwapGauge.Instance != null)
+                SwapGauge.Instance.ConsumeGauge(swapLevel);
+
+            Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord} (level={swapLevel})");
 
             // MP 소모 (두 블록 중간 위치에 팝업)
             if (MPManager.Instance != null)
