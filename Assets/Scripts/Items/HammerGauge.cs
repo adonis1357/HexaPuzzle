@@ -52,6 +52,7 @@ namespace JewelsHexaPuzzle.Items
         private bool initialized = false;
 
         /// <summary>현재 해금된 스킬에 따른 최대 레이어 수</summary>
+        public int GetCurrentMaxLayer() => GetMaxLayer();
         private int GetMaxLayer()
         {
             int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
@@ -190,21 +191,22 @@ namespace JewelsHexaPuzzle.Items
             layerText.text = "";
             layerText.fontSize = 24;
             layerText.fontStyle = FontStyle.Bold;
-            layerText.alignment = TextAnchor.MiddleCenter;
+            layerText.alignment = TextAnchor.UpperRight;
             layerText.color = Color.white;
             layerText.raycastTarget = false;
             layerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             // Outline 추가
             var outline = textObj.AddComponent<Outline>();
-            outline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            outline.effectColor = new Color(0f, 0f, 0f, 1f);
             outline.effectDistance = new Vector2(1.5f, -1.5f);
 
             RectTransform rt = textObj.GetComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.sizeDelta = Vector2.zero;
-            rt.anchoredPosition = Vector2.zero;
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(30f, 30f);
+            rt.anchoredPosition = new Vector2(-5f, -5f);
         }
 
         private void SetState(HammerState newState)

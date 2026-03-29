@@ -35,7 +35,15 @@ namespace JewelsHexaPuzzle.Items
         private LineDrawItem lineItem;
         private Image buttonImage;
         private Outline buttonOutline;
+        private Text layerText;
         private bool initialized = false;
+
+        /// <summary>현재 해금된 스킬에 따른 최대 레이어 수</summary>
+        public int GetCurrentMaxLayer()
+        {
+            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetLineLevel() : 0;
+            return 1 + level;
+        }
 
         private void Awake()
         {
@@ -164,9 +172,48 @@ namespace JewelsHexaPuzzle.Items
                     buttonOutline = itemButton.gameObject.AddComponent<Outline>();
                 buttonOutline.effectColor = COLOR_OUTLINE_OFF;
 
+                CreateLayerText();
+
                 ForceAlphaOne(itemButton.gameObject);
                 SetState(GaugeState.Inactive);
             }
+        }
+
+        private void CreateLayerText()
+        {
+            if (itemButton == null) return;
+            var existing = itemButton.transform.Find("LayerText");
+            if (existing != null) { layerText = existing.GetComponent<Text>(); return; }
+
+            GameObject textObj = new GameObject("LayerText");
+            textObj.transform.SetParent(itemButton.transform, false);
+
+            layerText = textObj.AddComponent<Text>();
+            layerText.text = "";
+            layerText.fontSize = 24;
+            layerText.fontStyle = FontStyle.Bold;
+            layerText.alignment = TextAnchor.UpperRight;
+            layerText.color = Color.white;
+            layerText.raycastTarget = false;
+            layerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            var outline = textObj.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 1f);
+            outline.effectDistance = new Vector2(1.5f, -1.5f);
+
+            RectTransform rt = textObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(30f, 30f);
+            rt.anchoredPosition = new Vector2(-5f, -5f);
+        }
+
+        private void UpdateLayerText()
+        {
+            if (layerText == null) return;
+            int layers = gauge / CHARGE_PER_USE;
+            layerText.text = layers <= 0 ? "" : layers.ToString();
         }
 
         private void SetState(GaugeState newState)
@@ -269,6 +316,7 @@ namespace JewelsHexaPuzzle.Items
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
                     break;
             }
+            UpdateLayerText();
         }
 
         private void ForceAlphaOne(GameObject obj)
