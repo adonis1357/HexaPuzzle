@@ -151,6 +151,8 @@ namespace JewelsHexaPuzzle.Items
 
         private void OnButtonClicked()
         {
+            if (JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode()) { AddGaugeEditor(); return; }
+
             if (currentState == GaugeState.Ready)
             {
                 SetState(GaugeState.UseReady);
@@ -257,5 +259,18 @@ namespace JewelsHexaPuzzle.Items
 
         public int CurrentGauge => gauge;
         public GaugeState CurrentState => currentState;
+
+        /// <summary>에디터 테스트용: 게이지 50 강제 추가</summary>
+        public void AddGaugeEditor()
+        {
+            gauge += 50;
+            int maxG = GetMaxGauge();
+            gauge = Mathf.Min(gauge, maxG);
+            usesAvailable = CalculateUses();
+            if (gauge >= CHARGE_PER_USE && currentState == GaugeState.Inactive)
+                SetState(GaugeState.Ready);
+            else
+                RefreshUI();
+        }
     }
 }
