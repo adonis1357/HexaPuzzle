@@ -358,6 +358,15 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
+        /// <summary>UseReady 상태에서의 사용 레벨 (gaugeLayer - 1, 0~3). 스킬 해금 기준 제한 적용.</summary>
+        public int GetUseReadyLevel()
+        {
+            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetLineLevel() : 0;
+            int maxLevel = level;
+            int rawLevel = Mathf.Max(0, gaugeLayer - 1);
+            return Mathf.Min(rawLevel, maxLevel);
+        }
+
         public int GaugeLayer => gaugeLayer;
         public int GaugeInLayer => gaugeInLayer;
         public int TotalGauge => gaugeLayer * LAYER_SIZE + gaugeInLayer;
