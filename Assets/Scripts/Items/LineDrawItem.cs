@@ -42,6 +42,7 @@ namespace JewelsHexaPuzzle.Items
         // 비주얼
         private List<GameObject> lineSegments = new List<GameObject>();
         private List<GameObject> blockHighlights = new List<GameObject>();
+        private bool chainVisualsHidden = false; // 그리드 밖 드래그 시 미리보기 숨김 상태
 
         // 이펙트 부모
         private Transform effectParent;
@@ -489,7 +490,14 @@ namespace JewelsHexaPuzzle.Items
             if (chain.Count == 0) return;
 
             HexBlock hoverBlock = FindBlockAtPosition(screenPos);
-            if (hoverBlock == null) return;
+            if (hoverBlock == null)
+            {
+                // 그리드 밖 → 미리보기 숨김 (데이터 유지)
+                if (!chainVisualsHidden) SetChainVisualsActive(false);
+                return;
+            }
+            // 그리드 안 → 미리보기 복원
+            if (chainVisualsHidden) SetChainVisualsActive(true);
 
             // 되돌아가기: 직전 블록으로 돌아가면 마지막 블록 제거
             if (chain.Count >= 2 && hoverBlock == chain[chain.Count - 2])
@@ -557,10 +565,21 @@ namespace JewelsHexaPuzzle.Items
             if (block != null && img != null) img.color = orig;
         }
 
+        /// <summary>라인 미리보기 오브젝트 SetActive 토글 (데이터 유지)</summary>
+        private void SetChainVisualsActive(bool active)
+        {
+            chainVisualsHidden = !active;
+            foreach (var seg in lineSegments)
+                if (seg != null) seg.SetActive(active);
+            foreach (var hl in blockHighlights)
+                if (hl != null) hl.SetActive(active);
+        }
+
         /// <summary>라인 취소: 미리보기 제거, UseReady 유지, 게이지 소모 없음</summary>
         private void CancelChainKeepReady()
         {
             isDrawing = false;
+            chainVisualsHidden = false;
             ClearChainVisuals();
             chain.Clear();
             chainColors.Clear();
