@@ -1,7 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
-using JewelsHexaPuzzle.Core;
 using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Items
@@ -192,13 +191,6 @@ namespace JewelsHexaPuzzle.Items
 
         private void OnHammerButtonClicked()
         {
-            // 게이지 추가 모드에서는 아이템 사용 대신 게이지 추가
-            if (EditorTestSystem.Instance != null && EditorTestSystem.Instance.GaugeAddMode)
-            {
-                EditorTestSystem.Instance.AddGaugeToItem("hammer");
-                return;
-            }
-
             if (currentState == HammerState.Ready)
             {
                 // Ready → UseReady0 (기본 망치)
@@ -343,34 +335,6 @@ namespace JewelsHexaPuzzle.Items
             {
                 gaugeInLayer = 0;
             }
-
-            if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
-            {
-                SetState(HammerState.Ready);
-                StartCoroutine(FlashEffect());
-            }
-            else
-            {
-                RefreshUI();
-            }
-        }
-
-        /// <summary>에디터 테스트용: 상태 제한 없이 게이지 강제 추가</summary>
-        public void AddGaugeEditor(int amount)
-        {
-            int maxLayer = GetMaxLayer();
-            if (gaugeLayer >= maxLayer) return;
-
-            gaugeInLayer += amount;
-
-            while (gaugeInLayer >= LAYER_SIZE && gaugeLayer < maxLayer)
-            {
-                gaugeInLayer -= LAYER_SIZE;
-                gaugeLayer++;
-            }
-
-            if (gaugeLayer >= maxLayer)
-                gaugeInLayer = 0;
 
             if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
             {
