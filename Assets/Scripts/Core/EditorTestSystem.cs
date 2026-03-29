@@ -208,6 +208,7 @@ namespace JewelsHexaPuzzle.Core
 
             // === 게이지 추가 버튼 생성 (몬스터 버튼 아래) ===
             CreateGaugeAddButton();
+            CreateMPAddButton();
         }
 
         private void CreateSpecialBlockButton(int index, Vector2 position)
@@ -1039,6 +1040,92 @@ namespace JewelsHexaPuzzle.Core
             if (gaugeAddButtonOutline != null)
                 gaugeAddButtonOutline.color = gaugeAddMode ? ACTIVE_BORDER : INACTIVE_BORDER;
             gaugeAddButton.transform.localScale = gaugeAddMode ? Vector3.one * 1.15f : Vector3.one;
+        }
+
+        // ============================================================
+        // MP 추가 버튼
+        // ============================================================
+
+        private void CreateMPAddButton()
+        {
+            if (gaugeAddButton == null || panelContainer == null) return;
+
+            float sqrt3 = Mathf.Sqrt(3f);
+            RectTransform gaugeRt = gaugeAddButton.GetComponent<RectTransform>();
+            Vector2 gaugePos = gaugeRt.anchoredPosition;
+            float btnHalfH = COLOR_BTN_SIZE * sqrt3 / 4f;
+
+            string btnName = "TestBtn_MPAdd";
+            GameObject btnObj = new GameObject(btnName);
+            btnObj.transform.SetParent(panelContainer.transform, false);
+
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(gaugePos.x, gaugePos.y - btnHalfH * 2f - 8f);
+            btnRt.sizeDelta = new Vector2(COLOR_BTN_SIZE, COLOR_BTN_SIZE);
+
+            Color mpColor = new Color(0.15f, 0.35f, 0.70f, 0.90f);
+            Image bgImage = btnObj.AddComponent<Image>();
+            bgImage.sprite = HexBlock.GetHexFlashSprite();
+            bgImage.type = Image.Type.Simple;
+            bgImage.preserveAspect = true;
+            bgImage.color = mpColor;
+
+            GameObject outlineObj = new GameObject("Outline");
+            outlineObj.transform.SetParent(btnObj.transform, false);
+            RectTransform outRt = outlineObj.AddComponent<RectTransform>();
+            outRt.anchorMin = Vector2.zero; outRt.anchorMax = Vector2.one;
+            outRt.offsetMin = Vector2.zero; outRt.offsetMax = Vector2.zero;
+            Image outImg = outlineObj.AddComponent<Image>();
+            outImg.sprite = HexBlock.GetHexBorderSprite();
+            outImg.type = Image.Type.Simple;
+            outImg.preserveAspect = true;
+            outImg.color = INACTIVE_BORDER;
+            outImg.raycastTarget = false;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            Text label = labelObj.AddComponent<Text>();
+            label.text = "MP+";
+            label.font = font;
+            label.fontSize = 13;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = new Color(1f, 1f, 1f, 0.85f);
+            label.raycastTarget = false;
+            label.fontStyle = FontStyle.Bold;
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(1f, 0f);
+            labelRt.anchoredPosition = new Vector2(0f, 10f);
+            labelRt.sizeDelta = new Vector2(0f, 16f);
+
+            Button btn = btnObj.AddComponent<Button>();
+            var bc = btn.colors;
+            bc.normalColor = Color.white;
+            bc.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+            bc.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
+            btn.colors = bc;
+            btn.onClick.AddListener(OnMPAddButtonClicked);
+        }
+
+        private void OnMPAddButtonClicked()
+        {
+            if (MPManager.Instance == null) return;
+
+            if (MPManager.Instance.CurrentMP >= MPManager.Instance.MaxMP)
+            {
+                // 풀이면 0으로 초기화
+                MPManager.Instance.SetMP(0);
+                Debug.Log("[EditorTestSystem] MP 초기화 → 0");
+            }
+            else
+            {
+                MPManager.Instance.AddMP(10);
+                Debug.Log($"[EditorTestSystem] MP +10 → {MPManager.Instance.CurrentMP}");
+            }
         }
 
         // ============================================================
