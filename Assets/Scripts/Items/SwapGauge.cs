@@ -238,6 +238,16 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
+        public void ActivateUseReady()
+        {
+            if (currentState == GaugeState.Ready || currentState == GaugeState.UseReady)
+            {
+                SetState(GaugeState.UseReady);
+                if (swapItem == null) swapItem = FindObjectOfType<SwapItem>();
+                if (swapItem != null) swapItem.Activate();
+            }
+        }
+
         public void OnItemUsed()
         {
             gaugeLayer = Mathf.Max(0, gaugeLayer - 1);
