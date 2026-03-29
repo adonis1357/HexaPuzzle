@@ -273,6 +273,11 @@ namespace JewelsHexaPuzzle.Items
                 {
                     HexBlock blockA = selectedBlock;
                     HexBlock blockB = dragTargetBlock;
+
+                    // 게이지 즉시 차감 (사용 결정 시점)
+                    if (SwapGauge.Instance != null)
+                        SwapGauge.Instance.OnItemUsed();
+
                     isProcessing = true;
                     Deactivate();
                     StartCoroutine(ExecuteSwap(blockA, blockB));
@@ -332,6 +337,11 @@ namespace JewelsHexaPuzzle.Items
                 {
                     HexBlock blockA = selectedBlock;
                     HexBlock blockB = dragTargetBlock;
+
+                    // 게이지 즉시 차감 (사용 결정 시점)
+                    if (SwapGauge.Instance != null)
+                        SwapGauge.Instance.OnItemUsed();
+
                     isProcessing = true;
                     Deactivate();
                     StartCoroutine(ExecuteSwap(blockA, blockB));
