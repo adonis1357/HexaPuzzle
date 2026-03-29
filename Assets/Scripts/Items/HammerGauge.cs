@@ -261,11 +261,12 @@ namespace JewelsHexaPuzzle.Items
         // 외부 호출
         // ============================================================
 
-        /// <summary>망치 사용 완료 — 현재 UseReady 레벨에 따라 게이지 레이어 차감</summary>
+        /// <summary>망치 사��� 완료 — 게이지 즉시 초기화</summary>
         public void OnHammerUsedWithLevel(int layerCost)
         {
-            gaugeLayer = Mathf.Max(0, gaugeLayer - layerCost);
-            SetState(gaugeLayer >= 1 ? HammerState.Ready : HammerState.Inactive);
+            gaugeLayer = 0;
+            gaugeInLayer = 0;
+            SetState(HammerState.Inactive);
         }
 
         /// <summary>기본 망치 사용 완료 (1칸 파괴) — 레이어 1 소모</summary>
