@@ -1604,7 +1604,7 @@ namespace JewelsHexaPuzzle.Managers
             Vector2 start = new Vector2(-340f, -10f);
             rt.anchoredPosition = start;
 
-            float duration = 0.4f;
+            float duration = 0.2f;
             float elapsed = 0f;
 
             while (elapsed < duration)

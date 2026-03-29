@@ -5242,7 +5242,7 @@ private void OnBigBang()
                 // "NEXT" 라벨 페이드아웃 대상
                 Transform nextLabel = oldPreviewRt.Find("NextLabel");
 
-                float transitionDuration = 0.5f;
+                float transitionDuration = 0.25f;
                 float elapsed = 0f;
 
                 // 미션 전환 효과음
@@ -5367,7 +5367,7 @@ private void OnBigBang()
                 yield return null;
 
                 // 짧은 팝인 (페이드+스케일)
-                float popDuration = 0.2f;
+                float popDuration = 0.1f;
                 float popElapsed = 0f;
                 while (popElapsed < popDuration)
                 {
@@ -5390,7 +5390,7 @@ private void OnBigBang()
                         previewCg = newPreviewRt.gameObject.AddComponent<CanvasGroup>();
                     previewCg.alpha = 0f;
 
-                    float fadeDuration = 0.3f;
+                    float fadeDuration = 0.15f;
                     float fadeElapsed = 0f;
                     while (fadeElapsed < fadeDuration)
                     {
@@ -5421,7 +5421,7 @@ private void OnBigBang()
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayMissionEntranceSound();
 
-                float slideDuration = 0.4f;
+                float slideDuration = 0.2f;
                 float elapsed = 0f;
                 while (elapsed < slideDuration)
                 {
@@ -5555,7 +5555,7 @@ private void OnBigBang()
 
                     // 다음 미션 등장 전 약간의 딜레이
                     if (i < missions.Length - 1)
-                        yield return new WaitForSeconds(0.12f);
+                        yield return new WaitForSeconds(0.06f);
                 }
             }
 
@@ -5573,7 +5573,7 @@ private void OnBigBang()
             Vector2 startPos = rt.anchoredPosition;
             CanvasGroup cg = rt.GetComponent<CanvasGroup>();
 
-            float slideDuration = 0.4f;
+            float slideDuration = 0.2f;
             float elapsed = 0f;
 
             while (elapsed < slideDuration)
