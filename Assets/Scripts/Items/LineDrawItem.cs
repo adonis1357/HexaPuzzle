@@ -373,7 +373,17 @@ namespace JewelsHexaPuzzle.Items
             // 릴리스
             if (Input.GetMouseButtonUp(0) && isDrawing)
             {
-                FinishChain();
+                // 마지막 터치 위치가 유효한 블록 위인지 확인
+                HexBlock releaseBlock = FindBlockAtPosition(Input.mousePosition);
+                if (releaseBlock == null || releaseBlock.Data == null || releaseBlock.Data.gemType == GemType.None)
+                {
+                    // 그리드 밖 또는 빈 블록 → 라인 취소, UseReady 유지
+                    CancelChainKeepReady();
+                }
+                else
+                {
+                    FinishChain();
+                }
             }
         }
 
@@ -405,7 +415,16 @@ namespace JewelsHexaPuzzle.Items
 
             if (touch.phase == TouchPhase.Ended && isDrawing)
             {
-                FinishChain();
+                // 마지막 터치 위치가 유효한 블록 위인지 확인
+                HexBlock releaseBlock = FindBlockAtPosition(touch.position);
+                if (releaseBlock == null || releaseBlock.Data == null || releaseBlock.Data.gemType == GemType.None)
+                {
+                    CancelChainKeepReady();
+                }
+                else
+                {
+                    FinishChain();
+                }
             }
 
             if (touch.phase == TouchPhase.Canceled && isDrawing)
@@ -536,6 +555,17 @@ namespace JewelsHexaPuzzle.Items
             img.color = new Color(1f, 0.2f, 0.2f, 1f);
             yield return new WaitForSeconds(0.1f);
             if (block != null && img != null) img.color = orig;
+        }
+
+        /// <summary>라인 취소: 미리보기 제거, UseReady 유지, 게이지 소모 없음</summary>
+        private void CancelChainKeepReady()
+        {
+            isDrawing = false;
+            ClearChainVisuals();
+            chain.Clear();
+            chainColors.Clear();
+            chainColor = GemType.None;
+            Debug.Log("[LineDrawItem] 그리드 밖 릴리스 → 라인 취소 (UseReady 유지)");
         }
 
         private void FinishChain()
