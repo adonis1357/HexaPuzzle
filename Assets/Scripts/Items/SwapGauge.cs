@@ -16,7 +16,7 @@ namespace JewelsHexaPuzzle.Items
         private static readonly Color COLOR_USE_READY = new Color(0.2f, 1f, 0.2f, 1f);
         private static readonly Color COLOR_FLASH     = Color.white;
 
-        private const int CHARGE_PER_USE = 10;
+        private const int CHARGE_PER_USE = 50;
         private int gauge = 0;
         private int usesAvailable = 0;
         private GaugeState currentState = GaugeState.Inactive;
@@ -168,7 +168,8 @@ namespace JewelsHexaPuzzle.Items
         {
             gauge = Mathf.Max(0, gauge - CHARGE_PER_USE);
             usesAvailable = CalculateUses();
-            if (usesAvailable >= 1) SetState(GaugeState.Ready);
+            int maxG = GetMaxGauge();
+            if (gauge >= maxG && usesAvailable >= 1) SetState(GaugeState.Ready);
             else SetState(GaugeState.Inactive);
         }
 
@@ -192,7 +193,7 @@ namespace JewelsHexaPuzzle.Items
             int maxG = GetMaxGauge();
             gauge = Mathf.Min(gauge + amount, maxG);
             usesAvailable = CalculateUses();
-            if (usesAvailable >= 1 && currentState == GaugeState.Inactive)
+            if (gauge >= maxG && currentState == GaugeState.Inactive)
             {
                 SetState(GaugeState.Ready);
                 StartCoroutine(FlashEffect());
@@ -200,7 +201,7 @@ namespace JewelsHexaPuzzle.Items
             else { RefreshUI(); }
         }
 
-        public void OnTurnEnd() { AddGauge(3); }
+        public void OnTurnEnd() { AddGauge(5); }
 
         private IEnumerator FlashEffect()
         {

@@ -3716,6 +3716,14 @@ private void OnRotationComplete(bool matchFound)
                     Debug.LogWarning($"[GameManager] OnSingleGemDestroyedForMission: missionSystem is null! gemType={gemType}");
                 }
             }
+
+            // ★ 아이템 게이지 충전 (모든 블록 파괴 경로에서 자동 적용)
+            if (gemType == GemType.Red && JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
+                JewelsHexaPuzzle.Items.HammerGauge.Instance.AddGauge(2);
+            if (gemType == GemType.Green && JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
+                JewelsHexaPuzzle.Items.SwapGauge.Instance.AddGauge(2);
+            if (gemType == GemType.Purple && JewelsHexaPuzzle.Items.LineGauge.Instance != null)
+                JewelsHexaPuzzle.Items.LineGauge.Instance.AddGauge(2);
         }
 
         // ============================================================

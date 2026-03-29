@@ -5,41 +5,31 @@ using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Items
 {
-    /// <summary>
-    /// 망치 게이지 3단계 상태머신.
-    /// Inactive(0~19) → Ready(20/활성) → UseReady(망치 모드) → 사용 시 Inactive / 취소 시 Ready.
-    /// 버튼 탐색 실패 시 무한 재시도 (절대 코루틴 종료 안 함).
-    /// </summary>
     public class HammerGauge : MonoBehaviour
     {
         public static HammerGauge Instance { get; private set; }
 
-        public enum HammerState { Inactive, Ready, UseReady }
+        public enum HammerState { Inactive, Ready, UseReady, UseReady1 }
 
-        // 색상 상수
-        private static readonly Color COLOR_INACTIVE  = new Color(0.3f, 0f, 0f, 1f);
-        private static readonly Color COLOR_READY     = new Color(1f, 0.2f, 0.2f, 1f);
-        private static readonly Color COLOR_USE_READY = new Color(1f, 0.2f, 0.2f, 1f);
-        private static readonly Color COLOR_FLASH     = Color.white;
+        // 색상
+        private static readonly Color COLOR_INACTIVE    = new Color(0.3f, 0f, 0f, 1f);
+        private static readonly Color COLOR_READY       = new Color(1f, 0.2f, 0.2f, 1f);
+        private static readonly Color COLOR_USE_READY   = new Color(1f, 0.2f, 0.2f, 1f);
+        private static readonly Color COLOR_USE_READY1  = new Color(1f, 0.1f, 0.1f, 1f);
+        private static readonly Color COLOR_FLASH       = Color.white;
+        private static readonly Color COLOR_OUTLINE_ACTIVE  = new Color(1f, 0.9f, 0f, 1f);
+        private static readonly Color COLOR_OUTLINE_BRIGHT  = new Color(1f, 1f, 0.3f, 1f);
+        private static readonly Color COLOR_OUTLINE_OFF     = new Color(0f, 0f, 0f, 0f);
 
-        // 상태
-        private const int CHARGE_PER_USE = 10; // 1회 사용 = 10 충전
+        private const int CHARGE_PER_USE = 50;
         private int gauge = 0;
-        private int usesAvailable = 0; // 현재 사용 가능 횟수
         private HammerState currentState = HammerState.Inactive;
 
-        /// <summary>스킬 레벨 기반 최대 게이지 (10/20/30/40)</summary>
         private int GetMaxGauge()
         {
             int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
-            return CHARGE_PER_USE * (1 + level); // Lv0=10, Lv1=20, Lv2=30, Lv3=40
+            return CHARGE_PER_USE * (1 + level);
         }
-
-        /// <summary>현재 사용 가능 횟수 (gauge / CHARGE_PER_USE)</summary>
-        private int CalculateUses() => gauge / CHARGE_PER_USE;
-
-        private static readonly Color COLOR_OUTLINE_ACTIVE = new Color(1f, 0.9f, 0f, 1f);
-        private static readonly Color COLOR_OUTLINE_OFF = new Color(0f, 0f, 0f, 0f);
 
         private Button hammerButton;
         private HammerItem hammerItem;
@@ -60,33 +50,17 @@ namespace JewelsHexaPuzzle.Items
             StartCoroutine(AutoInitCoroutine());
         }
 
-        // ============================================================
-        // 자동 초기화 — 무한 재시도 (절대 종료 안 함)
-        // ============================================================
-
         private IEnumerator AutoInitCoroutine()
         {
-            // 초기 2프레임 대기
             yield return null;
             yield return null;
-
             int round = 0;
             while (!initialized)
             {
                 round++;
-                Debug.Log($"[HammerGauge] 버튼 탐색 라운드 {round}");
-
                 TryFindButton();
-
-                if (initialized)
-                {
-                    Debug.Log($"[HammerGauge] ★ 초기화 성공: {hammerButton.gameObject.name} (라운드 {round})");
-                    yield break;
-                }
-
-                // 점점 간격 늘려서 재시도 (0.5초 → 2초 → 5초)
+                if (initialized) yield break;
                 float wait = round <= 5 ? 0.5f : (round <= 15 ? 2f : 5f);
-                Debug.Log($"[HammerGauge] 버튼 못 찾음, {wait}초 후 재시도...");
                 yield return new WaitForSeconds(wait);
             }
         }
@@ -94,78 +68,39 @@ namespace JewelsHexaPuzzle.Items
         private void TryFindButton()
         {
             if (initialized) return;
-
-            // ---- 1순위: HammerItem.HammerButton ----
             if (hammerButton == null)
             {
                 if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
                 if (hammerItem != null && hammerItem.HammerButton != null)
-                {
                     hammerButton = hammerItem.HammerButton;
-                    Debug.Log("[HammerGauge] 탐색 1순위 성공: HammerItem.HammerButton");
-                }
             }
-
-            // ---- 2순위: UIManager.ItemButtons에서 ItemType.Hammer ----
             if (hammerButton == null)
             {
                 var uiMgr = FindObjectOfType<UIManager>();
                 if (uiMgr != null && uiMgr.ItemButtons != null)
-                {
                     foreach (var ib in uiMgr.ItemButtons)
-                    {
                         if (ib != null && ib.CurrentItemType == ItemType.Hammer && ib.ButtonComponent != null)
-                        {
-                            hammerButton = ib.ButtonComponent;
-                            Debug.Log("[HammerGauge] 탐색 2순위 성공: UIManager.ItemButtons");
-                            break;
-                        }
-                    }
-                }
+                        { hammerButton = ib.ButtonComponent; break; }
             }
-
-            // ---- 3순위: FindObjectsOfType<Button> 이름 검색 ----
             if (hammerButton == null)
-            {
                 foreach (var btn in FindObjectsOfType<Button>())
                 {
                     if (btn == null) continue;
                     string n = btn.gameObject.name.ToLower();
-                    if (n.Contains("hammer") || n.Contains("망치"))
-                    {
-                        hammerButton = btn;
-                        Debug.Log($"[HammerGauge] 탐색 3순위 성공: 이름 '{btn.gameObject.name}'");
-                        break;
-                    }
+                    if (n.Contains("hammer") || n.Contains("망치")) { hammerButton = btn; break; }
                 }
-            }
-
-            // ---- 4순위: HammerItem 컴포넌트에서 Button 직접 ----
             if (hammerButton == null)
             {
                 if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
-                if (hammerItem != null)
-                {
-                    var btn = hammerItem.GetComponentInChildren<Button>();
-                    if (btn != null)
-                    {
-                        hammerButton = btn;
-                        Debug.Log("[HammerGauge] 탐색 4순위 성공: HammerItem.GetComponentInChildren<Button>");
-                    }
-                }
+                if (hammerItem != null) { var btn = hammerItem.GetComponentInChildren<Button>(); if (btn != null) hammerButton = btn; }
             }
-
-            // HammerItem도 확보
             if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
 
-            // ---- 초기화 완료 ----
             if (hammerButton != null)
             {
                 initialized = true;
-
                 hammerButton.onClick.RemoveAllListeners();
                 hammerButton.onClick.AddListener(OnHammerButtonClicked);
-
                 buttonImage = hammerButton.GetComponent<Image>();
                 if (buttonImage != null)
                 {
@@ -173,21 +108,13 @@ namespace JewelsHexaPuzzle.Items
                     buttonImage.fillMethod = Image.FillMethod.Vertical;
                     buttonImage.fillOrigin = (int)Image.OriginVertical.Bottom;
                 }
-
-                // Outline 확보 (없으면 추가)
                 buttonOutline = hammerButton.GetComponent<Outline>();
-                if (buttonOutline == null)
-                    buttonOutline = hammerButton.gameObject.AddComponent<Outline>();
+                if (buttonOutline == null) buttonOutline = hammerButton.gameObject.AddComponent<Outline>();
                 buttonOutline.effectColor = COLOR_OUTLINE_OFF;
-
                 ForceAlphaOne(hammerButton.gameObject);
                 SetState(HammerState.Inactive);
             }
         }
-
-        // ============================================================
-        // 상태 전환
-        // ============================================================
 
         private void SetState(HammerState newState)
         {
@@ -196,68 +123,87 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // 버튼 클릭 처리
+        // 버튼 클릭: Ready → UseReady → UseReady1(조건부) → Inactive
         // ============================================================
 
         private void OnHammerButtonClicked()
         {
             if (currentState == HammerState.Ready)
             {
+                // Ready → UseReady (기본 망치)
                 SetState(HammerState.UseReady);
                 if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
                 if (hammerItem != null) hammerItem.Activate();
             }
             else if (currentState == HammerState.UseReady)
             {
+                // UseReady → UseReady1 (게이지 100+ && Lv1 해금) 또는 Inactive
+                bool canUpgrade = gauge >= 100
+                    && SkillTreeManager.Instance != null
+                    && SkillTreeManager.Instance.GetHammerLevel() >= 1;
+
+                if (canUpgrade)
+                {
+                    SetState(HammerState.UseReady1);
+                    // HammerItem은 이미 Activate 상태 유지
+                }
+                else
+                {
+                    if (hammerItem != null) hammerItem.Deactivate();
+                    SetState(gauge >= CHARGE_PER_USE ? HammerState.Ready : HammerState.Inactive);
+                }
+            }
+            else if (currentState == HammerState.UseReady1)
+            {
+                // UseReady1 → Inactive
                 if (hammerItem != null) hammerItem.Deactivate();
-                SetState(HammerState.Ready);
+                SetState(gauge >= CHARGE_PER_USE ? HammerState.Ready : HammerState.Inactive);
             }
         }
 
         // ============================================================
-        // 외부 호출: 사용 완료 / 취소
+        // 외부 호출
         // ============================================================
 
+        /// <summary>기본 망치 사용 완료 (1칸 파괴) — 게이지 50 소모</summary>
         public void OnHammerUsed()
         {
             gauge = Mathf.Max(0, gauge - CHARGE_PER_USE);
-            usesAvailable = CalculateUses();
+            SetState(gauge >= CHARGE_PER_USE ? HammerState.Ready : HammerState.Inactive);
+        }
 
-            if (usesAvailable >= 1)
-                SetState(HammerState.Ready); // 아직 사용 가능 횟수 남음
-            else
-                SetState(HammerState.Inactive);
+        /// <summary>1레벨 망치 사용 완료 (7칸 파괴) — 게이지 100 소모</summary>
+        public void OnHammerUsedLevel1()
+        {
+            gauge = Mathf.Max(0, gauge - CHARGE_PER_USE * 2);
+            SetState(gauge >= CHARGE_PER_USE ? HammerState.Ready : HammerState.Inactive);
         }
 
         public void OnHammerCancelled()
         {
-            if (currentState == HammerState.UseReady)
-                SetState(HammerState.Ready);
+            if (currentState == HammerState.UseReady || currentState == HammerState.UseReady1)
+                SetState(gauge >= CHARGE_PER_USE ? HammerState.Ready : HammerState.Inactive);
         }
 
-        /// <summary>게임 재시작 시 전체 초기화</summary>
         public void ResetGauge()
         {
             gauge = 0;
-            usesAvailable = 0;
             currentState = HammerState.Inactive;
             if (hammerButton != null) hammerButton.interactable = false;
             RefreshUI();
         }
 
         // ============================================================
-        // 게이지 충전
+        // 게이지 충전: 50 이상이면 Ready
         // ============================================================
 
         public void AddGauge(int amount)
         {
             if (currentState != HammerState.Inactive) return;
-
             int maxG = GetMaxGauge();
             gauge = Mathf.Min(gauge + amount, maxG);
-            usesAvailable = CalculateUses();
 
-            if (usesAvailable >= 1 && currentState == HammerState.Inactive)
+            if (gauge >= CHARGE_PER_USE && currentState == HammerState.Inactive)
             {
                 SetState(HammerState.Ready);
                 StartCoroutine(FlashEffect());
@@ -268,19 +214,11 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
-        public void OnTurnEnd()
-        {
-            AddGauge(3);
-        }
-
-        // ============================================================
-        // 활성화 연출
-        // ============================================================
+        public void OnTurnEnd() { AddGauge(5); }
 
         private IEnumerator FlashEffect()
         {
             if (buttonImage == null) yield break;
-
             for (int i = 0; i < 3; i++)
             {
                 buttonImage.color = COLOR_FLASH;
@@ -291,13 +229,12 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // UI 갱신 (색상 상수만 사용)
+        // UI
         // ============================================================
 
         private void RefreshUI()
         {
             if (buttonImage == null) return;
-
             int maxG = GetMaxGauge();
             float ratio = maxG > 0 ? gauge / (float)maxG : 0f;
 
@@ -308,25 +245,35 @@ namespace JewelsHexaPuzzle.Items
                     buttonImage.color = COLOR_READY;
                     if (hammerButton != null) hammerButton.interactable = false;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
                     break;
 
                 case HammerState.Ready:
-                    buttonImage.fillAmount = Mathf.Max(ratio, (float)usesAvailable / Mathf.Max(1, maxG / CHARGE_PER_USE));
+                    buttonImage.fillAmount = 1f;
                     buttonImage.color = COLOR_READY;
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
                     break;
 
                 case HammerState.UseReady:
-                    buttonImage.fillAmount = Mathf.Max(ratio, (float)usesAvailable / Mathf.Max(1, maxG / CHARGE_PER_USE));
+                    buttonImage.fillAmount = 1f;
                     buttonImage.color = COLOR_USE_READY;
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
+                    break;
+
+                case HammerState.UseReady1:
+                    buttonImage.fillAmount = 1f;
+                    buttonImage.color = COLOR_USE_READY1;
+                    if (hammerButton != null) hammerButton.interactable = true;
+                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_BRIGHT;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one * 1.2f;
                     break;
             }
         }
 
-        /// <summary>자신과 모든 부모의 CanvasGroup alpha를 1f로 강제 설정</summary>
         private void ForceAlphaOne(GameObject obj)
         {
             if (obj == null) return;
@@ -334,18 +281,10 @@ namespace JewelsHexaPuzzle.Items
             while (t != null)
             {
                 CanvasGroup cg = t.GetComponent<CanvasGroup>();
-                if (cg != null && cg.alpha < 1f)
-                {
-                    cg.alpha = 1f;
-                    Debug.Log($"[HammerGauge] CanvasGroup alpha 강제 1f: {t.name}");
-                }
+                if (cg != null && cg.alpha < 1f) cg.alpha = 1f;
                 t = t.parent;
             }
         }
-
-        // ============================================================
-        // 외부 조회
-        // ============================================================
 
         public int CurrentGauge => gauge;
         public HammerState CurrentState => currentState;

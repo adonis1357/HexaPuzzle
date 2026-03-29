@@ -3193,18 +3193,32 @@ public void TriggerBigBang()
             Dictionary<GemType, int> gemCountsForGauge = new Dictionary<GemType, int>();
             foreach (var block in blocksToRemove)
             {
-                if (block != null && block.Data != null && block.Data.gemType != GemType.None
-                    && !block.Data.isCracked && !block.Data.isShell)
+                if (block != null && block.Data != null && block.Data.gemType != GemType.None)
                 {
-                    GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                    bool isBroken = block.Data.isCracked || block.Data.isShell;
 
-                    // 게이지 충전용 색상별 카운트 수집
-                    Debug.Log("[아이템진단1] 블록제거됨 type=" + block.Data.gemType);
-                    GemType gt = block.Data.gemType;
-                    if (gemCountsForGauge.ContainsKey(gt))
-                        gemCountsForGauge[gt]++;
+                    if (!isBroken)
+                    {
+                        // 일반 블록: 미션 보고 + 게이지 +2 (OnSingleGemDestroyedForMission 내부에서)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+
+                        GemType gt = block.Data.gemType;
+                        if (gemCountsForGauge.ContainsKey(gt))
+                            gemCountsForGauge[gt]++;
+                        else
+                            gemCountsForGauge[gt] = 1;
+                    }
                     else
-                        gemCountsForGauge[gt] = 1;
+                    {
+                        // 깨진 블록: 미션 제외, 게이지 +1 (일반의 절반)
+                        GemType gt = block.Data.gemType;
+                        if (gt == GemType.Red && JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
+                            JewelsHexaPuzzle.Items.HammerGauge.Instance.AddGauge(1);
+                        if (gt == GemType.Green && JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
+                            JewelsHexaPuzzle.Items.SwapGauge.Instance.AddGauge(1);
+                        if (gt == GemType.Purple && JewelsHexaPuzzle.Items.LineGauge.Instance != null)
+                            JewelsHexaPuzzle.Items.LineGauge.Instance.AddGauge(1);
+                    }
                 }
             }
 
@@ -3225,28 +3239,36 @@ public void TriggerBigBang()
                 }
             }
 
-            // ★ HammerGauge 연동: Red 블록 제거 시 +1
+            // ★ 게이지 충전: 일반 블록 ×2, 깨진 블록 ×1
+            int normalBlockCount = 0;
+            int crackedBlockCount = 0;
+            foreach (var block in blocksToRemove)
+            {
+                if (block == null || block.Data == null) continue;
+                if (block.Data.isCracked || block.Data.isShell) crackedBlockCount++;
+                else normalBlockCount++;
+            }
+            int totalGaugePerColor = normalBlockCount * 2 + crackedBlockCount * 1;
+
             if (JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
             {
                 int redCount = gemCountsForGauge.ContainsKey(GemType.Red) ? gemCountsForGauge[GemType.Red] : 0;
                 if (redCount > 0)
-                    JewelsHexaPuzzle.Items.HammerGauge.Instance.AddGauge(redCount);
+                    JewelsHexaPuzzle.Items.HammerGauge.Instance.AddGauge(redCount * 2);
             }
 
-            // ★ SwapGauge 연동: Green 블록 제거 시 +1
             if (JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
             {
                 int greenCount = gemCountsForGauge.ContainsKey(GemType.Green) ? gemCountsForGauge[GemType.Green] : 0;
                 if (greenCount > 0)
-                    JewelsHexaPuzzle.Items.SwapGauge.Instance.AddGauge(greenCount);
+                    JewelsHexaPuzzle.Items.SwapGauge.Instance.AddGauge(greenCount * 2);
             }
 
-            // ★ LineGauge 연동: Purple 블록 제거 시 +1
             if (JewelsHexaPuzzle.Items.LineGauge.Instance != null)
             {
                 int purpleCount = gemCountsForGauge.ContainsKey(GemType.Purple) ? gemCountsForGauge[GemType.Purple] : 0;
                 if (purpleCount > 0)
-                    JewelsHexaPuzzle.Items.LineGauge.Instance.AddGauge(purpleCount);
+                    JewelsHexaPuzzle.Items.LineGauge.Instance.AddGauge(purpleCount * 2);
             }
 
             // 5e. 모든 블록이 깨져서 특수 블록 생성이 차단된 경우 메시지 표시

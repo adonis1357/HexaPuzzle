@@ -373,17 +373,38 @@ namespace JewelsHexaPuzzle.Items
             if (clickedBlock != null)
                 clickedCoord = clickedBlock.Coord;
 
-            // ★ 몬스터 직접 타격: 해당 좌표에 몬스터가 있으면 1 데미지
+            // ★ 현재 망치 레벨 확인
+            bool isLevel1 = HammerGauge.Instance != null
+                && HammerGauge.Instance.CurrentState == HammerGauge.HammerState.UseReady1;
+
+            // ★ 몬스터 직접 타격
             if (clickedCoord.HasValue && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
                 GoblinSystem.Instance.ApplyDamageAtPosition(clickedCoord.Value, 1);
+
+                // Level1: 인접 6칸 몬스터에도 1 데미지
+                if (isLevel1)
+                {
+                    foreach (var neighbor in clickedCoord.Value.GetAllNeighbors())
+                        GoblinSystem.Instance.ApplyDamageAtPosition(neighbor, 1);
+                }
             }
 
             if (clickedBlock != null && clickedBlock.Data != null && clickedBlock.Data.gemType != GemType.None)
             {
                 isProcessing = true;
                 Deactivate();
-                StartCoroutine(SmashBlock(clickedBlock));
+
+                if (isLevel1)
+                {
+                    // Level1: 중심 + 인접 6칸 = 7칸 파괴
+                    StartCoroutine(SmashArea(clickedBlock));
+                }
+                else
+                {
+                    // 기본: 1칸 파괴
+                    StartCoroutine(SmashBlock(clickedBlock));
+                }
             }
             else
             {
@@ -471,6 +492,71 @@ namespace JewelsHexaPuzzle.Items
             // ★ 망치 사용 완료 → 게이지 초기화
             if (HammerGauge.Instance != null)
                 HammerGauge.Instance.OnHammerUsed();
+        }
+
+        /// <summary>Level1 망치: 중심 + 인접 6칸 = 7칸 파괴. 게이지 100 소모.</summary>
+        private IEnumerator SmashArea(HexBlock centerBlock)
+        {
+            isProcessing = true;
+            HexCoord center = centerBlock.Coord;
+            Debug.Log($"[HammerItem] SmashArea at {center} (7칸)");
+
+            // MP 소모 (Level1 비용)
+            if (MPManager.Instance != null)
+                MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.Hammer) * 2, centerBlock.transform.position);
+
+            // 중심 파괴 애니메이션
+            yield return StartCoroutine(SmashAnimation(centerBlock));
+
+            // 중심 블록 파괴
+            if (centerBlock.Data != null && centerBlock.Data.gemType != GemType.None)
+            {
+                if (centerBlock.Data.specialType == SpecialBlockType.None)
+                {
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(centerBlock.Data.gemType);
+                    centerBlock.ClearData();
+                    centerBlock.transform.localScale = Vector3.one;
+                }
+            }
+
+            // 인접 6칸 파괴
+            if (hexGrid != null)
+            {
+                var neighbors = hexGrid.GetNeighbors(center);
+                foreach (var nb in neighbors)
+                {
+                    if (nb == null || nb.Data == null || nb.Data.gemType == GemType.None) continue;
+
+                    if (nb.Data.specialType == SpecialBlockType.None)
+                    {
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(nb.Data.gemType);
+                        // 간단 파괴 이펙트
+                        StartCoroutine(SmashAnimation(nb));
+                        nb.ClearData();
+                        nb.transform.localScale = Vector3.one;
+                    }
+                }
+            }
+
+            yield return new WaitForSeconds(0.15f);
+
+            // 낙하
+            if (blockRemovalSystem != null)
+            {
+                if (GameManager.Instance != null)
+                    GameManager.Instance.IsItemAction = true;
+                blockRemovalSystem.TriggerFallOnly();
+                while (blockRemovalSystem.IsProcessing) yield return null;
+            }
+
+            isProcessing = false;
+            if (inputSystem != null && GameManager.Instance != null &&
+                GameManager.Instance.CurrentState == GameState.Playing)
+                inputSystem.SetEnabled(true);
+
+            // ★ Level1 사용 완료 → 게이지 100 소모
+            if (HammerGauge.Instance != null)
+                HammerGauge.Instance.OnHammerUsedLevel1();
         }
 
         // ============================================================
