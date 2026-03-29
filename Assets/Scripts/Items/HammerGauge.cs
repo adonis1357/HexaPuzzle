@@ -191,6 +191,8 @@ namespace JewelsHexaPuzzle.Items
 
         private void OnHammerButtonClicked()
         {
+            if (JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode()) { AddGaugeEditor(); return; }
+
             if (currentState == HammerState.Ready)
             {
                 // Ready → UseReady0 (기본 망치)
@@ -476,5 +478,18 @@ namespace JewelsHexaPuzzle.Items
 
         // 하위 호환용 (기존 코드에서 CurrentGauge 참조하는 곳)
         public int CurrentGauge => TotalGauge;
+
+        /// <summary>에디터 테스트용: 게이지 50 강제 추가</summary>
+        public void AddGaugeEditor()
+        {
+            gaugeInLayer += 50;
+            if (gaugeInLayer >= 50) { gaugeLayer++; }
+            gaugeInLayer = gaugeInLayer % 50;
+            gaugeLayer = Mathf.Min(gaugeLayer, 4);
+            if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
+                SetState(HammerState.Ready);
+            else
+                RefreshUI();
+        }
     }
 }
