@@ -47,7 +47,33 @@ namespace JewelsHexaPuzzle.Items
         {
             gauge = 0;
             currentState = GaugeState.Inactive;
+            ApplyInactiveColorImmediate();
             StartCoroutine(AutoInitCoroutine());
+        }
+
+        private void ApplyInactiveColorImmediate()
+        {
+            Button btn = null;
+            var uiMgr = FindObjectOfType<UIManager>();
+            if (uiMgr != null && uiMgr.ItemButtons != null)
+                foreach (var ib in uiMgr.ItemButtons)
+                    if (ib != null && ib.CurrentItemType == ItemType.SixWayLaser && ib.ButtonComponent != null)
+                    { btn = ib.ButtonComponent; break; }
+            if (btn == null)
+            {
+                var li = FindObjectOfType<LineDrawItem>();
+                if (li != null) btn = li.GetComponentInChildren<Button>();
+            }
+            if (btn != null)
+            {
+                var img = btn.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = COLOR_READY;
+                    img.fillAmount = 0f;
+                }
+                btn.interactable = false;
+            }
         }
 
         private IEnumerator AutoInitCoroutine()

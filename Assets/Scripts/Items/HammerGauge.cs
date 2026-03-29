@@ -70,7 +70,35 @@ namespace JewelsHexaPuzzle.Items
             gaugeLayer = 0;
             gaugeInLayer = 0;
             currentState = HammerState.Inactive;
+            // 즉시 버튼을 찾아 비활성화 색상 적용 (AutoInit 대기 전 흰색 방지)
+            ApplyInactiveColorImmediate();
             StartCoroutine(AutoInitCoroutine());
+        }
+
+        /// <summary>Start에서 즉시 호출: 버튼이 이미 존재하면 비활성화 색상 즉시 적용</summary>
+        private void ApplyInactiveColorImmediate()
+        {
+            Button btn = null;
+            var hi = FindObjectOfType<HammerItem>();
+            if (hi != null && hi.HammerButton != null) btn = hi.HammerButton;
+            if (btn == null)
+            {
+                var uiMgr = FindObjectOfType<UIManager>();
+                if (uiMgr != null && uiMgr.ItemButtons != null)
+                    foreach (var ib in uiMgr.ItemButtons)
+                        if (ib != null && ib.CurrentItemType == ItemType.Hammer && ib.ButtonComponent != null)
+                        { btn = ib.ButtonComponent; break; }
+            }
+            if (btn != null)
+            {
+                var img = btn.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = COLOR_LAYER_0;
+                    img.fillAmount = 0f;
+                }
+                btn.interactable = false;
+            }
         }
 
         private IEnumerator AutoInitCoroutine()
