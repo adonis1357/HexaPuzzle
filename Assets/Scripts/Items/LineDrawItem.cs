@@ -607,7 +607,13 @@ namespace JewelsHexaPuzzle.Items
         private IEnumerator ExecuteRemoval(List<HexBlock> blocksToRemove, GemType removedColor)
         {
             isProcessing = true;
-            Debug.Log($"[LineDrawItem] Removing {blocksToRemove.Count} blocks");
+
+            // 레벨별 게이지 소모
+            int lineLevel = LineGauge.Instance != null ? LineGauge.Instance.GetUseReadyLevel() : 0;
+            if (LineGauge.Instance != null)
+                LineGauge.Instance.ConsumeGauge(lineLevel);
+
+            Debug.Log($"[LineDrawItem] Removing {blocksToRemove.Count} blocks (level={lineLevel})");
 
             // MP 소모 (라인 중간 위치에 팝업)
             if (MPManager.Instance != null && blocksToRemove.Count > 0)
