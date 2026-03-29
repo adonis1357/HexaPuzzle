@@ -267,6 +267,13 @@ namespace JewelsHexaPuzzle.Managers
             Debug.Log($"[MPManager] MP 회복 +{amount}: {currentMP}/{maxMP}");
         }
 
+        /// <summary>에디터용: MP를 특정 값으로 직접 설정</summary>
+        public void SetMP(int value)
+        {
+            currentMP = Mathf.Clamp(value, 0, maxMP);
+            OnMPChanged?.Invoke(currentMP, maxMP);
+        }
+
         // ============================================================
         // 특수 블록 비용 조회
         // ============================================================
