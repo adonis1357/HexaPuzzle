@@ -479,16 +479,28 @@ namespace JewelsHexaPuzzle.Items
         // 하위 호환용 (기존 코드에서 CurrentGauge 참조하는 곳)
         public int CurrentGauge => TotalGauge;
 
-        /// <summary>에디터 테스트용: gaugeLayer 1 증가 (최대 4)</summary>
+        /// <summary>에디터 테스트용: gaugeLayer 1 증가. 풀이면 0으로 초기화</summary>
         public void AddGaugeEditor()
         {
-            Debug.Log($"[EditorGauge] 망치 게이지추가모드 진입 — gaugeLayer: {gaugeLayer} → {Mathf.Min(gaugeLayer + 1, 4)}");
-            gaugeLayer = Mathf.Min(gaugeLayer + 1, 4);
-            gaugeInLayer = 0;
-            if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
-                SetState(HammerState.Ready);
+            int maxLayer = GetMaxLayer();
+            bool isFull = gaugeLayer >= maxLayer && gaugeInLayer == 0;
+            if (isFull)
+            {
+                Debug.Log($"[EditorGauge] 망치 게이지 풀 → 초기화 (gaugeLayer: {gaugeLayer} → 0)");
+                gaugeLayer = 0;
+                gaugeInLayer = 0;
+                SetState(HammerState.Inactive);
+            }
             else
-                RefreshUI();
+            {
+                Debug.Log($"[EditorGauge] 망치 게이지 증가 — gaugeLayer: {gaugeLayer} → {Mathf.Min(gaugeLayer + 1, maxLayer)}");
+                gaugeLayer = Mathf.Min(gaugeLayer + 1, maxLayer);
+                gaugeInLayer = 0;
+                if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
+                    SetState(HammerState.Ready);
+                else
+                    RefreshUI();
+            }
         }
     }
 }

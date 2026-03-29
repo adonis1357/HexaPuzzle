@@ -260,16 +260,28 @@ namespace JewelsHexaPuzzle.Items
         public int CurrentGauge => gauge;
         public GaugeState CurrentState => currentState;
 
-        /// <summary>에디터 테스트용: gauge를 CHARGE_PER_USE만큼 증가 (1레이어 추가)</summary>
+        /// <summary>에디터 테스트용: gauge를 CHARGE_PER_USE만큼 증가. 풀이면 0으로 초기화</summary>
         public void AddGaugeEditor()
         {
-            Debug.Log($"[EditorGauge] 스왑 게이지추가모드 진입 — gauge: {gauge} → {Mathf.Min(gauge + CHARGE_PER_USE, GetMaxGauge())}");
-            gauge = Mathf.Min(gauge + CHARGE_PER_USE, GetMaxGauge());
-            usesAvailable = CalculateUses();
-            if (gauge >= CHARGE_PER_USE && currentState == GaugeState.Inactive)
-                SetState(GaugeState.Ready);
+            int maxG = GetMaxGauge();
+            bool isFull = gauge >= maxG;
+            if (isFull)
+            {
+                Debug.Log($"[EditorGauge] 스왑 게이지 풀 → 초기화 (gauge: {gauge} → 0)");
+                gauge = 0;
+                usesAvailable = 0;
+                SetState(GaugeState.Inactive);
+            }
             else
-                RefreshUI();
+            {
+                Debug.Log($"[EditorGauge] 스왑 게이지 증가 — gauge: {gauge} → {Mathf.Min(gauge + CHARGE_PER_USE, maxG)}");
+                gauge = Mathf.Min(gauge + CHARGE_PER_USE, maxG);
+                usesAvailable = CalculateUses();
+                if (gauge >= CHARGE_PER_USE && currentState == GaugeState.Inactive)
+                    SetState(GaugeState.Ready);
+                else
+                    RefreshUI();
+            }
         }
     }
 }
