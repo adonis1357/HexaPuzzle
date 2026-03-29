@@ -442,7 +442,10 @@ namespace JewelsHexaPuzzle.Items
             // 거리 기반 게이지 소모 (거리 1=1레이어, 2=2레이어, 3=3레이어, 4=4레이어)
             int swapDist = blockA.Coord.DistanceTo(blockB.Coord);
             if (SwapGauge.Instance != null)
+            {
                 SwapGauge.Instance.ConsumeGauge(swapDist);
+                SwapGauge.Instance.ForceRefreshUI();
+            }
 
             Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord} (dist={swapDist})");
 

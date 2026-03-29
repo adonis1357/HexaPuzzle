@@ -611,7 +611,10 @@ namespace JewelsHexaPuzzle.Items
             // 레벨별 게이지 소모
             int lineLevel = LineGauge.Instance != null ? LineGauge.Instance.GetUseReadyLevel() : 0;
             if (LineGauge.Instance != null)
+            {
                 LineGauge.Instance.ConsumeGauge(lineLevel);
+                LineGauge.Instance.ForceRefreshUI();
+            }
 
             Debug.Log($"[LineDrawItem] Removing {blocksToRemove.Count} blocks (level={lineLevel})");
 
