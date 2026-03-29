@@ -379,6 +379,9 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
+        /// <summary>외부에서 UI 즉시 갱신 호출용</summary>
+        public void ForceRefreshUI() { RefreshUI(); }
+
         /// <summary>UseReady 상태에서의 사용 레벨 (gaugeLayer - 1, 0~3). 스킬 해금 기준 제한 적용.</summary>
         public int GetUseReadyLevel()
         {
