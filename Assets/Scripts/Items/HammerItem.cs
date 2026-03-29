@@ -38,10 +38,6 @@ namespace JewelsHexaPuzzle.Items
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 
-        // 버튼 기본 색상 (활성화 색상의 어두운 버전)
-        // HammerGauge가 색상을 관리하므로 여기서는 건드리지 않음
-        private Color btnOriginalColor = new Color(0.93f, 0.18f, 0.18f, 1f);  // Red 블록색
-        private static readonly Color BtnActiveColor = new Color(0.93f, 0.18f, 0.18f, 1f);
         private void Start()
         {
             AutoFindReferences();
@@ -52,7 +48,6 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 초기 색상은 HammerGauge가 관리 (여기서 덮어쓰지 않음)
         }
 
         private void AutoFindReferences()
@@ -95,14 +90,13 @@ namespace JewelsHexaPuzzle.Items
         {
             if (isProcessing) return;
 
-            // 활성 상태에서 다시 클릭 → 비활성화
             if (isActive)
             {
                 Deactivate();
                 return;
             }
 
-            // MP 체크: MP가 부족하면 사용 불가
+            // MP 체크
             if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.Hammer))
             {
                 Debug.Log($"[HammerItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.Hammer)}, 현재 {MPManager.Instance.CurrentMP}");
@@ -122,13 +116,11 @@ namespace JewelsHexaPuzzle.Items
         {
             if (isActive || isProcessing) return;
 
-            // 다른 아이템 비활성화 (오버레이 중첩 방지)
             DeactivateOtherItems();
 
             isActive = true;
             if (inputSystem != null) inputSystem.SetEnabled(false);
 
-            // 오버레이 페이드인
             if (backgroundOverlay != null)
             {
                 backgroundOverlay.gameObject.SetActive(true);
@@ -136,18 +128,12 @@ namespace JewelsHexaPuzzle.Items
                 StartCoroutine(FadeOverlay(0f, activeOverlayColor.a, 0.15f));
             }
 
-            // 버튼 활성화 펄스
             if (hammerButton != null)
-            {
-                // 색상은 HammerGauge가 관리
                 StartCoroutine(ButtonActivatePulse());
-            }
 
-            // 버튼 글로우 링
             if (hammerButton != null)
                 StartCoroutine(ButtonGlowRing());
 
-            // 대기 애니메이션 시작
             idleAnimCoroutine = StartCoroutine(IdleAnimation());
 
             Debug.Log("[HammerItem] Activated");
@@ -157,49 +143,37 @@ namespace JewelsHexaPuzzle.Items
         {
             isActive = false;
 
-            // 대기 애니메이션 중단
             if (idleAnimCoroutine != null)
             {
                 StopCoroutine(idleAnimCoroutine);
                 idleAnimCoroutine = null;
             }
 
-            // 버튼 아이콘 스케일 복원
             if (hammerIcon != null)
                 hammerIcon.transform.localScale = Vector3.one;
 
-            // 처리 중이 아닐 때만 입력 복원
             if (!isProcessing && inputSystem != null && GameManager.Instance != null &&
                 GameManager.Instance.CurrentState == GameState.Playing)
                 inputSystem.SetEnabled(true);
 
-            // 오버레이 페이드아웃
             if (backgroundOverlay != null)
-            {
                 StartCoroutine(FadeOverlayThenHide(backgroundOverlay.color.a, 0f, 0.12f));
-            }
 
-            // 버튼 비활성화 연출
             if (hammerButton != null)
-            {
                 StartCoroutine(ButtonDeactivateAnim());
-            }
 
-            // ★ 망치 취소 → Ready 복귀 (게이지 유지)
             if (HammerGauge.Instance != null)
                 HammerGauge.Instance.OnHammerCancelled();
 
             Debug.Log("[HammerItem] Deactivated");
         }
 
-        /// <summary>버튼 스케일 펄스: 1.0 → 1.25 → 1.0 + 아이콘 흔들림</summary>
         private IEnumerator ButtonActivatePulse()
         {
             if (hammerButton == null) yield break;
             Transform btnTransform = hammerButton.transform;
-            Vector3 origScale = Vector3.one;
+            Vector3 origScale = btnTransform.localScale;
 
-            // 스케일 펄스: 1.0 → 1.25 → 1.0
             float duration = 0.2f;
             float elapsed = 0f;
             while (elapsed < duration)
@@ -212,7 +186,6 @@ namespace JewelsHexaPuzzle.Items
             }
             btnTransform.localScale = origScale;
 
-            // 아이콘 좌우 흔들림 2회 (0.15초)
             if (hammerIcon != null)
             {
                 float shakeDur = 0.15f;
@@ -229,7 +202,6 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
-        /// <summary>금색 글로우 링 확장 페이드아웃</summary>
         private IEnumerator ButtonGlowRing()
         {
             if (hammerButton == null) yield break;
@@ -262,7 +234,6 @@ namespace JewelsHexaPuzzle.Items
             Destroy(glow);
         }
 
-        /// <summary>활성 상태 대기 애니메이션: 아이콘 호흡 + 테두리 글로우 펄스</summary>
         private IEnumerator IdleAnimation()
         {
             float phase = 0f;
@@ -270,48 +241,36 @@ namespace JewelsHexaPuzzle.Items
             {
                 phase += Time.deltaTime;
 
-                // 아이콘 호흡: 스케일 1.0 ↔ 1.05 (1.5초 주기)
                 if (hammerIcon != null)
                 {
                     float breathScale = 1f + 0.05f * Mathf.Sin(phase * Mathf.PI * 2f / 1.5f);
                     hammerIcon.transform.localScale = Vector3.one * breathScale;
                 }
 
-                // 버튼 색상은 HammerGauge가 관리 (여기서 변경하지 않음)
-
                 yield return null;
             }
         }
 
-        /// <summary>비활성화 버튼 연출: 수축 → 복원 + 색상 보간</summary>
         private IEnumerator ButtonDeactivateAnim()
         {
             if (hammerButton == null) yield break;
             Transform btnTransform = hammerButton.transform;
-            var btnImg = hammerButton.GetComponent<Image>();
 
             float duration = 0.15f;
             float elapsed = 0f;
-            Color startColor = btnImg != null ? btnImg.color : BtnActiveColor;
 
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
-
-                // 스케일 수축 → 복원
                 float scale = 1f - 0.1f * Mathf.Sin(t * Mathf.PI);
                 btnTransform.localScale = Vector3.one * scale;
-
-                // 색상은 HammerGauge가 관리
-
                 yield return null;
             }
 
             btnTransform.localScale = Vector3.one;
         }
 
-        /// <summary>오버레이 알파 페이드</summary>
         private IEnumerator FadeOverlay(float from, float to, float duration)
         {
             if (backgroundOverlay == null) yield break;
@@ -329,7 +288,6 @@ namespace JewelsHexaPuzzle.Items
             backgroundOverlay.color = c;
         }
 
-        /// <summary>오버레이 페이드아웃 후 비활성화</summary>
         private IEnumerator FadeOverlayThenHide(float from, float to, float duration)
         {
             yield return StartCoroutine(FadeOverlay(from, to, duration));
@@ -344,10 +302,68 @@ namespace JewelsHexaPuzzle.Items
         private void Update()
         {
             if (!isActive || isProcessing) return;
-            // 구매 팝업 열려있으면 입력 차단
             if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
             if (Input.GetMouseButtonDown(0))
                 HandleClick(Input.mousePosition);
+        }
+
+        /// <summary>현재 HammerGauge 상태에서 망치 레벨 반환 (0~3)</summary>
+        private int GetCurrentHammerLevel()
+        {
+            if (HammerGauge.Instance == null) return 0;
+            switch (HammerGauge.Instance.CurrentState)
+            {
+                case HammerGauge.HammerState.UseReady0: return 0;
+                case HammerGauge.HammerState.UseReady1: return 1;
+                case HammerGauge.HammerState.UseReady2: return 2;
+                case HammerGauge.HammerState.UseReady3: return 3;
+                default: return 0;
+            }
+        }
+
+        /// <summary>레벨별 파괴 대상 좌표 목록 반환</summary>
+        private List<HexCoord> GetDestructionCoords(HexCoord center, int level)
+        {
+            HashSet<HexCoord> coords = new HashSet<HexCoord>();
+
+            switch (level)
+            {
+                case 0:
+                    // 클릭 블록 1개
+                    coords.Add(center);
+                    break;
+
+                case 1:
+                    // 중심 + axial 거리 1 이내 = 7칸
+                    foreach (var c in HexCoord.GetHexesInRadius(center, 1))
+                        coords.Add(c);
+                    break;
+
+                case 2:
+                    // 7칸 + 6방향 3칸, 4칸 위치 추가 = 총 19칸
+                    // 먼저 반지름 1 (7칸)
+                    foreach (var c in HexCoord.GetHexesInRadius(center, 1))
+                        coords.Add(c);
+                    // 6방향으로 거리 2, 3칸 위치 추가 (반지름 2 전체 = 19칸)
+                    foreach (var c in HexCoord.GetHexesInRadius(center, 2))
+                        coords.Add(c);
+                    break;
+
+                case 3:
+                    // 반지름 3 전체 = 37칸
+                    foreach (var c in HexCoord.GetHexesInRadius(center, 3))
+                        coords.Add(c);
+                    break;
+            }
+
+            return new List<HexCoord>(coords);
+        }
+
+        /// <summary>레벨별 게이지 레이어 소모량</summary>
+        private int GetLayerCost(int level)
+        {
+            // UseReady0: 1, UseReady1: 2, UseReady2: 3, UseReady3: 4
+            return level + 1;
         }
 
         private void HandleClick(Vector2 screenPos)
@@ -368,43 +384,25 @@ namespace JewelsHexaPuzzle.Items
 
             HexBlock clickedBlock = FindBlockAtPosition(screenPos);
 
-            // 클릭 위치의 HexCoord 확인 (몬스터 타격용)
             HexCoord? clickedCoord = null;
             if (clickedBlock != null)
                 clickedCoord = clickedBlock.Coord;
 
-            // ★ 현재 망치 레벨 확인
-            bool isLevel1 = HammerGauge.Instance != null
-                && HammerGauge.Instance.CurrentState == HammerGauge.HammerState.UseReady1;
+            int hammerLevel = GetCurrentHammerLevel();
 
-            // ★ 몬스터 직접 타격
+            // 몬스터 직접 타격
             if (clickedCoord.HasValue && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                GoblinSystem.Instance.ApplyDamageAtPosition(clickedCoord.Value, 1);
-
-                // Level1: 인접 6칸 몬스터에도 1 데미지
-                if (isLevel1)
-                {
-                    foreach (var neighbor in clickedCoord.Value.GetAllNeighbors())
-                        GoblinSystem.Instance.ApplyDamageAtPosition(neighbor, 1);
-                }
+                var destructionCoords = GetDestructionCoords(clickedCoord.Value, hammerLevel);
+                foreach (var coord in destructionCoords)
+                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, 1);
             }
 
             if (clickedBlock != null && clickedBlock.Data != null && clickedBlock.Data.gemType != GemType.None)
             {
                 isProcessing = true;
                 Deactivate();
-
-                if (isLevel1)
-                {
-                    // Level1: 중심 + 인접 6칸 = 7칸 파괴
-                    StartCoroutine(SmashArea(clickedBlock));
-                }
-                else
-                {
-                    // 기본: 1칸 파괴
-                    StartCoroutine(SmashBlock(clickedBlock));
-                }
+                StartCoroutine(SmashByLevel(clickedBlock, hammerLevel));
             }
             else
             {
@@ -434,22 +432,81 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // 파괴 메인 시퀀스
+        // 레벨별 파괴 통합 메서드
         // ============================================================
 
-        private IEnumerator SmashBlock(HexBlock block)
+        private IEnumerator SmashByLevel(HexBlock centerBlock, int level)
         {
             isProcessing = true;
-            Debug.Log("[HammerItem] Smashing block at " + block.Coord);
+            HexCoord center = centerBlock.Coord;
+            int layerCost = GetLayerCost(level);
+            Debug.Log($"[HammerItem] SmashByLevel {level} at {center} (cost: {layerCost} layers)");
 
             // MP 소모
             if (MPManager.Instance != null)
-                MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.Hammer), block.transform.position);
+            {
+                int baseCost = MPManager.Instance.GetItemCost(ItemType.Hammer);
+                int mpCost = baseCost * (level + 1);
+                MPManager.Instance.TryConsumeMP(mpCost, centerBlock.transform.position);
+            }
+
+            // 중심 블록 파괴 애니메이션
+            yield return StartCoroutine(SmashAnimation(centerBlock));
+
+            // 파괴 대상 좌표 수집
+            var destructionCoords = GetDestructionCoords(center, level);
+
+            // 중심 블록 파괴
+            DestroyBlockAtCoord(centerBlock);
+
+            // 나머지 블록 파괴 (중심 제외)
+            if (level >= 1 && hexGrid != null)
+            {
+                foreach (var coord in destructionCoords)
+                {
+                    if (coord == center) continue;
+                    HexBlock block = hexGrid.GetBlock(coord);
+                    if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+
+                    if (block.Data.specialType == SpecialBlockType.None)
+                    {
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                        StartCoroutine(SmashAnimation(block));
+                        block.ClearData();
+                        block.transform.localScale = Vector3.one;
+                    }
+                }
+
+                yield return new WaitForSeconds(0.15f);
+            }
+
+            // 낙하
+            if (blockRemovalSystem != null)
+            {
+                if (GameManager.Instance != null)
+                    GameManager.Instance.IsItemAction = true;
+
+                blockRemovalSystem.TriggerFallOnly();
+                while (blockRemovalSystem.IsProcessing) yield return null;
+            }
+
+            isProcessing = false;
+            if (inputSystem != null && GameManager.Instance != null &&
+                GameManager.Instance.CurrentState == GameState.Playing)
+                inputSystem.SetEnabled(true);
+
+            // 게이지 레이어 차감
+            if (HammerGauge.Instance != null)
+                HammerGauge.Instance.OnHammerUsedWithLevel(layerCost);
+        }
+
+        /// <summary>블록 파괴 헬퍼: 특수 블록이면 드릴 발동, 아니면 일반 파괴</summary>
+        private void DestroyBlockAtCoord(HexBlock block)
+        {
+            if (block == null || block.Data == null) return;
 
             bool isSpecial = block.Data.specialType != SpecialBlockType.None;
             SpecialBlockType specialType = block.Data.specialType;
-
-            yield return StartCoroutine(SmashAnimation(block));
 
             if (isSpecial)
             {
@@ -457,106 +514,22 @@ namespace JewelsHexaPuzzle.Items
                 {
                     case SpecialBlockType.Drill:
                         if (drillSystem != null)
-                        {
                             drillSystem.ActivateDrill(block);
-                            yield return new WaitForSeconds(0.1f);
-                            while (drillSystem.IsBlockActive(block)) yield return null;
-                        }
+                        break;
+                    default:
+                        // 다른 특수 블록은 일반 파괴
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                        block.ClearData();
+                        block.transform.localScale = Vector3.one;
                         break;
                 }
             }
             else
             {
-                // 미션 카운팅: 블록 파괴 시점에 개별 보고 (Stage/Infinite 모두 지원)
-                if (block.Data != null && block.Data.gemType != GemType.None)
-                    GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
-
+                GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
                 block.ClearData();
                 block.transform.localScale = Vector3.one;
             }
-
-            if (blockRemovalSystem != null)
-            {
-                if (GameManager.Instance != null)
-                    GameManager.Instance.IsItemAction = true;
-
-                blockRemovalSystem.TriggerFallOnly();
-                while (blockRemovalSystem.IsProcessing) yield return null;
-            }
-
-            isProcessing = false;
-            if (inputSystem != null && GameManager.Instance != null &&
-                GameManager.Instance.CurrentState == GameState.Playing)
-                inputSystem.SetEnabled(true);
-
-            // ★ 망치 사용 완료 → 게이지 초기화
-            if (HammerGauge.Instance != null)
-                HammerGauge.Instance.OnHammerUsed();
-        }
-
-        /// <summary>Level1 망치: 중심 + 인접 6칸 = 7칸 파괴. 게이지 100 소모.</summary>
-        private IEnumerator SmashArea(HexBlock centerBlock)
-        {
-            isProcessing = true;
-            HexCoord center = centerBlock.Coord;
-            Debug.Log($"[HammerItem] SmashArea at {center} (7칸)");
-
-            // MP 소모 (Level1 비용)
-            if (MPManager.Instance != null)
-                MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.Hammer) * 2, centerBlock.transform.position);
-
-            // 중심 파괴 애니메이션
-            yield return StartCoroutine(SmashAnimation(centerBlock));
-
-            // 중심 블록 파괴
-            if (centerBlock.Data != null && centerBlock.Data.gemType != GemType.None)
-            {
-                if (centerBlock.Data.specialType == SpecialBlockType.None)
-                {
-                    GameManager.Instance?.OnSingleGemDestroyedForMission(centerBlock.Data.gemType);
-                    centerBlock.ClearData();
-                    centerBlock.transform.localScale = Vector3.one;
-                }
-            }
-
-            // 인접 6칸 파괴
-            if (hexGrid != null)
-            {
-                var neighbors = hexGrid.GetNeighbors(center);
-                foreach (var nb in neighbors)
-                {
-                    if (nb == null || nb.Data == null || nb.Data.gemType == GemType.None) continue;
-
-                    if (nb.Data.specialType == SpecialBlockType.None)
-                    {
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(nb.Data.gemType);
-                        // 간단 파괴 이펙트
-                        StartCoroutine(SmashAnimation(nb));
-                        nb.ClearData();
-                        nb.transform.localScale = Vector3.one;
-                    }
-                }
-            }
-
-            yield return new WaitForSeconds(0.15f);
-
-            // 낙하
-            if (blockRemovalSystem != null)
-            {
-                if (GameManager.Instance != null)
-                    GameManager.Instance.IsItemAction = true;
-                blockRemovalSystem.TriggerFallOnly();
-                while (blockRemovalSystem.IsProcessing) yield return null;
-            }
-
-            isProcessing = false;
-            if (inputSystem != null && GameManager.Instance != null &&
-                GameManager.Instance.CurrentState == GameState.Playing)
-                inputSystem.SetEnabled(true);
-
-            // ★ Level1 사용 완료 → 게이지 100 소모
-            if (HammerGauge.Instance != null)
-                HammerGauge.Instance.OnHammerUsedLevel1();
         }
 
         // ============================================================
@@ -568,25 +541,20 @@ namespace JewelsHexaPuzzle.Items
             if (block == null) yield break;
             Vector3 origPos = block.transform.position;
 
-            // 1. Pre-Fire Compression (1.0 → 0.78 → 1.18 → 1.0)
             yield return StartCoroutine(PreFireCompression(block));
 
-            // 2. 파괴 순간: HitStop + ZoomPunch + DestroyFlash + Bloom (동시 시작)
             StartCoroutine(HitStop(VisualConstants.HitStopDurationSmall));
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
             StartCoroutine(DestroyFlashOverlay(block));
             Color blockColor = block.Data != null ? GemColors.GetColor(block.Data.gemType) : Color.gray;
             StartCoroutine(BloomLayer(origPos, blockColor, VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
 
-            // 3. 파편 + 스파크 + 충격파
             SpawnDebris(block);
             SpawnSparks(origPos, blockColor);
             StartCoroutine(ImpactWave(origPos, blockColor));
 
-            // 4. 화면 흔들림
             StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
 
-            // 5. DualEasing Destroy (확대 → 찌그러짐 축소)
             yield return StartCoroutine(DualEasingDestroy(block));
 
             yield return new WaitForSeconds(0.03f);
@@ -602,7 +570,6 @@ namespace JewelsHexaPuzzle.Items
             float elapsed = 0f;
             float duration = VisualConstants.PreFireDuration;
 
-            // 밝기 증가용 원본 색상 캐싱
             Image blockImg = block.GetComponent<Image>();
             Color origColor = blockImg != null ? blockImg.color : Color.white;
 
@@ -626,7 +593,6 @@ namespace JewelsHexaPuzzle.Items
 
                 block.transform.localScale = Vector3.one * scale;
 
-                // 밝기 증가
                 if (blockImg != null)
                 {
                     float brighten = t * VisualConstants.PreFireBrightenAmount;
@@ -778,7 +744,7 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // DualEasing Destroy (확대 → 찌그러짐 축소)
+        // DualEasing Destroy
         // ============================================================
 
         private IEnumerator DualEasingDestroy(HexBlock block)
@@ -789,7 +755,6 @@ namespace JewelsHexaPuzzle.Items
             float expandPhase = totalDuration * VisualConstants.DestroyExpandPhaseRatio;
             float shrinkPhase = totalDuration * (1f - VisualConstants.DestroyExpandPhaseRatio);
 
-            // Phase 1: 확대 (25%)
             float elapsed = 0f;
             while (elapsed < expandPhase)
             {
@@ -801,7 +766,6 @@ namespace JewelsHexaPuzzle.Items
                 yield return null;
             }
 
-            // Phase 2: 찌그러짐 + 축소 (75%)
             elapsed = 0f;
             while (elapsed < shrinkPhase)
             {
@@ -811,7 +775,6 @@ namespace JewelsHexaPuzzle.Items
                 float eased = VisualConstants.EaseInQuad(t);
 
                 float scaleBase = Mathf.Lerp(VisualConstants.DestroyExpandScale, 0f, eased);
-                // X축 오버슈트 (찌그러짐)
                 float squeezeX = 1f + VisualConstants.DestroySqueezePeak * Mathf.Sin(t * Mathf.PI);
                 float scaleX = scaleBase * squeezeX;
                 float scaleY = scaleBase;
@@ -897,7 +860,7 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // Debris (파편) — VisualConstants 표준
+        // Debris
         // ============================================================
 
         private void SpawnDebris(HexBlock block)
@@ -955,7 +918,7 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // Sparks (스파크) — VisualConstants 표준
+        // Sparks
         // ============================================================
 
         private void SpawnSparks(Vector3 center, Color color)
@@ -975,7 +938,6 @@ namespace JewelsHexaPuzzle.Items
             var img = spark.AddComponent<Image>();
             img.raycastTarget = false;
 
-            // 밝은 색상 (하이라이트)
             Color sparkColor = new Color(
                 Mathf.Min(1f, color.r + 0.3f),
                 Mathf.Min(1f, color.g + 0.3f),
@@ -1024,7 +986,6 @@ namespace JewelsHexaPuzzle.Items
                 Destroy(effectParent.GetChild(i).gameObject);
         }
 
-        /// <summary>다른 활성 아이템 비활성화 (오버레이 중첩 방지)</summary>
         private void DeactivateOtherItems()
         {
             var swap = FindObjectOfType<SwapItem>();
