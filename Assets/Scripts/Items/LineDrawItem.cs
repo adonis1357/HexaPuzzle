@@ -37,6 +37,7 @@ namespace JewelsHexaPuzzle.Items
         // 체인 데이터
         private List<HexBlock> chain = new List<HexBlock>();
         private GemType chainColor = GemType.None;
+        private HashSet<GemType> chainColors = new HashSet<GemType>(); // 레벨별 다중 색상 추적
 
         // 비주얼
         private List<GameObject> lineSegments = new List<GameObject>();
@@ -186,6 +187,7 @@ namespace JewelsHexaPuzzle.Items
             // 체인 비주얼 정리
             ClearChainVisuals();
             chain.Clear();
+            chainColors.Clear();
             chainColor = GemType.None;
 
             // 대기 애니메이션 중단
@@ -411,6 +413,7 @@ namespace JewelsHexaPuzzle.Items
                 // 터치 취소 → 체인 리셋
                 ClearChainVisuals();
                 chain.Clear();
+                chainColors.Clear();
                 chainColor = GemType.None;
                 isDrawing = false;
             }
@@ -438,13 +441,22 @@ namespace JewelsHexaPuzzle.Items
         // 체인 관리
         // ============================================================
 
+        /// <summary>현재 라인 레벨에 따른 추가 허용 색상 수 (Level0=0, 1=1, 2=2, 3=3)</summary>
+        private int GetMaxExtraColors()
+        {
+            if (LineGauge.Instance == null) return 0;
+            return LineGauge.Instance.GetUseReadyLevel();
+        }
+
         private void StartChain(HexBlock block)
         {
             // 이전 체인 정리
             ClearChainVisuals();
             chain.Clear();
+            chainColors.Clear();
 
             chainColor = block.Data.gemType;
+            chainColors.Add(chainColor);
             chain.Add(block);
             isDrawing = true;
 
@@ -480,10 +492,24 @@ namespace JewelsHexaPuzzle.Items
             // 유효한 블록인지 확인
             if (hoverBlock.Data == null || hoverBlock.Data.gemType == GemType.None) return;
 
-            // 같은 색상인지 확인
-            if (hoverBlock.Data.gemType == chainColor)
+            // 색상 확인 — 레벨별 다중 색상 허용
+            GemType blockGem = hoverBlock.Data.gemType;
+            bool colorAllowed = chainColors.Contains(blockGem);
+            if (!colorAllowed)
+            {
+                // 새 색상: 추가 허용 한도 체크 (기본 색상 1종 + 추가 maxExtra종)
+                int maxExtraColors = GetMaxExtraColors();
+                int extraCount = chainColors.Count - 1; // 기본 색상 제외
+                if (extraCount < maxExtraColors)
+                {
+                    colorAllowed = true;
+                }
+            }
+
+            if (colorAllowed)
             {
                 // 체인에 추가
+                chainColors.Add(blockGem);
                 chain.Add(hoverBlock);
                 CreateBlockHighlight(hoverBlock);
                 CreateLineSegment(lastBlock, hoverBlock);
@@ -494,14 +520,22 @@ namespace JewelsHexaPuzzle.Items
             }
             else
             {
-                // 다른 색상 → 체인 리셋 (아이템은 활성 유지)
-                ClearChainVisuals();
-                chain.Clear();
-                chainColor = GemType.None;
-                isDrawing = false;
-
-                Debug.Log("[LineDrawItem] Chain reset: different color");
+                // 색상 제한 초과 → 빨간 깜빡임 피드백 (체인은 유지)
+                StartCoroutine(FlashBlockRed(hoverBlock));
+                Debug.Log($"[LineDrawItem] 색상 제한 초과: {blockGem} (허용 {chainColors.Count}/{1 + GetMaxExtraColors()})");
             }
+        }
+
+        /// <summary>색상 제한 초과 시 빨간 깜빡임 피드백</summary>
+        private IEnumerator FlashBlockRed(HexBlock block)
+        {
+            if (block == null) yield break;
+            var img = block.GetComponent<Image>();
+            if (img == null) yield break;
+            Color orig = img.color;
+            img.color = new Color(1f, 0.2f, 0.2f, 1f);
+            yield return new WaitForSeconds(0.1f);
+            if (block != null && img != null) img.color = orig;
         }
 
         private void FinishChain()
@@ -526,6 +560,7 @@ namespace JewelsHexaPuzzle.Items
                 // 1개 이하 → 체인 리셋 (아이템은 활성 유지)
                 ClearChainVisuals();
                 chain.Clear();
+                chainColors.Clear();
                 chainColor = GemType.None;
             }
         }

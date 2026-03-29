@@ -349,8 +349,15 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
+        /// <summary>현재 스왑 레벨에 따른 최대 스왑 거리 (UseReady0=1, 1=2, 2=3, 3=4)</summary>
+        private int GetMaxSwapDistance()
+        {
+            if (SwapGauge.Instance == null) return 1;
+            return 1 + SwapGauge.Instance.GetUseReadyLevel();
+        }
+
         /// <summary>
-        /// 드래그 중 인접 블록 감지 및 하이라이트
+        /// 드래그 중 블록 감지 및 하이라이트 — 레벨별 거리 제한 적용
         /// </summary>
         private void UpdateDragTarget(Vector2 screenPos)
         {
@@ -368,8 +375,16 @@ namespace JewelsHexaPuzzle.Items
             HexBlock hoverBlock = FindBlockAtPosition(screenPos);
             if (hoverBlock == null || hoverBlock == selectedBlock) return;
 
-            // 인접 블록인지 확인
-            if (selectedBlock.Coord.DistanceTo(hoverBlock.Coord) != 1) return;
+            // 레벨별 거리 제한 확인
+            int maxDist = GetMaxSwapDistance();
+            int dist = selectedBlock.Coord.DistanceTo(hoverBlock.Coord);
+            if (dist < 1 || dist > maxDist)
+            {
+                // 거리 초과 시 빨간 깜빡임 피드백
+                if (dist > maxDist && hoverBlock.Data != null && hoverBlock.Data.gemType != GemType.None)
+                    StartCoroutine(FlashBlockRed(hoverBlock));
+                return;
+            }
 
             // CanMove 체크
             if (hoverBlock.Data == null || hoverBlock.Data.gemType == GemType.None || !hoverBlock.Data.CanMove()) return;
@@ -377,6 +392,18 @@ namespace JewelsHexaPuzzle.Items
             dragTargetBlock = hoverBlock;
             dragTargetBlock.SetHighlighted(true);
             CreateTargetIndicator(hoverBlock);
+        }
+
+        /// <summary>거리 초과 시 빨간 깜빡임 피드백</summary>
+        private IEnumerator FlashBlockRed(HexBlock block)
+        {
+            if (block == null) yield break;
+            var img = block.GetComponent<Image>();
+            if (img == null) yield break;
+            Color orig = img.color;
+            img.color = new Color(1f, 0.2f, 0.2f, 1f);
+            yield return new WaitForSeconds(0.1f);
+            if (block != null && img != null) img.color = orig;
         }
 
         // ============================================================
