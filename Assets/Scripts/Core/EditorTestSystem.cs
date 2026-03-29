@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Items;
 using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
@@ -16,6 +17,8 @@ namespace JewelsHexaPuzzle.Core
     /// </summary>
     public class EditorTestSystem : MonoBehaviour
     {
+        public static EditorTestSystem Instance { get; private set; }
+
         private HexGrid hexGrid;
 
         // 에디터 모드 상태
@@ -31,6 +34,13 @@ namespace JewelsHexaPuzzle.Core
         private GameObject monsterButton;
         private Image monsterButtonBg;
         private Image monsterButtonOutline;
+
+        // 게이지 추가 모드 상태
+        public bool GaugeAddMode => gaugeAddMode;
+        private bool gaugeAddMode = false;
+        private GameObject gaugeAddButton;
+        private Image gaugeAddButtonBg;
+        private Image gaugeAddButtonOutline;
 
         // Canvas UI 참조 — 특수 블록 버튼
         private GameObject panelContainer;
@@ -122,6 +132,12 @@ namespace JewelsHexaPuzzle.Core
         // 초기화
         // ============================================================
 
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+            else if (Instance != this) Destroy(gameObject);
+        }
+
         public void InitializeUI(Canvas canvas, HexGrid grid)
         {
             if (isInitialized) return;
@@ -192,6 +208,9 @@ namespace JewelsHexaPuzzle.Core
 
             // === 몬스터 배치 버튼 생성 (색상 버튼 아래) ===
             CreateMonsterButton(leftmostX, lowestY, btnHexH);
+
+            // === 게이지 추가 버튼 생성 (몬스터 버튼 아래) ===
+            CreateGaugeAddButton(leftmostX, lowestY, btnHexH);
         }
 
         private void CreateSpecialBlockButton(int index, Vector2 position)
@@ -485,6 +504,142 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
+        // 게이지 추가 버튼 생성
+        // ============================================================
+
+        private void CreateGaugeAddButton(float leftmostX, float lowestY, float specialBtnHexH)
+        {
+            if (monsterButton == null) return;
+
+            // 몬스터 버튼 바로 아래에 배치 (간격 8px)
+            float sqrt3 = Mathf.Sqrt(3f);
+            RectTransform monsterRt = monsterButton.GetComponent<RectTransform>();
+            Vector2 monsterPos = monsterRt.anchoredPosition;
+            float btnHalfH = COLOR_BTN_SIZE * sqrt3 / 4f;
+            float gaugeBtnX = monsterPos.x;
+            float gaugeBtnY = monsterPos.y - btnHalfH - 8f - btnHalfH;
+
+            string btnName = "TestBtn_GaugeAdd";
+            GameObject btnObj = new GameObject(btnName);
+            btnObj.transform.SetParent(panelContainer.transform, false);
+
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(gaugeBtnX, gaugeBtnY);
+            btnRt.sizeDelta = new Vector2(COLOR_BTN_SIZE, COLOR_BTN_SIZE);
+
+            // 배경 (육각형) — 비활성 시 청록 계열
+            Color gaugeInactiveColor = new Color(0.20f, 0.55f, 0.55f, 0.90f);
+            Image bgImage = btnObj.AddComponent<Image>();
+            bgImage.sprite = HexBlock.GetHexFlashSprite();
+            bgImage.type = Image.Type.Simple;
+            bgImage.preserveAspect = true;
+            bgImage.color = gaugeInactiveColor;
+
+            // 테두리
+            GameObject outlineObj = new GameObject("Outline");
+            outlineObj.transform.SetParent(btnObj.transform, false);
+            RectTransform outRt = outlineObj.AddComponent<RectTransform>();
+            outRt.anchorMin = Vector2.zero; outRt.anchorMax = Vector2.one;
+            outRt.offsetMin = Vector2.zero; outRt.offsetMax = Vector2.zero;
+            Image outImg = outlineObj.AddComponent<Image>();
+            outImg.sprite = HexBlock.GetHexBorderSprite();
+            outImg.type = Image.Type.Simple;
+            outImg.preserveAspect = true;
+            outImg.color = INACTIVE_BORDER;
+            outImg.raycastTarget = false;
+
+            // 라벨 텍스트
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            Text label = labelObj.AddComponent<Text>();
+            label.text = "게이지+";
+            label.font = font;
+            label.fontSize = 11;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = new Color(1f, 1f, 1f, 0.85f);
+            label.raycastTarget = false;
+            label.fontStyle = FontStyle.Bold;
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(1f, 0f);
+            labelRt.anchoredPosition = new Vector2(0f, 10f);
+            labelRt.sizeDelta = new Vector2(0f, 16f);
+
+            // Button 컴포넌트
+            Button btn = btnObj.AddComponent<Button>();
+            var bc = btn.colors;
+            bc.normalColor = Color.white;
+            bc.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+            bc.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
+            btn.colors = bc;
+            btn.onClick.AddListener(OnGaugeAddButtonClicked);
+
+            gaugeAddButton = btnObj;
+            gaugeAddButtonBg = bgImage;
+            gaugeAddButtonOutline = outImg;
+        }
+
+        // ============================================================
+        // 게이지 추가 버튼 클릭 → 모드 토글
+        // ============================================================
+
+        private void OnGaugeAddButtonClicked()
+        {
+            if (gaugeAddMode)
+            {
+                DeactivateMode();
+                return;
+            }
+
+            // 다른 모드 해제
+            editorMode = false;
+            activeBlockType = SpecialBlockType.None;
+            activeButtonIndex = -1;
+            colorMode = false;
+            activeGemType = GemType.None;
+            activeColorButtonIndex = -1;
+            monsterMode = false;
+
+            gaugeAddMode = true;
+            LastModeChangeFrame = Time.frameCount;
+
+            UpdateAllButtonVisuals();
+            Debug.Log($"[EditorTestSystem] 게이지 추가 모드 활성화 frame={Time.frameCount}");
+        }
+
+        /// <summary>
+        /// 게이지 추가 모드에서 아이템 버튼 클릭 시 호출.
+        /// 해당 아이템 게이지에 50 추가.
+        /// </summary>
+        public void AddGaugeToItem(string itemName)
+        {
+            if (!gaugeAddMode) return;
+
+            switch (itemName.ToLower())
+            {
+                case "hammer":
+                    if (HammerGauge.Instance != null)
+                        HammerGauge.Instance.AddGaugeEditor(50);
+                    Debug.Log("[EditorTestSystem] 망치 게이지 +50");
+                    break;
+                case "swap":
+                    if (SwapGauge.Instance != null)
+                        SwapGauge.Instance.AddGaugeEditor(50);
+                    Debug.Log("[EditorTestSystem] 스왑 게이지 +50");
+                    break;
+                case "line":
+                    if (LineGauge.Instance != null)
+                        LineGauge.Instance.AddGaugeEditor(50);
+                    Debug.Log("[EditorTestSystem] 라인 게이지 +50");
+                    break;
+            }
+        }
+
+        // ============================================================
         // 몬스터 버튼 클릭 → 모드 토글
         // ============================================================
 
@@ -504,6 +659,7 @@ namespace JewelsHexaPuzzle.Core
             colorMode = false;
             activeGemType = GemType.None;
             activeColorButtonIndex = -1;
+            gaugeAddMode = false;
 
             monsterMode = true;
             LastModeChangeFrame = Time.frameCount;
@@ -608,6 +764,7 @@ namespace JewelsHexaPuzzle.Core
             activeGemType = GemType.None;
             activeColorButtonIndex = -1;
             monsterMode = false;
+            gaugeAddMode = false;
 
             editorMode = true;
             activeBlockType = clickedType;
@@ -641,6 +798,7 @@ namespace JewelsHexaPuzzle.Core
             activeBlockType = SpecialBlockType.None;
             activeButtonIndex = -1;
             monsterMode = false;
+            gaugeAddMode = false;
 
             colorMode = true;
             activeGemType = clickedGem;
@@ -726,6 +884,19 @@ namespace JewelsHexaPuzzle.Core
                     monsterButtonOutline.color = monsterMode ? ACTIVE_BORDER : INACTIVE_BORDER;
                 monsterButton.transform.localScale = monsterMode ? Vector3.one * 1.15f : Vector3.one;
             }
+
+            // 게이지 추가 버튼 업데이트
+            if (gaugeAddButton != null)
+            {
+                Color gaugeInactiveColor = new Color(0.20f, 0.55f, 0.55f, 0.90f);
+                Color gaugeActiveColor = new Color(0.40f, 0.85f, 0.85f, 1f);
+
+                if (gaugeAddButtonBg != null)
+                    gaugeAddButtonBg.color = gaugeAddMode ? gaugeActiveColor : gaugeInactiveColor;
+                if (gaugeAddButtonOutline != null)
+                    gaugeAddButtonOutline.color = gaugeAddMode ? ACTIVE_BORDER : INACTIVE_BORDER;
+                gaugeAddButton.transform.localScale = gaugeAddMode ? Vector3.one * 1.15f : Vector3.one;
+            }
         }
 
         public void DeactivateMode()
@@ -739,6 +910,7 @@ namespace JewelsHexaPuzzle.Core
             activeColorButtonIndex = -1;
 
             monsterMode = false;
+            gaugeAddMode = false;
 
             LastModeChangeFrame = Time.frameCount;
 
@@ -779,6 +951,16 @@ namespace JewelsHexaPuzzle.Core
                 if (monsterButtonOutline != null)
                     monsterButtonOutline.color = INACTIVE_BORDER;
                 monsterButton.transform.localScale = Vector3.one;
+            }
+
+            // 게이지 추가 버튼 초기화
+            if (gaugeAddButton != null)
+            {
+                if (gaugeAddButtonBg != null)
+                    gaugeAddButtonBg.color = new Color(0.20f, 0.55f, 0.55f, 0.90f);
+                if (gaugeAddButtonOutline != null)
+                    gaugeAddButtonOutline.color = INACTIVE_BORDER;
+                gaugeAddButton.transform.localScale = Vector3.one;
             }
 
             Debug.Log("[EditorTestSystem] 비활성화");
@@ -883,7 +1065,7 @@ namespace JewelsHexaPuzzle.Core
         // 공개 프로퍼티
         // ============================================================
 
-        public bool IsEditorModeActive => editorMode || colorMode || monsterMode;
+        public bool IsEditorModeActive => editorMode || colorMode || monsterMode || gaugeAddMode;
         public SpecialBlockType ActiveBlockType => activeBlockType;
         public GemType ActiveGemType => activeGemType;
         public bool IsColorMode => colorMode;
