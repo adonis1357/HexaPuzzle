@@ -814,10 +814,18 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         public bool TryPlaceOnBlock(HexBlock block)
         {
-            if (!editorMode && !colorMode && !monsterMode)
+            if (!editorMode && !colorMode && !monsterMode && !gaugeAddMode)
             {
                 Debug.LogWarning("[EditorTestSystem] TryPlaceOnBlock 호출되었으나 모든 모드 false");
                 return false;
+            }
+
+            // 게이지 추가 모드: 블록/빈 곳 클릭 시 비활성화
+            if (gaugeAddMode)
+            {
+                Debug.Log("[EditorTestSystem] 게이지 추가 모드: 빈 곳 클릭 → 비활성화");
+                DeactivateMode();
+                return true;
             }
 
             if (monsterMode)
