@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using JewelsHexaPuzzle.Core;
 using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Items
@@ -151,6 +152,13 @@ namespace JewelsHexaPuzzle.Items
 
         private void OnButtonClicked()
         {
+            // 게이지 추가 모드에서는 아이템 사용 대신 게이지 추가
+            if (EditorTestSystem.Instance != null && EditorTestSystem.Instance.GaugeAddMode)
+            {
+                EditorTestSystem.Instance.AddGaugeToItem("swap");
+                return;
+            }
+
             if (currentState == GaugeState.Ready)
             {
                 SetState(GaugeState.UseReady);
@@ -199,6 +207,23 @@ namespace JewelsHexaPuzzle.Items
                 StartCoroutine(FlashEffect());
             }
             else { RefreshUI(); }
+        }
+
+        /// <summary>에디터 테스트용: 상태 제한 없이 게이지 강제 추가</summary>
+        public void AddGaugeEditor(int amount)
+        {
+            int maxG = GetMaxGauge();
+            gauge = Mathf.Min(gauge + amount, maxG);
+            usesAvailable = CalculateUses();
+            if (gauge >= maxG && currentState == GaugeState.Inactive)
+            {
+                SetState(GaugeState.Ready);
+                StartCoroutine(FlashEffect());
+            }
+            else
+            {
+                RefreshUI();
+            }
         }
 
         public void OnTurnEnd() { AddGauge(5); }
