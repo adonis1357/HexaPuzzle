@@ -390,7 +390,7 @@ namespace JewelsHexaPuzzle.Items
                     // fillAmount = 현재 레이어 내 진행률
                     buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
                     buttonImage.color = GetLayerColor(gaugeLayer);
-                    if (hammerButton != null) hammerButton.interactable = false;
+                    if (hammerButton != null) hammerButton.interactable = JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode();
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
                     if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
                     break;
@@ -482,6 +482,7 @@ namespace JewelsHexaPuzzle.Items
         /// <summary>에디터 테스트용: 게이지 50 강제 추가</summary>
         public void AddGaugeEditor()
         {
+            Debug.Log($"[EditorGauge] 망치 게이지 추가 호출됨 (before: layer={gaugeLayer}, inLayer={gaugeInLayer})");
             gaugeInLayer += 50;
             if (gaugeInLayer >= 50) { gaugeLayer++; }
             gaugeInLayer = gaugeInLayer % 50;

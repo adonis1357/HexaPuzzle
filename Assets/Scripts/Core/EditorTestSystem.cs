@@ -978,6 +978,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 gaugeAddMode = false;
                 UpdateGaugeAddButtonVisual();
+                RefreshItemButtonInteractable();
                 return;
             }
 
@@ -988,7 +989,27 @@ namespace JewelsHexaPuzzle.Core
             gaugeAddMode = true;
             LastModeChangeFrame = Time.frameCount;
             UpdateGaugeAddButtonVisual();
+            RefreshItemButtonInteractable();
             Debug.Log("[EditorTestSystem] 게이지 추가 모드 활성화");
+        }
+
+        /// <summary>gaugeAddMode 전환 시 아이템 버튼 interactable 상태 갱신</summary>
+        private void RefreshItemButtonInteractable()
+        {
+            // 각 게이지의 버튼을 찾아서 interactable 갱신
+            var hammerBtns = FindObjectsOfType<Button>();
+            foreach (var btn in hammerBtns)
+            {
+                if (btn == null) continue;
+                string n = btn.gameObject.name.ToLower();
+                if (n.Contains("hammer") || n.Contains("망치") || n.Contains("swap") || n.Contains("스왑")
+                    || n.Contains("line") || n.Contains("laser") || n.Contains("라인"))
+                {
+                    if (gaugeAddMode)
+                        btn.interactable = true;
+                    // 비활성화 시에는 각 Gauge의 RefreshUI가 자체적으로 처리
+                }
+            }
         }
 
         private void UpdateGaugeAddButtonVisual()

@@ -227,7 +227,7 @@ namespace JewelsHexaPuzzle.Items
                 case GaugeState.Inactive:
                     buttonImage.fillAmount = ratio;
                     buttonImage.color = COLOR_READY;
-                    if (itemButton != null) itemButton.interactable = false;
+                    if (itemButton != null) itemButton.interactable = JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode();
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
                     break;
                 case GaugeState.Ready:
@@ -263,6 +263,7 @@ namespace JewelsHexaPuzzle.Items
         /// <summary>에디터 테스트용: 게이지 50 강제 추가</summary>
         public void AddGaugeEditor()
         {
+            Debug.Log($"[EditorGauge] 라인 게이지 추가 호출됨 (before: gauge={gauge})");
             gauge += 50;
             int maxG = GetMaxGauge();
             gauge = Mathf.Min(gauge, maxG);
