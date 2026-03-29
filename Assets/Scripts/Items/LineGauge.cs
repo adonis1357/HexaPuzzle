@@ -209,7 +209,12 @@ namespace JewelsHexaPuzzle.Items
         private void UpdateLayerText()
         {
             if (layerText == null) return;
-            layerText.text = gaugeLayer <= 0 ? "" : gaugeLayer.ToString();
+            if (gaugeLayer <= 0)
+                layerText.text = "";
+            else if (currentState == GaugeState.Inactive)
+                layerText.text = gaugeLayer.ToString();
+            else
+                layerText.text = $"{gaugeLayer}/{GetCurrentMaxLayer()}";
         }
 
         private void SetState(GaugeState newState)
