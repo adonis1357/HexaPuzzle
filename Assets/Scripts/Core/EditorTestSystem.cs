@@ -820,9 +820,17 @@ namespace JewelsHexaPuzzle.Core
                 return false;
             }
 
-            // 게이지 추가 모드: 블록/빈 곳 클릭 시 비활성화
+            // 게이지 추가 모드: 빈 곳 클릭 시 비활성화 (아이템 버튼 클릭은 제외)
             if (gaugeAddMode)
             {
+                // 클릭된 UI 오브젝트가 아이템 버튼이면 비활성화 건너뜀
+                var selected = UnityEngine.EventSystems.EventSystem.current != null
+                    ? UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject : null;
+                if (selected != null && selected.GetComponentInParent<Button>() != null)
+                {
+                    Debug.Log("[EditorTestSystem] 게이지 추가 모드: 버튼 클릭 감지 → 비활성화 건너뜀");
+                    return true;
+                }
                 Debug.Log("[EditorTestSystem] 게이지 추가 모드: 빈 곳 클릭 → 비활성화");
                 DeactivateMode();
                 return true;
