@@ -483,16 +483,23 @@ namespace JewelsHexaPuzzle.Items
             {
                 layerText.text = "";
             }
-            else if (currentState == HammerState.Inactive)
+            else if (currentState == HammerState.Inactive || currentState == HammerState.Ready)
             {
-                // 비활성화 상태: 숫자만 표시
+                // 비활성화/Ready: 숫자만 표시
                 layerText.text = gaugeLayer.ToString();
             }
             else
             {
-                // Ready / UseReady 상태: 현재/최대 형식
-                int maxLayer = GetMaxLayer();
-                layerText.text = $"{gaugeLayer}/{maxLayer}";
+                // UseReady 상태: gaugeLayer/소모량 형식
+                int cost = 1;
+                switch (currentState)
+                {
+                    case HammerState.UseReady0: cost = 1; break;
+                    case HammerState.UseReady1: cost = 2; break;
+                    case HammerState.UseReady2: cost = 3; break;
+                    case HammerState.UseReady3: cost = 4; break;
+                }
+                layerText.text = $"{gaugeLayer}/{cost}";
             }
         }
 
