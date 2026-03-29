@@ -400,11 +400,6 @@ namespace JewelsHexaPuzzle.Items
 
             if (clickedBlock != null && clickedBlock.Data != null && clickedBlock.Data.gemType != GemType.None)
             {
-                // 게이지 즉시 차감 (사용 결정 시점)
-                int layerCost = GetLayerCost(hammerLevel);
-                if (HammerGauge.Instance != null)
-                    HammerGauge.Instance.OnHammerUsedWithLevel(layerCost);
-
                 isProcessing = true;
                 Deactivate();
                 StartCoroutine(SmashByLevel(clickedBlock, hammerLevel));
@@ -500,7 +495,9 @@ namespace JewelsHexaPuzzle.Items
                 GameManager.Instance.CurrentState == GameState.Playing)
                 inputSystem.SetEnabled(true);
 
-            // 게이지 차감은 HandleClick에서 즉시 처리됨
+            // 게이지 레이어 차감
+            if (HammerGauge.Instance != null)
+                HammerGauge.Instance.OnHammerUsedWithLevel(layerCost);
         }
 
         /// <summary>블록 파괴 헬퍼: 특수 블록이면 드릴 발동, 아니면 일반 파괴</summary>
