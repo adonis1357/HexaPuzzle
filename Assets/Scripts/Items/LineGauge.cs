@@ -242,11 +242,10 @@ namespace JewelsHexaPuzzle.Items
             SetState(gaugeLayer >= 1 ? GaugeState.Ready : GaugeState.Inactive);
         }
 
-        /// <summary>레벨별 게이지 소모: UseReady0=1, 1=2, 2=3, 3=4 레이어 차감</summary>
-        public void ConsumeGauge(int level)
+        /// <summary>게이지 소모: amount 레이어 직접 차감</summary>
+        public void ConsumeGauge(int amount)
         {
-            int cost = level + 1;
-            gaugeLayer = Mathf.Max(0, gaugeLayer - cost);
+            gaugeLayer = Mathf.Max(0, gaugeLayer - amount);
             gaugeInLayer = 0;
             SetState(gaugeLayer >= 1 ? GaugeState.Ready : GaugeState.Inactive);
         }

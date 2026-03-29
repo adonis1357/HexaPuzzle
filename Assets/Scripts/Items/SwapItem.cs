@@ -439,12 +439,12 @@ namespace JewelsHexaPuzzle.Items
         {
             isProcessing = true;
 
-            // 레벨별 게이지 소모
-            int swapLevel = SwapGauge.Instance != null ? SwapGauge.Instance.GetUseReadyLevel() : 0;
+            // 거리 기반 게이지 소모 (거리 1=1레이어, 2=2레이어, 3=3레이어, 4=4레이어)
+            int swapDist = blockA.Coord.DistanceTo(blockB.Coord);
             if (SwapGauge.Instance != null)
-                SwapGauge.Instance.ConsumeGauge(swapLevel);
+                SwapGauge.Instance.ConsumeGauge(swapDist);
 
-            Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord} (level={swapLevel})");
+            Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord} (dist={swapDist})");
 
             // MP 소모 (두 블록 중간 위치에 팝업)
             if (MPManager.Instance != null)
