@@ -203,7 +203,7 @@ namespace JewelsHexaPuzzle.Items
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(1f, 1f);
             rt.sizeDelta = new Vector2(30f, 30f);
-            rt.anchoredPosition = new Vector2(-5f, -5f);
+            rt.anchoredPosition = new Vector2(-11f, -8f);
         }
 
         private void UpdateLayerText()
