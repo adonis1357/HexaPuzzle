@@ -478,22 +478,30 @@ namespace JewelsHexaPuzzle.Items
             HexBlock centerBlock = dragCenterBlock;
             HexCoord center = dragCenter;
 
-            // 종료 지점 블록 감지 → axial 거리 계산
+            // 종료 지점 블록 감지 → 시작점 HexCoord와 비교
             HexBlock endBlock = FindBlockAtPosition(Input.mousePosition);
-            int axialDist = 0;
-            if (endBlock != null && endBlock.Data != null)
+
+            // 빈 곳에서 손을 뗐으면 파괴 안 하고 UseReady 유지
+            if (endBlock == null || endBlock.Data == null || endBlock.Data.gemType == GemType.None)
             {
-                axialDist = center.DistanceTo(endBlock.Coord);
+                dragCenterBlock = null;
+                currentDragLevel = 0;
+                return;
             }
 
+            HexCoord endCoord = endBlock.Coord;
+            bool isSameHex = (endCoord == center); // 시작점과 종료점 동일 칸 비교
+
             int level;
-            if (axialDist == 0)
+            if (isSameHex)
             {
-                // 단순 클릭: 중심 1칸 파괴
+                // 동일 칸 = 단순 클릭: 중심 1칸 파괴
                 level = 0;
             }
             else
             {
+                // 다른 칸 = 드래그: axial 거리에 따른 레벨 선택
+                int axialDist = center.DistanceTo(endCoord);
                 level = DetermineDragLevel(axialDist);
                 if (level == -1)
                 {
