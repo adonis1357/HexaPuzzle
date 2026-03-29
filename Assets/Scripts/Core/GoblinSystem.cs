@@ -139,6 +139,12 @@ namespace JewelsHexaPuzzle.Core
         private int bombSpawned = 0;
         private int healerSpawned = 0;
 
+        // 2단계 소환 시스템
+        private bool useWaveSpawn = false;      // 웨이브 소환 모드 활성 여부
+        private bool secondWaveSpawned = false;  // 2차 소환 완료 여부
+        private int firstWaveCount = 0;          // 1차 소환 수
+        private int totalWaveTarget = 0;         // 전체 웨이브 소환 목표
+
         // 낙하 충돌 대미지로 사망한 고블린 대기열 (ProcessFalling 완료 후 처리)
         private List<GoblinData> pendingFallDeaths = new List<GoblinData>();
 
@@ -296,6 +302,10 @@ namespace JewelsHexaPuzzle.Core
             archerSpawned = 0;
             shieldSpawned = 0;
             bombSpawned = 0;
+            useWaveSpawn = false;
+            secondWaveSpawned = false;
+            firstWaveCount = 0;
+            totalWaveTarget = 0;
             MissionComplete = false;
 
             // 기존 폭탄 정리 (그리드 블록 데이터에서 제거)
@@ -306,6 +316,316 @@ namespace JewelsHexaPuzzle.Core
 
             Debug.Log($"[GoblinSystem] 초기화: 소환 {config.minSpawnPerTurn}~{config.maxSpawnPerTurn}/턴, " +
                       $"목표 {config.missionKillCount}킬, 최대 {config.maxOnBoard}마리");
+        }
+
+        // ============================================================
+        // 2단계 웨이브 소환 시스템
+        // ============================================================
+
+        /// <summary>
+        /// 1차 소환: 게임 시작 시 전체 미션 몬스터 수의 40~50%를 소환.
+        /// GameManager.StartGameCoroutine에서 호출.
+        /// </summary>
+        public IEnumerator SpawnFirstWave()
+        {
+            useWaveSpawn = true;
+            int totalMission = GetTotalMissionTarget();
+            if (totalMission <= 0 && currentConfig != null)
+                totalMission = currentConfig.missionKillCount;
+            totalWaveTarget = totalMission;
+
+            // 40~50% 랜덤 (소수점 내림)
+            firstWaveCount = Mathf.FloorToInt(totalMission * Random.Range(0.4f, 0.5f));
+            firstWaveCount = Mathf.Max(1, firstWaveCount); // 최소 1마리
+
+            Debug.Log($"[GoblinSystem] 1차 웨이브 소환: {firstWaveCount}/{totalWaveTarget}마리 (40~50%)");
+            yield return StartCoroutine(SpawnWaveBatch(firstWaveCount));
+        }
+
+        /// <summary>
+        /// 2차 소환: 이동 횟수 50% 시점에 나머지 몬스터를 모두 소환.
+        /// GameManager.UseTurn에서 조건 충족 시 호출.
+        /// </summary>
+        public IEnumerator SpawnSecondWave()
+        {
+            if (secondWaveSpawned) yield break;
+            secondWaveSpawned = true;
+
+            int remaining = totalWaveTarget - firstWaveCount;
+            if (remaining <= 0)
+            {
+                Debug.Log("[GoblinSystem] 2차 웨이브: 남은 소환 수 없음");
+                yield break;
+            }
+
+            Debug.Log($"[GoblinSystem] 2차 웨이브 소환: {remaining}마리 (나머지 전부)");
+            yield return StartCoroutine(SpawnWaveBatch(remaining));
+        }
+
+        /// <summary>
+        /// 웨이브 배치 소환: 지정 수만큼 타입 비율에 맞게 소환.
+        /// maxOnBoard 제한 적용, 초과분은 소환하지 않음.
+        /// </summary>
+        private IEnumerator SpawnWaveBatch(int targetCount)
+        {
+            if (currentConfig == null || targetCount <= 0) yield break;
+
+            // 미션 완료 시 추가 소환 중단
+            if (MissionComplete) yield break;
+
+            // 보드 최대 동시 존재 수 제한
+            int aliveCount = AliveCount;
+            int boardSlots = currentConfig.maxOnBoard - aliveCount;
+            if (boardSlots <= 0) yield break;
+
+            // 타입별 미션 목표 조회
+            int regularTarget = GetMissionTargetForType(false, false);
+            int armoredTarget = GetMissionTargetForType(true, false);
+            int archerTarget = GetMissionTargetForType(false, true);
+            int shieldTarget = GetMissionTargetForType(false, false, true);
+            int bombTarget = GetMissionTargetForType(false, false, false, true);
+            int healerTarget = GetMissionTargetForType(false, false, false, false, true);
+
+            int regularRemaining = Mathf.Max(0, regularTarget - regularSpawned);
+            int armoredRemaining = Mathf.Max(0, armoredTarget - armoredSpawned);
+            int archerRemaining = Mathf.Max(0, archerTarget - archerSpawned);
+            int shieldRemaining = Mathf.Max(0, shieldTarget - shieldSpawned);
+            int bombRemaining = Mathf.Max(0, bombTarget - bombSpawned);
+            int healerRemaining = Mathf.Max(0, healerTarget - healerSpawned);
+
+            int totalMissionTarget = GetTotalMissionTarget();
+            int hardCap = totalMissionTarget > 0
+                ? Mathf.Max(0, totalMissionTarget - totalSpawned)
+                : Mathf.Max(0, (currentConfig != null ? currentConfig.missionKillCount : 0) - totalSpawned);
+
+            int spawnCount = Mathf.Min(targetCount, boardSlots);
+            spawnCount = Mathf.Min(spawnCount, hardCap);
+            if (spawnCount <= 0) yield break;
+
+            Debug.Log($"[GoblinSystem] 웨이브 배치 소환 계획: {spawnCount}마리 (목표={targetCount}, 슬롯={boardSlots}, 하드캡={hardCap})");
+
+            // 소환 가능 위치 분류
+            var occupiedPositions = new HashSet<HexCoord>(goblins.Where(g => g.isAlive).Select(g => g.position));
+            int gridRadius = hexGrid.GridRadius;
+
+            var topRowCoords = new List<HexCoord>();
+            var lowerRowCoords = new List<HexCoord>();
+            var bottomRowCoords = new List<HexCoord>();
+            for (int q = -gridRadius; q <= gridRadius; q++)
+            {
+                int rMin = hexGrid.GetTopR(q);
+                var topCoord = new HexCoord(q, rMin - 3);
+                if (!occupiedPositions.Contains(topCoord))
+                    topRowCoords.Add(topCoord);
+                var mid = new HexCoord(q, rMin - 2);
+                var bot = new HexCoord(q, rMin - 1);
+                if (!occupiedPositions.Contains(mid)) lowerRowCoords.Add(mid);
+                if (!occupiedPositions.Contains(bot))
+                {
+                    lowerRowCoords.Add(bot);
+                    bottomRowCoords.Add(bot);
+                }
+            }
+
+            var shuffledTop = topRowCoords.OrderBy(x => Random.value).ToList();
+            var shuffledLower = lowerRowCoords.OrderBy(x => Random.value).ToList();
+            var shuffledBottom = bottomRowCoords.OrderBy(x => Random.value).ToList();
+            var usedPositions = new HashSet<HexCoord>(occupiedPositions);
+
+            List<Coroutine> spawnCoroutines = new List<Coroutine>();
+
+            for (int i = 0; i < spawnCount; i++)
+            {
+                bool isArcher = false;
+                bool isArmored = false;
+                bool isShieldType = false;
+                bool isBombType = false;
+                bool isHealerType = false;
+                int goblinHp = 5;
+                int spawnShieldHp = currentConfig.shieldHp;
+
+                int availableTop = 0;
+                foreach (var c in shuffledTop) { if (!usedPositions.Contains(c)) availableTop++; }
+                int availableBottom = 0;
+                foreach (var c in shuffledBottom) { if (!usedPositions.Contains(c)) availableBottom++; }
+                int availableLower = 0;
+                foreach (var c in shuffledLower) { if (!usedPositions.Contains(c)) availableLower++; }
+
+                int totalPool = regularRemaining + armoredRemaining + archerRemaining + shieldRemaining + bombRemaining + healerRemaining;
+                if (totalPool <= 0) break;
+
+                float roll = Random.value * totalPool;
+                float threshold = 0f;
+
+                threshold += bombRemaining;
+                if (roll < threshold && bombRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                {
+                    isBombType = true;
+                    goblinHp = currentConfig.bombGoblinHp;
+                    bombRemaining--;
+                }
+                else
+                {
+                    threshold += healerRemaining;
+                    if (roll < threshold && healerRemaining > 0 && availableTop > 0)
+                    {
+                        bool hasDamaged = goblins.Any(g => g.isAlive && g.hp < g.maxHp);
+                        if (hasDamaged)
+                        {
+                            isHealerType = true;
+                            goblinHp = 2;
+                            healerRemaining--;
+                        }
+                    }
+                }
+                if (!isBombType && !isHealerType)
+                {
+                    threshold += shieldRemaining;
+                    if (roll < threshold && shieldRemaining > 0 && availableBottom > 0)
+                    {
+                        isShieldType = true;
+                        goblinHp = currentConfig.shieldGoblinHp;
+                        shieldRemaining--;
+                    }
+                    else
+                    {
+                        threshold += armoredRemaining;
+                        if (roll < threshold && armoredRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                        {
+                            isArmored = true;
+                            goblinHp = currentConfig.armoredHp;
+                            armoredRemaining--;
+                        }
+                        else
+                        {
+                            threshold += archerRemaining;
+                            if (roll < threshold && archerRemaining > 0 && availableTop > 0)
+                            {
+                                isArcher = true;
+                                goblinHp = currentConfig.archerHp;
+                                archerRemaining--;
+                            }
+                            else if (regularRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                            {
+                                regularRemaining--;
+                            }
+                            else
+                            {
+                                // 위치 부족으로 특정 타입 스킵된 경우, 남은 타입 중 소환 가능한 것 선택
+                                if (bombRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                                {
+                                    isBombType = true;
+                                    goblinHp = currentConfig.bombGoblinHp;
+                                    bombRemaining--;
+                                }
+                                else if (shieldRemaining > 0 && availableBottom > 0)
+                                {
+                                    isShieldType = true;
+                                    goblinHp = currentConfig.shieldGoblinHp;
+                                    shieldRemaining--;
+                                }
+                                else if (armoredRemaining > 0 && (availableLower > 0 || availableTop > 0))
+                                {
+                                    isArmored = true;
+                                    goblinHp = currentConfig.armoredHp;
+                                    armoredRemaining--;
+                                }
+                                else if (archerRemaining > 0 && availableTop > 0)
+                                {
+                                    isArcher = true;
+                                    goblinHp = currentConfig.archerHp;
+                                    archerRemaining--;
+                                }
+                                else
+                                {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 위치 배정
+                HexCoord coord = default;
+                bool foundCoord = false;
+
+                if (isArcher)
+                {
+                    foreach (var c in shuffledTop)
+                    {
+                        if (!usedPositions.Contains(c)) { coord = c; foundCoord = true; break; }
+                    }
+                    if (!foundCoord) continue;
+                }
+                else if (isShieldType)
+                {
+                    foreach (var c in shuffledBottom)
+                    {
+                        if (!usedPositions.Contains(c)) { coord = c; foundCoord = true; break; }
+                    }
+                    if (!foundCoord) continue;
+                }
+                else
+                {
+                    foreach (var c in shuffledLower)
+                    {
+                        if (!usedPositions.Contains(c)) { coord = c; foundCoord = true; break; }
+                    }
+                    if (!foundCoord)
+                    {
+                        foreach (var c in shuffledTop)
+                        {
+                            if (!usedPositions.Contains(c)) { coord = c; foundCoord = true; break; }
+                        }
+                    }
+                    if (!foundCoord) continue;
+                }
+
+                usedPositions.Add(coord);
+
+                GoblinData newGoblin = new GoblinData
+                {
+                    position = coord,
+                    hp = goblinHp,
+                    maxHp = goblinHp,
+                    displayedHp = goblinHp,
+                    isAlive = true,
+                    isArcher = isArcher,
+                    isArmored = isArmored,
+                    isBomb = isBombType,
+                    bombTurnCounter = 1,
+                    isHealer = isHealerType,
+                    healerTurnCounter = 0,
+                    isShieldType = isShieldType,
+                    isShielded = isShieldType,
+                    shieldHp = isShieldType ? spawnShieldHp : 0,
+                    shieldTurnCounter = 0,
+                    stuckDrills = isShieldType ? new List<GameObject>() : null
+                };
+
+                goblins.Add(newGoblin);
+                totalSpawned++;
+                if (isBombType) bombSpawned++;
+                else if (isHealerType) healerSpawned++;
+                else if (isArcher) archerSpawned++;
+                else if (isArmored) armoredSpawned++;
+                else if (isShieldType) shieldSpawned++;
+                else regularSpawned++;
+
+                if (isHealerType)
+                    PerformHeal(newGoblin);
+
+                string typeStr = isHealerType ? "힐러" : isBombType ? "폭탄" : isArcher ? "궁수" : isArmored ? "갑옷" : isShieldType ? "방패" : "기본";
+                Debug.Log($"[GoblinSystem] 웨이브 {typeStr} 고블린 소환 at ({coord}), HP={goblinHp}, 누적소환={totalSpawned}");
+                spawnCoroutines.Add(StartCoroutine(SpawnSingleGoblin(newGoblin)));
+            }
+
+            foreach (var co in spawnCoroutines)
+                yield return co;
+
+            int totalMT = GetTotalMissionTarget();
+            Debug.Log($"[GoblinSystem] 웨이브 배치 {spawnCoroutines.Count}마리 소환 완료 | 보드 {AliveCount}/{currentConfig.maxOnBoard} | " +
+                      $"누적소환 {totalSpawned}/{totalMT}");
         }
 
         /// <summary>
@@ -1096,6 +1416,13 @@ namespace JewelsHexaPuzzle.Core
 
         private IEnumerator SpawnGoblins()
         {
+            // 웨이브 소환 모드에서는 턴당 소환 스킵 (1차/2차 웨이브로만 소환)
+            if (useWaveSpawn)
+            {
+                Debug.Log("[GoblinSystem] SpawnGoblins 스킵: 웨이브 소환 모드");
+                yield break;
+            }
+
             if (currentConfig == null)
             {
                 Debug.LogWarning("[GoblinSystem] SpawnGoblins 취소: currentConfig == null");

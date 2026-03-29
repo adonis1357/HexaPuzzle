@@ -59,6 +59,7 @@ namespace JewelsHexaPuzzle.Managers
         public int RotationCount => rotationCount;
 
         private bool isProcessingChainDrill = false;
+        private bool secondWaveTriggered = false; // 고블린 2차 웨이브 소환 완료 여부
         private float lastAftermathProgressTime = 0f;  // ProcessSpecialBlockAftermath 진행 추적 타임스탬프
         private bool isInPostRecovery = false;
         private bool isPaused = false;
@@ -3141,6 +3142,7 @@ private void InitializeSystems()
                 // currentTurns <= 0 체크 시 GameOver 호출되는 타이밍 버그 방지)
                 currentTurns = initialTurns;
                 continueCount = 0; // ★ 이동횟수 추가 구매 횟수 초기화
+                secondWaveTriggered = false; // 고블린 2차 웨이브 플래그 초기화
                 if (uiManager != null)
                 {
                     uiManager.SetInfiniteMode(false);
@@ -3185,9 +3187,10 @@ private void InitializeSystems()
                     // 고블린 킬 이벤트 → 미션 시스템 연동
                     goblinSystem.OnGoblinKilled -= OnGoblinKilledForMission;
                     goblinSystem.OnGoblinKilled += OnGoblinKilledForMission;
-                    // 첫 턴 시작 시 즉시 고블린 소환
-                    yield return StartCoroutine(goblinSystem.ProcessTurn());
-                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + 초기 소환 완료: 스테이지 {selectedStage}");
+                    // 2단계 웨이브 소환: 1차 (전체의 40~50%)
+                    secondWaveTriggered = false;
+                    yield return StartCoroutine(goblinSystem.SpawnFirstWave());
+                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + 1차 웨이브 소환 완료: 스테이지 {selectedStage}");
 
                     // 고블린 출현 알림 메시지
                     ShowFloatingMessage("⚔️ 고블린이 출현! 블록을 떨어뜨려 처치하세요!");
@@ -4347,6 +4350,18 @@ private void OnBigBang()
             // 턴 부족 경고 사운드 (3턴 이하)
             if (currentTurns <= 3 && currentTurns > 0 && AudioManager.Instance != null)
                 AudioManager.Instance.PlayWarningBeep();
+
+            // 고블린 2차 웨이브: 남은 턴이 전체의 50% 이하 도달 시 트리거
+            if (!secondWaveTriggered && goblinSystem != null && goblinSystem.IsActive && initialTurns > 0)
+            {
+                int halfTurns = initialTurns / 2;
+                if (currentTurns <= halfTurns)
+                {
+                    secondWaveTriggered = true;
+                    StartCoroutine(goblinSystem.SpawnSecondWave());
+                    Debug.Log($"[GameManager] 고블린 2차 웨이브 트리거! 남은턴={currentTurns}, 전체={initialTurns}, 50%={halfTurns}");
+                }
+            }
 
             Debug.Log($"Turn used. Remaining: {currentTurns}");
         }
