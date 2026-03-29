@@ -38,6 +38,13 @@ namespace JewelsHexaPuzzle.Items
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 
+        // 드래그 상태 필드
+        private bool isDragging = false;
+        private HexBlock dragCenterBlock = null;
+        private HexCoord dragCenter;
+        private int currentDragLevel = 0;
+        private List<GameObject> previewOverlays = new List<GameObject>();
+
         private void Start()
         {
             AutoFindReferences();
@@ -142,6 +149,12 @@ namespace JewelsHexaPuzzle.Items
         public void Deactivate()
         {
             isActive = false;
+
+            // 드래그 상태 정리
+            isDragging = false;
+            dragCenterBlock = null;
+            currentDragLevel = 0;
+            ClearPreview();
 
             if (idleAnimCoroutine != null)
             {
@@ -296,29 +309,38 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // 클릭 & 타격
+        // 드래그 기반 타격 시스템
         // ============================================================
 
         private void Update()
         {
             if (!isActive || isProcessing) return;
             if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+
             if (Input.GetMouseButtonDown(0))
-                HandleClick(Input.mousePosition);
+            {
+                HandleDragStart(Input.mousePosition);
+            }
+            else if (isDragging && Input.GetMouseButton(0))
+            {
+                HandleDragUpdate(Input.mousePosition);
+            }
+            else if (isDragging && Input.GetMouseButtonUp(0))
+            {
+                HandleDragEnd();
+            }
         }
 
-        /// <summary>현재 HammerGauge 상태에서 망치 레벨 반환 (0~3)</summary>
-        private int GetCurrentHammerLevel()
+        /// <summary>드래그에서 axial 거리에 따른 파괴 레벨 결정</summary>
+        private int DetermineDragLevel(int axialDist)
         {
-            if (HammerGauge.Instance == null) return 0;
-            switch (HammerGauge.Instance.CurrentState)
-            {
-                case HammerGauge.HammerState.UseReady0: return 0;
-                case HammerGauge.HammerState.UseReady1: return 1;
-                case HammerGauge.HammerState.UseReady2: return 2;
-                case HammerGauge.HammerState.UseReady3: return 3;
-                default: return 0;
-            }
+            int gl = HammerGauge.Instance != null ? HammerGauge.Instance.GaugeLayer : 0;
+            int hammerLevel = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
+
+            if (axialDist >= 3 && gl >= 3 && hammerLevel >= 2) return 3;
+            if (axialDist >= 2 && gl >= 2 && hammerLevel >= 1) return 2;
+            if (gl >= 1) return 1;
+            return 1; // 최소 레벨1
         }
 
         /// <summary>레벨별 파괴 대상 좌표 목록 반환</summary>
@@ -328,11 +350,6 @@ namespace JewelsHexaPuzzle.Items
 
             switch (level)
             {
-                case 0:
-                    // 클릭 블록 1개
-                    coords.Add(center);
-                    break;
-
                 case 1:
                     // 중심 + axial 거리 1 이내 = 7칸
                     foreach (var c in HexCoord.GetHexesInRadius(center, 1))
@@ -340,11 +357,7 @@ namespace JewelsHexaPuzzle.Items
                     break;
 
                 case 2:
-                    // 7칸 + 6방향 3칸, 4칸 위치 추가 = 총 19칸
-                    // 먼저 반지름 1 (7칸)
-                    foreach (var c in HexCoord.GetHexesInRadius(center, 1))
-                        coords.Add(c);
-                    // 6방향으로 거리 2, 3칸 위치 추가 (반지름 2 전체 = 19칸)
+                    // 반지름 2 전체 = 19칸
                     foreach (var c in HexCoord.GetHexesInRadius(center, 2))
                         coords.Add(c);
                     break;
@@ -352,6 +365,12 @@ namespace JewelsHexaPuzzle.Items
                 case 3:
                     // 반지름 3 전체 = 37칸
                     foreach (var c in HexCoord.GetHexesInRadius(center, 3))
+                        coords.Add(c);
+                    break;
+
+                default:
+                    // 기본: 7칸
+                    foreach (var c in HexCoord.GetHexesInRadius(center, 1))
                         coords.Add(c);
                     break;
             }
@@ -362,12 +381,12 @@ namespace JewelsHexaPuzzle.Items
         /// <summary>레벨별 게이지 레이어 소모량</summary>
         private int GetLayerCost(int level)
         {
-            // UseReady0: 1, UseReady1: 2, UseReady2: 3, UseReady3: 4
-            return level + 1;
+            return level;
         }
 
-        private void HandleClick(Vector2 screenPos)
+        private void HandleDragStart(Vector2 screenPos)
         {
+            // 버튼 클릭 감지
             var es = UnityEngine.EventSystems.EventSystem.current;
             if (es != null && es.IsPointerOverGameObject())
             {
@@ -384,30 +403,111 @@ namespace JewelsHexaPuzzle.Items
 
             HexBlock clickedBlock = FindBlockAtPosition(screenPos);
 
-            HexCoord? clickedCoord = null;
-            if (clickedBlock != null)
-                clickedCoord = clickedBlock.Coord;
-
-            int hammerLevel = GetCurrentHammerLevel();
-
-            // 몬스터 직접 타격
-            if (clickedCoord.HasValue && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
-            {
-                var destructionCoords = GetDestructionCoords(clickedCoord.Value, hammerLevel);
-                foreach (var coord in destructionCoords)
-                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, 1);
-            }
-
             if (clickedBlock != null && clickedBlock.Data != null && clickedBlock.Data.gemType != GemType.None)
             {
-                isProcessing = true;
-                Deactivate();
-                StartCoroutine(SmashByLevel(clickedBlock, hammerLevel));
+                dragCenterBlock = clickedBlock;
+                dragCenter = clickedBlock.Coord;
+                isDragging = true;
+                currentDragLevel = DetermineDragLevel(0);
+                ShowPreview(dragCenter, currentDragLevel);
             }
             else
             {
                 Deactivate();
             }
+        }
+
+        private void HandleDragUpdate(Vector2 screenPos)
+        {
+            if (dragCenterBlock == null) return;
+
+            HexBlock currentBlock = FindBlockAtPosition(screenPos);
+            int axialDist = 0;
+
+            if (currentBlock != null && currentBlock.Data != null)
+            {
+                axialDist = dragCenter.DistanceTo(currentBlock.Coord);
+            }
+
+            int newLevel = DetermineDragLevel(axialDist);
+
+            if (newLevel != currentDragLevel)
+            {
+                currentDragLevel = newLevel;
+                ShowPreview(dragCenter, currentDragLevel);
+            }
+        }
+
+        private void HandleDragEnd()
+        {
+            isDragging = false;
+            ClearPreview();
+
+            if (dragCenterBlock == null || dragCenterBlock.Data == null || dragCenterBlock.Data.gemType == GemType.None)
+            {
+                dragCenterBlock = null;
+                currentDragLevel = 0;
+                return;
+            }
+
+            int level = currentDragLevel;
+            HexBlock centerBlock = dragCenterBlock;
+            HexCoord center = dragCenter;
+
+            // 몬스터 직접 타격
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                var destructionCoords = GetDestructionCoords(center, level);
+                foreach (var coord in destructionCoords)
+                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, 1);
+            }
+
+            isProcessing = true;
+            Deactivate();
+            StartCoroutine(SmashByLevel(centerBlock, level));
+
+            dragCenterBlock = null;
+            currentDragLevel = 0;
+        }
+
+        // ============================================================
+        // 범위 미리보기 UI
+        // ============================================================
+
+        private void ShowPreview(HexCoord center, int level)
+        {
+            ClearPreview();
+            var coords = GetDestructionCoords(center, level);
+            foreach (var coord in coords)
+            {
+                if (hexGrid == null) continue;
+                if (!hexGrid.IsValidCoord(coord)) continue;
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block == null) continue;
+
+                GameObject overlay = new GameObject("HammerPreview");
+                overlay.transform.SetParent(block.transform, false);
+                overlay.transform.localPosition = Vector3.zero;
+
+                var img = overlay.AddComponent<Image>();
+                img.raycastTarget = false;
+                img.color = new Color(1f, 0.2f, 0.2f, 0.35f); // 반투명 빨간
+
+                RectTransform rt = overlay.GetComponent<RectTransform>();
+                rt.anchoredPosition = Vector2.zero;
+                rt.sizeDelta = new Vector2(80f, 80f);
+
+                previewOverlays.Add(overlay);
+            }
+        }
+
+        private void ClearPreview()
+        {
+            foreach (var obj in previewOverlays)
+            {
+                if (obj != null) Destroy(obj);
+            }
+            previewOverlays.Clear();
         }
 
         private HexBlock FindBlockAtPosition(Vector2 screenPos)
@@ -896,7 +996,6 @@ namespace JewelsHexaPuzzle.Items
             float rotSpd = Random.Range(VisualConstants.DebrisRotSpeedMin, VisualConstants.DebrisRotSpeedMax);
             float life = Random.Range(VisualConstants.DebrisLifetimeMin, VisualConstants.DebrisLifetimeMax);
             float elapsed = 0f;
-
             while (elapsed < life)
             {
                 elapsed += Time.deltaTime;

@@ -13,10 +13,7 @@ namespace JewelsHexaPuzzle.Items
         {
             Inactive,    // 비활성
             Ready,       // gaugeLayer>=1, 클릭 대기
-            UseReady0,   // 기본 망치 준비 (gaugeLayer>=1)
-            UseReady1,   // 1레벨 망치 준비 (gaugeLayer>=2 AND Level1 해금)
-            UseReady2,   // 2레벨 망치 준비 (gaugeLayer>=3 AND Level2 해금)
-            UseReady3    // 3레벨 망치 준비 (gaugeLayer>=4 AND Level3 해금)
+            UseReady     // 망치 사용 준비 (드래그로 레벨 결정)
         }
 
         // 레이어별 색상
@@ -27,13 +24,9 @@ namespace JewelsHexaPuzzle.Items
 
         // UseReady 오버레이 색상
         private static readonly Color COLOR_USE_READY0 = new Color(1f, 0.2f, 0.2f, 1f);    // 빨간 오버레이
-        private static readonly Color COLOR_USE_READY1 = new Color(0.9f, 0.05f, 0.05f, 1f);// 진한 빨간+불꽃
-        private static readonly Color COLOR_USE_READY2 = new Color(1f, 0.3f, 0f, 1f);      // 주황빨간
-        private static readonly Color COLOR_USE_READY3 = new Color(1f, 0.5f, 0f, 1f);      // 밝은 주황
 
         private static readonly Color COLOR_FLASH       = Color.white;
         private static readonly Color COLOR_OUTLINE_ACTIVE  = new Color(1f, 0.9f, 0f, 1f);
-        private static readonly Color COLOR_OUTLINE_BRIGHT  = new Color(1f, 1f, 0.3f, 1f);
         private static readonly Color COLOR_OUTLINE_OFF     = new Color(0f, 0f, 0f, 0f);
 
         private const int LAYER_SIZE = 50;
@@ -216,7 +209,7 @@ namespace JewelsHexaPuzzle.Items
         }
 
         // ============================================================
-        // 버튼 클릭: Ready → UseReady0 → UseReady1 → ... → Inactive
+        // 버튼 클릭: Ready → UseReady → Inactive
         // ============================================================
 
         private void OnHammerButtonClicked()
@@ -225,62 +218,16 @@ namespace JewelsHexaPuzzle.Items
 
             if (currentState == HammerState.Ready)
             {
-                // Ready → UseReady0 (기본 망치)
-                SetState(HammerState.UseReady0);
+                // Ready → UseReady (활성화)
+                SetState(HammerState.UseReady);
                 if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
                 if (hammerItem != null) hammerItem.Activate();
             }
-            else if (currentState == HammerState.UseReady0)
+            else if (currentState == HammerState.UseReady)
             {
-                // UseReady0 → UseReady1 (조건 충족 시) 또는 Inactive
-                if (CanUseLevel(1))
-                {
-                    SetState(HammerState.UseReady1);
-                }
-                else
-                {
-                    CancelAndReturn();
-                }
-            }
-            else if (currentState == HammerState.UseReady1)
-            {
-                // UseReady1 → UseReady2 (조건 충족 시) 또는 Inactive
-                if (CanUseLevel(2))
-                {
-                    SetState(HammerState.UseReady2);
-                }
-                else
-                {
-                    CancelAndReturn();
-                }
-            }
-            else if (currentState == HammerState.UseReady2)
-            {
-                // UseReady2 → UseReady3 (조건 충족 시) 또는 Inactive
-                if (CanUseLevel(3))
-                {
-                    SetState(HammerState.UseReady3);
-                }
-                else
-                {
-                    CancelAndReturn();
-                }
-            }
-            else if (currentState == HammerState.UseReady3)
-            {
-                // UseReady3 → Inactive
+                // UseReady → 취소하고 복귀
                 CancelAndReturn();
             }
-        }
-
-        /// <summary>해당 레벨 사용 가능 여부 (게이지 레이어 + 스킬 해금)</summary>
-        private bool CanUseLevel(int level)
-        {
-            int hammerLevel = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
-            // Level1: gaugeLayer>=2 AND HammerLevel1 해금
-            // Level2: gaugeLayer>=3 AND HammerLevel2 해금
-            // Level3: gaugeLayer>=4 AND HammerLevel3 해금
-            return gaugeLayer >= (level + 1) && hammerLevel >= level;
         }
 
         private void CancelAndReturn()
@@ -326,8 +273,7 @@ namespace JewelsHexaPuzzle.Items
 
         public void OnHammerCancelled()
         {
-            if (currentState == HammerState.UseReady0 || currentState == HammerState.UseReady1
-                || currentState == HammerState.UseReady2 || currentState == HammerState.UseReady3)
+            if (currentState == HammerState.UseReady)
                 SetState(gaugeLayer >= 1 ? HammerState.Ready : HammerState.Inactive);
         }
 
@@ -438,36 +384,12 @@ namespace JewelsHexaPuzzle.Items
                     if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
                     break;
 
-                case HammerState.UseReady0:
+                case HammerState.UseReady:
                     buttonImage.fillAmount = 1f;
                     buttonImage.color = COLOR_USE_READY0;
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
                     if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
-                    break;
-
-                case HammerState.UseReady1:
-                    buttonImage.fillAmount = 1f;
-                    buttonImage.color = COLOR_USE_READY1;
-                    if (hammerButton != null) hammerButton.interactable = true;
-                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_BRIGHT;
-                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one * 1.15f;
-                    break;
-
-                case HammerState.UseReady2:
-                    buttonImage.fillAmount = 1f;
-                    buttonImage.color = COLOR_USE_READY2;
-                    if (hammerButton != null) hammerButton.interactable = true;
-                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_BRIGHT;
-                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one * 1.25f;
-                    break;
-
-                case HammerState.UseReady3:
-                    buttonImage.fillAmount = 1f;
-                    buttonImage.color = COLOR_USE_READY3;
-                    if (hammerButton != null) hammerButton.interactable = true;
-                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_BRIGHT;
-                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one * 1.35f;
                     break;
             }
 
@@ -483,23 +405,9 @@ namespace JewelsHexaPuzzle.Items
             {
                 layerText.text = "";
             }
-            else if (currentState == HammerState.Inactive || currentState == HammerState.Ready)
-            {
-                // 비활성화/Ready: 숫자만 표시
-                layerText.text = gaugeLayer.ToString();
-            }
             else
             {
-                // UseReady 상태: gaugeLayer/소모량 형식
-                int cost = 1;
-                switch (currentState)
-                {
-                    case HammerState.UseReady0: cost = 1; break;
-                    case HammerState.UseReady1: cost = 2; break;
-                    case HammerState.UseReady2: cost = 3; break;
-                    case HammerState.UseReady3: cost = 4; break;
-                }
-                layerText.text = $"{gaugeLayer}/{cost}";
+                layerText.text = gaugeLayer.ToString();
             }
         }
 
