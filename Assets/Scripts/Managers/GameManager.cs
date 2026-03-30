@@ -152,6 +152,14 @@ namespace JewelsHexaPuzzle.Managers
                 obj.AddComponent<JewelsHexaPuzzle.Items.LineGauge>();
             }
 
+            // MonsterSpawnController 싱글톤 자동 생성
+            if (MonsterSpawnController.Instance == null)
+            {
+                var spawnCtrlObj = new GameObject("MonsterSpawnController");
+                spawnCtrlObj.transform.SetParent(transform);
+                spawnCtrlObj.AddComponent<MonsterSpawnController>();
+            }
+
             AutoFindReferences();
             InitializeSystems();
             LoadGold();
@@ -3187,10 +3195,14 @@ private void InitializeSystems()
                     // 고블린 킬 이벤트 → 미션 시스템 연동
                     goblinSystem.OnGoblinKilled -= OnGoblinKilledForMission;
                     goblinSystem.OnGoblinKilled += OnGoblinKilledForMission;
-                    // 2단계 웨이브 소환: 1차 (전체의 40~50%)
+                    // MonsterSpawnController 초기화 + 1차 소환 (40~50%)
                     secondWaveTriggered = false;
-                    yield return StartCoroutine(goblinSystem.SpawnFirstWave());
-                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + 1차 웨이브 소환 완료: 스테이지 {selectedStage}");
+                    if (MonsterSpawnController.Instance != null)
+                    {
+                        int totalMission = goblinSystem.GetTotalMissionTargetPublic();
+                        yield return StartCoroutine(MonsterSpawnController.Instance.Initialize(totalMission, initialTurns));
+                    }
+                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + MonsterSpawnController 1차 소환 완료: 스테이지 {selectedStage}");
 
                     // 고블린 출현 알림 메시지
                     ShowFloatingMessage("⚔️ 고블린이 출현! 블록을 떨어뜨려 처치하세요!");
@@ -4351,16 +4363,10 @@ private void OnBigBang()
             if (currentTurns <= 3 && currentTurns > 0 && AudioManager.Instance != null)
                 AudioManager.Instance.PlayWarningBeep();
 
-            // 고블린 2차 웨이브: 남은 턴이 전체의 50% 이하 도달 시 트리거
-            if (!secondWaveTriggered && goblinSystem != null && goblinSystem.IsActive && initialTurns > 0)
+            // MonsterSpawnController에 턴 종료 알림 (규칙2: 40% 이하 전부 소환, 규칙3: 3마리 이하 추가 소환)
+            if (goblinSystem != null && goblinSystem.IsActive && MonsterSpawnController.Instance != null)
             {
-                int halfTurns = initialTurns / 2;
-                if (currentTurns <= halfTurns)
-                {
-                    secondWaveTriggered = true;
-                    StartCoroutine(goblinSystem.SpawnSecondWave());
-                    Debug.Log($"[GameManager] 고블린 2차 웨이브 트리거! 남은턴={currentTurns}, 전체={initialTurns}, 50%={halfTurns}");
-                }
+                MonsterSpawnController.Instance.OnTurnEnd(currentTurns);
             }
 
             Debug.Log($"Turn used. Remaining: {currentTurns}");
@@ -6462,6 +6468,7 @@ private void OnBigBang()
             // ★ MPGaugeUI가 비활성 상태에서 ResetMP 호출 시 코루틴 에러 방지
             // → 게이지 비활성 상태이므로 이벤트 구독 해제 후 리셋
             if (MPManager.Instance != null) MPManager.Instance.ResetMPSilent();
+            if (MonsterSpawnController.Instance != null) MonsterSpawnController.Instance.Reset();
             ShowLobby();
         }
 
@@ -6473,6 +6480,7 @@ private void OnBigBang()
             Time.timeScale = 1f;
             if (scoreManager != null) scoreManager.ResetScore();
             if (MPManager.Instance != null) MPManager.Instance.ResetMPSilent();
+            if (MonsterSpawnController.Instance != null) MonsterSpawnController.Instance.Reset();
             Debug.Log("[GameManager] ReturnToLobby: 로비로 돌아갑니다");
             ShowLobby();
         }

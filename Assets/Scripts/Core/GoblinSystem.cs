@@ -182,6 +182,18 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>현재 보드 위 고블린 수</summary>
         public int AliveCount => goblins.Count(g => g.isAlive);
 
+        /// <summary>현재 생존 고블린 수 반환 (MonsterSpawnController 연동용)</summary>
+        public int GetAliveGoblinCount() => AliveCount;
+
+        /// <summary>전체 미션 목표 수 반환 (MonsterSpawnController 연동용)</summary>
+        public int GetTotalMissionTargetPublic()
+        {
+            int total = GetTotalMissionTarget();
+            if (total <= 0 && currentConfig != null)
+                total = currentConfig.missionKillCount;
+            return total;
+        }
+
         /// <summary>총 제거 수</summary>
         public int TotalKills => totalKills;
 
@@ -626,6 +638,15 @@ namespace JewelsHexaPuzzle.Core
             int totalMT = GetTotalMissionTarget();
             Debug.Log($"[GoblinSystem] 웨이브 배치 {spawnCoroutines.Count}마리 소환 완료 | 보드 {AliveCount}/{currentConfig.maxOnBoard} | " +
                       $"누적소환 {totalSpawned}/{totalMT}");
+        }
+
+        /// <summary>
+        /// 외부(MonsterSpawnController)에서 호출 가능한 배치 소환 공개 래퍼.
+        /// 내부 SpawnWaveBatch를 그대로 위임한다.
+        /// </summary>
+        public IEnumerator SpawnWaveBatchPublic(int targetCount)
+        {
+            yield return StartCoroutine(SpawnWaveBatch(targetCount));
         }
 
         /// <summary>
