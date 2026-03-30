@@ -3074,6 +3074,9 @@ namespace JewelsHexaPuzzle.Core
         public void ApplyDamageAtPosition(HexCoord position, int damage = 1)
         {
             var goblin = goblins.FirstOrDefault(g => g.isAlive && g.position == position);
+            // Heavy 고블린: occupiedCoords 중 하나라도 매칭되면 해당 Heavy에 데미지
+            if (goblin == null)
+                goblin = goblins.FirstOrDefault(g => g.isAlive && g.isHeavy && g.occupiedCoords != null && g.occupiedCoords.Contains(position));
             if (goblin == null) return;
 
             // ★ 방패 활성 시: 특수 공격 대미지를 방패에 전달
@@ -3126,10 +3129,19 @@ namespace JewelsHexaPuzzle.Core
             foreach (var kvp in damageMap)
             {
                 var goblin = goblins.FirstOrDefault(g => g.isAlive && g.position == kvp.Key);
+                // Heavy 고블린: occupiedCoords 중 하나라도 매칭
+                if (goblin == null)
+                    goblin = goblins.FirstOrDefault(g => g.isAlive && g.isHeavy && g.occupiedCoords != null && g.occupiedCoords.Contains(kvp.Key));
                 if (goblin == null) continue;
 
                 if (goblinDamage.ContainsKey(goblin))
-                    goblinDamage[goblin] += kvp.Value;
+                {
+                    // ★ Heavy 고블린: 여러 occupiedCoords가 범위에 있어도 가장 큰 데미지 1번만
+                    if (goblin.isHeavy)
+                        goblinDamage[goblin] = Mathf.Max(goblinDamage[goblin], kvp.Value);
+                    else
+                        goblinDamage[goblin] += kvp.Value;
+                }
                 else
                     goblinDamage[goblin] = kvp.Value;
             }
@@ -3202,7 +3214,8 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         public bool HasGoblinAt(HexCoord coord)
         {
-            return goblins.Any(g => g.isAlive && g.position == coord);
+            return goblins.Any(g => g.isAlive && g.position == coord)
+                || goblins.Any(g => g.isAlive && g.isHeavy && g.occupiedCoords != null && g.occupiedCoords.Contains(coord));
         }
 
         /// <summary>
@@ -3253,6 +3266,9 @@ namespace JewelsHexaPuzzle.Core
             foreach (var goblin in snapshot)
             {
                 if (goblin == null || !goblin.isAlive || goblin.visualObject == null) continue;
+
+                // ★ Heavy 고블린은 넉백 면역
+                if (goblin.isHeavy) continue;
 
                 HexCoord origPos = goblin.position;
 
