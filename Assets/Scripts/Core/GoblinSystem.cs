@@ -66,6 +66,7 @@ namespace JewelsHexaPuzzle.Core
         public bool isHealer = false;          // 힐러 고블린 여부
         public bool isHeavy = false;           // 헤비급 고블린 여부 (3블록 삼각형 점유)
         public List<HexCoord> occupiedCoords = new List<HexCoord>(); // Heavy일 때 점유하는 3개 좌표
+        public int heavyTurnCounter = 0;       // Heavy 전용 턴 카운터 (3턴마다 점프)
         public int healerTurnCounter = 0;      // 힐러 턴 카운터
         public int bombTurnCounter = 0;        // 폭탄 고블린 턴 카운터 (3턴마다 설치)
         public bool isShielded = false;        // 현재 방패 활성 여부
@@ -1293,8 +1294,101 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// Heavy 고블린 이동: 3칸 전체를 아래로 1칸 이동 (occupiedCoords 갱신 포함).
-        /// 이동 전 아래 블록을 공격하여 파괴한다.
+        /// 현재 삼각형에서 1~2블록이 겹치는 인접 삼각형 목록을 탐색.
+        /// 각 삼각형은 3개 좌표로 구성되며, 모두 유효 범위 내 + 비어있거나 자신의 좌표여야 함.
+        /// </summary>
+        private List<List<HexCoord>> FindAdjacentTriangles(List<HexCoord> currentTriangle, HashSet<HexCoord> allOccupied, GoblinData self)
+        {
+            var results = new List<List<HexCoord>>();
+            if (currentTriangle == null || currentTriangle.Count < 3) return results;
+
+            // 삼각형 패턴 6가지 (FindHeavySpawnPosition과 동일)
+            HexCoord[][] triangleOffsets = new HexCoord[][]
+            {
+                // 아래쪽 삼각형 (∇ 형태)
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(1,0), new HexCoord(0,1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(-1,1), new HexCoord(0,1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(-1,0), new HexCoord(-1,1) },
+                // 위쪽 삼각형 (△ 형태)
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(1,-1), new HexCoord(1,0) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(0,-1), new HexCoord(1,-1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(-1,0), new HexCoord(0,-1) },
+            };
+
+            var currentSet = new HashSet<HexCoord>(currentTriangle);
+            var foundSets = new HashSet<string>(); // 중복 방지
+
+            // 현재 삼각형의 각 좌표 주변 탐색
+            foreach (var baseCoord in currentTriangle)
+            {
+                // baseCoord를 포함하는 삼각형 후보 탐색
+                for (int cq = baseCoord.q - 1; cq <= baseCoord.q + 1; cq++)
+                {
+                    for (int cr = baseCoord.r - 1; cr <= baseCoord.r + 1; cr++)
+                    {
+                        var center = new HexCoord(cq, cr);
+                        foreach (var offsets in triangleOffsets)
+                        {
+                            var candidate = new List<HexCoord>();
+                            bool valid = true;
+
+                            for (int i = 0; i < 3; i++)
+                            {
+                                var coord = new HexCoord(center.q + offsets[i].q, center.r + offsets[i].r);
+                                candidate.Add(coord);
+                            }
+
+                            // 겹침 수 계산: 1~2블록 겹쳐야 인접 삼각형
+                            int overlapCount = 0;
+                            foreach (var c in candidate)
+                            {
+                                if (currentSet.Contains(c)) overlapCount++;
+                            }
+                            if (overlapCount < 1 || overlapCount > 2)
+                                continue;
+
+                            // 동일 삼각형(3개 모두 겹침) 제외
+                            if (overlapCount == 3)
+                                continue;
+
+                            // 3개 좌표 유효성 검사
+                            foreach (var coord in candidate)
+                            {
+                                // 범위 확인 (그리드 + 확장 3줄)
+                                if (Mathf.Abs(coord.q) > hexGrid.GridRadius)
+                                { valid = false; break; }
+
+                                int rMin = hexGrid.GetTopR(coord.q);
+                                int rMax = Mathf.Min(hexGrid.GridRadius, -coord.q + hexGrid.GridRadius);
+                                if (coord.r < rMin - 3 || coord.r > rMax)
+                                { valid = false; break; }
+
+                                // 자신의 좌표가 아니면서 다른 고블린이 점유 중이면 불가
+                                if (!currentSet.Contains(coord) && allOccupied.Contains(coord))
+                                { valid = false; break; }
+                            }
+
+                            if (!valid) continue;
+
+                            // 중복 방지 (좌표 정렬 후 키 생성)
+                            var sorted = candidate.OrderBy(c => c.q).ThenBy(c => c.r).ToList();
+                            string key = $"{sorted[0]},{sorted[1]},{sorted[2]}";
+                            if (foundSets.Contains(key)) continue;
+                            foundSets.Add(key);
+
+                            results.Add(candidate);
+                        }
+                    }
+                }
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Heavy 고블린 이동: 인접 삼각형 기반 이동 (1~2블록 겹침).
+        /// 상단 절반이면 아래쪽만, 중간 이하이면 모든 방향 랜덤.
+        /// turnCounter에 따라 3턴마다 점프 실행.
         /// </summary>
         private IEnumerator HeavyGoblinMovePhase()
         {
@@ -1315,44 +1409,60 @@ namespace JewelsHexaPuzzle.Core
             {
                 if (heavy.occupiedCoords == null || heavy.occupiedCoords.Count < 3) continue;
 
-                // 이동 방향: 바로 아래 (0, 1)
-                HexCoord moveDir = new HexCoord(0, 1);
+                // 턴 카운터 증가
+                heavy.heavyTurnCounter++;
 
-                // 이동 후 새 좌표 계산
-                var newCoords = new List<HexCoord>();
-                bool canMove = true;
-                foreach (var c in heavy.occupiedCoords)
+                // 3턴마다 점프 실행
+                if (heavy.heavyTurnCounter % 3 == 0)
                 {
-                    var nc = new HexCoord(c.q + moveDir.q, c.r + moveDir.r);
-                    newCoords.Add(nc);
-
-                    // 새 좌표가 유효 범위인지 (그리드 + 확장 3줄)
-                    if (Mathf.Abs(nc.q) > hexGrid.GridRadius)
-                    {
-                        canMove = false;
-                        break;
-                    }
-                    int rMax = Mathf.Min(hexGrid.GridRadius, -nc.q + hexGrid.GridRadius);
-                    if (nc.r > rMax)
-                    {
-                        canMove = false;
-                        break;
-                    }
-
-                    // 기존 점유 좌표가 아니면서 다른 고블린이 점유 중인지
-                    if (!heavy.occupiedCoords.Contains(nc) && allOccupied.Contains(nc))
-                    {
-                        canMove = false;
-                        break;
-                    }
+                    yield return StartCoroutine(HeavyGoblinJump(heavy, allOccupied));
+                    continue;
                 }
 
-                if (!canMove) continue;
+                // 인접 삼각형 탐색
+                var adjacentTriangles = FindAdjacentTriangles(heavy.occupiedCoords, allOccupied, heavy);
+                if (adjacentTriangles.Count == 0) continue;
+
+                // 방향 필터: 그리드 중심 r 기준 상단 절반이면 아래쪽만
+                float currentCenterR = 0f;
+                foreach (var c in heavy.occupiedCoords)
+                    currentCenterR += c.r;
+                currentCenterR /= heavy.occupiedCoords.Count;
+
+                // 그리드 중심 r 계산 (q=0 기준)
+                int gridCenterR = (hexGrid.GetTopR(0) + hexGrid.GridRadius) / 2;
+
+                List<List<HexCoord>> filteredTriangles;
+                if (currentCenterR < gridCenterR)
+                {
+                    // 상단 절반: 아래쪽 방향만 (새 중심 r > 현재 중심 r)
+                    filteredTriangles = new List<List<HexCoord>>();
+                    foreach (var tri in adjacentTriangles)
+                    {
+                        float newCenterR = 0f;
+                        foreach (var c in tri) newCenterR += c.r;
+                        newCenterR /= tri.Count;
+                        if (newCenterR > currentCenterR)
+                            filteredTriangles.Add(tri);
+                    }
+                    // 아래쪽 후보 없으면 전체에서 선택
+                    if (filteredTriangles.Count == 0)
+                        filteredTriangles = adjacentTriangles;
+                }
+                else
+                {
+                    // 중간 이하: 모든 방향 랜덤
+                    filteredTriangles = adjacentTriangles;
+                }
+
+                // 랜덤 1개 선택
+                var newCoords = filteredTriangles[Random.Range(0, filteredTriangles.Count)];
 
                 // 이동 전: 새 좌표 중 그리드 내부의 블록 공격
+                var currentSet = new HashSet<HexCoord>(heavy.occupiedCoords);
                 foreach (var nc in newCoords)
                 {
-                    if (!heavy.occupiedCoords.Contains(nc) && hexGrid.IsInsideGrid(nc))
+                    if (!currentSet.Contains(nc) && hexGrid.IsInsideGrid(nc))
                     {
                         HexBlock block = hexGrid.GetBlock(nc);
                         if (block != null && block.Data != null && block.Data.gemType != GemType.None)
@@ -1393,6 +1503,188 @@ namespace JewelsHexaPuzzle.Core
                 // 점유 블록 압박 효과 재적용
                 ApplyHeavyPressureEffect(heavy);
             }
+        }
+
+        /// <summary>
+        /// Heavy 고블린 점프: axial 거리 5 이내의 유효 삼각형으로 점프.
+        /// 착지 시 3블록 isCracked + 화면 흔들림.
+        /// </summary>
+        private IEnumerator HeavyGoblinJump(GoblinData goblin, HashSet<HexCoord> allOccupied)
+        {
+            if (goblin.occupiedCoords == null || goblin.occupiedCoords.Count < 3) yield break;
+
+            // 현재 중심 좌표 계산
+            float avgQ = 0f, avgR = 0f;
+            foreach (var c in goblin.occupiedCoords)
+            {
+                avgQ += c.q;
+                avgR += c.r;
+            }
+            var approxCenter = new HexCoord(Mathf.RoundToInt(avgQ / 3f), Mathf.RoundToInt(avgR / 3f));
+
+            // axial 거리 5 이내의 유효 삼각형 위치 탐색
+            var candidates = FindHeavyJumpTriangles(approxCenter, 5, goblin, allOccupied);
+            if (candidates.Count == 0)
+            {
+                Debug.Log($"[GoblinSystem] Heavy 점프 실패: 유효한 삼각형 없음 at {approxCenter}");
+                yield break;
+            }
+
+            // 랜덤 1개 선택
+            var targetCoords = candidates[Random.Range(0, candidates.Count)];
+
+            // 기존 점유 해제
+            foreach (var c in goblin.occupiedCoords)
+                allOccupied.Remove(c);
+
+            // 점프 애니메이션
+            RectTransform rt = goblin.visualObject != null ? goblin.visualObject.GetComponent<RectTransform>() : null;
+            if (rt != null)
+            {
+                Vector2 startPos = rt.anchoredPosition;
+                Vector2 targetCenter = CalculateHeavyCenterPosition(targetCoords);
+
+                // 1단계: 위로 80px 상승 (0.15초, EaseOutCubic)
+                float dur1 = 0.15f;
+                float elapsed = 0f;
+                Vector2 jumpUpPos = startPos + new Vector2(0, 80f);
+                while (elapsed < dur1)
+                {
+                    if (goblin.visualObject == null) yield break;
+                    elapsed += Time.deltaTime;
+                    float t = VisualConstants.EaseOutCubic(Mathf.Clamp01(elapsed / dur1));
+                    rt.anchoredPosition = Vector2.Lerp(startPos, jumpUpPos, t);
+                    yield return null;
+                }
+
+                // 2단계: 목표 위치로 낙하 (0.15초, EaseInCubic)
+                float dur2 = 0.15f;
+                elapsed = 0f;
+                Vector2 jumpMidPos = new Vector2(targetCenter.x, jumpUpPos.y);
+                while (elapsed < dur2)
+                {
+                    if (goblin.visualObject == null) yield break;
+                    elapsed += Time.deltaTime;
+                    float raw = Mathf.Clamp01(elapsed / dur2);
+                    float t = raw * raw * raw; // EaseInCubic
+                    // 수평 이동 + 수직 낙하 동시
+                    float x = Mathf.Lerp(jumpUpPos.x, targetCenter.x, t);
+                    float y = Mathf.Lerp(jumpMidPos.y, targetCenter.y, t);
+                    rt.anchoredPosition = new Vector2(x, y);
+                    yield return null;
+                }
+
+                if (rt != null)
+                    rt.anchoredPosition = targetCenter;
+            }
+
+            // 좌표 갱신
+            goblin.occupiedCoords = targetCoords;
+            goblin.position = targetCoords[0];
+
+            // 새 점유 등록
+            foreach (var c in targetCoords)
+                allOccupied.Add(c);
+
+            // 착지 효과: 3블록 isCracked 처리
+            foreach (var coord in targetCoords)
+            {
+                if (hexGrid.IsInsideGrid(coord))
+                {
+                    HexBlock block = hexGrid.GetBlock(coord);
+                    if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                    {
+                        block.Data.isCracked = true;
+                        // 특수 블록이면 specialType = None (MoveBlock/FixedBlock 제외)
+                        if (block.Data.specialType != SpecialBlockType.None &&
+                            block.Data.specialType != SpecialBlockType.MoveBlock &&
+                            block.Data.specialType != SpecialBlockType.FixedBlock)
+                        {
+                            block.Data.specialType = SpecialBlockType.None;
+                        }
+                        block.UpdateVisuals();
+                    }
+                }
+            }
+
+            // 착지 화면 흔들림 (작은 강도)
+            StartCoroutine(ScreenShake(3f, 0.15f));
+
+            // 점유 블록 압박 효과 적용
+            ApplyHeavyPressureEffect(goblin);
+
+            Debug.Log($"[GoblinSystem] Heavy 점프 완료: {approxCenter} → {targetCoords[0]}, 점유={string.Join(",", targetCoords)}");
+        }
+
+        /// <summary>
+        /// Heavy 점프용 삼각형 위치 탐색: 중심에서 axial 거리 maxDist 이내.
+        /// 3개 좌표 모두 유효, 비어있거나 자신, 다른 고블린 없음.
+        /// </summary>
+        private List<List<HexCoord>> FindHeavyJumpTriangles(HexCoord center, int maxDist, GoblinData self, HashSet<HexCoord> allOccupied)
+        {
+            var results = new List<List<HexCoord>>();
+            var selfCoords = new HashSet<HexCoord>(self.occupiedCoords);
+
+            // 삼각형 패턴 (FindHeavySpawnPosition과 동일한 6가지)
+            HexCoord[][] triangleOffsets = new HexCoord[][]
+            {
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(1,0), new HexCoord(0,1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(-1,1), new HexCoord(0,1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(-1,0), new HexCoord(-1,1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(1,-1), new HexCoord(1,0) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(0,-1), new HexCoord(1,-1) },
+                new HexCoord[] { new HexCoord(0,0), new HexCoord(-1,0), new HexCoord(0,-1) },
+            };
+
+            var hexesInRange = HexCoord.GetHexesInRadius(center, maxDist);
+            var foundSets = new HashSet<string>(); // 중복 방지
+
+            foreach (var hex in hexesInRange)
+            {
+                foreach (var offsets in triangleOffsets)
+                {
+                    var coords = new List<HexCoord>();
+                    bool valid = true;
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        var coord = new HexCoord(hex.q + offsets[i].q, hex.r + offsets[i].r);
+
+                        // 범위 확인 (그리드 + 확장 3줄)
+                        if (Mathf.Abs(coord.q) > hexGrid.GridRadius)
+                        { valid = false; break; }
+
+                        int rMin = hexGrid.GetTopR(coord.q);
+                        int rMax = Mathf.Min(hexGrid.GridRadius, -coord.q + hexGrid.GridRadius);
+                        if (coord.r < rMin - 3 || coord.r > rMax)
+                        { valid = false; break; }
+
+                        // 자신의 좌표가 아니면서 다른 고블린이 점유 중이면 불가
+                        if (!selfCoords.Contains(coord) && allOccupied.Contains(coord))
+                        { valid = false; break; }
+
+                        coords.Add(coord);
+                    }
+
+                    if (!valid || coords.Count != 3) continue;
+
+                    // 현재 위치와 완전히 동일하면 제외
+                    int sameCount = 0;
+                    foreach (var c in coords)
+                        if (selfCoords.Contains(c)) sameCount++;
+                    if (sameCount == 3) continue;
+
+                    // 중복 방지
+                    var sorted = coords.OrderBy(c => c.q).ThenBy(c => c.r).ToList();
+                    string key = $"{sorted[0]},{sorted[1]},{sorted[2]}";
+                    if (foundSets.Contains(key)) continue;
+                    foundSets.Add(key);
+
+                    results.Add(coords);
+                }
+            }
+
+            return results;
         }
 
         /// <summary>
