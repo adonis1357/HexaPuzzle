@@ -5279,6 +5279,16 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 헤비급 고블린 스프라이트 외부 접근용 (미션 아이콘 등)
+        /// </summary>
+        public static Sprite GetHeavyGoblinSprite()
+        {
+            if (heavyGoblinSprite == null)
+                heavyGoblinSprite = CreateHeavyGoblinSprite(256);
+            return heavyGoblinSprite;
+        }
+
+        /// <summary>
         /// 방패 스프라이트 외부 접근용 (미션 아이콘 오버레이 등)
         /// </summary>
         public static Sprite GetShieldSprite()
