@@ -2768,6 +2768,12 @@ namespace JewelsHexaPuzzle.Managers
                     cvImg.color = new Color(1f, 1f, 1f, 0.9f);
                     cvImg.raycastTarget = false;
                 }
+                else if (mission.targetEnemyType == EnemyType.HeavyGoblin)
+                {
+                    // 헤비급: 전용 스프라이트 (진한 갈색 + 뿔) 사용
+                    iconImage.sprite = GoblinSystem.GetHeavyGoblinSprite();
+                    iconImage.color = Color.white;
+                }
                 else if (mission.targetEnemyType == EnemyType.Goblin)
                 {
                     iconImage.sprite = GoblinSystem.GetGoblinSprite();
