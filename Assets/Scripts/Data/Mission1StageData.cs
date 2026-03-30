@@ -6,7 +6,7 @@ using JewelsHexaPuzzle.Data;
 namespace JewelsHexaPuzzle.Managers
 {
     /// <summary>
-    /// 미션 1: 고블린 소탕 - Stage 1~50 데이터
+    /// 미션 1: 고블린 소탕 - Stage 1~70 데이터
     /// </summary>
     public static class Mission1StageData
     {
@@ -76,7 +76,17 @@ namespace JewelsHexaPuzzle.Managers
                 { 57, GetStage57() },
                 { 58, GetStage58() },
                 { 59, GetStage59() },
-                { 60, GetStage60() }
+                { 60, GetStage60() },
+                { 61, GetStage61() },
+                { 62, GetStage62() },
+                { 63, GetStage63() },
+                { 64, GetStage64() },
+                { 65, GetStage65() },
+                { 66, GetStage66() },
+                { 67, GetStage67() },
+                { 68, GetStage68() },
+                { 69, GetStage69() },
+                { 70, GetStage70() }
             };
         }
 
@@ -2674,6 +2684,297 @@ namespace JewelsHexaPuzzle.Managers
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 4, description = "힐러 고블린 4마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 61: 헤비1 + 기본3 + 갑옷2 + 힐러1 = 7
+        // 턴 30 | 미션처치 7
+        // ============================================================
+        private static StageData GetStage61()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 61,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 30,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 1, description = "헤비 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 62: 헤비1 + 폭탄3 + 갑옷2 + 힐러1 + 궁수1 = 8
+        // 턴 27 | 미션처치 8
+        // ============================================================
+        private static StageData GetStage62()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 62,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 27,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 1, description = "헤비 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 1, description = "활 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 63: 헤비1 + 폭탄3 + 방패2 + 힐러2 + 기본1 = 9
+        // 턴 26 | 미션처치 9
+        // ============================================================
+        private static StageData GetStage63()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 63,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 26,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 1, description = "헤비 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 1, description = "고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 64: 헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1 = 9
+        // 턴 22 | 미션처치 9
+        // ============================================================
+        private static StageData GetStage64()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 64,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 22,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 1, description = "방패 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 65: 헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2 = 12
+        // 턴 20 | 미션처치 12
+        // ============================================================
+        private static StageData GetStage65()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 65,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 20,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 66: 헤비1 + 기본3 + 갑옷2 + 궁수2 + 폭탄2 + 힐러1 = 11
+        // 턴 30 | 미션처치 11
+        // ============================================================
+        private static StageData GetStage66()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 66,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 30,
+                difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 1, description = "헤비 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 67: 헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1 = 11
+        // 턴 25 | 미션처치 11
+        // ============================================================
+        private static StageData GetStage67()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 67,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 25,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 68: 헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1 = 12
+        // 턴 24 | 미션처치 12
+        // ============================================================
+        private static StageData GetStage68()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 68,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 24,
+                difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 69: 헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러1 = 13
+        // 턴 20 | 미션처치 13
+        // ============================================================
+        private static StageData GetStage69()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 69,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 20,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null,
+                tutorialFlags = new TutorialFlag[0]
+            };
+            return stage;
+        }
+
+        // ============================================================
+        // Stage 70: 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2 = 18
+        // 턴 18 | 미션처치 18
+        // ============================================================
+        private static StageData GetStage70()
+        {
+            StageData stage = new StageData
+            {
+                stageNumber = 70,
+                chapterNumber = 7,
+                chapterName = "거인의 둥지",
+                turnLimit = 18,
+                difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 3, description = "헤비 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
