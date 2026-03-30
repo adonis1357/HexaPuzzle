@@ -1781,13 +1781,19 @@ private IEnumerator ProcessFalling()
                 List<BlockData> dataList = new List<BlockData>();
                 List<int> sourceSlots = new List<int>();
 
-                // GravityWarper: 고정 슬롯 수집 (쉘 블록은 낙하 가능)
+                // GravityWarper + Heavy 고블린 점유: 고정 슬롯 수집 (쉘 블록은 낙하 가능)
                 HashSet<int> anchoredSlots = new HashSet<int>();
+                HashSet<HexCoord> heavyOccupied = null;
+                if (GoblinSystem.Instance != null)
+                    heavyOccupied = GoblinSystem.Instance.GetHeavyOccupiedCoords();
                 for (int i = 0; i < column.Count; i++)
                 {
                     HexBlock block = column[i];
                     if (block != null && block.Data != null &&
                         block.Data.IsGravityAnchored())
+                        anchoredSlots.Add(i);
+                    // Heavy 고블린 점유 좌표는 빈 칸으로 취급하지 않음
+                    if (block != null && heavyOccupied != null && heavyOccupied.Contains(block.Coord))
                         anchoredSlots.Add(i);
                 }
 
@@ -2028,13 +2034,18 @@ private IEnumerator ProcessFalling()
             List<BlockData> dataList = new List<BlockData>();
             List<int> sourceSlots = new List<int>();
 
-            // 고정 슬롯 수집
+            // 고정 슬롯 수집 (GravityWarper + Heavy 고블린 점유)
             HashSet<int> anchoredSlots = new HashSet<int>();
+            HashSet<HexCoord> heavyOccupiedCol = null;
+            if (GoblinSystem.Instance != null)
+                heavyOccupiedCol = GoblinSystem.Instance.GetHeavyOccupiedCoords();
             for (int i = 0; i < column.Count; i++)
             {
                 HexBlock block = column[i];
                 if (block != null && block.Data != null &&
                     block.Data.IsGravityAnchored())
+                    anchoredSlots.Add(i);
+                if (block != null && heavyOccupiedCol != null && heavyOccupiedCol.Contains(block.Coord))
                     anchoredSlots.Add(i);
             }
 
