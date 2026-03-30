@@ -159,6 +159,9 @@ namespace JewelsHexaPuzzle.Data
             // --- 레벨 51~60: Stage 모드 (치유의 늪 — 힐러고블린 등장) ---
             RegisterStages51To60();
 
+            // --- 레벨 61~70: Stage 모드 (거인의 둥지 — 헤비급 고블린 등장) ---
+            RegisterStages61To70();
+
             // --- 마지막 레벨: Infinite 모드 (무한 도전) — 항상 스테이지 레벨 뒤에 배치 ---
             RegisterInfiniteLevel();
         }
@@ -555,6 +558,74 @@ namespace JewelsHexaPuzzle.Data
             for (int i = 51; i <= 60; i++)
             {
                 int idx = i - 51;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"STAGE {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 61~70 등록 (거인의 둥지 — 헤비급 고블린 등장)
+        /// </summary>
+        private static void RegisterStages61To70()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.40f, 0.28f, 0.15f),  // 61: 거인의 둥지 갈색
+                new Color(0.42f, 0.25f, 0.14f),  // 62
+                new Color(0.44f, 0.22f, 0.13f),  // 63
+                new Color(0.46f, 0.20f, 0.12f),  // 64
+                new Color(0.48f, 0.18f, 0.11f),  // 65
+                new Color(0.45f, 0.24f, 0.14f),  // 66
+                new Color(0.43f, 0.21f, 0.13f),  // 67
+                new Color(0.41f, 0.18f, 0.12f),  // 68
+                new Color(0.39f, 0.15f, 0.11f),  // 69
+                new Color(0.35f, 0.12f, 0.10f)   // 70: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "헤비1 + 기본3 + 갑옷2 + 힐러1",                      // 61: Easy
+                "헤비1 + 폭탄3 + 갑옷2 + 힐러1 + 궁수1",              // 62: Normal
+                "헤비1 + 폭탄3 + 방패2 + 힐러2 + 기본1",              // 63: Normal
+                "헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1",              // 64: Hard
+                "헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2",              // 65: Hard
+                "헤비1 + 기본3 + 갑옷2 + 궁수2 + 폭탄2 + 힐러1",      // 66: Easy
+                "헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1",              // 67: Normal
+                "헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1",              // 68: Normal
+                "헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러1",              // 69: Hard
+                "★ 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2"     // 70: Hard
+            };
+
+            for (int i = 61; i <= 70; i++)
+            {
+                int idx = i - 61;
                 Color bgColor = bgColors[idx];
                 Color borderColor = new Color(
                     Mathf.Min(bgColor.r + 0.2f, 1f),
