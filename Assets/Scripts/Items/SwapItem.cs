@@ -187,6 +187,10 @@ namespace JewelsHexaPuzzle.Items
                 StartCoroutine(ButtonDeactivateAnim());
             }
 
+            // 게이지 상태 복원 (UseReady → Ready/Inactive)
+            if (SwapGauge.Instance != null)
+                SwapGauge.Instance.OnItemCancelled();
+
             Debug.Log("[SwapItem] Deactivated");
         }
 
