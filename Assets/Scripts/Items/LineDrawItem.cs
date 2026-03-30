@@ -226,6 +226,10 @@ namespace JewelsHexaPuzzle.Items
                 StartCoroutine(ButtonDeactivateAnim());
             }
 
+            // 게이지 상태 복원 (UseReady → Ready/Inactive)
+            if (LineGauge.Instance != null)
+                LineGauge.Instance.OnItemCancelled();
+
             Debug.Log("[LineDrawItem] Deactivated");
         }
 
