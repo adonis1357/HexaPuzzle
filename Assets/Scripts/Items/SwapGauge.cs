@@ -234,7 +234,7 @@ namespace JewelsHexaPuzzle.Items
             else if (currentState == GaugeState.UseReady)
             {
                 if (swapItem != null) swapItem.Deactivate();
-                SetState(GaugeState.Ready);
+                SetState(gaugeLayer >= 1 ? GaugeState.Ready : GaugeState.Inactive);
             }
         }
 
@@ -266,7 +266,7 @@ namespace JewelsHexaPuzzle.Items
         public void OnItemCancelled()
         {
             if (currentState == GaugeState.UseReady)
-                SetState(GaugeState.Ready);
+                SetState(gaugeLayer >= 1 ? GaugeState.Ready : GaugeState.Inactive);
         }
 
         public void ResetGauge()
