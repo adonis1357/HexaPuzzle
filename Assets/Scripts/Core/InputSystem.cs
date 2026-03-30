@@ -625,6 +625,23 @@ private void Update()
                     }
                 }
 
+                // ★ Heavy 고블린 점유 블록 회전 불가: 클러스터 좌표 중 하나라도 Heavy 점유이면 차단
+                if (GoblinSystem.Instance != null)
+                {
+                    var heavyCoords = GoblinSystem.Instance.GetHeavyOccupiedCoords();
+                    if (heavyCoords.Count > 0)
+                    {
+                        HexBlock hb0 = cluster.Value.Item1, hb1 = cluster.Value.Item2, hb2 = cluster.Value.Item3;
+                        if ((hb0 != null && heavyCoords.Contains(hb0.Coord)) ||
+                            (hb1 != null && heavyCoords.Contains(hb1.Coord)) ||
+                            (hb2 != null && heavyCoords.Contains(hb2.Coord)))
+                        {
+                            hasValidCluster = false;
+                            return;
+                        }
+                    }
+                }
+
                 currentCluster[0] = cluster.Value.Item1;
                 currentCluster[1] = cluster.Value.Item2;
                 currentCluster[2] = cluster.Value.Item3;
