@@ -185,8 +185,8 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
         // 이벤트
         // ============================================================
-        /// <summary>고블린 제거 시 호출 (totalKills, isArmored, isArcher, isShieldType, isBomb, isHealer)</summary>
-        public event System.Action<int, bool, bool, bool, bool, bool> OnGoblinKilled;
+        /// <summary>고블린 제거 시 호출 (totalKills, isArmored, isArcher, isShieldType, isBomb, isHealer, isHeavy)</summary>
+        public event System.Action<int, bool, bool, bool, bool, bool, bool> OnGoblinKilled;
 
         /// <summary>현재 보드 위 고블린 수</summary>
         public int AliveCount => goblins.Count(g => g.isAlive);
@@ -319,6 +319,8 @@ namespace JewelsHexaPuzzle.Core
             archerKills = 0;
             shieldKills = 0;
             bombKills = 0;
+            healerKills = 0;
+            heavyKills = 0;
             regularSpawned = 0;
             armoredSpawned = 0;
             healerSpawned = 0;
@@ -814,7 +816,19 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
-            return null; // 유효한 삼각형 위치 없음
+            // 폴백: 삼각형 위치를 찾지 못한 경우, 빈 단일 좌표에 소환
+            // (3블록 점유 대신 1블록 점유로 축소 — 소환 자체가 스킵되는 것 방지)
+            foreach (var center in shuffled)
+            {
+                if (!usedPositions.Contains(center))
+                {
+                    Debug.LogWarning($"[GoblinSystem] FindHeavySpawnPosition: 삼각형 위치 없음 → 단일 좌표 폴백 ({center})");
+                    return new List<HexCoord> { center, center, center }; // 3개 동일 좌표 (occupiedCoords 크기 유지)
+                }
+            }
+
+            Debug.LogError("[GoblinSystem] FindHeavySpawnPosition: 소환 가능 위치 완전 없음");
+            return null; // 소환 영역 자체가 가득 찬 경우
         }
 
         /// <summary>
@@ -3106,7 +3120,7 @@ namespace JewelsHexaPuzzle.Core
                 goblin.isAlive = false;
                 totalKills++;
                 IncrementTypeKill(goblin);
-                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer);
+                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer, goblin.isHeavy);
                 StartCoroutine(DeathAnimation(goblin));
             }
         }
@@ -3203,7 +3217,7 @@ namespace JewelsHexaPuzzle.Core
                     goblin.isAlive = false;
                     totalKills++;
                     IncrementTypeKill(goblin);
-                    OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer);
+                    OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer, goblin.isHeavy);
                     StartCoroutine(DeathAnimation(goblin));
                 }
             }
@@ -3666,7 +3680,7 @@ namespace JewelsHexaPuzzle.Core
             goblin.isAlive = false;
             totalKills++;
             IncrementTypeKill(goblin);
-            OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer);
+            OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer, goblin.isHeavy);
             StartCoroutine(DeathAnimation(goblin));
         }
 
@@ -5201,7 +5215,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 totalKills++;
                 IncrementTypeKill(goblin);
-                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer);
+                OnGoblinKilled?.Invoke(totalKills, goblin.isArmored, goblin.isArcher, goblin.isShieldType, goblin.isBomb, goblin.isHealer, goblin.isHeavy);
                 if (goblin.visualObject != null)
                     deathCoroutines.Add(StartCoroutine(DeathAnimation(goblin)));
             }

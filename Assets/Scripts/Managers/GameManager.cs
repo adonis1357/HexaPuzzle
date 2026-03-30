@@ -7129,15 +7129,15 @@ private void OnDestroy()
         /// 고블린 제거 시 미션 시스템에 보고
         /// blockRemovalSystem.OnEnemyRemoved 이벤트를 통해 StageManager에 전달
         /// </summary>
-        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer)
+        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer, bool isHeavy)
         {
-            string typeName = isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
+            string typeName = isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
             Debug.Log($"[GameManager] {typeName} 고블린 제거 미션 보고: 총 {totalKills}킬");
 
             // StageManager에 고블린 타입 정보 전달
             if (stageManager != null)
             {
-                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer);
+                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer, isHeavy);
 
                 // 미션 완료 시 추가 소환 중단
                 if (stageManager.IsMissionComplete() && goblinSystem != null)
@@ -7272,6 +7272,28 @@ private void OnDestroy()
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
                 case 60: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 7,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+
+                // 스테이지 61~70: 챕터 7 — 거인의 둥지 (헤비급 고블린 등장)
+                case 61: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 7, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 62: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 8, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 63: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 64: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 65: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 12, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 66: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 11, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 67: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 11, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 68: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 12, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 69: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 13, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 70: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 default: return null;
             }
         }
