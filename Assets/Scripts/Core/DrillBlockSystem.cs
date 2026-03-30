@@ -720,6 +720,8 @@ private IEnumerator DrillLineWithProjectile(
             }
             // 이미 대미지를 준 고블린 좌표 추적 (중복 방지)
             HashSet<HexCoord> damagedGoblinPositions = new HashSet<HexCoord>();
+            // ★ Heavy 고블린 라인당 1회 데미지 제한 (같은 Heavy의 여러 occupiedCoords를 지나도 1회만)
+            HashSet<GoblinData> damagedHeavyThisLine = new HashSet<GoblinData>();
 
             // lastDamageCoord를 그리드 마지막 유효 좌표로 미리 계산 (exit 애니메이션용)
             if (hexGrid != null)
@@ -804,9 +806,25 @@ private IEnumerator DrillLineWithProjectile(
                     && !damagedGoblinPositions.Contains(target.Coord))
                 {
                     damagedGoblinPositions.Add(target.Coord);
-                    int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
                     if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
-                        GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+                    {
+                        // ★ Heavy 고블린: 같은 라인에서 같은 Heavy의 여러 블록을 지나가도 1회만 데미지
+                        var goblinAtCoord = GoblinSystem.Instance.GetGoblinAt(target.Coord);
+                        bool shouldDamage = true;
+                        if (goblinAtCoord != null && goblinAtCoord.isHeavy)
+                        {
+                            if (damagedHeavyThisLine.Contains(goblinAtCoord))
+                                shouldDamage = false; // 이미 이 라인에서 데미지 적용됨
+                            else
+                                damagedHeavyThisLine.Add(goblinAtCoord);
+                        }
+
+                        if (shouldDamage)
+                        {
+                            int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                            GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+                        }
+                    }
                 }
 
                 // 안전 검사: 다른 드릴/폭탄 등이 동시에 이 블록을 처리했을 수 있음
@@ -865,7 +883,19 @@ private IEnumerator DrillLineWithProjectile(
                     if (!damagedGoblinPositions.Contains(gPos))
                     {
                         damagedGoblinPositions.Add(gPos);
-                        GoblinSystem.Instance.ApplyDamageAtPosition(gPos, drillDmgPass);
+                        // ★ Heavy 고블린: 같은 라인에서 이미 데미지를 줬으면 스킵
+                        var goblinAtPos = GoblinSystem.Instance.GetGoblinAt(gPos);
+                        bool shouldDamage = true;
+                        if (goblinAtPos != null && goblinAtPos.isHeavy)
+                        {
+                            if (damagedHeavyThisLine.Contains(goblinAtPos))
+                                shouldDamage = false;
+                            else
+                                damagedHeavyThisLine.Add(goblinAtPos);
+                        }
+
+                        if (shouldDamage)
+                            GoblinSystem.Instance.ApplyDamageAtPosition(gPos, drillDmgPass);
                     }
                 }
             }
