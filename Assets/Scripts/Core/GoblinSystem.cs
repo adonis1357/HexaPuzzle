@@ -1145,8 +1145,8 @@ namespace JewelsHexaPuzzle.Core
             // 1단계: 근접 고블린 이동 (블록 공격+파괴 통합) — 궁수/폭탄 고블린 제외
             yield return StartCoroutine(MoveAllGoblins());
 
-            // ★ 이동 후 위치 겹침 검증 + 해소
-            ResolveOverlappingPositions();
+            // ★ 이동 후 위치 겹침 검증 + 해소 (우선순위 기반)
+            CheckAndResolveOverlap();
 
             // 1.4단계: Heavy 고블린 이동 (3칸 전체 이동)
             yield return StartCoroutine(HeavyGoblinMovePhase());
@@ -1157,8 +1157,8 @@ namespace JewelsHexaPuzzle.Core
             // 1.6단계: 힐러 고블린 페이즈
             yield return StartCoroutine(HealerGoblinPhase());
 
-            // ★ 설치 후 위치 겹침 검증
-            ResolveOverlappingPositions();
+            // ★ 설치 후 위치 겹침 검증 (우선순위 기반)
+            CheckAndResolveOverlap();
 
             // 2단계: 궁수 고블린 공격 (2턴마다)
             archerTurnCounter++;
@@ -1176,11 +1176,152 @@ namespace JewelsHexaPuzzle.Core
             // 3단계: 새 고블린 소환
             yield return StartCoroutine(SpawnGoblins());
 
-            // ★ 스폰 후 위치 겹침 검증 + 해소
-            ResolveOverlappingPositions();
+            // ★ 스폰 후 위치 겹침 검증 + 해소 (우선순위 기반)
+            CheckAndResolveOverlap();
 
             // 4단계: 크랙/쉘 블록 엣지 연결 체크
             yield return StartCoroutine(CheckAndApplyEdgeConnection());
+        }
+
+        /// <summary>
+        /// 고블린 타입별 우선순위 반환. 숫자가 클수록 강한 고블린.
+        /// Heavy=6, Shield=5, BombGoblin=4, Armored/Archer=3, Healer=2, Regular=1
+        /// </summary>
+        private int GetGoblinPriority(GoblinData g)
+        {
+            if (g.isHeavy) return 6;
+            if (g.isShieldType) return 5;
+            if (g.isBomb) return 4;
+            if (g.isArmored || g.isArcher) return 3;
+            if (g.isHealer) return 2;
+            return 1;
+        }
+
+        /// <summary>
+        /// 우선순위 기반 겹침 방지 시스템.
+        /// Heavy↔일반, Heavy↔Heavy, 일반↔일반 세 가지 케이스를 처리.
+        /// </summary>
+        private void CheckAndResolveOverlap()
+        {
+            var aliveGoblins = goblins.Where(g => g.isAlive).ToList();
+            if (aliveGoblins.Count <= 1) return;
+
+            // 전체 점유 좌표 집합 (이동 시 실시간 업데이트)
+            var occupiedCoords = new HashSet<HexCoord>();
+            foreach (var g in aliveGoblins)
+            {
+                if (g.isHeavy && g.occupiedCoords != null)
+                    foreach (var c in g.occupiedCoords) occupiedCoords.Add(c);
+                else
+                    occupiedCoords.Add(g.position);
+            }
+
+            // ── 케이스 1 & 2: Heavy 고블린 관련 겹침 ──
+            var heavyGoblins = aliveGoblins.Where(g => g.isHeavy && g.occupiedCoords != null).ToList();
+            foreach (var heavy in heavyGoblins)
+            {
+                var heavySet = new HashSet<HexCoord>(heavy.occupiedCoords);
+
+                // 케이스 1: Heavy vs 일반 — 일반 고블린이 Heavy 점유 칸 안에 있으면 밀어냄
+                var normalGoblins = aliveGoblins.Where(g => !g.isHeavy).ToList();
+                foreach (var normal in normalGoblins)
+                {
+                    if (!heavySet.Contains(normal.position)) continue;
+
+                    Debug.LogWarning($"[GoblinSystem] ⚠️ Heavy↔일반 겹침: {normal.position} (Heavy 점유 내)");
+                    // Heavy가 우선 — 일반 고블린을 빈 칸으로 이동
+                    HexCoord newPos = FindNearestEmptyPosition(normal.position, occupiedCoords);
+                    if (newPos != normal.position)
+                    {
+                        Debug.LogWarning($"[GoblinSystem] → 겹침 해소(일반 이동): ({normal.position}) → ({newPos})");
+                        occupiedCoords.Remove(normal.position);
+                        normal.position = newPos;
+                        occupiedCoords.Add(newPos);
+                        UpdateGoblinVisualPosition(normal, newPos);
+                    }
+                }
+
+                // 케이스 2: Heavy vs Heavy — occupiedCoords 겹침 시 낮은 우선순위 Heavy 이동
+                foreach (var other in heavyGoblins)
+                {
+                    if (other == heavy) continue;
+                    if (other.occupiedCoords == null) continue;
+
+                    bool overlaps = other.occupiedCoords.Any(c => heavySet.Contains(c));
+                    if (!overlaps) continue;
+
+                    Debug.LogWarning($"[GoblinSystem] ⚠️ Heavy↔Heavy 겹침 감지");
+                    // 우선순위 낮은 쪽(동률이면 나중 인덱스)을 이동
+                    GoblinData toMove = GetGoblinPriority(heavy) >= GetGoblinPriority(other) ? other : heavy;
+                    GoblinData staying = toMove == heavy ? other : heavy;
+
+                    // Heavy 이동: FindHeavyJumpTriangles로 삼각형 자리 탐색
+                    var staySet = new HashSet<HexCoord>(staying.occupiedCoords);
+                    // 이동할 Heavy의 현재 좌표를 occupiedCoords에서 제거
+                    foreach (var c in toMove.occupiedCoords) occupiedCoords.Remove(c);
+
+                    var allOccupiedForSearch = new HashSet<HexCoord>(occupiedCoords);
+                    var candidates = FindHeavyJumpTriangles(toMove.position, hexGrid.GridRadius + 3, toMove, allOccupiedForSearch);
+                    if (candidates.Count > 0)
+                    {
+                        var best = candidates[0];
+                        HexCoord newCenter = CalculateHeavyCenterPosition(best);
+                        Debug.LogWarning($"[GoblinSystem] → Heavy 겹침 해소: ({toMove.position}) → ({newCenter})");
+                        foreach (var c in best) occupiedCoords.Add(c);
+                        toMove.occupiedCoords = best;
+                        toMove.position = newCenter;
+                        UpdateGoblinVisualPosition(toMove, newCenter);
+                    }
+                    else
+                    {
+                        // 대안 없으면 원래 좌표 복원
+                        foreach (var c in toMove.occupiedCoords) occupiedCoords.Add(c);
+                        Debug.LogWarning($"[GoblinSystem] Heavy 겹침 해소 실패: 이동 가능한 삼각형 없음");
+                    }
+                }
+            }
+
+            // ── 케이스 3: 일반 vs 일반 — 같은 position ──
+            var normalMap = new Dictionary<HexCoord, List<GoblinData>>();
+            foreach (var g in aliveGoblins.Where(g => !g.isHeavy))
+            {
+                if (!normalMap.ContainsKey(g.position))
+                    normalMap[g.position] = new List<GoblinData>();
+                normalMap[g.position].Add(g);
+            }
+
+            foreach (var kvp in normalMap)
+            {
+                if (kvp.Value.Count <= 1) continue;
+
+                Debug.LogWarning($"[GoblinSystem] ⚠️ 일반 겹침: {kvp.Key} 에 {kvp.Value.Count}마리");
+                // 우선순위 내림차순 정렬 — 높은 쪽이 먼저 (유지), 나머지 이동
+                var sorted = kvp.Value.OrderByDescending(g => GetGoblinPriority(g)).ToList();
+                for (int i = 1; i < sorted.Count; i++)
+                {
+                    var goblin = sorted[i];
+                    HexCoord newPos = FindNearestEmptyPosition(goblin.position, occupiedCoords);
+                    if (newPos != goblin.position)
+                    {
+                        Debug.LogWarning($"[GoblinSystem] → 겹침 해소: ({goblin.position}) → ({newPos})");
+                        occupiedCoords.Remove(goblin.position);
+                        goblin.position = newPos;
+                        occupiedCoords.Add(newPos);
+                        UpdateGoblinVisualPosition(goblin, newPos);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 고블린의 비주얼 오브젝트 위치를 즉시 갱신하는 헬퍼.
+        /// </summary>
+        private void UpdateGoblinVisualPosition(GoblinData goblin, HexCoord coord)
+        {
+            if (goblin.visualObject == null || hexGrid == null) return;
+            RectTransform rt = goblin.visualObject.GetComponent<RectTransform>();
+            if (rt != null)
+                rt.anchoredPosition = hexGrid.CalculateFlatTopHexPosition(coord);
         }
 
         /// <summary>
@@ -2289,6 +2430,9 @@ namespace JewelsHexaPuzzle.Core
             // 소환 가능 위치 분류: 궁수는 가장 윗줄(row=3)만, 근접/갑옷은 아래 2줄
             var allExtended = hexGrid.GetExtendedTopCoords();
             var occupiedPositions = new HashSet<HexCoord>(goblins.Where(g => g.isAlive).Select(g => g.position));
+            // Heavy 고블린의 3칸 점유 좌표도 모두 등록 (겹침 방지)
+            foreach (var hg in goblins.Where(g => g.isAlive && g.isHeavy && g.occupiedCoords != null))
+                foreach (var c in hg.occupiedCoords) occupiedPositions.Add(c);
 
             // 좌표 분류: 최상단(궁수), 중간+하단(일반/갑옷), 하단만(방패)
             var topRowCoords = new List<HexCoord>();    // rMin - 3: 궁수 전용
