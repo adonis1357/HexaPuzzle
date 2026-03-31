@@ -1844,6 +1844,10 @@ namespace JewelsHexaPuzzle.Core
             // 착지 전: 착지 예정 좌표에 있는 일반 고블린 밀어내기
             PushGoblinsFromHeavyCoords(targetCoords, goblin);
 
+            // 점프 시작 사운드 — 무거운 저음 whoosh
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayHeavyJumpSound();
+
             // 점프 애니메이션
             RectTransform rt = goblin.visualObject != null ? goblin.visualObject.GetComponent<RectTransform>() : null;
             if (rt != null)
@@ -1892,6 +1896,10 @@ namespace JewelsHexaPuzzle.Core
             // 새 점유 등록
             foreach (var c in targetCoords)
                 allOccupied.Add(c);
+
+            // 착지 사운드 — 지진 느낌의 강한 저음 충격음
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayHeavyLandSound();
 
             // 착지 효과: 3블록 isCracked 처리
             foreach (var coord in targetCoords)

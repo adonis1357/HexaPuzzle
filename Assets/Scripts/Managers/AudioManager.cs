@@ -89,6 +89,8 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralDroneStrike;
         private AudioClip proceduralMissionEntrance;
         private AudioClip proceduralMissionComplete;
+        private AudioClip proceduralHeavyJump;
+        private AudioClip proceduralHeavyLand;
 
         // 배경음악 캐시
         private AudioClip proceduralLobbySereneBGM;
@@ -244,6 +246,8 @@ namespace JewelsHexaPuzzle.Managers
             proceduralDroneStrike = SafeCreateClip("DroneStrike", () => ProceduralAudio.CreateDroneStrikeSound(0.2f), ref successCount, ref failCount);
             proceduralMissionEntrance = SafeCreateClip("MissionEntrance", () => ProceduralAudio.CreateMissionEntranceSound(0.2f), ref successCount, ref failCount);
             proceduralMissionComplete = SafeCreateClip("MissionComplete", () => ProceduralAudio.CreateMissionCompleteSound(0.4f), ref successCount, ref failCount);
+            proceduralHeavyJump = SafeCreateClip("HeavyJump", () => ProceduralAudio.CreateHeavyJumpSound(0.28f), ref successCount, ref failCount);
+            proceduralHeavyLand = SafeCreateClip("HeavyLand", () => ProceduralAudio.CreateHeavyLandSound(0.38f), ref successCount, ref failCount);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
@@ -623,6 +627,12 @@ namespace JewelsHexaPuzzle.Managers
         /// 미션 완료 사운드 — C메이저 상승 아르페지오 차임
         /// </summary>
         public void PlayMissionCompleteSound() => PlaySFX(proceduralMissionComplete, 0.8f);
+
+        // Heavy 고블린 사운드
+        /// <summary>Heavy 고블린 점프 시작 — 낮은 저음 whoosh</summary>
+        public void PlayHeavyJumpSound() => PlaySFX(proceduralHeavyJump, 0.85f);
+        /// <summary>Heavy 고블린 착지 충격 — 지진 느낌의 강한 저음 충격음</summary>
+        public void PlayHeavyLandSound() => PlaySFX(proceduralHeavyLand, 1.0f);
 
         // 특수 블록 변환 틱 사운드 (XBlock 합성 시 순차 변환용)
         // index: 변환 순번, total: 전체 블록 수 → 피치를 점진적으로 올림
