@@ -124,6 +124,7 @@ namespace JewelsHexaPuzzle.Core
         // 참조
         // ============================================================
         private HexGrid hexGrid;
+        private BlockRemovalSystem blockRemovalSystem;
         private GoblinStageConfig currentConfig;
         private List<GoblinData> goblins = new List<GoblinData>();
         private int totalKills = 0;
@@ -311,6 +312,8 @@ namespace JewelsHexaPuzzle.Core
         public void Initialize(HexGrid grid, GoblinStageConfig config)
         {
             hexGrid = grid;
+            if (blockRemovalSystem == null)
+                blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
             currentConfig = config;
             totalKills = 0;
             totalSpawned = 0;
@@ -1806,6 +1809,9 @@ namespace JewelsHexaPuzzle.Core
 
                 // 점유 블록 압박 효과 재적용
                 ApplyHeavyPressureEffect(heavy);
+
+                // ★ 이동 완료: 새 점유 좌표의 특수 블록 발동 없이 단순 파괴
+                CrushSpecialBlocksUnderHeavy(heavy.occupiedCoords);
             }
         }
 
@@ -1900,6 +1906,9 @@ namespace JewelsHexaPuzzle.Core
             // 착지 사운드 — 지진 느낌의 강한 저음 충격음
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayHeavyLandSound();
+
+            // ★ 착지: 점유 좌표의 특수 블록 발동 없이 단순 파괴 (이미 파괴된 좌표는 isCracked 루프에서 자동 스킵)
+            CrushSpecialBlocksUnderHeavy(targetCoords);
 
             // 착지 효과: 3블록 isCracked 처리
             foreach (var coord in targetCoords)
@@ -3524,6 +3533,42 @@ namespace JewelsHexaPuzzle.Core
         {
             return goblins.Any(g => g.isAlive && g.position == coord)
                 || goblins.Any(g => g.isAlive && g.isHeavy && g.occupiedCoords != null && g.occupiedCoords.Contains(coord));
+        }
+
+        /// <summary>
+        /// Heavy 고블린이 이동/착지한 좌표에 있는 특수 블록을 발동 없이 단순 파괴.
+        /// MoveBlock/FixedBlock은 제외. 파괴 후 낙하 처리 실행.
+        /// </summary>
+        private void CrushSpecialBlocksUnderHeavy(List<HexCoord> coords)
+        {
+            if (hexGrid == null || coords == null) return;
+
+            bool anyDestroyed = false;
+            foreach (var coord in coords)
+            {
+                if (!hexGrid.IsInsideGrid(coord)) continue;
+                HexBlock block = hexGrid.GetBlock(coord);
+                if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+
+                var sType = block.Data.specialType;
+                if (sType == SpecialBlockType.None) continue;
+                // MoveBlock/FixedBlock은 Heavy도 무력화 불가
+                if (sType == SpecialBlockType.MoveBlock || sType == SpecialBlockType.FixedBlock) continue;
+
+                Debug.Log($"[GoblinSystem] Heavy 고블린 밟기: 특수 블록 무력화 {coord} ({sType})");
+                // 특수 기능 제거 후 발동 없이 단순 파괴
+                block.Data.specialType = SpecialBlockType.None;
+                block.ClearData();
+                anyDestroyed = true;
+            }
+
+            if (anyDestroyed)
+            {
+                if (blockRemovalSystem == null)
+                    blockRemovalSystem = FindObjectOfType<BlockRemovalSystem>();
+                if (blockRemovalSystem != null)
+                    blockRemovalSystem.TriggerFallOnly();
+            }
         }
 
         /// <summary>
