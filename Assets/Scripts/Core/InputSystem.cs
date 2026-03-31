@@ -694,7 +694,7 @@ private void Update()
                 if (blocked)
                 {
                     Debug.Log("[InputSystem] Heavy 고블린 점유 블록 — 회전 차단");
-                    ShowHeavyBlockedMessage();
+                    UIManager.Instance?.ShowToast("⚠️ 헤비 고블린이 짓누르고 있어\n블록을 회전할 수 없습니다!");
                     ClearHighlight();
                     hasValidCluster = false;
                     return;
@@ -706,113 +706,6 @@ private void Update()
 
             ClearHighlight();
             hasValidCluster = false;
-        }
-
-        // ── Heavy 차단 메시지 팝업 ──
-        private Coroutine heavyBlockedMessageCoroutine;
-
-        private void ShowHeavyBlockedMessage()
-        {
-            // 이전 팝업이 남아있으면 중단
-            if (heavyBlockedMessageCoroutine != null)
-            {
-                StopCoroutine(heavyBlockedMessageCoroutine);
-                heavyBlockedMessageCoroutine = null;
-            }
-            if (gameCanvas == null) return;
-            heavyBlockedMessageCoroutine = StartCoroutine(ShowHeavyBlockedMessageCoroutine());
-        }
-
-        private IEnumerator ShowHeavyBlockedMessageCoroutine()
-        {
-            // 이전 동명 팝업 정리
-            var old = gameCanvas.transform.Find("HeavyBlockedMsg");
-            if (old != null) Destroy(old.gameObject);
-
-            // 팝업 루트 오브젝트 생성
-            GameObject msgObj = new GameObject("HeavyBlockedMsg");
-            msgObj.transform.SetParent(gameCanvas.transform, false);
-
-            RectTransform rt = msgObj.AddComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(0f, 60f); // 화면 중앙 약간 위
-            rt.sizeDelta = new Vector2(420f, 60f);
-
-            // 배경 패널
-            UnityEngine.UI.Image bg = msgObj.AddComponent<UnityEngine.UI.Image>();
-            bg.color = new Color(0.08f, 0.04f, 0.02f, 0.82f);
-            bg.raycastTarget = false;
-
-            // 텍스트
-            GameObject textObj = new GameObject("Text");
-            textObj.transform.SetParent(msgObj.transform, false);
-
-            RectTransform textRt = textObj.AddComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(10f, 4f);
-            textRt.offsetMax = new Vector2(-10f, -4f);
-
-            UnityEngine.UI.Text label = textObj.AddComponent<UnityEngine.UI.Text>();
-            label.text = "헤비급 고블린이 버티고 있어\n회전할 수 없습니다";
-            label.alignment = TextAnchor.MiddleCenter;
-            label.fontSize = 22;
-            label.fontStyle = FontStyle.Bold;
-            label.color = new Color(1f, 0.85f, 0.4f, 1f); // 황금빛
-            label.raycastTarget = false;
-
-            // 외곽선 효과
-            UnityEngine.UI.Outline outline = textObj.AddComponent<UnityEngine.UI.Outline>();
-            outline.effectColor = new Color(0.3f, 0.1f, 0f, 0.9f);
-            outline.effectDistance = new Vector2(1.5f, -1.5f);
-
-            // 0.5초 유지 후 페이드 아웃
-            float holdTime = 0.5f;
-            float fadeTime = 0.25f;
-            float elapsed = 0f;
-
-            // 팝업 인 (0.1초 스케일 펀치)
-            rt.localScale = Vector3.zero;
-            float punchDur = 0.1f;
-            float punchElapsed = 0f;
-            while (punchElapsed < punchDur)
-            {
-                if (msgObj == null) yield break;
-                punchElapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(punchElapsed / punchDur);
-                float scale = t < 0.7f
-                    ? Mathf.Lerp(0f, 1.12f, t / 0.7f)
-                    : Mathf.Lerp(1.12f, 1f, (t - 0.7f) / 0.3f);
-                rt.localScale = Vector3.one * scale;
-                yield return null;
-            }
-            if (msgObj != null) rt.localScale = Vector3.one;
-
-            // 유지
-            while (elapsed < holdTime)
-            {
-                if (msgObj == null) yield break;
-                elapsed += Time.unscaledDeltaTime;
-                yield return null;
-            }
-
-            // 페이드 아웃
-            elapsed = 0f;
-            while (elapsed < fadeTime)
-            {
-                if (msgObj == null) yield break;
-                elapsed += Time.unscaledDeltaTime;
-                float alpha = Mathf.Lerp(1f, 0f, elapsed / fadeTime);
-                bg.color = new Color(bg.color.r, bg.color.g, bg.color.b, 0.82f * alpha);
-                label.color = new Color(label.color.r, label.color.g, label.color.b, alpha);
-                outline.effectColor = new Color(outline.effectColor.r, outline.effectColor.g, outline.effectColor.b, 0.9f * alpha);
-                yield return null;
-            }
-
-            if (msgObj != null) Destroy(msgObj);
-            heavyBlockedMessageCoroutine = null;
         }
 
         private void ClearHighlight()

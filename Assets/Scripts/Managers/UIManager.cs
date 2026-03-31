@@ -13,6 +13,18 @@ namespace JewelsHexaPuzzle.Managers
     /// </summary>
     public class UIManager : MonoBehaviour
     {
+        public static UIManager Instance { get; private set; }
+
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
         [Header("HUD Elements")]
         [SerializeField] private Text turnText;
         [SerializeField] private Text stageText;
@@ -3706,6 +3718,114 @@ namespace JewelsHexaPuzzle.Managers
             tex.SetPixels(pixels);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        // ============================================================
+        // 토스트 메시지
+        // ============================================================
+
+        private Coroutine toastCoroutine;
+
+        /// <summary>
+        /// 화면 중앙 하단에 잠시 표시되는 토스트 메시지.
+        /// 반투명 검정 배경 + 흰색 텍스트, 1.5초 유지 후 페이드 아웃.
+        /// </summary>
+        public void ShowToast(string message)
+        {
+            if (toastCoroutine != null)
+            {
+                StopCoroutine(toastCoroutine);
+                toastCoroutine = null;
+                // 이전 토스트 즉시 제거
+                var oldToast = transform.Find("ToastMessage");
+                if (oldToast != null) Destroy(oldToast.gameObject);
+            }
+            toastCoroutine = StartCoroutine(ShowToastCoroutine(message));
+        }
+
+        private IEnumerator ShowToastCoroutine(string message)
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) yield break;
+
+            // ── 배경 패널 ──
+            GameObject toastObj = new GameObject("ToastMessage");
+            toastObj.transform.SetParent(canvas.transform, false);
+
+            RectTransform rt = toastObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0f);
+            rt.anchorMax = new Vector2(0.5f, 0f);
+            rt.pivot     = new Vector2(0.5f, 0f);
+            rt.anchoredPosition = new Vector2(0f, 120f); // 화면 하단에서 120px 위
+            rt.sizeDelta = new Vector2(480f, 72f);
+
+            Image bg = toastObj.AddComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0.78f);
+            bg.raycastTarget = false;
+
+            // ── 텍스트 ──
+            GameObject textObj = new GameObject("Label");
+            textObj.transform.SetParent(toastObj.transform, false);
+
+            RectTransform textRt = textObj.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(14f, 6f);
+            textRt.offsetMax = new Vector2(-14f, -6f);
+
+            Text label = textObj.AddComponent<Text>();
+            label.text      = message;
+            label.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            label.fontSize  = 22;
+            label.fontStyle = FontStyle.Bold;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color     = Color.white;
+            label.raycastTarget = false;
+
+            Shadow shadow = textObj.AddComponent<Shadow>();
+            shadow.effectColor    = new Color(0f, 0f, 0f, 0.6f);
+            shadow.effectDistance = new Vector2(1f, -1f);
+
+            // ── 팝인 (0.12초 EaseOutBack) ──
+            float punchDur = 0.12f;
+            float t = 0f;
+            rt.localScale = Vector3.zero;
+            while (t < punchDur)
+            {
+                if (toastObj == null) yield break;
+                t += Time.unscaledDeltaTime;
+                float s = VisualConstants.EaseOutBack(Mathf.Clamp01(t / punchDur));
+                rt.localScale = Vector3.one * s;
+                yield return null;
+            }
+            if (toastObj != null) rt.localScale = Vector3.one;
+
+            // ── 유지 1.5초 ──
+            float elapsed = 0f;
+            while (elapsed < 1.5f)
+            {
+                if (toastObj == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            // ── 페이드 아웃 0.3초 ──
+            elapsed = 0f;
+            float fadeTime = 0.3f;
+            while (elapsed < fadeTime)
+            {
+                if (toastObj == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float alpha = Mathf.Lerp(1f, 0f, elapsed / fadeTime);
+                bg.color    = new Color(0f, 0f, 0f, 0.78f * alpha);
+                label.color = new Color(1f, 1f, 1f, alpha);
+                shadow.effectColor = new Color(0f, 0f, 0f, 0.6f * alpha);
+                yield return null;
+            }
+
+            if (toastObj != null) Destroy(toastObj);
+            toastCoroutine = null;
         }
     }
 
