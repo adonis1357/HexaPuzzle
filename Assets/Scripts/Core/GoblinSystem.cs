@@ -1265,12 +1265,17 @@ namespace JewelsHexaPuzzle.Core
                     if (candidates.Count > 0)
                     {
                         var best = candidates[0];
-                        HexCoord newCenter = CalculateHeavyCenterPosition(best);
-                        Debug.LogWarning($"[GoblinSystem] → Heavy 겹침 해소: ({toMove.position}) → ({newCenter})");
+                        HexCoord newCoord = best[0]; // Heavy position = occupiedCoords[0]
+                        Debug.LogWarning($"[GoblinSystem] → Heavy 겹침 해소: ({toMove.position}) → ({newCoord})");
                         foreach (var c in best) occupiedCoords.Add(c);
                         toMove.occupiedCoords = best;
-                        toMove.position = newCenter;
-                        UpdateGoblinVisualPosition(toMove, newCenter);
+                        toMove.position = newCoord;
+                        // Heavy 비주얼은 3칸 중심(Vector2) 기준
+                        if (toMove.visualObject != null && hexGrid != null)
+                        {
+                            RectTransform rt = toMove.visualObject.GetComponent<RectTransform>();
+                            if (rt != null) rt.anchoredPosition = CalculateHeavyCenterPosition(best);
+                        }
                     }
                     else
                     {
