@@ -671,7 +671,7 @@ private void Update()
             // ★ Heavy 고블린 점유 좌표와 겹치는 클러스터 회전 차단
             if (GoblinSystem.Instance != null)
             {
-                var clusterCoords = new JewelsHexaPuzzle.Data.HexCoord[]
+                var clusterCoords = new HexCoord[]
                 {
                     currentCluster[0].Coord,
                     currentCluster[1].Coord,
