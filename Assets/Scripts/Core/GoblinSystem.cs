@@ -740,6 +740,20 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 살아있는 모든 Heavy 고블린 목록 반환
+        /// </summary>
+        public List<GoblinData> GetHeavyGoblins()
+        {
+            var result = new List<GoblinData>();
+            foreach (var g in goblins)
+            {
+                if (g.isAlive && g.isHeavy)
+                    result.Add(g);
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Heavy 고블린 소환 시 유효한 삼각형 3블록 위치를 탐색.
         /// flat-top 헥사에서 인접 3블록이 면으로 맞닿는 삼각형 구조 탐색.
         /// 3블록 모두 비어있고, 다른 고블린이 없는 위치만 반환.
@@ -962,7 +976,7 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>
         /// Heavy 고블린의 occupiedCoords를 delta만큼 이동
         /// </summary>
-        private void MoveHeavyOccupiedCoords(GoblinData goblin, HexCoord delta)
+        public void MoveHeavyOccupiedCoords(GoblinData goblin, HexCoord delta)
         {
             if (goblin.occupiedCoords == null) return;
             for (int i = 0; i < goblin.occupiedCoords.Count; i++)
@@ -976,7 +990,7 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>
         /// Heavy 고블린의 occupiedCoords 중심(무게중심) 위치를 월드 좌표로 계산
         /// </summary>
-        private Vector2 CalculateHeavyCenterPosition(List<HexCoord> coords)
+        public Vector2 CalculateHeavyCenterPosition(List<HexCoord> coords)
         {
             if (coords == null || coords.Count == 0) return Vector2.zero;
             Vector2 sum = Vector2.zero;
