@@ -3543,6 +3543,14 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 살아있는 모든 고블린 목록 반환 (읽기 전용 스냅샷)
+        /// </summary>
+        public List<GoblinData> GetAliveGoblins()
+        {
+            return goblins.Where(g => g.isAlive).ToList();
+        }
+
+        /// <summary>
         /// 특정 좌표에 있는 살아있는 고블린 반환 (없으면 null)
         /// </summary>
         public GoblinData GetGoblinAt(HexCoord coord)
