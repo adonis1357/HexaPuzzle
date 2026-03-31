@@ -1820,6 +1820,11 @@ namespace JewelsHexaPuzzle.Core
                         if (coord.r < rMin - 3 || coord.r > rMax)
                         { valid = false; break; }
 
+                        // 실제 블록 오브젝트가 존재하는 좌표인지 확인
+                        // (그리드 확장 영역이나 빈 슬롯은 후보에서 제외)
+                        if (!hexGrid.IsValidCoord(coord))
+                        { valid = false; break; }
+
                         // 자신의 좌표가 아니면서 다른 고블린이 점유 중이면 불가
                         if (!selfCoords.Contains(coord) && allOccupied.Contains(coord))
                         { valid = false; break; }
