@@ -1799,7 +1799,16 @@ private IEnumerator ProcessFalling()
                     {
                         if (anchoredSlots.Contains(i))
                             continue; // GravityWarper 고정 — 낙하에서 제외
-                        dataList.Add(block.Data.Clone());
+                        BlockData cloned = block.Data.Clone();
+                        // 안전장치: 적군 아닌 Gray 블록은 낙하 전에 랜덤 색으로 교정
+                        if (cloned.gemType == GemType.Gray && cloned.enemyType == EnemyType.None)
+                        {
+                            Debug.LogWarning($"[BRS] ProcessFalling: Gray/None 블록 교정 at col {kvp.Key}, slot {i} (coord {block.Coord})");
+                            cloned.gemType = GemTypeHelper.GetRandom();
+                            // 원본 블록도 교정
+                            block.Data.gemType = cloned.gemType;
+                        }
+                        dataList.Add(cloned);
                         sourceSlots.Add(i);
                     }
                 }
@@ -2121,7 +2130,15 @@ private IEnumerator ProcessFalling()
                 if (block != null && block.Data != null && block.Data.gemType != GemType.None)
                 {
                     if (anchoredSlots.Contains(i)) continue;
-                    dataList.Add(block.Data.Clone());
+                    BlockData cloned = block.Data.Clone();
+                    // 안전장치: 적군 아닌 Gray 블록은 낙하 전에 랜덤 색으로 교정
+                    if (cloned.gemType == GemType.Gray && cloned.enemyType == EnemyType.None)
+                    {
+                        Debug.LogWarning($"[BRS] ProcessFallingForColumn: Gray/None 블록 교정 at col {colKey}, slot {i} (coord {block.Coord})");
+                        cloned.gemType = GemTypeHelper.GetRandom();
+                        block.Data.gemType = cloned.gemType;
+                    }
+                    dataList.Add(cloned);
                     sourceSlots.Add(i);
                 }
             }

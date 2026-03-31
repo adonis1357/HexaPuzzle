@@ -1631,7 +1631,8 @@ namespace JewelsHexaPuzzle.Core
                             {
                                 block.Data.isShell = true;
                                 block.Data.isCracked = false;
-                                block.Data.gemType = GemType.Gray;
+                                // gemType은 유지 (Gray로 바꾸면 ProcessFalling에서 SetBlockData 안전장치 오류 발생)
+                                // 쉘 비주얼은 isShell 플래그로 HexBlock.UpdateVisuals()에서 처리
                                 block.UpdateVisuals();
                             }
                         }
