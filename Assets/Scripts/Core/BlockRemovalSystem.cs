@@ -1783,19 +1783,13 @@ private IEnumerator ProcessFalling()
 
                 // GravityWarper + Heavy 고블린 점유: 고정 슬롯 수집 (쉘 블록은 낙하 가능)
                 HashSet<int> anchoredSlots = new HashSet<int>();
-                HashSet<HexCoord> heavyOccupied = null;
-                if (GoblinSystem.Instance != null)
-                    heavyOccupied = GoblinSystem.Instance.GetHeavyOccupiedCoords();
                 for (int i = 0; i < column.Count; i++)
                 {
                     HexBlock block = column[i];
                     if (block != null && block.Data != null &&
                         block.Data.IsGravityAnchored())
                         anchoredSlots.Add(i);
-                    // Heavy 고블린 점유 좌표: 블록이 실제로 존재할 때만 고정 (삭제된 빈 칸은 낙하 허용)
-                    if (block != null && heavyOccupied != null && heavyOccupied.Contains(block.Coord)
-                        && block.Data != null && block.Data.gemType != GemType.None)
-                        anchoredSlots.Add(i);
+                    // Heavy 점유 블록은 고정하지 않음 — 일반 블록과 동일하게 낙하
                 }
 
                 for (int i = 0; i < column.Count; i++)
@@ -2112,19 +2106,13 @@ private IEnumerator ProcessFalling()
 
             // 고정 슬롯 수집 (GravityWarper + Heavy 고블린 점유)
             HashSet<int> anchoredSlots = new HashSet<int>();
-            HashSet<HexCoord> heavyOccupiedCol = null;
-            if (GoblinSystem.Instance != null)
-                heavyOccupiedCol = GoblinSystem.Instance.GetHeavyOccupiedCoords();
             for (int i = 0; i < column.Count; i++)
             {
                 HexBlock block = column[i];
                 if (block != null && block.Data != null &&
                     block.Data.IsGravityAnchored())
                     anchoredSlots.Add(i);
-                // Heavy 고블린 점유 좌표: 블록이 실제로 존재할 때만 고정 (삭제된 빈 칸은 낙하 허용)
-                if (block != null && heavyOccupiedCol != null && heavyOccupiedCol.Contains(block.Coord)
-                    && block.Data != null && block.Data.gemType != GemType.None)
-                    anchoredSlots.Add(i);
+                // Heavy 점유 블록은 고정하지 않음 — 일반 블록과 동일하게 낙하
             }
 
             for (int i = 0; i < column.Count; i++)
