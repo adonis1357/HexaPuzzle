@@ -2900,21 +2900,6 @@ namespace JewelsHexaPuzzle.Core
             goblin.visualObject = obj;
             goblin.goblinImage = img;
 
-            // 그림자 원형 Image (고블린 아래)
-            GameObject shadowObj = new GameObject("HeavyShadow");
-            shadowObj.transform.SetParent(obj.transform, false);
-            shadowObj.transform.SetAsFirstSibling(); // 고블린 뒤에 렌더링
-
-            RectTransform shadowRt = shadowObj.AddComponent<RectTransform>();
-            shadowRt.anchorMin = new Vector2(0.5f, 0.5f);
-            shadowRt.anchorMax = new Vector2(0.5f, 0.5f);
-            shadowRt.anchoredPosition = new Vector2(0, -size * 0.08f);
-            shadowRt.sizeDelta = new Vector2(size * 1.1f, size * 0.35f);
-
-            Image shadowImg = shadowObj.AddComponent<Image>();
-            shadowImg.color = new Color(0f, 0f, 0f, 0.3f);
-            shadowImg.raycastTarget = false;
-
             // HP바 생성 (큰 사이즈)
             CreateHPBar(goblin, obj.transform, size);
         }
