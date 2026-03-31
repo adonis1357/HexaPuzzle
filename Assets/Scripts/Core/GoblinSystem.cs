@@ -832,6 +832,134 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// Heavy 고블린 이동/점프 시 새 점유 좌표에 있는 일반 고블린을 밀어낸다.
+        /// heavyCoords 중심에서 가장 먼 인접 빈 칸으로 이동시킴.
+        /// </summary>
+        private void PushGoblinAway(GoblinData goblin, List<HexCoord> heavyCoords)
+        {
+            if (goblin == null || !goblin.isAlive || goblin.isHeavy) return;
+            if (heavyCoords == null || heavyCoords.Count == 0) return;
+
+            // Heavy 좌표 중심 계산
+            float centerQ = 0f, centerR = 0f;
+            foreach (var c in heavyCoords) { centerQ += c.q; centerR += c.r; }
+            centerQ /= heavyCoords.Count;
+            centerR /= heavyCoords.Count;
+
+            // 점유 좌표 수집 (다른 고블린 + Heavy의 새 좌표)
+            var occupiedCoords = new HashSet<HexCoord>();
+            foreach (var g in goblins.Where(g => g.isAlive && g != goblin))
+            {
+                if (g.isHeavy && g.occupiedCoords != null)
+                    foreach (var c in g.occupiedCoords) occupiedCoords.Add(c);
+                else
+                    occupiedCoords.Add(g.position);
+            }
+            foreach (var c in heavyCoords)
+                occupiedCoords.Add(c);
+
+            // 인접 6방향 중 비어있는 칸 탐색
+            var candidates = new List<(HexCoord coord, float dist)>();
+            int gridRadius = hexGrid.GridRadius;
+
+            foreach (var dir in HexCoord.Directions)
+            {
+                var candidate = goblin.position + dir;
+
+                // 범위 확인 (그리드 + 확장 3줄)
+                if (Mathf.Abs(candidate.q) > gridRadius) continue;
+                int rMin = hexGrid.GetTopR(candidate.q);
+                int rMax = Mathf.Min(gridRadius, -candidate.q + gridRadius);
+                if (candidate.r < rMin - 3 || candidate.r > rMax) continue;
+
+                // 점유 확인
+                if (occupiedCoords.Contains(candidate)) continue;
+
+                // 그리드 내부에 블록이 있으면 이동 불가
+                if (hexGrid.IsInsideGrid(candidate))
+                {
+                    HexBlock block = hexGrid.GetBlock(candidate);
+                    if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                        continue;
+                }
+
+                // Heavy 중심에서의 거리 계산 (멀수록 우선)
+                float dist = Mathf.Abs(candidate.q - centerQ) + Mathf.Abs(candidate.r - centerR)
+                           + Mathf.Abs((-candidate.q - candidate.r) - (-centerQ - centerR));
+                candidates.Add((candidate, dist));
+            }
+
+            HexCoord newPos;
+            if (candidates.Count > 0)
+            {
+                // 가장 먼 칸 선택
+                candidates.Sort((a, b) => b.dist.CompareTo(a.dist));
+                newPos = candidates[0].coord;
+            }
+            else
+            {
+                // 빈 칸 없으면 r이 작은 방향(소환 영역) 쪽으로 강제 이동
+                var upDirs = new HexCoord[]
+                {
+                    new HexCoord(0, -1),   // 바로 위
+                    new HexCoord(1, -1),   // 오른쪽 위
+                    new HexCoord(-1, 0)    // 왼쪽 위
+                };
+                HexCoord fallback = goblin.position;
+                foreach (var dir in upDirs)
+                {
+                    var candidate = goblin.position + dir;
+                    if (Mathf.Abs(candidate.q) > gridRadius) continue;
+                    int rMin = hexGrid.GetTopR(candidate.q);
+                    if (candidate.r < rMin - 3) continue;
+                    int rMax = Mathf.Min(gridRadius, -candidate.q + gridRadius);
+                    if (candidate.r > rMax) continue;
+                    if (!occupiedCoords.Contains(candidate))
+                    {
+                        fallback = candidate;
+                        break;
+                    }
+                }
+                newPos = fallback;
+            }
+
+            if (newPos == goblin.position) return; // 이동 불가
+
+            Debug.Log($"[GoblinSystem] 고블린 밀어내기: ({goblin.position}) → ({newPos})");
+            goblin.position = newPos;
+
+            // 비주얼 위치 즉시 갱신
+            if (goblin.visualObject != null && hexGrid != null)
+            {
+                RectTransform rt = goblin.visualObject.GetComponent<RectTransform>();
+                if (rt != null)
+                    rt.anchoredPosition = hexGrid.CalculateFlatTopHexPosition(newPos);
+            }
+        }
+
+        /// <summary>
+        /// Heavy 고블린의 새 좌표에 있는 일반 고블린들을 모두 밀어냄.
+        /// </summary>
+        private void PushGoblinsFromHeavyCoords(List<HexCoord> heavyCoords, GoblinData heavySelf)
+        {
+            if (heavyCoords == null || heavyCoords.Count == 0) return;
+            var heavySet = new HashSet<HexCoord>(heavyCoords);
+
+            // Heavy의 새 좌표에 있는 일반 고블린 찾기
+            var toPush = new List<GoblinData>();
+            foreach (var g in goblins)
+            {
+                if (!g.isAlive || g == heavySelf || g.isHeavy) continue;
+                if (heavySet.Contains(g.position))
+                    toPush.Add(g);
+            }
+
+            // 밀어내기 실행
+            foreach (var g in toPush)
+                PushGoblinAway(g, heavyCoords);
+        }
+
+        /// <summary>
         /// Heavy 고블린의 occupiedCoords를 delta만큼 이동
         /// </summary>
         private void MoveHeavyOccupiedCoords(GoblinData goblin, HexCoord delta)
@@ -1409,14 +1537,12 @@ namespace JewelsHexaPuzzle.Core
             var heavyGoblins = goblins.Where(g => g.isAlive && g.isHeavy).ToList();
             if (heavyGoblins.Count == 0) yield break;
 
-            // 점유 좌표 전체 수집 (다른 고블린 포함)
+            // 점유 좌표 수집: Heavy 고블린만 (일반 고블린은 밀어내기 가능하므로 제외)
             var allOccupied = new HashSet<HexCoord>();
-            foreach (var g in goblins.Where(g => g.isAlive))
+            foreach (var g in goblins.Where(g => g.isAlive && g.isHeavy))
             {
-                if (g.isHeavy && g.occupiedCoords != null)
+                if (g.occupiedCoords != null)
                     foreach (var c in g.occupiedCoords) allOccupied.Add(c);
-                else
-                    allOccupied.Add(g.position);
             }
 
             foreach (var heavy in heavyGoblins)
@@ -1498,6 +1624,9 @@ namespace JewelsHexaPuzzle.Core
                     }
                 }
 
+                // 이동 전: 새 좌표에 있는 일반 고블린 밀어내기
+                PushGoblinsFromHeavyCoords(newCoords, heavy);
+
                 // occupiedCoords에서 기존 점유 해제
                 foreach (var c in heavy.occupiedCoords)
                     allOccupied.Remove(c);
@@ -1550,6 +1679,9 @@ namespace JewelsHexaPuzzle.Core
             // 기존 점유 해제
             foreach (var c in goblin.occupiedCoords)
                 allOccupied.Remove(c);
+
+            // 착지 전: 착지 예정 좌표에 있는 일반 고블린 밀어내기
+            PushGoblinsFromHeavyCoords(targetCoords, goblin);
 
             // 점프 애니메이션
             RectTransform rt = goblin.visualObject != null ? goblin.visualObject.GetComponent<RectTransform>() : null;
