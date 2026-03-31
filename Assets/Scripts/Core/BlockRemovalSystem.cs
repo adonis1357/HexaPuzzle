@@ -3406,10 +3406,12 @@ public void TriggerBigBang()
                     }
                 }
 
-                // 좌표별 데미지 누적 (같은 몬스터가 여러 블록에 인접하면 각 1씩 누적)
-                Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
-                // 방패 내구도 감소 좌표 (일반 블록 직격만 해당)
-                HashSet<HexCoord> shieldDamageCoords = new HashSet<HexCoord>();
+                // 고블린별 데미지 누적
+                // — 같은 블록 제거로 같은 몬스터가 여러 번 카운트되는 경우(헤비급 다중 칸 포함) 1회만 적용
+                // — 서로 다른 블록 제거로 같은 몬스터에 각각 인접하면 각각 1씩 누적
+                Dictionary<GoblinData, int> goblinDamageMap = new Dictionary<GoblinData, int>();
+                // 방패 내구도 감소 대상 고블린 (일반 블록 직격만 해당)
+                HashSet<GoblinData> shieldDamageGoblins = new HashSet<GoblinData>();
 
                 foreach (var block in allRemovedBlocks)
                 {
@@ -3417,53 +3419,65 @@ public void TriggerBigBang()
                     HexCoord blockCoord = block.Coord;
                     bool isCracked = block.Data.isCracked || block.Data.isShell;
 
+                    // 이 블록 제거로 이미 데미지를 받은 몬스터 추적 (1블록 → 1몬스터 최대 1 데미지)
+                    HashSet<GoblinData> hitByThisBlock = new HashSet<GoblinData>();
+
                     // === 규칙 1: 직격 — 매칭된 블록 위치에 몬스터가 있으면 ===
                     // 일반 블록: 본체 1 + 방패 내구도 1
                     // 깨진 블록: 본체 1 + 방패 내구도 감소 없음
-                    if (damageMap.ContainsKey(blockCoord))
-                        damageMap[blockCoord] += 1;
-                    else
-                        damageMap[blockCoord] = 1;
+                    var directGoblin = GoblinSystem.Instance.GetGoblinAt(blockCoord);
+                    if (directGoblin != null && !hitByThisBlock.Contains(directGoblin))
+                    {
+                        hitByThisBlock.Add(directGoblin);
+                        if (goblinDamageMap.ContainsKey(directGoblin))
+                            goblinDamageMap[directGoblin] += 1;
+                        else
+                            goblinDamageMap[directGoblin] = 1;
 
-                    if (!isCracked)
-                        shieldDamageCoords.Add(blockCoord); // 일반 블록 직격만 방패 내구도 감소
+                        if (!isCracked)
+                            shieldDamageGoblins.Add(directGoblin); // 일반 블록 직격만 방패 내구도 감소
+                    }
 
                     // === 규칙 2: 인접 — 일반 블록만 인접 6방향 데미지 ===
                     if (!isCracked)
                     {
                         foreach (var neighbor in blockCoord.GetAllNeighbors())
                         {
-                            if (damageMap.ContainsKey(neighbor))
-                                damageMap[neighbor] += 1;
-                            else
-                                damageMap[neighbor] = 1;
-                            // 인접 데미지는 방패 내구도 감소 없음 (shieldDamageCoords에 추가 안 함)
+                            var adjGoblin = GoblinSystem.Instance.GetGoblinAt(neighbor);
+                            if (adjGoblin != null && !hitByThisBlock.Contains(adjGoblin))
+                            {
+                                hitByThisBlock.Add(adjGoblin);
+                                if (goblinDamageMap.ContainsKey(adjGoblin))
+                                    goblinDamageMap[adjGoblin] += 1;
+                                else
+                                    goblinDamageMap[adjGoblin] = 1;
+                                // 인접 데미지는 방패 내구도 감소 없음
+                            }
                         }
                     }
                     // 깨진 블록: 인접 데미지 없음 (블록 제거만 처리)
                 }
 
                 // === 데미지 적용 ===
-                foreach (var kvp in damageMap)
+                foreach (var kvp in goblinDamageMap)
                 {
-                    HexCoord coord = kvp.Key;
+                    GoblinData goblin = kvp.Key;
                     int totalDmg = kvp.Value;
 
-                    var goblin = GoblinSystem.Instance.GetGoblinAt(coord);
-                    if (goblin == null) continue;
+                    if (goblin == null || !goblin.isAlive) continue;
 
                     // 방패 고블린: 방패 내구도가 모두 깎이기 전까지 본체 HP 보호
                     if (goblin.isShielded)
                     {
                         // 일반 블록 직격 위치면 방패 내구도 1 감소
-                        if (shieldDamageCoords.Contains(coord))
-                            GoblinSystem.Instance.ApplyShieldDamagePublic(coord, 1);
+                        if (shieldDamageGoblins.Contains(goblin))
+                            GoblinSystem.Instance.ApplyShieldDamagePublic(goblin.position, 1);
                         // 방패 활성 중에는 본체 데미지 차단
                         continue;
                     }
 
                     // 일반 몬스터 / 방패 파괴된 고블린: 본체에 데미지
-                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, totalDmg);
+                    GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, totalDmg);
                 }
             }
 
