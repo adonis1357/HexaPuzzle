@@ -1792,8 +1792,9 @@ private IEnumerator ProcessFalling()
                     if (block != null && block.Data != null &&
                         block.Data.IsGravityAnchored())
                         anchoredSlots.Add(i);
-                    // Heavy 고블린 점유 좌표는 빈 칸으로 취급하지 않음
-                    if (block != null && heavyOccupied != null && heavyOccupied.Contains(block.Coord))
+                    // Heavy 고블린 점유 좌표: 블록이 실제로 존재할 때만 고정 (삭제된 빈 칸은 낙하 허용)
+                    if (block != null && heavyOccupied != null && heavyOccupied.Contains(block.Coord)
+                        && block.Data != null && block.Data.gemType != GemType.None)
                         anchoredSlots.Add(i);
                 }
 
@@ -1995,6 +1996,81 @@ private IEnumerator ProcessFalling()
             {
                 yield return StartCoroutine(GoblinSystem.Instance.ProcessPendingFallDeaths());
             }
+
+            // ★ Heavy 고블린 낙하 체크: 점유 블록이 삭제되어 아래가 비었으면 자동 하강
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                ProcessHeavyGoblinFall();
+            }
+        }
+
+        /// <summary>
+        /// Heavy 고블린 낙하 처리: 점유 블록이 삭제되어 아래가 모두 빈 칸이면
+        /// Heavy 전체(3블록)를 아래로 이동. 더 이상 내려갈 수 없을 때까지 반복.
+        /// </summary>
+        private void ProcessHeavyGoblinFall()
+        {
+            if (GoblinSystem.Instance == null || hexGrid == null) return;
+
+            List<GoblinData> heavyGoblins = GoblinSystem.Instance.GetHeavyGoblins();
+            if (heavyGoblins == null || heavyGoblins.Count == 0) return;
+
+            foreach (var goblin in heavyGoblins)
+            {
+                if (goblin.occupiedCoords == null || goblin.occupiedCoords.Count == 0) continue;
+
+                // 더 이상 내려갈 수 없을 때까지 반복
+                bool moved = true;
+                while (moved)
+                {
+                    moved = false;
+
+                    // 각 점유 좌표의 아래(r+1) 위치 확인
+                    bool canFall = true;
+                    foreach (var coord in goblin.occupiedCoords)
+                    {
+                        HexCoord below = new HexCoord(coord.q, coord.r + 1);
+
+                        // 아래 좌표가 자기 자신의 점유 좌표면 이동 가능
+                        if (goblin.occupiedCoords.Contains(below))
+                            continue;
+
+                        // 그리드 유효 좌표인지 확인
+                        if (!hexGrid.IsValidCoord(below))
+                        {
+                            canFall = false;
+                            break;
+                        }
+
+                        // 해당 좌표의 블록이 빈 칸인지 확인
+                        HexBlock blockBelow = hexGrid.GetBlock(below);
+                        if (blockBelow == null || blockBelow.Data == null || blockBelow.Data.gemType != GemType.None)
+                        {
+                            canFall = false;
+                            break;
+                        }
+                    }
+
+                    if (canFall)
+                    {
+                        // occupiedCoords 전체를 r+1로 이동
+                        HexCoord delta = new HexCoord(0, 1);
+                        GoblinSystem.Instance.MoveHeavyOccupiedCoords(goblin, delta);
+                        goblin.position = new HexCoord(goblin.position.q, goblin.position.r + 1);
+
+                        // 비주얼 위치 갱신
+                        Vector2 newCenter = GoblinSystem.Instance.CalculateHeavyCenterPosition(goblin.occupiedCoords);
+                        if (goblin.visualObject != null)
+                        {
+                            RectTransform rt = goblin.visualObject.GetComponent<RectTransform>();
+                            if (rt != null)
+                                rt.anchoredPosition = newCenter;
+                        }
+
+                        moved = true;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -2045,7 +2121,9 @@ private IEnumerator ProcessFalling()
                 if (block != null && block.Data != null &&
                     block.Data.IsGravityAnchored())
                     anchoredSlots.Add(i);
-                if (block != null && heavyOccupiedCol != null && heavyOccupiedCol.Contains(block.Coord))
+                // Heavy 고블린 점유 좌표: 블록이 실제로 존재할 때만 고정 (삭제된 빈 칸은 낙하 허용)
+                if (block != null && heavyOccupiedCol != null && heavyOccupiedCol.Contains(block.Coord)
+                    && block.Data != null && block.Data.gemType != GemType.None)
                     anchoredSlots.Add(i);
             }
 
