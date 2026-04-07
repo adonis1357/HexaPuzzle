@@ -60,10 +60,15 @@ namespace JewelsHexaPuzzle.Items
         private static readonly Color BtnActiveColor = new Color(0.9f, 0.6f, 0.2f, 1f);
 
         // 라인 비주얼 설정
-        private const float LINE_WIDTH = 6f;
-        private const float LINE_ALPHA = 0.7f;
-        private const float HIGHLIGHT_ALPHA = 0.4f;
-        private const float HIGHLIGHT_SIZE = 70f;
+        private const float LINE_WIDTH = 8f;
+        private static readonly Color LINE_COLOR = new Color(1f, 1f, 1f, 0.9f);
+        private const float OUTLINE_THICKNESS = 4f;
+        private static readonly Color OUTLINE_COLOR = Color.white;
+
+        // 통합 아웃라인 오브젝트 풀
+        private List<GameObject> outlineEdges = new List<GameObject>();
+        // flat-top hex 꼭짓점 캐시 (hexSize 기준)
+        private Vector2[] hexVerticesLocal;
 
         // 블록 감지 범위 배율 (한붓그리기 활성 시 판정 영역 확장)
         private const float BLOCK_DETECT_SCALE = 2.0f;
@@ -253,6 +258,13 @@ namespace JewelsHexaPuzzle.Items
             }
             blockHighlights.Clear();
 
+            // 아웃라인 변 제거
+            foreach (var edge in outlineEdges)
+            {
+                if (edge != null) Destroy(edge);
+            }
+            outlineEdges.Clear();
+
             // 체인 블록 하이라이트 해제
             foreach (var block in chain)
             {
@@ -260,24 +272,92 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
-        private void CreateBlockHighlight(HexBlock block)
+        /// <summary>
+        /// flat-top hex 꼭짓점 캐시를 초기화합니다.
+        /// v[i] = (hexSize * cos(60°*i), hexSize * sin(60°*i))
+        /// </summary>
+        private void EnsureHexVertices()
         {
-            if (block == null) return;
+            if (hexVerticesLocal != null) return;
+            float s = hexGrid != null ? hexGrid.HexSize : 50f;
+            hexVerticesLocal = new Vector2[6];
+            for (int i = 0; i < 6; i++)
+            {
+                float angle = Mathf.Deg2Rad * 60f * i;
+                hexVerticesLocal[i] = new Vector2(s * Mathf.Cos(angle), s * Mathf.Sin(angle));
+            }
+        }
 
-            Color gemColor = GemColors.GetColor(block.Data.gemType);
+        /// <summary>
+        /// 체인 블록의 통합 아웃라인을 재계산합니다.
+        /// 인접 체인 블록 사이의 공유 변은 그리지 않아 하나의 윤곽선이 됩니다.
+        /// 방향 d에 대응하는 hex 변: v[(d+5)%6] ~ v[d]
+        /// </summary>
+        private void UpdateChainOutline()
+        {
+            // 기존 아웃라인 정리
+            foreach (var obj in outlineEdges)
+                if (obj != null) Destroy(obj);
+            outlineEdges.Clear();
 
-            GameObject hl = new GameObject("LineDrawHL");
-            hl.transform.SetParent(block.transform, false);
-            RectTransform hlRt = hl.AddComponent<RectTransform>();
-            hlRt.anchoredPosition = Vector2.zero;
-            hlRt.sizeDelta = new Vector2(HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+            if (chain.Count == 0 || effectParent == null) return;
+            EnsureHexVertices();
 
-            Image hlImg = hl.AddComponent<Image>();
-            hlImg.color = new Color(gemColor.r, gemColor.g, gemColor.b, HIGHLIGHT_ALPHA);
-            hlImg.raycastTarget = false;
+            // 체인 블록 좌표 HashSet
+            HashSet<HexCoord> chainSet = new HashSet<HexCoord>();
+            Dictionary<HexCoord, HexBlock> coordToBlock = new Dictionary<HexCoord, HexBlock>();
+            foreach (var b in chain)
+            {
+                if (b == null) continue;
+                chainSet.Add(b.Coord);
+                coordToBlock[b.Coord] = b;
+            }
 
-            blockHighlights.Add(hl);
-            block.SetHighlighted(true);
+            foreach (var block in chain)
+            {
+                if (block == null) continue;
+                block.SetHighlighted(true);
+
+                var neighbors = block.Coord.GetAllNeighbors();
+                for (int d = 0; d < 6; d++)
+                {
+                    // 이웃이 체인에 포함되어 있으면 공유 변 → 건너뜀
+                    if (chainSet.Contains(neighbors[d])) continue;
+
+                    // 외부 변 그리기: v[(d+5)%6] ~ v[d]
+                    int vi1 = (d + 5) % 6;
+                    int vi2 = d;
+
+                    Vector3 worldV1 = block.transform.TransformPoint(hexVerticesLocal[vi1]);
+                    Vector3 worldV2 = block.transform.TransformPoint(hexVerticesLocal[vi2]);
+
+                    DrawOutlineEdge(worldV1, worldV2);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 아웃라인 변 하나를 흰색 Image로 그립니다.
+        /// </summary>
+        private void DrawOutlineEdge(Vector3 worldV1, Vector3 worldV2)
+        {
+            Vector3 mid = (worldV1 + worldV2) / 2f;
+            float length = Vector3.Distance(worldV1, worldV2);
+            float angle = Mathf.Atan2(worldV2.y - worldV1.y, worldV2.x - worldV1.x) * Mathf.Rad2Deg;
+
+            GameObject edge = new GameObject("OutlineEdge");
+            edge.transform.SetParent(effectParent, false);
+            edge.transform.position = mid;
+
+            Image img = edge.AddComponent<Image>();
+            img.color = OUTLINE_COLOR;
+            img.raycastTarget = false;
+
+            RectTransform rt = edge.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(length + OUTLINE_THICKNESS, OUTLINE_THICKNESS);
+            rt.localRotation = Quaternion.Euler(0, 0, angle);
+
+            outlineEdges.Add(edge);
         }
 
         private void CreateLineSegment(HexBlock fromBlock, HexBlock toBlock)
@@ -295,14 +375,12 @@ namespace JewelsHexaPuzzle.Items
             float distance = Vector3.Distance(fromPos, toPos);
             float angle = Mathf.Atan2(toPos.y - fromPos.y, toPos.x - fromPos.x) * Mathf.Rad2Deg;
 
-            Color gemColor = GemColors.GetColor(chainColor);
-
             GameObject line = new GameObject("LineDrawSeg");
             line.transform.SetParent(effectParent, false);
             line.transform.position = midPos;
 
             Image lineImg = line.AddComponent<Image>();
-            lineImg.color = new Color(gemColor.r, gemColor.g, gemColor.b, LINE_ALPHA);
+            lineImg.color = LINE_COLOR;
             lineImg.raycastTarget = false;
 
             RectTransform lineRt = line.GetComponent<RectTransform>();
@@ -484,7 +562,7 @@ namespace JewelsHexaPuzzle.Items
             chain.Add(block);
             isDrawing = true;
 
-            CreateBlockHighlight(block);
+            UpdateChainOutline();
 
             Debug.Log($"[LineDrawItem] Chain started: {block.Coord}, color={chainColor}");
         }
@@ -510,6 +588,7 @@ namespace JewelsHexaPuzzle.Items
                 removedBlock.SetHighlighted(false);
                 chain.RemoveAt(chain.Count - 1);
                 RemoveLastChainVisual();
+                UpdateChainOutline();
                 return;
             }
 
@@ -542,8 +621,8 @@ namespace JewelsHexaPuzzle.Items
                 // 체인에 추가
                 chainColors.Add(blockGem);
                 chain.Add(hoverBlock);
-                CreateBlockHighlight(hoverBlock);
                 CreateLineSegment(lastBlock, hoverBlock);
+                UpdateChainOutline();
 
                 // 사운드 피드백
                 if (AudioManager.Instance != null)
@@ -577,6 +656,8 @@ namespace JewelsHexaPuzzle.Items
                 if (seg != null) seg.SetActive(active);
             foreach (var hl in blockHighlights)
                 if (hl != null) hl.SetActive(active);
+            foreach (var edge in outlineEdges)
+                if (edge != null) edge.SetActive(active);
         }
 
         /// <summary>라인 취소: 미리보기 제거, UseReady 유지, 게이지 소모 없음</summary>
@@ -665,7 +746,7 @@ namespace JewelsHexaPuzzle.Items
             int lineLevel = LineGauge.Instance != null ? LineGauge.Instance.GetUseReadyLevel() : 0;
             if (LineGauge.Instance != null)
             {
-                LineGauge.Instance.ConsumeGauge(lineLevel);
+                LineGauge.Instance.ConsumeGauge(lineLevel + 1); // ★ 레벨0=1소모, 레벨1=2소모 (기존 lineLevel=0일 때 소모 안 되는 버그 수정)
                 LineGauge.Instance.ForceRefreshUI();
             }
 
@@ -709,7 +790,65 @@ namespace JewelsHexaPuzzle.Items
                 yield return new WaitForSeconds(0.03f);
             }
 
-            // 3. 미션 보고 + 블록 데이터 클리어 (비주얼 애니메이션 후)
+            // 3. 인접 몬스터 데미지 (블록 데이터 클리어 전에 적용)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                Dictionary<GoblinData, int> goblinDmgMap = new Dictionary<GoblinData, int>();
+                HashSet<GoblinData> shieldDmgGoblins = new HashSet<GoblinData>();
+
+                foreach (var block in blocksToRemove)
+                {
+                    if (block == null || block.Data == null) continue;
+                    HexCoord blockCoord = block.Coord;
+                    bool isCracked = block.Data.isCracked || block.Data.isShell;
+                    HashSet<GoblinData> hitByThis = new HashSet<GoblinData>();
+
+                    // 직격: 블록 위치에 몬스터가 있으면 1 데미지
+                    var directGoblin = GoblinSystem.Instance.GetGoblinAt(blockCoord);
+                    if (directGoblin != null && !hitByThis.Contains(directGoblin))
+                    {
+                        hitByThis.Add(directGoblin);
+                        if (goblinDmgMap.ContainsKey(directGoblin)) goblinDmgMap[directGoblin] += 1;
+                        else goblinDmgMap[directGoblin] = 1;
+                        if (!isCracked) shieldDmgGoblins.Add(directGoblin);
+                    }
+
+                    // 인접: 일반 블록만 인접 6방향 데미지
+                    if (!isCracked)
+                    {
+                        foreach (var neighbor in blockCoord.GetAllNeighbors())
+                        {
+                            var adjGoblin = GoblinSystem.Instance.GetGoblinAt(neighbor);
+                            if (adjGoblin != null && !hitByThis.Contains(adjGoblin))
+                            {
+                                hitByThis.Add(adjGoblin);
+                                if (goblinDmgMap.ContainsKey(adjGoblin)) goblinDmgMap[adjGoblin] += 1;
+                                else goblinDmgMap[adjGoblin] = 1;
+                            }
+                        }
+                    }
+                }
+
+                // 데미지 적용
+                foreach (var kvp in goblinDmgMap)
+                {
+                    GoblinData goblin = kvp.Key;
+                    if (goblin == null || !goblin.isAlive) continue;
+
+                    if (goblin.isShielded)
+                    {
+                        if (shieldDmgGoblins.Contains(goblin))
+                            GoblinSystem.Instance.ApplyShieldDamagePublic(goblin.position, 1);
+                        else
+                            GoblinSystem.Instance.ShowShieldBlockPopup(goblin);
+                        continue;
+                    }
+
+                    GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, kvp.Value);
+                }
+            }
+
+            // 3b. 미션 보고 + 블록 데이터 클리어 (비주얼 애니메이션 후)
             yield return new WaitForSeconds(0.1f);
             foreach (var block in blocksToRemove)
             {

@@ -139,13 +139,17 @@ namespace JewelsHexaPuzzle.Managers
                 return; // 규칙2 발동 시 규칙3은 스킵
             }
 
-            // 규칙3: 필드 3마리 이하이고 잔여 있으면 1~3마리 추가
+            // 규칙3: 필드 3마리 미만이면 소환 수량 증가
+            // ★ 필드 몬스터가 적을수록 더 많이 소환 (원래 소환 수량 초과 가능, 미션 상한 준수)
             int aliveCount = GoblinSystem.Instance.GetAliveGoblinCount();
-            if (aliveCount <= 3 && RemainingCount > 0)
+            if (aliveCount < 3 && RemainingCount > 0)
             {
-                int extra = Random.Range(1, 4); // 1~3
-                extra = Mathf.Min(extra, RemainingCount);
-                Debug.Log($"[MonsterSpawnController] 규칙3 트리거: 필드={aliveCount}마리, 추가 {extra}마리 소환");
+                // 부족한 수(3 - alive)에 비례하여 증가: 0마리→5~7, 1마리→3~5, 2마리→2~3
+                int deficit = 3 - aliveCount;
+                int baseExtra = deficit * 2;
+                int extra = baseExtra + Random.Range(0, deficit + 1);
+                extra = Mathf.Min(extra, RemainingCount); // ★ 절대 미션 상한 초과 금지
+                Debug.Log($"[MonsterSpawnController] 규칙3 트리거: 필드={aliveCount}마리(부족{deficit}), 추가 {extra}마리 소환 (잔여={RemainingCount})");
                 StartCoroutine(SpawnBatch(extra));
             }
         }

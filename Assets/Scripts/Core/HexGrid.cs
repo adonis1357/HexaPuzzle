@@ -64,6 +64,19 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
+        /// 블록 필드 + 소환 영역 전체를 포함하는 게임 필드 범위 체크.
+        /// 드릴 쿠션 반사 등에서 "당구대" 경계 판별에 사용.
+        /// </summary>
+        public bool IsInGameField(HexCoord coord)
+        {
+            if (blocks.ContainsKey(coord)) return true;
+            if (Mathf.Abs(coord.q) > gridRadius) return false;
+            int rMin = GetTopR(coord.q);
+            if (coord.r >= rMin - 3 && coord.r < rMin) return true;
+            return false;
+        }
+
+        /// <summary>
         /// gridContainer의 Transform 반환 (고블린 등 외부 오브젝트 배치용)
         /// </summary>
         public Transform GridContainer => gridContainer;
@@ -283,6 +296,17 @@ namespace JewelsHexaPuzzle.Core
             float y = hexSize * Mathf.Sqrt(3f) * (coord.r + coord.q / 2f);
 
             return new Vector2(x, -y);  // Y 반전
+        }
+
+        /// <summary>
+        /// 헥스 좌표를 월드 좌표로 변환.
+        /// CalculateFlatTopHexPosition(로컬/앵커 좌표)를 gridContainer의 Transform을 통해
+        /// 월드 좌표로 변환합니다. 블록이 없는 소환 영역 좌표도 정확한 월드 위치를 반환.
+        /// </summary>
+        public Vector3 HexToWorldPosition(HexCoord coord)
+        {
+            Vector2 local = CalculateFlatTopHexPosition(coord);
+            return gridContainer.TransformPoint(new Vector3(local.x, local.y, 0f));
         }
 
         public void PopulateWithRandomGems()

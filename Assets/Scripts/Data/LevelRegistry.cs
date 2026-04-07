@@ -130,7 +130,7 @@ namespace JewelsHexaPuzzle.Data
             Register(new LevelData
             {
                 levelId = 11,
-                levelName = "STAGE 11",
+                levelName = "LEVEL 11",
                 subtitle = "드릴 튜토리얼",
                 gameMode = GameMode.Stage,
                 difficultyType = DifficultyType.Easy,
@@ -161,6 +161,9 @@ namespace JewelsHexaPuzzle.Data
 
             // --- 레벨 61~70: Stage 모드 (거인의 둥지 — 헤비급 고블린 등장) ---
             RegisterStages61To70();
+
+            // --- 레벨 71~80: Stage 모드 (마법사의 탑 — 마법사 고블린 등장) ---
+            RegisterStages71To80();
 
             // --- 마지막 레벨: Infinite 모드 (무한 도전) — 항상 스테이지 레벨 뒤에 배치 ---
             RegisterInfiniteLevel();
@@ -256,7 +259,7 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = DifficultyType.Easy,
@@ -306,7 +309,7 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = DifficultyType.Normal,
@@ -358,7 +361,7 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = DifficultyType.Normal,
@@ -420,7 +423,7 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = DifficultyType.Hard,
@@ -509,7 +512,7 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = diffType,
@@ -574,7 +577,7 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = diffType,
@@ -642,7 +645,75 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 71~80 등록 (마법사의 탑 — 마법사 고블린 등장)
+        /// </summary>
+        private static void RegisterStages71To80()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.35f, 0.18f, 0.55f),  // 71: 마법사의 탑 보라
+                new Color(0.38f, 0.16f, 0.58f),  // 72
+                new Color(0.40f, 0.14f, 0.60f),  // 73
+                new Color(0.42f, 0.12f, 0.63f),  // 74
+                new Color(0.45f, 0.10f, 0.65f),  // 75
+                new Color(0.40f, 0.15f, 0.60f),  // 76
+                new Color(0.38f, 0.12f, 0.62f),  // 77
+                new Color(0.35f, 0.10f, 0.65f),  // 78
+                new Color(0.32f, 0.08f, 0.68f),  // 79
+                new Color(0.28f, 0.06f, 0.72f)   // 80: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "마법사1 + 헤비1 + 기본3 + 갑옷2 + 힐러1",                          // 71: Easy
+                "마법사1 + 헤비1 + 폭탄3 + 갑옷2 + 힐러1 + 방패1",                  // 72: Normal
+                "마법사1 + 헤비1 + 폭탄3 + 방패2 + 힐러2",                          // 73: Normal
+                "마법사2 + 헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1",                  // 74: Hard
+                "마법사2 + 헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2",                  // 75: Hard
+                "마법사1 + 헤비1 + 기본3 + 갑옷2 + 궁수2 + 폭탄2 + 힐러1",          // 76: Easy
+                "마법사2 + 헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1",                  // 77: Normal
+                "마법사2 + 헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1",                  // 78: Normal
+                "마법사2 + 헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러2",                  // 79: Hard
+                "★ 마법사3 + 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2"         // 80: Hard
+            };
+
+            for (int i = 71; i <= 80; i++)
+            {
+                int idx = i - 71;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
                     difficultyType = diffType,

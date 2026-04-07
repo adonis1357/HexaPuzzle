@@ -42,6 +42,16 @@ namespace JewelsHexaPuzzle.Data
         DrillDamage2 = 501,    // 드릴 몬스터 데미지 +2
         DrillDamage3 = 502,    // 드릴 몬스터 데미지 +3
 
+        // === 드릴 쿠션 반사 스킬 체인 ===
+        DrillCushion1 = 550,       // 드릴 쿠션 1회
+        DrillCushion2 = 551,       // 드릴 쿠션 2회
+        DrillCushion3 = 552,       // 드릴 쿠션 3회
+
+        // === 드론 타겟 데미지 스킬 체인 ===
+        DroneTargetDamage1 = 600,  // 드론 타겟 데미지 +1
+        DroneTargetDamage2 = 601,  // 드론 타겟 데미지 +2
+        DroneTargetDamage3 = 602,  // 드론 타겟 데미지 +3
+
         // === 망치 아이템 레벨 체인 ===
         HammerLevel1 = 700,
         HammerLevel2 = 701,
@@ -167,8 +177,26 @@ namespace JewelsHexaPuzzle.Data
             foreach (var s in all)
             {
                 int v = (int)s.skillType;
-                if (v >= 500 && v <= 599) result.Add(s);
+                if (v >= 500 && v <= 549) result.Add(s);
             }
+            return result;
+        }
+
+        /// <summary>드릴 쿠션 스킬만 반환</summary>
+        public static List<SkillNodeData> GetDrillCushionSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 550 && v <= 599) result.Add(s); }
+            return result;
+        }
+
+        /// <summary>드론 타겟 데미지 스킬만 반환</summary>
+        public static List<SkillNodeData> GetDroneTargetDamageSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 600 && v <= 699) result.Add(s); }
             return result;
         }
 
@@ -418,6 +446,73 @@ namespace JewelsHexaPuzzle.Data
                     prerequisite = SkillType.DrillDamage2,
                     nodeColor = new Color(0.1f, 0.45f, 0.95f),
                     iconSymbol = "⇉⇉⇉",
+                    drillMoveRange = 3
+                },
+
+                // === 드릴 쿠션 반사 스킬 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.DrillCushion1, skillName = "드릴 쿠션 I",
+                    description = "드릴이 경계에서 1회 반사합니다.",
+                    usageDescription = "드릴 발사 시 경계 도달 시 자동 반사 1회",
+                    skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
+                    nodeColor = new Color(0.4f, 0.8f, 1f), iconSymbol = "↩", drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.DrillCushion2, skillName = "드릴 쿠션 II",
+                    description = "드릴이 경계에서 2회 반사합니다.",
+                    usageDescription = "드릴 발사 시 경계 도달 시 자동 반사 최대 2회",
+                    skillPointCost = 2, goldCost = 500, prerequisite = SkillType.DrillCushion1,
+                    nodeColor = new Color(0.3f, 0.7f, 1f), iconSymbol = "↩↩", drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.DrillCushion3, skillName = "드릴 쿠션 III",
+                    description = "드릴이 경계에서 3회 반사합니다.",
+                    usageDescription = "드릴 발사 시 경계 도달 시 자동 반사 최대 3회",
+                    skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.DrillCushion2,
+                    nodeColor = new Color(0.2f, 0.6f, 1f), iconSymbol = "↩↩↩", drillMoveRange = 3
+                },
+
+                // === 드론 타겟 데미지 스킬 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.DroneTargetDamage1,
+                    skillName = "드론 데미지+1",
+                    description = "드론 타겟 공격 시 데미지가 1 추가됩니다.",
+                    usageDescription = "드론 타격 시 기본 1 + 추가 1 = 총 2 대미지",
+                    skillPointCost = 1,
+                    goldCost = 200,
+                    prerequisite = SkillType.None,
+                    nodeColor = new Color(0.3f, 0.7f, 0.95f),
+                    iconSymbol = "✈",
+                    drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.DroneTargetDamage2,
+                    skillName = "드론 데미지+2",
+                    description = "드론 타겟 공격 시 데미지가 2 추가됩니다.",
+                    usageDescription = "드론 타격 시 기본 1 + 추가 2 = 총 3 대미지",
+                    skillPointCost = 2,
+                    goldCost = 500,
+                    prerequisite = SkillType.DroneTargetDamage1,
+                    nodeColor = new Color(0.2f, 0.55f, 0.9f),
+                    iconSymbol = "✈✈",
+                    drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.DroneTargetDamage3,
+                    skillName = "드론 데미지+3",
+                    description = "드론 타겟 공격 시 데미지가 3 추가됩니다.",
+                    usageDescription = "드론 타격 시 기본 1 + 추가 3 = 총 4 대미지",
+                    skillPointCost = 3,
+                    goldCost = 1000,
+                    prerequisite = SkillType.DroneTargetDamage2,
+                    nodeColor = new Color(0.1f, 0.4f, 0.85f),
+                    iconSymbol = "✈✈✈",
                     drillMoveRange = 3
                 },
 

@@ -315,14 +315,12 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
                 merged.score = CalculateScore(merged.blocks.Count);
 
-                // 특수 블록 우선순위: 도넛(7+링) > 드론(5+나비) > 폭탄(5+뭉침) > 드릴(4)
-                // 드론: 중앙 + 4이웃(2쌍 분리), 폭탄: 중앙 + 4이웃(뭉침)
-                // 드론이 폭탄보다 먼저 체크 (나비 패턴이 뭉침 조건도 만족할 수 있으므로)
+                // 특수 블록 우선순위: 드론(5+나비) > 폭탄(5+뭉침) > 드릴(4)
+                // ★ 도넛(Rainbow) 생성 제거됨 — 7+매칭도 드론/폭탄으로 처리
                 if (merged.blocks.Count >= 7)
                 {
-                    if (!CheckForDonutPattern(merged))
-                        if (!CheckForDronePattern(merged))
-                            CheckForBombPattern(merged);
+                    if (!CheckForDronePattern(merged))
+                        CheckForBombPattern(merged);
                 }
                 else if (merged.blocks.Count >= 5)
                 {
@@ -406,71 +404,7 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
 
 
-        private bool CheckForDonutPattern(MatchGroup group)
-        {
-            if (group.blocks.Count < 7) return false;
-
-            HashSet<HexCoord> groupCoords = new HashSet<HexCoord>();
-            Dictionary<HexCoord, HexBlock> coordToBlock = new Dictionary<HexCoord, HexBlock>();
-            foreach (var block in group.blocks)
-            {
-                groupCoords.Add(block.Coord);
-                coordToBlock[block.Coord] = block;
-            }
-
-            HashSet<HexCoord> candidateCenters = new HashSet<HexCoord>(groupCoords);
-            foreach (var coord in groupCoords)
-                foreach (var neighbor in coord.GetAllNeighbors())
-                    candidateCenters.Add(neighbor);
-
-            HexCoord? bestCenter = null;
-            int bestCount = 0;
-
-            foreach (var center in candidateCenters)
-            {
-                var neighbors = center.GetAllNeighbors();
-                bool allInGroup = true;
-                int count = 0;
-                foreach (var n in neighbors)
-                {
-                    if (groupCoords.Contains(n)) count++;
-                    else { allInGroup = false; break; }
-                }
-                if (!allInGroup || count < 6) continue;
-                if (bestCenter == null || count > bestCount)
-                {
-                    bestCenter = center;
-                    bestCount = count;
-                }
-            }
-
-            if (bestCenter == null) return false;
-
-            HexBlock spawnBlock = null;
-            float lowestY = float.MaxValue;
-            foreach (var nc in bestCenter.Value.GetAllNeighbors())
-            {
-                if (!coordToBlock.ContainsKey(nc)) continue;
-                HexBlock ringBlock = coordToBlock[nc];
-                if (ringBlock.Data == null || ringBlock.Data.specialType != SpecialBlockType.None) continue;
-                Vector2 pos = GetBlockScreenPosition(ringBlock);
-                if (pos.y < lowestY) { lowestY = pos.y; spawnBlock = ringBlock; }
-            }
-
-            if (spawnBlock == null && groupCoords.Contains(bestCenter.Value))
-            {
-                HexBlock centerBlock = coordToBlock[bestCenter.Value];
-                if (centerBlock.Data != null && centerBlock.Data.specialType == SpecialBlockType.None)
-                    spawnBlock = centerBlock;
-            }
-
-            if (spawnBlock == null) return false;
-
-            group.createdSpecialType = SpecialBlockType.Rainbow;
-            group.specialSpawnBlock = spawnBlock;
-            Debug.Log($"[MatchingSystem] DONUT: Count={group.blocks.Count}, Center=({bestCenter.Value}), Spawn=({spawnBlock.Coord})");
-            return true;
-        }
+        // ★ CheckForDonutPattern 제거됨 — 도넛(Rainbow) 특수 블록 생성 폐기
 
         /// <summary>
         /// 폭탄 패턴 체크:

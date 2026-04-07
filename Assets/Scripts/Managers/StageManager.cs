@@ -111,10 +111,13 @@ namespace JewelsHexaPuzzle.Managers
         /// 고블린 제거 보고 (GoblinSystem에서 호출)
         /// isArmored에 따라 EnemyType.Goblin 또는 ArmoredGoblin 미션 진행도 업데이트
         /// </summary>
-        public void ReportGoblinKill(bool isArmored, bool isArcher = false, bool isShieldType = false, bool isBomb = false, bool isHealer = false, bool isHeavy = false)
+        public void ReportGoblinKill(bool isArmored, bool isArcher = false, bool isShieldType = false,
+            bool isBomb = false, bool isHealer = false, bool isHeavy = false, bool isWizard = false)
         {
             EnemyType targetType;
-            if (isHeavy)
+            if (isWizard)
+                targetType = EnemyType.WizardGoblin;
+            else if (isHeavy)
                 targetType = EnemyType.HeavyGoblin;
             else if (isHealer)
                 targetType = EnemyType.HealerGoblin;
@@ -261,8 +264,10 @@ namespace JewelsHexaPuzzle.Managers
         }
         
         /// <summary>
-        /// 미션 초기화
+        /// 미션 초기화 — 최대 6종 제한, 초과 시 수량 재분배
         /// </summary>
+        private const int MAX_MISSION_TYPES = 6;
+
         private void InitializeMissions()
         {
             missionProgress.Clear();
@@ -273,7 +278,42 @@ namespace JewelsHexaPuzzle.Managers
                 return;
             }
 
-            foreach (var mission in currentStageData.missions)
+            var missions = currentStageData.missions;
+
+            // ★ 6종 초과 시 제한: 수량이 큰 미션 우선 유지, 나머지 수량 재분배
+            if (missions.Length > MAX_MISSION_TYPES)
+            {
+                Debug.LogWarning($"[StageManager] 미션 {missions.Length}종 → {MAX_MISSION_TYPES}종 제한 적용");
+
+                // 수량 내림차순 정렬 (수량 큰 것 = 중요 미션 우선 유지)
+                var sorted = new List<MissionData>(missions);
+                sorted.Sort((a, b) => b.targetCount.CompareTo(a.targetCount));
+
+                // 유지할 미션 (상위 6종)
+                var kept = sorted.GetRange(0, MAX_MISSION_TYPES);
+                // 제거할 미션 (하위)
+                var removed = sorted.GetRange(MAX_MISSION_TYPES, sorted.Count - MAX_MISSION_TYPES);
+
+                // 제거된 미션의 총 수량을 유지 미션에 균등 분배
+                int removedTotal = 0;
+                foreach (var m in removed)
+                    removedTotal += m.targetCount;
+
+                if (removedTotal > 0)
+                {
+                    int perMission = removedTotal / kept.Count;
+                    int remainder = removedTotal % kept.Count;
+                    for (int i = 0; i < kept.Count; i++)
+                    {
+                        kept[i].targetCount += perMission + (i < remainder ? 1 : 0);
+                    }
+                    Debug.Log($"[StageManager] 제거된 미션 수량 {removedTotal}을 {kept.Count}종에 재분배");
+                }
+
+                missions = kept.ToArray();
+            }
+
+            foreach (var mission in missions)
             {
                 missionProgress.Add(new MissionProgress
                 {

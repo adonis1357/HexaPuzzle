@@ -237,7 +237,37 @@ namespace JewelsHexaPuzzle.Managers
                     skillTreeUI.Initialize(canvas);
                 }
             }
+            // ★ 스킬 해금/초기화 시 특수 블록 아이콘 색상 갱신
+            if (SkillTreeManager.Instance != null)
+            {
+                SkillTreeManager.Instance.OnSkillUnlocked += OnSkillUnlockedRefreshBlocks;
+                SkillTreeManager.Instance.OnSkillTreeReset += OnSkillResetRefreshBlocks;
+            }
+
             ShowLobby();
+        }
+
+        /// <summary>스킬 해금 시 모든 특수 블록 아이콘 색상 갱신</summary>
+        private void OnSkillUnlockedRefreshBlocks(SkillType _)
+        {
+            RefreshAllSpecialBlockVisuals();
+        }
+
+        /// <summary>스킬 초기화 시 모든 특수 블록 아이콘 색상 갱신</summary>
+        private void OnSkillResetRefreshBlocks()
+        {
+            RefreshAllSpecialBlockVisuals();
+        }
+
+        /// <summary>모든 블록의 UpdateVisuals 호출 (특수 블록 아이콘 색조 갱신)</summary>
+        private void RefreshAllSpecialBlockVisuals()
+        {
+            if (hexGrid == null) return;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block != null && block.Data != null && block.Data.IsSpecial())
+                    block.UpdateVisuals();
+            }
         }
 
         /// <summary>
@@ -266,6 +296,7 @@ namespace JewelsHexaPuzzle.Managers
         private Text lobbyGoldText;
         private Text hudLevelBestText;    // 레벨 최고 점수
         private Text hudPersonalBestText; // 개인 최고 점수
+        private Text hudLevelInfoText;    // 인게임 난이도+레벨 표시
         private GameObject sfxToggleBtnObj;   // SFX 토글 버튼 (로비/인게임 공용)
         private GameObject bgmToggleBtnObj;   // BGM 토글 버튼 (로비/인게임 공용)
 
@@ -397,7 +428,7 @@ namespace JewelsHexaPuzzle.Managers
             scoreLabelText.raycastTarget = false;
             scoreLabelText.text = "SCORE";
 
-            // === 난이도 표시 (SCORE 라벨 우측) ===
+            // === 레벨 정보 표시 (난이도 + 레벨 번호 1행) ===
             {
                 var levelData = LevelRegistry.GetLevel(selectedStage);
                 DifficultyType diff = levelData != null ? levelData.difficultyType : DifficultyType.Easy;
@@ -407,59 +438,43 @@ namespace JewelsHexaPuzzle.Managers
                 switch (diff)
                 {
                     case DifficultyType.Easy:
-                        diffLabel = "EASY";
+                        diffLabel = "쉬움";
                         diffColor = new Color(0.3f, 0.9f, 0.3f);
                         break;
                     case DifficultyType.Normal:
-                        diffLabel = "NORMAL";
+                        diffLabel = "보통";
                         diffColor = new Color(1f, 0.85f, 0.2f);
                         break;
                     case DifficultyType.Hard:
                     default:
-                        diffLabel = "HARD";
+                        diffLabel = "어려움";
                         diffColor = new Color(1f, 0.3f, 0.3f);
                         break;
                 }
 
-                GameObject diffObj = new GameObject("HUD_DifficultyText");
-                diffObj.transform.SetParent(canvas.transform, false);
-                RectTransform diffRt = diffObj.AddComponent<RectTransform>();
-                diffRt.anchorMin = new Vector2(0f, 1f);
-                diffRt.anchorMax = new Vector2(0f, 1f);
-                diffRt.pivot = new Vector2(0f, 1f);
-                diffRt.anchoredPosition = new Vector2(20f, -20f);
-                diffRt.sizeDelta = new Vector2(120f, 28f);
-                Text diffText = diffObj.AddComponent<Text>();
-                diffText.font = font;
-                diffText.fontSize = 18;
-                diffText.fontStyle = FontStyle.Bold;
-                diffText.alignment = TextAnchor.MiddleLeft;
-                diffText.color = diffColor;
-                diffText.raycastTarget = false;
-                diffText.text = diffLabel;
-                Outline diffOutline = diffObj.AddComponent<Outline>();
-                diffOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
-                diffOutline.effectDistance = new Vector2(1, 1);
+                GameObject levelInfoObj = new GameObject("HUD_LevelInfo");
+                levelInfoObj.transform.SetParent(canvas.transform, false);
+                RectTransform levelInfoRt = levelInfoObj.AddComponent<RectTransform>();
+                levelInfoRt.anchorMin = new Vector2(0f, 1f);
+                levelInfoRt.anchorMax = new Vector2(0f, 1f);
+                levelInfoRt.pivot = new Vector2(0f, 1f);
+                levelInfoRt.anchoredPosition = new Vector2(170f, -20f);
+                levelInfoRt.sizeDelta = new Vector2(200f, 28f);
+                hudLevelInfoText = levelInfoObj.AddComponent<Text>();
+                hudLevelInfoText.font = font;
+                hudLevelInfoText.fontSize = 18;
+                hudLevelInfoText.fontStyle = FontStyle.Bold;
+                hudLevelInfoText.alignment = TextAnchor.MiddleLeft;
+                hudLevelInfoText.color = Color.white;
+                hudLevelInfoText.supportRichText = true;
+                hudLevelInfoText.raycastTarget = false;
+                string diffHex = ColorUtility.ToHtmlStringRGB(diffColor);
+                hudLevelInfoText.text = $"<color=#{diffHex}>{diffLabel}</color> LEVEL {selectedStage}";
+                Outline levelInfoOutline = levelInfoObj.AddComponent<Outline>();
+                levelInfoOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+                levelInfoOutline.effectDistance = new Vector2(1, 1);
 
-                // Stage 라벨 (난이도 아래)
-                GameObject stageLabelObj = new GameObject("HUD_StageLabel");
-                stageLabelObj.transform.SetParent(canvas.transform, false);
-                RectTransform stageLabelRt = stageLabelObj.AddComponent<RectTransform>();
-                stageLabelRt.anchorMin = new Vector2(0f, 1f);
-                stageLabelRt.anchorMax = new Vector2(0f, 1f);
-                stageLabelRt.pivot = new Vector2(0f, 1f);
-                stageLabelRt.anchoredPosition = new Vector2(20f, -46f);
-                stageLabelRt.sizeDelta = new Vector2(120f, 22f);
-                Text stageLabelText = stageLabelObj.AddComponent<Text>();
-                stageLabelText.font = font;
-                stageLabelText.fontSize = 14;
-                stageLabelText.alignment = TextAnchor.MiddleLeft;
-                stageLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
-                stageLabelText.raycastTarget = false;
-                stageLabelText.text = $"STAGE {selectedStage}";
-
-                hudElements.Add(diffObj);
-                hudElements.Add(stageLabelObj);
+                hudElements.Add(levelInfoObj);
             }
 
             // === 레벨 최고 점수 (중앙 상단, SCORE 아래) ===
@@ -2079,62 +2094,11 @@ private void InitializeSystems()
         private Dictionary<ItemType, Text> itemCountBadges = new Dictionary<ItemType, Text>();
 
         /// <summary>
-        /// 아이템 버튼 하단 중앙에 MP 소모량 배지 생성 (파란 바탕 + 흰 텍스트)
+        /// 아이템 버튼 MP 소모량 배지 — 비활성화 (게이지 시스템으로 대체됨)
         /// </summary>
         private void CreateItemCountBadge(GameObject btnObj, ItemType itemType)
         {
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-
-            // MP 소모량 조회
-            int mpCost = MPManager.Instance != null ? MPManager.Instance.GetItemCost(itemType) : 0;
-
-            // 배지 배경 (파란색, 하단 중앙)
-            GameObject badgeBg = new GameObject("MPCostBadgeBg");
-            badgeBg.transform.SetParent(btnObj.transform, false);
-            Image bgImg = badgeBg.AddComponent<Image>();
-            bgImg.color = new Color(0.18f, 0.42f, 0.85f, 0.92f);
-            bgImg.raycastTarget = false;
-            RectTransform bgRt = badgeBg.GetComponent<RectTransform>();
-            bgRt.anchorMin = new Vector2(0.5f, 0f);
-            bgRt.anchorMax = new Vector2(0.5f, 0f);
-            bgRt.pivot = new Vector2(0.5f, 0.5f);
-            bgRt.anchoredPosition = new Vector2(0f, 14f);
-            bgRt.sizeDelta = new Vector2(38f, 16f);
-
-            // 배지 아웃라인 (진한 파랑, 배경 뒤)
-            GameObject outlineObj = new GameObject("MPCostBadgeOutline");
-            outlineObj.transform.SetParent(badgeBg.transform, false);
-            Image outlineImg = outlineObj.AddComponent<Image>();
-            outlineImg.color = new Color(0.08f, 0.18f, 0.45f, 0.85f);
-            outlineImg.raycastTarget = false;
-            RectTransform outlineRt = outlineObj.GetComponent<RectTransform>();
-            outlineRt.anchorMin = Vector2.zero;
-            outlineRt.anchorMax = Vector2.one;
-            outlineRt.offsetMin = new Vector2(-1.5f, -1.5f);
-            outlineRt.offsetMax = new Vector2(1.5f, 1.5f);
-            outlineObj.transform.SetAsFirstSibling();
-
-            // MP 소모량 텍스트 (흰색)
-            GameObject textObj = new GameObject("MPCostBadgeText");
-            textObj.transform.SetParent(badgeBg.transform, false);
-            Text countText = textObj.AddComponent<Text>();
-            countText.text = mpCost > 0 ? $"{mpCost}" : "0";
-            countText.font = font;
-            countText.fontSize = 11;
-            countText.fontStyle = FontStyle.Bold;
-            countText.alignment = TextAnchor.MiddleCenter;
-            countText.color = Color.white;
-            countText.raycastTarget = false;
-            countText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            countText.verticalOverflow = VerticalWrapMode.Overflow;
-            RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
-
-            // 딕셔너리에 저장
-            itemCountBadges[itemType] = countText;
+            // MP 배지 제거됨 — 아이템 게이지 시스템이 비용을 관리
         }
 
         /// <summary>
@@ -4089,7 +4053,8 @@ private IEnumerator ProcessSpecialBlockAftermath()
                     Debug.LogWarning("[GameManager] BRS still processing before falling. Waiting...");
                     float waited = 0f;
                     int lastDepth = blockRemovalSystem.CurrentCascadeDepth;
-                    while (blockRemovalSystem.IsProcessing && waited < 5f)
+                    // ★ 타임아웃 10초 — 드릴 쿠션 반사 + 다수 특수 블록 연쇄 시 5초 초과 가능
+                    while (blockRemovalSystem.IsProcessing && waited < 10f)
                     {
                         waited += Time.deltaTime;
                         processingStartTime = Time.time; // stuck 오판 방지
@@ -4099,13 +4064,22 @@ private IEnumerator ProcessSpecialBlockAftermath()
                             lastDepth = curDepth;
                             waited = 0f;
                         }
+                        // ★ 드릴/폭탄 등 특수 블록 활성 중이면 진행 중으로 간주 → 타이머 리셋
+                        if ((drillSystem != null && drillSystem.IsDrilling)
+                            || (bombSystem != null && bombSystem.IsBombing)
+                            || (donutSystem != null && donutSystem.IsActivating)
+                            || (droneSystem != null && droneSystem.IsActivating))
+                        {
+                            waited = 0f;
+                        }
                         yield return null;
                     }
                     if (blockRemovalSystem.IsProcessing)
                     {
                         Debug.LogWarning("[GameManager] BRS timeout before falling — Force resetting.");
                         blockRemovalSystem.ForceReset();
-                        yield return null; // ForceReset 후 1프레임 대기
+                        if (drillSystem != null && drillSystem.IsDrilling) drillSystem.ForceReset();
+                        yield return null;
                     }
                 }
 
@@ -4283,7 +4257,15 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         drillSystem.ActivateDrill(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (drillSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
+                        // ★ 드릴 타임아웃 10초 — 쿠션 반사 시 5초 초과 가능
+                        float drillTimeout = 10f;
+                        while (drillSystem.IsBlockActive(block) && waited < drillTimeout)
+                        {
+                            waited += Time.deltaTime;
+                            processingStartTime = Time.time;
+                            if (drillSystem.IsDrilling) waited = Mathf.Min(waited, drillTimeout * 0.5f);
+                            yield return null;
+                        }
                         if (drillSystem.IsBlockActive(block)) { Debug.LogError("[GM] Drill timeout!"); drillSystem.ForceReset(); }
                     }
                     break;
@@ -4504,7 +4486,7 @@ private void OnBigBang()
             if (AudioManager.Instance != null)
                 AudioManager.Instance.StopBGM();
 
-            Debug.Log($"Stage {currentStage} Clear!");
+            Debug.Log($"Level {currentStage} Clear!");
 
             // 남은 이동횟수만큼 랜덤 위치에 보너스 드릴 생성
             processingStartTime = Time.time;
@@ -4544,6 +4526,18 @@ private void OnBigBang()
 
             // 골드 즉시 지급
             AddGold(goldReward);
+
+            // ★ 다음 레벨 해금
+            int nextLevel = selectedStage + 1;
+            LevelRegistry.UnlockLevel(nextLevel);
+            Debug.Log($"[GameManager] 레벨 {nextLevel} 해금!");
+
+            // SP 보상: 스테이지 클리어 시 1 SP 지급
+            if (SkillTreeManager.Instance != null)
+            {
+                SkillTreeManager.Instance.AddSkillPoints(1);
+                Debug.Log("[GameManager] 스테이지 클리어 SP +1");
+            }
 
             // 특수 블록 연쇄 완료 후 1초 대기 후 클리어 팝업 표시
             yield return new WaitForSeconds(1f);
@@ -4603,9 +4597,10 @@ private void OnBigBang()
                 block.Data.drillDirection = directions[Random.Range(0, directions.Length)];
                 block.UpdateVisuals();
 
-                // 이동횟수 1 감소 + UI 갱신
+                // 이동횟수 1 감소 + UI 즉시 갱신
                 currentTurns = Mathf.Max(0, currentTurns - 1);
                 OnTurnChanged?.Invoke(currentTurns);
+                if (uiManager != null) uiManager.UpdateTurnDisplay(currentTurns);
 
                 // 스케일 팝 애니메이션
                 StartCoroutine(DrillSpawnPopAnimation(block.transform));
@@ -6406,9 +6401,10 @@ private void OnBigBang()
             if (lobbyGoldText != null)
                 lobbyGoldText.text = currentGold.ToString();
 
-            // 로비 레벨 버튼 최고 점수 갱신 + 스크롤 위치 설정
+            // 로비 레벨 버튼 해금 상태 + 최고 점수 갱신 + 스크롤 위치 설정
             if (stageScrollBuilder != null)
             {
+                stageScrollBuilder.RefreshUnlockStates();
                 stageScrollBuilder.RefreshHighScores();
                 stageScrollBuilder.ScrollToHighestUnlocked();
             }
@@ -6432,6 +6428,26 @@ private void OnBigBang()
             foreach (var hud in hudElements)
             {
                 if (hud != null) hud.SetActive(true);
+            }
+
+            // ★ 인게임 난이도/레벨 표시 갱신 (현재 선택된 스테이지 기준)
+            if (hudLevelInfoText != null)
+            {
+                var levelData = LevelRegistry.GetLevel(selectedStage);
+                DifficultyType diff = levelData != null ? levelData.difficultyType : DifficultyType.Easy;
+                string diffLabel;
+                Color diffColor;
+                switch (diff)
+                {
+                    case DifficultyType.Easy:
+                        diffLabel = "쉬움"; diffColor = new Color(0.3f, 0.9f, 0.3f); break;
+                    case DifficultyType.Normal:
+                        diffLabel = "보통"; diffColor = new Color(1f, 0.85f, 0.2f); break;
+                    case DifficultyType.Hard: default:
+                        diffLabel = "어려움"; diffColor = new Color(1f, 0.3f, 0.3f); break;
+                }
+                string diffHex = ColorUtility.ToHtmlStringRGB(diffColor);
+                hudLevelInfoText.text = $"<color=#{diffHex}>{diffLabel}</color> LEVEL {selectedStage}";
             }
 
             // 아이템 오버레이 강제 비활성화 (아이템 미활성 상태에서 오버레이가 보이지 않도록)
@@ -6464,6 +6480,10 @@ private void OnBigBang()
         public void ExitToLobby()
         {
             Time.timeScale = 1f;
+
+            // ★ 진행 중인 모든 게임 시스템 강제 초기화 (드릴 투사체 등 코루틴 잔류 방지)
+            ForceResetAllGameSystems();
+
             if (scoreManager != null) scoreManager.ResetScore();
             // ★ MPGaugeUI가 비활성 상태에서 ResetMP 호출 시 코루틴 에러 방지
             // → 게이지 비활성 상태이므로 이벤트 구독 해제 후 리셋
@@ -6478,11 +6498,52 @@ private void OnBigBang()
         public void ReturnToLobby()
         {
             Time.timeScale = 1f;
+
+            // ★ 진행 중인 모든 게임 시스템 강제 초기화
+            ForceResetAllGameSystems();
+
             if (scoreManager != null) scoreManager.ResetScore();
             if (MPManager.Instance != null) MPManager.Instance.ResetMPSilent();
             if (MonsterSpawnController.Instance != null) MonsterSpawnController.Instance.Reset();
             Debug.Log("[GameManager] ReturnToLobby: 로비로 돌아갑니다");
             ShowLobby();
+        }
+
+        /// <summary>
+        /// 게임 나가기/재시작 시 모든 게임 시스템의 코루틴과 상태를 강제 초기화합니다.
+        /// 드릴 투사체, 폭탄 이펙트 등 진행 중인 코루틴이 다음 게임에 영향주지 않도록 정리.
+        /// </summary>
+        private void ForceResetAllGameSystems()
+        {
+            // 1. GameManager 자체 코루틴 중지 + 상태 플래그 리셋
+            StopAllCoroutines();
+            isProcessingChainDrill = false;
+            isInPostRecovery = false;
+            processingStartTime = 0f;
+            lastAftermathProgressTime = 0f;
+
+            // 2. 블록 제거/낙하 시스템
+            if (blockRemovalSystem != null)
+                blockRemovalSystem.ForceReset();
+
+            // 3. 모든 특수 블록 시스템
+            if (drillSystem != null) drillSystem.ForceReset();
+            if (bombSystem != null) bombSystem.ForceReset();
+            if (donutSystem != null) donutSystem.ForceReset();
+            if (xBlockSystem != null) xBlockSystem.ForceReset();
+            if (droneSystem != null) droneSystem.ForceReset();
+
+            // 4. 합성 시스템
+            var comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
+            if (comboSystem != null)
+                comboSystem.StopAllCoroutines();
+
+            // 5. 아이템 시스템
+            var lineItem = FindObjectOfType<JewelsHexaPuzzle.Items.LineDrawItem>();
+            if (lineItem != null && lineItem.IsActive)
+                lineItem.StopAllCoroutines();
+
+            Debug.Log("[GameManager] ForceResetAllGameSystems: 모든 게임 시스템 초기화 완료");
         }
 
 // ============================================================
@@ -7129,15 +7190,15 @@ private void OnDestroy()
         /// 고블린 제거 시 미션 시스템에 보고
         /// blockRemovalSystem.OnEnemyRemoved 이벤트를 통해 StageManager에 전달
         /// </summary>
-        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer, bool isHeavy)
+        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer, bool isHeavy, bool isWizard)
         {
-            string typeName = isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
+            string typeName = isWizard ? "마법사" : isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
             Debug.Log($"[GameManager] {typeName} 고블린 제거 미션 보고: 총 {totalKills}킬");
 
             // StageManager에 고블린 타입 정보 전달
             if (stageManager != null)
             {
-                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer, isHeavy);
+                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer, isHeavy, isWizard);
 
                 // 미션 완료 시 추가 소환 중단
                 if (stageManager.IsMissionComplete() && goblinSystem != null)
@@ -7293,6 +7354,27 @@ private void OnDestroy()
                 case 69: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 13, maxOnBoard = 6,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 70: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                // 스테이지 71~80: 챕터 8 — 마법사의 탑 (마법사 고블린 등장)
+                case 71: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 8, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 72: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 73: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 74: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 11, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 75: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 14, maxOnBoard = 7,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 76: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 12, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 77: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 13, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 78: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 14, maxOnBoard = 6,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 79: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 16, maxOnBoard = 7,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 80: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 21, maxOnBoard = 8,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 default: return null;
             }

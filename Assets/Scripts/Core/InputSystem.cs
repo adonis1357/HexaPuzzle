@@ -196,6 +196,17 @@ private void Update()
             // 구매 팝업 열려있으면 입력 차단
             if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
 
+            // 망치/스왑/라인 아이템 UseReady 상태이면 회전 차단 (아이템이 자체 Update로 입력 처리)
+            if (JewelsHexaPuzzle.Items.HammerGauge.Instance != null &&
+                JewelsHexaPuzzle.Items.HammerGauge.Instance.CurrentState == JewelsHexaPuzzle.Items.HammerGauge.HammerState.UseReady)
+                return;
+            if (JewelsHexaPuzzle.Items.SwapGauge.Instance != null &&
+                JewelsHexaPuzzle.Items.SwapGauge.Instance.CurrentState == JewelsHexaPuzzle.Items.SwapGauge.GaugeState.UseReady)
+                return;
+            if (JewelsHexaPuzzle.Items.LineGauge.Instance != null &&
+                JewelsHexaPuzzle.Items.LineGauge.Instance.CurrentState == JewelsHexaPuzzle.Items.LineGauge.GaugeState.UseReady)
+                return;
+
             // 에디터 모드 활성화 시: 블록 설치만 처리, 회전/합성/발동 완전 차단
             if (cachedEditorTestSystem == null)
                 cachedEditorTestSystem = FindObjectOfType<EditorTestSystem>();
@@ -625,22 +636,8 @@ private void Update()
                     }
                 }
 
-                // ★ Heavy 고블린 점유 블록 회전 불가: 클러스터 좌표 중 하나라도 Heavy 점유이면 차단
-                if (GoblinSystem.Instance != null)
-                {
-                    var heavyCoords = GoblinSystem.Instance.GetHeavyOccupiedCoords();
-                    if (heavyCoords.Count > 0)
-                    {
-                        HexBlock hb0 = cluster.Value.Item1, hb1 = cluster.Value.Item2, hb2 = cluster.Value.Item3;
-                        if ((hb0 != null && heavyCoords.Contains(hb0.Coord)) ||
-                            (hb1 != null && heavyCoords.Contains(hb1.Coord)) ||
-                            (hb2 != null && heavyCoords.Contains(hb2.Coord)))
-                        {
-                            hasValidCluster = false;
-                            return;
-                        }
-                    }
-                }
+                // Heavy 고블린 점유 블록: 클러스터 선택은 허용 (하이라이트 표시)
+                // 실제 차단 + 연출은 ExecuteRotation()에서 처리
 
                 currentCluster[0] = cluster.Value.Item1;
                 currentCluster[1] = cluster.Value.Item2;
@@ -661,12 +658,80 @@ private void Update()
 
         private void ExecuteRotation()
         {
+            Debug.Log("[회전시도] 진입");
             if (!hasValidCluster)
             {
                 return;
             }
             if (rotationSystem == null) return;
             if (currentCluster[0] == null || currentCluster[1] == null || currentCluster[2] == null) return;
+
+            // ★ Heavy 고블린 점유 좌표와 겹치는 클러스터 회전 차단
+            if (GoblinSystem.Instance != null)
+            {
+                var clusterCoords = new HexCoord[]
+                {
+                    currentCluster[0].Coord,
+                    currentCluster[1].Coord,
+                    currentCluster[2].Coord
+                };
+                bool blocked = false;
+                foreach (var goblin in GoblinSystem.Instance.GetAliveGoblins())
+                {
+                    if (!goblin.isHeavy || goblin.occupiedCoords == null) continue;
+                    foreach (var clusterCoord in clusterCoords)
+                    {
+                        if (goblin.occupiedCoords.Contains(clusterCoord))
+                        {
+                            blocked = true;
+                            break;
+                        }
+                    }
+                    if (blocked) break;
+                }
+                if (blocked)
+                {
+                    Debug.Log("[InputSystem] Heavy 고블린 점유 블록 — 회전 차단 (연출 시작)");
+
+                    // 점유 좌표와 비점유 좌표 분리
+                    var heavyOccupiedCoords = new HashSet<HexCoord>();
+                    foreach (var goblin in GoblinSystem.Instance.GetAliveGoblins())
+                    {
+                        if (!goblin.isHeavy || goblin.occupiedCoords == null) continue;
+                        foreach (var oc in goblin.occupiedCoords)
+                        {
+                            foreach (var cc in clusterCoords)
+                            {
+                                if (oc.Equals(cc)) heavyOccupiedCoords.Add(oc);
+                            }
+                        }
+                    }
+
+                    var occupiedBlocks = new List<HexBlock>();
+                    var freeBlocks = new List<HexBlock>();
+                    foreach (var cc in clusterCoords)
+                    {
+                        HexBlock b = hexGrid.GetBlock(cc);
+                        if (b == null) continue;
+                        if (heavyOccupiedCoords.Contains(cc))
+                            occupiedBlocks.Add(b);
+                        else
+                            freeBlocks.Add(b);
+                    }
+
+                    // 토스트 메시지
+                    UIManager.Instance?.ShowToast("헤비가 짓누르고 있는 블록은\n회전시킬 수 없습니다!");
+
+                    // 연출 중 입력 차단
+                    isEnabled = false;
+                    StartCoroutine(HeavyBlockPressAnim(occupiedBlocks));
+                    StartCoroutine(HeavyFreeBlockTiltAnim(freeBlocks, () => { isEnabled = true; }));
+
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return;
+                }
+            }
 
             Debug.Log($"[InputSystem] ExecuteRotation: cluster=({currentCluster[0].Coord}, {currentCluster[1].Coord}, {currentCluster[2].Coord})");
             rotationSystem.TryRotate(currentCluster[0], currentCluster[1], currentCluster[2]);
@@ -1238,8 +1303,45 @@ private void Update()
 
             Debug.Log($"[InputSystem] EditorPlaceAtScreen: screenPos={screenPos}, block={block?.Coord.ToString() ?? "null"}");
 
+            // 몬스터 모드에서 그리드 밖(소환 영역) 클릭 시 좌표 기반 배치 시도
+            if (block == null && cachedEditorTestSystem.IsMonsterMode && hexGrid != null)
+            {
+                HexCoord? spawnCoord = FindNearestSpawnAreaCoord(localPos);
+                if (spawnCoord.HasValue)
+                {
+                    cachedEditorTestSystem.TryPlaceMonsterAtCoord(spawnCoord.Value);
+                    return;
+                }
+            }
+
             // EditorTestSystem에 위임
             cachedEditorTestSystem.TryPlaceOnBlock(block);
+        }
+
+        /// <summary>
+        /// 로컬 좌표에서 가장 가까운 소환 영역 좌표를 찾는다.
+        /// HexGrid.GetExtendedTopCoords()에서 제공하는 상단 3줄 소환 좌표 중
+        /// 거리가 hexSize 이내인 가장 가까운 좌표를 반환.
+        /// </summary>
+        private HexCoord? FindNearestSpawnAreaCoord(Vector2 localPos)
+        {
+            var spawnCoords = hexGrid.GetExtendedTopCoords();
+            float bestDist = float.MaxValue;
+            HexCoord? bestCoord = null;
+            float maxDist = hexGrid.HexSize * 1.2f;
+
+            foreach (var coord in spawnCoords)
+            {
+                Vector2 hexPos = hexGrid.CalculateFlatTopHexPosition(coord);
+                float dist = Vector2.Distance(localPos, hexPos);
+                if (dist < bestDist && dist < maxDist)
+                {
+                    bestDist = dist;
+                    bestCoord = coord;
+                }
+            }
+
+            return bestCoord;
         }
 
         public void SetEnabled(bool enabled)
@@ -1733,6 +1835,108 @@ private void Update()
                 if (hl != null) Destroy(hl);
             }
             bombMoveHighlights.Clear();
+        }
+
+        // ============================================================
+        // Heavy 고블린 회전 차단 연출
+        // ============================================================
+
+        /// <summary>
+        /// 헤비급 점유 블록 미동: Y축 -2px 눌렸다가 0.1초 후 복귀 (무게감 표현)
+        /// </summary>
+        private IEnumerator HeavyBlockPressAnim(List<HexBlock> blocks)
+        {
+            if (blocks == null || blocks.Count == 0) yield break;
+
+            // 각 블록의 원래 위치 저장
+            var originals = new List<Vector2>();
+            var rts = new List<RectTransform>();
+            foreach (var b in blocks)
+            {
+                if (b == null) continue;
+                var rt = b.GetComponent<RectTransform>();
+                rts.Add(rt);
+                originals.Add(rt != null ? rt.anchoredPosition : Vector2.zero);
+            }
+
+            // -2px 눌림
+            for (int i = 0; i < rts.Count; i++)
+            {
+                if (rts[i] != null)
+                    rts[i].anchoredPosition = originals[i] + new Vector2(0f, -2f);
+            }
+
+            yield return new WaitForSeconds(0.1f);
+
+            // 원래 위치로 복귀
+            for (int i = 0; i < rts.Count; i++)
+            {
+                if (rts[i] != null)
+                    rts[i].anchoredPosition = originals[i];
+            }
+        }
+
+        /// <summary>
+        /// 나머지 회전 가능 블록: 회전 방향으로 10도 기울였다가 0.2초 후 복귀
+        /// 완료 시 onComplete 콜백으로 입력 차단 해제
+        /// </summary>
+        private IEnumerator HeavyFreeBlockTiltAnim(List<HexBlock> blocks, System.Action onComplete)
+        {
+            if (blocks == null || blocks.Count == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            // 회전 방향 결정: 시계방향이면 -10도, 반시계면 +10도
+            float targetAngle = IsClockwise ? -10f : 10f;
+            Quaternion targetRot = Quaternion.Euler(0f, 0f, targetAngle);
+            Quaternion originalRot = Quaternion.identity;
+
+            // 기울이기 (0.08초)
+            float tiltDuration = 0.08f;
+            float elapsed = 0f;
+            while (elapsed < tiltDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / tiltDuration);
+                Quaternion current = Quaternion.Lerp(originalRot, targetRot, t);
+                foreach (var b in blocks)
+                {
+                    if (b != null) b.transform.localRotation = current;
+                }
+                yield return null;
+            }
+
+            // 기울어진 상태로 잠시 유지
+            foreach (var b in blocks)
+            {
+                if (b != null) b.transform.localRotation = targetRot;
+            }
+            yield return new WaitForSeconds(0.05f);
+
+            // 복귀 (0.07초)
+            float returnDuration = 0.07f;
+            elapsed = 0f;
+            while (elapsed < returnDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / returnDuration);
+                Quaternion current = Quaternion.Lerp(targetRot, originalRot, t);
+                foreach (var b in blocks)
+                {
+                    if (b != null) b.transform.localRotation = current;
+                }
+                yield return null;
+            }
+
+            // 원래 각도 확정
+            foreach (var b in blocks)
+            {
+                if (b != null) b.transform.localRotation = Quaternion.identity;
+            }
+
+            onComplete?.Invoke();
         }
     }
 }

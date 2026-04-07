@@ -60,6 +60,96 @@ namespace JewelsHexaPuzzle.UI
         }
 
         /// <summary>
+        /// 해금 상태 갱신: LevelRegistry의 현재 isLocked 값을 버튼 interactable에 반영
+        /// </summary>
+        public void RefreshUnlockStates()
+        {
+            if (contentRt == null) return;
+
+            var allLevels = LevelRegistry.GetAllLevels();
+            for (int i = 0; i < allLevels.Count; i++)
+            {
+                int stageNum = allLevels[i].levelId;
+                Transform stageBtn = contentRt.Find($"Row{i / COLUMNS}/Stage{stageNum}Button");
+                if (stageBtn == null) continue;
+
+                Button btn = stageBtn.GetComponent<Button>();
+                if (btn == null) continue;
+
+                bool wasLocked = !btn.interactable;
+                bool isNowUnlocked = !allLevels[i].isLocked;
+
+                if (wasLocked && isNowUnlocked)
+                {
+                    btn.interactable = true;
+
+                    // ★ 비주얼 갱신: 어두운 색상 → 원본 색상으로 복원
+                    var levelData = allLevels[i];
+                    var display = levelData.lobbyDisplay;
+                    if (display != null)
+                    {
+                        // 배경 색상 복원
+                        Image hexBg = stageBtn.GetComponent<Image>();
+                        if (hexBg != null)
+                        {
+                            hexBg.color = display.backgroundColor;
+                            // Button colors도 갱신
+                            var btnColors = btn.colors;
+                            btnColors.normalColor = Color.white;
+                            btnColors.highlightedColor = display.backgroundColor * 1.3f;
+                            btnColors.pressedColor = display.backgroundColor * 0.7f;
+                            btn.colors = btnColors;
+                        }
+
+                        // 테두리 색상 복원
+                        Transform borderTr = stageBtn.Find("HexBorder");
+                        if (borderTr != null)
+                        {
+                            Image borderImg = borderTr.GetComponent<Image>();
+                            if (borderImg != null)
+                                borderImg.color = display.borderColor;
+                        }
+                    }
+
+                    // 잠금 아이콘(🔒) → 레벨명으로 교체
+                    Transform stageTextTr = stageBtn.Find("StageText");
+                    if (stageTextTr != null)
+                    {
+                        Text stageText = stageTextTr.GetComponent<Text>();
+                        if (stageText != null)
+                        {
+                            stageText.text = levelData.levelName ?? $"LEVEL {stageNum}";
+                            stageText.fontSize = 28;
+                            stageText.color = new Color(0.85f, 0.9f, 1f);
+                        }
+                    }
+
+                    // 플레이 아이콘 또는 점수 표시 추가 (아직 없으면)
+                    if (scoreManager != null)
+                    {
+                        int levelBest = scoreManager.GetLevelHighScore(stageNum);
+                        int personalBest = scoreManager.GetPersonalLevelBest(stageNum);
+                        float btnSize = stageBtn.GetComponent<RectTransform>().sizeDelta.x;
+
+                        if (levelBest > 0 || personalBest > 0)
+                        {
+                            Transform playIcon = stageBtn.Find("PlayIcon");
+                            if (playIcon != null) Destroy(playIcon.gameObject);
+                            if (stageBtn.Find("LevelBest") == null)
+                                CreateScoreTexts(stageBtn.gameObject, btnSize, levelBest, personalBest);
+                        }
+                        else if (stageBtn.Find("PlayIcon") == null && stageBtn.Find("LevelBest") == null)
+                        {
+                            CreatePlayIcon(stageBtn.gameObject, btnSize);
+                        }
+                    }
+
+                    Debug.Log($"[StageScrollBuilder] 레벨 {stageNum} 버튼 해금 + 비주얼 갱신");
+                }
+            }
+        }
+
+        /// <summary>
         /// 최고 점수 텍스트 갱신
         /// </summary>
         public void RefreshHighScores()
@@ -419,6 +509,25 @@ namespace JewelsHexaPuzzle.UI
         // ============================================================
         // 헬퍼 메서드
         // ============================================================
+
+        private void CreatePlayIcon(GameObject stageBtn, float btnSize)
+        {
+            GameObject playObj = new GameObject("PlayIcon");
+            playObj.transform.SetParent(stageBtn.transform, false);
+            RectTransform playRt = playObj.AddComponent<RectTransform>();
+            playRt.anchorMin = new Vector2(0.5f, 0.5f);
+            playRt.anchorMax = new Vector2(0.5f, 0.5f);
+            playRt.pivot = new Vector2(0.5f, 0.5f);
+            playRt.anchoredPosition = new Vector2(0f, -15f);
+            playRt.sizeDelta = new Vector2(40f, 40f);
+            Text playText = playObj.AddComponent<Text>();
+            playText.font = font;
+            playText.fontSize = 32;
+            playText.alignment = TextAnchor.MiddleCenter;
+            playText.color = Color.white;
+            playText.raycastTarget = false;
+            playText.text = "\u25B6";
+        }
 
         private void CreateScoreTexts(GameObject stageBtn, float btnSize, int levelBest, int personalBest)
         {

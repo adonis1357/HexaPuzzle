@@ -18,6 +18,7 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private Image overlayImage;
         [SerializeField] private Image drillIndicator;
         [SerializeField] private Text timerText;
+        private Text bombSkillText; // 폭탄 스킬 레벨 텍스트 (v1/v2/v3)
 
         private HexCoord coord;
         private HexGrid parentGrid;
@@ -1091,6 +1092,7 @@ namespace JewelsHexaPuzzle.Core
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
             if (drillIndicator != null) drillIndicator.enabled = false;
+            if (bombSkillText != null) bombSkillText.enabled = false;
         }
 
 public void SetBlockData(BlockData data)
@@ -1171,6 +1173,7 @@ public void SetBlockData(BlockData data)
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
             if (drillIndicator != null) drillIndicator.enabled = false;
+            if (bombSkillText != null) bombSkillText.enabled = false;
             HideGoblinBombOverlay();
         }
 
@@ -1269,12 +1272,11 @@ private void UpdateSpecialIndicator()
                     if (bombIconSprite == null)
                         bombIconSprite = BombBlockSystem.GetBombIconSprite();
                     ShowSpecialIcon(bombIconSprite);
+                    UpdateBombSkillText();
                     break;
 
+                // ★ Rainbow(도넛) 생성 제거됨 — 기존 도넛이 필드에 있으면 아이콘 미표시
                 case SpecialBlockType.Rainbow:
-                    if (donutIconSprite == null)
-                        donutIconSprite = DonutBlockSystem.GetDonutIconSprite();
-                    ShowSpecialIcon(donutIconSprite);
                     break;
 
                 case SpecialBlockType.XBlock:
@@ -1333,13 +1335,49 @@ private void UpdateSpecialIndicator()
 /// <summary>
         /// 특수 블록 아이콘 표시 (공용)
         /// drillIndicator를 특수 블록 공용 아이콘 이미지로 사용
+        /// 스킬 해금 레벨에 따라 아이콘 색조(tint) 적용
         /// </summary>
         private void ShowSpecialIcon(Sprite iconSprite)
         {
             if (drillIndicator == null) return;
             drillIndicator.enabled = true;
             drillIndicator.sprite = iconSprite;
-            drillIndicator.color = Color.white;
+            drillIndicator.color = GetSpecialIconTint();
+        }
+
+        /// <summary>
+        /// 특수 블록 타입 + 스킬 해금 레벨에 따른 아이콘 색조 반환.
+        /// BlockSkillColors 중앙 색상 상수 참조 — 스킬트리 노드와 동일 색상 보장.
+        /// </summary>
+        private Color GetSpecialIconTint()
+        {
+            if (blockData == null) return Color.white;
+
+            var stm = JewelsHexaPuzzle.Managers.SkillTreeManager.Instance;
+
+            switch (blockData.specialType)
+            {
+                case SpecialBlockType.Drill:
+                {
+                    int level = (stm != null) ? stm.GetDrillDamageBonus() : 0;
+                    return JewelsHexaPuzzle.Utils.BlockSkillColors.GetByLevel(
+                        JewelsHexaPuzzle.Utils.BlockSkillColors.Drill, level);
+                }
+                case SpecialBlockType.Bomb:
+                {
+                    int level = (stm != null) ? stm.GetBombDamageBonus() : 0;
+                    return JewelsHexaPuzzle.Utils.BlockSkillColors.GetByLevel(
+                        JewelsHexaPuzzle.Utils.BlockSkillColors.Bomb, level);
+                }
+                case SpecialBlockType.Drone:
+                {
+                    int level = (stm != null) ? stm.GetDroneTargetDamageBonus() : 0;
+                    return JewelsHexaPuzzle.Utils.BlockSkillColors.GetByLevel(
+                        JewelsHexaPuzzle.Utils.BlockSkillColors.Drone, level);
+                }
+                default:
+                    return Color.white;
+            }
         }
 
 /// <summary>
@@ -1540,6 +1578,7 @@ public void ShowDroneIndicator()
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
             if (drillIndicator != null) drillIndicator.enabled = false;
+            if (bombSkillText != null) bombSkillText.enabled = false;
         }
 
         private void UpdateOverlay()
@@ -1828,6 +1867,51 @@ public void ShowDroneIndicator()
         private static Color GetEnemyOverlayColor(JewelsHexaPuzzle.Data.EnemyType type)
         {
             return JewelsHexaPuzzle.Data.EnemyRegistry.GetOverlayColor(type);
+        }
+
+        /// <summary>
+        /// 폭탄 블록 스킬 레벨 텍스트 갱신 (v1/v2/v3 또는 숨김)
+        /// </summary>
+        private void UpdateBombSkillText()
+        {
+            var stm = JewelsHexaPuzzle.Managers.SkillTreeManager.Instance;
+            int level = (stm != null) ? stm.GetBombDamageBonus() : 0;
+            string text = JewelsHexaPuzzle.Utils.BlockSkillColors.GetBombLevelText(level);
+
+            if (string.IsNullOrEmpty(text))
+            {
+                // 미해금: 텍스트 숨김
+                if (bombSkillText != null) bombSkillText.enabled = false;
+                return;
+            }
+
+            // 텍스트 오브젝트 생성 (최초 1회)
+            if (bombSkillText == null)
+            {
+                GameObject textObj = new GameObject("BombSkillText");
+                textObj.transform.SetParent(transform, false);
+                bombSkillText = textObj.AddComponent<Text>();
+                bombSkillText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                bombSkillText.fontStyle = FontStyle.Bold;
+                bombSkillText.alignment = TextAnchor.MiddleCenter;
+                bombSkillText.raycastTarget = false;
+
+                Outline outline = textObj.AddComponent<Outline>();
+                outline.effectColor = new Color(0f, 0f, 0f, 0.8f);
+                outline.effectDistance = new Vector2(1f, -1f);
+
+                RectTransform rt = textObj.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = new Vector2(0f, -8f); // 아이콘 아래쪽
+                rt.sizeDelta = new Vector2(60f, 20f);
+                bombSkillText.fontSize = 14;
+            }
+
+            bombSkillText.text = text;
+            bombSkillText.color = Color.white;
+            bombSkillText.enabled = true;
         }
 
         private void ShowTimerText(int count)

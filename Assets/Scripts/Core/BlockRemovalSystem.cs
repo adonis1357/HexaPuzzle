@@ -146,6 +146,7 @@ namespace JewelsHexaPuzzle.Core
             StopAllCoroutines();
             isProcessing = false;
             isFalling = false;
+            isFallingSuspended = false; // ★ 낙하 중단 플래그도 리셋
             currentCascadeDepth = 0;
 
             // SquashEffect 코루틴 추적 정리
@@ -472,7 +473,15 @@ namespace JewelsHexaPuzzle.Core
                         drillSystem.ActivateDrill(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (drillSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; yield return null; }
+                        // ★ 드릴 타임아웃 10초 — 쿠션 반사 3단계 × 양방향 시 5초 초과 가능
+                        float drillTimeout = 10f;
+                        while (drillSystem.IsBlockActive(block) && waited < drillTimeout)
+                        {
+                            waited += Time.deltaTime;
+                            // 드릴이 활발히 진행 중이면 타이머 리셋
+                            if (drillSystem.IsDrilling) waited = Mathf.Min(waited, drillTimeout * 0.5f);
+                            yield return null;
+                        }
                         if (drillSystem.IsBlockActive(block)) { Debug.LogError("[BRS] Drill timeout! ForceReset"); drillSystem.ForceReset(); }
                     }
                     break;
@@ -712,10 +721,7 @@ namespace JewelsHexaPuzzle.Core
                     if (bombSystem != null)
                         bombSystem.CreateBombBlock(block, gemType);
                     break;
-                case SpecialBlockType.Rainbow:
-                    if (donutSystem != null)
-                        donutSystem.CreateDonutBlock(block, gemType);
-                    break;
+                // ★ Rainbow(도넛) 생성 제거됨 — 더 이상 사용하지 않음
                 case SpecialBlockType.XBlock:
                     if (xBlockSystem != null)
                         xBlockSystem.CreateXBlock(block, gemType);
@@ -987,6 +993,9 @@ namespace JewelsHexaPuzzle.Core
 
             while (elapsed < impactDuration)
             {
+                // ★ 블록 또는 이펙트가 외부에서 파괴된 경우 즉시 종료
+                if (flashRt == null || ringRt == null || block == null) break;
+
                 elapsed += Time.deltaTime;
                 float t = elapsed / impactDuration;
 
@@ -1012,9 +1021,9 @@ namespace JewelsHexaPuzzle.Core
                 yield return null;
             }
 
-            block.transform.localScale = Vector3.one;
-            Destroy(flashObj);
-            Destroy(ringObj);
+            if (block != null) block.transform.localScale = Vector3.one;
+            if (flashObj != null) Destroy(flashObj);
+            if (ringObj != null) Destroy(ringObj);
         }
 
 
@@ -1769,14 +1778,11 @@ private IEnumerator ProcessFalling()
             List<FallAnimation> existingAnimations = new List<FallAnimation>();
             List<FallAnimation> newBlockAnimations = new List<FallAnimation>();
 
-            Dictionary<int, float> columnBaseDelay = new Dictionary<int, float>();
-            foreach (var key in columnCache.Keys)
-                columnBaseDelay[key] = Random.Range(0f, 0.04f);
+            // ★ 열별 지연 제거 — 모든 블록이 동시에 낙하 시작
 
             foreach (var kvp in columnCache)
             {
                 List<HexBlock> column = kvp.Value;
-                float colDelay = columnBaseDelay[kvp.Key];
 
                 List<BlockData> dataList = new List<BlockData>();
                 List<int> sourceSlots = new List<int>();
@@ -1799,7 +1805,15 @@ private IEnumerator ProcessFalling()
                     {
                         if (anchoredSlots.Contains(i))
                             continue; // GravityWarper 고정 — 낙하에서 제외
-                        dataList.Add(block.Data.Clone());
+                        BlockData cloned = block.Data.Clone();
+                        // 안전장치: 적군 아닌 Gray 블록은 낙하 전에 랜덤 색으로 교정
+                        if (cloned.gemType == GemType.Gray && cloned.enemyType == EnemyType.None)
+                        {
+                            Debug.LogWarning($"[BRS] ProcessFalling: Gray/None 블록 교정 at col {kvp.Key}, slot {i} (coord {block.Coord})");
+                            cloned.gemType = GemTypeHelper.GetRandom();
+                            block.Data.gemType = cloned.gemType;
+                        }
+                        dataList.Add(cloned);
                         sourceSlots.Add(i);
                     }
                 }
@@ -1858,22 +1872,16 @@ private IEnumerator ProcessFalling()
                     if (sourceSlot != targetSlot && slotPositions.ContainsKey(column[sourceSlot]))
                     {
                         Vector2 startPos = slotPositions[column[sourceSlot]];
-                        int fallDistance = sourceSlot - targetSlot;
-                        float heightDelay = fallDistance * 0.025f;
-                        float jitter = Random.Range(0f, 0.02f);
-                        float totalDelay = colDelay + heightDelay + jitter;
 
-                        if (totalDelay > maxExistingDelay)
-                            maxExistingDelay = totalDelay;
-
+                        // ★ 지연 없이 즉시 낙하 — 모든 블록 동시 시작
                         existingAnimations.Add(new FallAnimation
                         {
                             block = targetBlock,
                             startY = startPos.y,
                             targetY = slotPositions[targetBlock].y,
-                            delay = totalDelay,
-                            gravityMult = Random.Range(0.92f, 1.08f),
-                            maxSpeedMult = Random.Range(0.90f, 1.10f),
+                            delay = 0f,
+                            gravityMult = Random.Range(0.95f, 1.05f),
+                            maxSpeedMult = Random.Range(0.95f, 1.05f),
                         });
                     }
                 }
@@ -1882,7 +1890,7 @@ private IEnumerator ProcessFalling()
                 // 스폰 오프셋: 빈 셀 3줄 위에서 생성 (필드 맨위 + 4칸)
                 float cellHeight = hexGrid != null ? hexGrid.HexSize * Mathf.Sqrt(3f) : 87f;
                 float spawnOffset = cellHeight * 4f;
-                float newBlockBaseDelay = maxExistingDelay + 0.08f;
+                float newBlockBaseDelay = 0f; // ★ 새 블록도 즉시 낙하 시작
 
                 if (emptyCount > 0)
                     Debug.Log($"[BRS] ★ ProcessFalling 스폰: topY={topY:F1}, cellHeight={cellHeight:F1}, spawnOffset={spawnOffset:F1}, topY+offset={topY + spawnOffset:F1}");
@@ -1906,7 +1914,7 @@ private IEnumerator ProcessFalling()
                     targetBlock.SetBlockData(newData);
                     targetBlock.transform.localScale = Vector3.one;
 
-                    float newDelay = newBlockBaseDelay + i * 0.04f + Random.Range(0f, 0.025f);
+                    float newDelay = newBlockBaseDelay; // ★ 동일 열 새 블록도 동시 낙하
 
                     newBlockAnimations.Add(new FallAnimation
                     {
@@ -1983,6 +1991,10 @@ private IEnumerator ProcessFalling()
 
             // ★ 낙하 완료 후 모든 블록의 위치를 슬롯으로 강제 스냅 (위치 어긋남 방지)
             SnapAllBlocksToSlots();
+
+            // ★ 고블린 비주얼을 블록 위로 재배치 (새 블록 스폰으로 sibling 순서 밀림 방지)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                GoblinSystem.Instance.BringGoblinsToFront();
 
             // ★ 물리적 충돌 대미지: 낙하 중 AnimateFall에서 실시간 적용됨
             // 사망 대기열에 있는 고블린들의 DeathAnimation 처리
@@ -2121,7 +2133,15 @@ private IEnumerator ProcessFalling()
                 if (block != null && block.Data != null && block.Data.gemType != GemType.None)
                 {
                     if (anchoredSlots.Contains(i)) continue;
-                    dataList.Add(block.Data.Clone());
+                    BlockData cloned = block.Data.Clone();
+                    // 안전장치: 적군 아닌 Gray 블록은 낙하 전에 랜덤 색으로 교정
+                    if (cloned.gemType == GemType.Gray && cloned.enemyType == EnemyType.None)
+                    {
+                        Debug.LogWarning($"[BRS] ProcessFallingForColumn: Gray/None 블록 교정 at col {colKey}, slot {i} (coord {block.Coord})");
+                        cloned.gemType = GemTypeHelper.GetRandom();
+                        block.Data.gemType = cloned.gemType;
+                    }
+                    dataList.Add(cloned);
                     sourceSlots.Add(i);
                 }
             }
@@ -2289,6 +2309,10 @@ private IEnumerator ProcessFalling()
                 }
             }
 
+            // ★ 고블린 비주얼을 블록 위로 재배치
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                GoblinSystem.Instance.BringGoblinsToFront();
+
             // ★ 낙하 충돌 사망 처리
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.HasPendingFallDeaths)
             {
@@ -2407,6 +2431,7 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                             && currentY <= target.yPos)
                         {
                             hitGoblins.Add(target.goblin);
+                            Debug.Log($"[낙하충돌] 몬스터타입=archer:{target.goblin.isArcher} healer:{target.goblin.isHealer} armored:{target.goblin.isArmored} shield:{target.goblin.isShielded} bomb:{target.goblin.isBomb} heavy:{target.goblin.isHeavy} 위치={target.goblin.position}");
                             GoblinSystem.Instance.ApplyIndividualFallDamage(target.goblin);
                         }
                     }
@@ -3389,10 +3414,12 @@ public void TriggerBigBang()
                     }
                 }
 
-                // 좌표별 데미지 누적 (같은 몬스터가 여러 블록에 인접하면 각 1씩 누적)
-                Dictionary<HexCoord, int> damageMap = new Dictionary<HexCoord, int>();
-                // 방패 내구도 감소 좌표 (일반 블록 직격만 해당)
-                HashSet<HexCoord> shieldDamageCoords = new HashSet<HexCoord>();
+                // 고블린별 데미지 누적
+                // — 같은 블록 제거로 같은 몬스터가 여러 번 카운트되는 경우(헤비급 다중 칸 포함) 1회만 적용
+                // — 서로 다른 블록 제거로 같은 몬스터에 각각 인접하면 각각 1씩 누적
+                Dictionary<GoblinData, int> goblinDamageMap = new Dictionary<GoblinData, int>();
+                // 방패 내구도 감소 대상 고블린 (일반 블록 직격만 해당)
+                HashSet<GoblinData> shieldDamageGoblins = new HashSet<GoblinData>();
 
                 foreach (var block in allRemovedBlocks)
                 {
@@ -3400,53 +3427,67 @@ public void TriggerBigBang()
                     HexCoord blockCoord = block.Coord;
                     bool isCracked = block.Data.isCracked || block.Data.isShell;
 
+                    // 이 블록 제거로 이미 데미지를 받은 몬스터 추적 (1블록 → 1몬스터 최대 1 데미지)
+                    HashSet<GoblinData> hitByThisBlock = new HashSet<GoblinData>();
+
                     // === 규칙 1: 직격 — 매칭된 블록 위치에 몬스터가 있으면 ===
                     // 일반 블록: 본체 1 + 방패 내구도 1
                     // 깨진 블록: 본체 1 + 방패 내구도 감소 없음
-                    if (damageMap.ContainsKey(blockCoord))
-                        damageMap[blockCoord] += 1;
-                    else
-                        damageMap[blockCoord] = 1;
+                    var directGoblin = GoblinSystem.Instance.GetGoblinAt(blockCoord);
+                    if (directGoblin != null && !hitByThisBlock.Contains(directGoblin))
+                    {
+                        hitByThisBlock.Add(directGoblin);
+                        if (goblinDamageMap.ContainsKey(directGoblin))
+                            goblinDamageMap[directGoblin] += 1;
+                        else
+                            goblinDamageMap[directGoblin] = 1;
 
-                    if (!isCracked)
-                        shieldDamageCoords.Add(blockCoord); // 일반 블록 직격만 방패 내구도 감소
+                        if (!isCracked)
+                            shieldDamageGoblins.Add(directGoblin); // 일반 블록 직격만 방패 내구도 감소
+                    }
 
                     // === 규칙 2: 인접 — 일반 블록만 인접 6방향 데미지 ===
                     if (!isCracked)
                     {
                         foreach (var neighbor in blockCoord.GetAllNeighbors())
                         {
-                            if (damageMap.ContainsKey(neighbor))
-                                damageMap[neighbor] += 1;
-                            else
-                                damageMap[neighbor] = 1;
-                            // 인접 데미지는 방패 내구도 감소 없음 (shieldDamageCoords에 추가 안 함)
+                            var adjGoblin = GoblinSystem.Instance.GetGoblinAt(neighbor);
+                            if (adjGoblin != null && !hitByThisBlock.Contains(adjGoblin))
+                            {
+                                hitByThisBlock.Add(adjGoblin);
+                                if (goblinDamageMap.ContainsKey(adjGoblin))
+                                    goblinDamageMap[adjGoblin] += 1;
+                                else
+                                    goblinDamageMap[adjGoblin] = 1;
+                                // 인접 데미지는 방패 내구도 감소 없음
+                            }
                         }
                     }
                     // 깨진 블록: 인접 데미지 없음 (블록 제거만 처리)
                 }
 
                 // === 데미지 적용 ===
-                foreach (var kvp in damageMap)
+                foreach (var kvp in goblinDamageMap)
                 {
-                    HexCoord coord = kvp.Key;
+                    GoblinData goblin = kvp.Key;
                     int totalDmg = kvp.Value;
 
-                    var goblin = GoblinSystem.Instance.GetGoblinAt(coord);
-                    if (goblin == null) continue;
+                    if (goblin == null || !goblin.isAlive) continue;
 
                     // 방패 고블린: 방패 내구도가 모두 깎이기 전까지 본체 HP 보호
                     if (goblin.isShielded)
                     {
-                        // 일반 블록 직격 위치면 방패 내구도 1 감소
-                        if (shieldDamageCoords.Contains(coord))
-                            GoblinSystem.Instance.ApplyShieldDamagePublic(coord, 1);
+                        // 일반 블록 직격 위치면 방패 내구도 1 감소 (ApplyShieldDamage 내부에서 "방어" 팝업 표시)
+                        if (shieldDamageGoblins.Contains(goblin))
+                            GoblinSystem.Instance.ApplyShieldDamagePublic(goblin.position, 1);
+                        else
+                            GoblinSystem.Instance.ShowShieldBlockPopup(goblin); // 인접 데미지 차단 시 "방어" 팝업
                         // 방패 활성 중에는 본체 데미지 차단
                         continue;
                     }
 
                     // 일반 몬스터 / 방패 파괴된 고블린: 본체에 데미지
-                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, totalDmg);
+                    GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, totalDmg);
                 }
             }
 

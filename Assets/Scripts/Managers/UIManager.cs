@@ -13,6 +13,18 @@ namespace JewelsHexaPuzzle.Managers
     /// </summary>
     public class UIManager : MonoBehaviour
     {
+        public static UIManager Instance { get; private set; }
+
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
         [Header("HUD Elements")]
         [SerializeField] private Text turnText;
         [SerializeField] private Text stageText;
@@ -107,6 +119,7 @@ namespace JewelsHexaPuzzle.Managers
         {
             SetupButtons();
             HideAllPopups();
+            InitToastPool();
 
             if (goldText != null)
                 scoreDefaultColor = goldText.color;
@@ -1139,7 +1152,7 @@ namespace JewelsHexaPuzzle.Managers
 
             Text titleText = titleObj.AddComponent<Text>();
             titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            titleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
+            titleText.text = "LEVEL CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
             titleText.fontSize = 36;
             titleText.fontStyle = FontStyle.Bold;
             titleText.alignment = TextAnchor.UpperCenter;
@@ -2774,6 +2787,17 @@ namespace JewelsHexaPuzzle.Managers
                     iconImage.sprite = GoblinSystem.GetHeavyGoblinSprite();
                     iconImage.color = Color.white;
                 }
+                else if (mission.targetEnemyType == EnemyType.WizardGoblin)
+                {
+                    // 마법사: 전용 스프라이트 + 스케일 반전 (pivot 중앙 기준)
+                    iconImage.sprite = GoblinSystem.GetWizardGoblinSprite();
+                    iconImage.color = Color.white;
+                    // pivot을 중앙으로 변경하여 스케일 반전 시 위치 어긋남 방지
+                    iconImage.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                    iconImage.rectTransform.anchoredPosition = new Vector2(32f, 0f);
+                    iconImage.rectTransform.sizeDelta = new Vector2(60f, 60f);
+                    iconImage.rectTransform.localScale = new Vector3(-1f, -1f, 1f);
+                }
                 else if (mission.targetEnemyType == EnemyType.Goblin)
                 {
                     iconImage.sprite = GoblinSystem.GetGoblinSprite();
@@ -3706,6 +3730,123 @@ namespace JewelsHexaPuzzle.Managers
             tex.SetPixels(pixels);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
+        }
+
+        // ============================================================
+        // 토스트 메시지 (풀링 + 인터럽트 방식)
+        // ============================================================
+
+        private GameObject toastPoolObj;       // 풀링된 토스트 GameObject
+        private RectTransform toastRt;         // 토스트 RectTransform
+        private Text toastLabel;               // 토스트 Text
+        private Outline toastOutline;          // 토스트 Outline
+        private Coroutine currentToastCoroutine; // 현재 실행 중인 토스트 코루틴 (항상 1개만)
+        private Vector2 toastStartPos = new Vector2(0f, -270f); // 상단 중앙 기준 시작 위치
+
+        /// <summary>
+        /// 토스트 풀 오브젝트 초기 생성 (Start에서 호출)
+        /// </summary>
+        private void InitToastPool()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            toastPoolObj = new GameObject("ToastMessage");
+            toastPoolObj.transform.SetParent(canvas.transform, false);
+
+            toastRt = toastPoolObj.AddComponent<RectTransform>();
+            toastRt.anchorMin = new Vector2(0.5f, 1f);   // 상단 중앙
+            toastRt.anchorMax = new Vector2(0.5f, 1f);
+            toastRt.pivot     = new Vector2(0.5f, 1f);
+            toastRt.anchoredPosition = toastStartPos;
+            toastRt.sizeDelta = new Vector2(500f, 60f);
+
+            toastLabel = toastPoolObj.AddComponent<Text>();
+            toastLabel.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            toastLabel.fontSize  = 26;
+            toastLabel.fontStyle = FontStyle.Bold;
+            toastLabel.alignment = TextAnchor.MiddleCenter;
+            toastLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            toastLabel.verticalOverflow   = VerticalWrapMode.Overflow;
+            toastLabel.color     = Color.white;
+            toastLabel.raycastTarget = false;
+            toastLabel.text = "";
+
+            toastOutline = toastPoolObj.AddComponent<Outline>();
+            toastOutline.effectColor    = new Color(0f, 0f, 0f, 1f);
+            toastOutline.effectDistance = new Vector2(2f, -2f);
+
+            toastPoolObj.SetActive(false);
+        }
+
+        /// <summary>
+        /// 화면 상단 중앙에 표시되는 토스트 메시지.
+        /// 배경 없음, 흰색 텍스트 + 검정 Outline.
+        /// 0.5초 대기 → 1초 위로 100px 이동 + 페이드아웃.
+        /// 항상 1개의 코루틴만 실행 — 잔상 방지.
+        /// </summary>
+        public void ShowToast(string message)
+        {
+            if (toastPoolObj == null) InitToastPool();
+            if (toastPoolObj == null) return;
+
+            // 진행 중인 코루틴 즉시 중단
+            if (currentToastCoroutine != null)
+            {
+                StopCoroutine(currentToastCoroutine);
+                currentToastCoroutine = null;
+            }
+
+            // 오브젝트 상태 즉시 초기화 (잔상 방지)
+            toastLabel.color = new Color(1f, 1f, 1f, 0f);
+            toastOutline.effectColor = new Color(0f, 0f, 0f, 0f);
+            toastRt.anchoredPosition = toastStartPos;
+
+            // 새 메시지 표시
+            toastLabel.text  = message;
+            toastLabel.color = Color.white;
+            toastOutline.effectColor = new Color(0f, 0f, 0f, 1f);
+            toastRt.anchoredPosition = toastStartPos;
+            toastPoolObj.SetActive(true);
+
+            currentToastCoroutine = StartCoroutine(ToastCoroutine());
+        }
+
+        /// <summary>
+        /// 토스트 메인 코루틴: 0.5초 대기 → 1초 위로 100px + 페이드아웃
+        /// </summary>
+        private IEnumerator ToastCoroutine()
+        {
+            // 0.5초 대기
+            float waitElapsed = 0f;
+            while (waitElapsed < 0.5f)
+            {
+                if (toastPoolObj == null) yield break;
+                waitElapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            // 1초 동안 위로 100px 이동 + 알파 0
+            Vector2 startPos = toastRt.anchoredPosition;
+            Vector2 endPos   = startPos + Vector2.up * 100f;
+            float fadeDuration = 1f;
+            float elapsed = 0f;
+            while (elapsed < fadeDuration)
+            {
+                if (toastPoolObj == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDuration);
+
+                toastRt.anchoredPosition = Vector2.Lerp(startPos, endPos, t);
+                float alpha = Mathf.Lerp(1f, 0f, t);
+                toastLabel.color = new Color(1f, 1f, 1f, alpha);
+                toastOutline.effectColor = new Color(0f, 0f, 0f, alpha);
+                yield return null;
+            }
+
+            toastPoolObj.SetActive(false);
+            currentToastCoroutine = null;
         }
     }
 

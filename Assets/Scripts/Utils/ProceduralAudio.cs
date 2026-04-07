@@ -1179,6 +1179,75 @@ namespace JewelsHexaPuzzle.Utils
             return noiseVal * (1f - st / 0.025f) * vol;
         }
 
+        /// <summary>
+        /// Heavy 고블린 점프 사운드 — 무거운 몸체가 도약하는 낮은 whoosh.
+        /// 저음 서브베이스(70Hz) + 상승 스윕 + 노이즈 퍼프.
+        /// </summary>
+        public static AudioClip CreateHeavyJumpSound(float duration = 0.28f)
+        {
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            System.Random rng = new System.Random(71);
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float tNorm = (float)i / sampleCount;
+                // 엔벨로프: 빠른 어택 → 빠른 감쇠
+                float envelope = ADSR(tNorm, 0.02f, 0.3f, 0.0f, 0.5f);
+                // 서브베이스: 70→130Hz 상승 스윕 (도약 느낌)
+                float sweepFreq = Mathf.Lerp(70f, 130f, tNorm);
+                float sub = Mathf.Sin(2f * Mathf.PI * sweepFreq * t) * 0.6f;
+                // 하체 충격 퍼프 노이즈 (초반만)
+                float noise = (float)(rng.NextDouble() * 2.0 - 1.0)
+                            * Mathf.Max(0f, 1f - tNorm * 4f) * 0.3f;
+                // 저음 확장 하모닉
+                float body = Mathf.Sin(2f * Mathf.PI * 110f * t) * 0.25f * (1f - tNorm);
+                data[i] = (sub + noise + body) * envelope * 0.45f;
+            }
+            ApplyFades(data, 16, 128);
+            ApplyLowPass(data, 0.35f);
+            ApplyReverb(data, 18f, 0.18f, 2);
+            AudioClip clip = AudioClip.Create("HeavyJump", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>
+        /// Heavy 고블린 착지 충격음 — 지진 느낌의 강한 저음 충격.
+        /// 초저음(50Hz) 펀치 + 먼지 노이즈 + 짧은 여진 리버브.
+        /// </summary>
+        public static AudioClip CreateHeavyLandSound(float duration = 0.38f)
+        {
+            int sampleCount = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] data = new float[sampleCount];
+            System.Random rng = new System.Random(83);
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float tNorm = (float)i / sampleCount;
+                // 초고속 어택 → 강한 감쇠 (쿵! 느낌)
+                float envelope = ADSR(tNorm, 0.003f, 0.25f, 0.05f, 0.7f);
+                // 초저음 펀치: 50→30Hz 하강 (지면 충격)
+                float punchFreq = Mathf.Lerp(50f, 30f, tNorm);
+                float punch = Mathf.Sin(2f * Mathf.PI * punchFreq * t) * 0.7f;
+                // 중저음 두께: 120Hz
+                float mid = Mathf.Sin(2f * Mathf.PI * 120f * t) * 0.35f * (1f - tNorm);
+                // 먼지 노이즈 (전체 구간, 시간에 따라 감쇠)
+                float dust = (float)(rng.NextDouble() * 2.0 - 1.0)
+                           * (1f - tNorm * 0.7f) * 0.25f;
+                // 고주파 충격 스파크 (초반 5%만)
+                float spark = Mathf.Sin(2f * Mathf.PI * 800f * t) * 0.1f
+                            * Mathf.Max(0f, 1f - tNorm * 20f);
+                data[i] = (punch + mid + dust + spark) * envelope * 0.5f;
+            }
+            ApplyFades(data, 4, 256);
+            ApplyLowPass(data, 0.28f);
+            ApplyReverb(data, 30f, 0.3f, 3);
+            AudioClip clip = AudioClip.Create("HeavyLand", sampleCount, 1, SAMPLE_RATE, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
         /// <summary>노이즈 테이블 생성 (하이햇/퍼커션용)</summary>
         private static float[] MakeNoiseTable(int seed = 42)
         {

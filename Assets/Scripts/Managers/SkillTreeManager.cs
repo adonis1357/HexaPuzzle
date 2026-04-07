@@ -79,6 +79,17 @@ namespace JewelsHexaPuzzle.Managers
         // ============================================================
 
         /// <summary>
+        /// 스킬 잠금 (에디터 전용) — 해금 목록에서 제거. SP/골드 환급 없음.
+        /// </summary>
+        public void LockSkill(SkillType skillType)
+        {
+            if (!unlockedSkills.Contains(skillType)) return;
+            unlockedSkills.Remove(skillType);
+            SaveSkillData();
+            Debug.Log($"[SkillTreeManager] 스킬 잠금: {skillType}");
+        }
+
+        /// <summary>
         /// 스킬 해금 시도 — SP + 골드 소모
         /// </summary>
         /// <returns>해금 성공 여부</returns>
@@ -220,6 +231,26 @@ namespace JewelsHexaPuzzle.Managers
             return 0;
         }
 
+
+        /// <summary>
+        /// 현재 해금된 드론 타겟 데미지 추가량 반환 (0 = 미해금)
+        /// </summary>
+        public int GetDroneTargetDamageBonus()
+        {
+            if (IsSkillUnlocked(SkillType.DroneTargetDamage3)) return 3;
+            if (IsSkillUnlocked(SkillType.DroneTargetDamage2)) return 2;
+            if (IsSkillUnlocked(SkillType.DroneTargetDamage1)) return 1;
+            return 0;
+        }
+
+        /// <summary>드릴 쿠션 반사 횟수 (0=미해금, 1~3)</summary>
+        public int GetDrillCushionLevel()
+        {
+            if (IsSkillUnlocked(SkillType.DrillCushion3)) return 3;
+            if (IsSkillUnlocked(SkillType.DrillCushion2)) return 2;
+            if (IsSkillUnlocked(SkillType.DrillCushion1)) return 1;
+            return 0;
+        }
 
         /// <summary>망치 아이템 레벨 (0=미해금, 1~3)</summary>
         public int GetHammerLevel()

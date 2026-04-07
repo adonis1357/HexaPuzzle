@@ -276,28 +276,34 @@ namespace JewelsHexaPuzzle.UI
             containerRt.anchorMax = new Vector2(0.5f, 0.5f);
             containerRt.pivot = new Vector2(0.5f, 0.5f);
             containerRt.anchoredPosition = new Vector2(0f, 60f);
-            containerRt.sizeDelta = new Vector2(800f, 1200f);
+            containerRt.sizeDelta = new Vector2(800f, 1600f);
 
             float startX = -(NODE_SPACING_X);
             float drillY = 400f;
             float drillDmgY = 260f;
-            float bombMoveY = 120f;
-            float bombKnockY = -20f;
-            float bombDmgY = -160f;
-            float hammerY = -300f;
-            float swapY = -440f;
-            float lineY = -580f;
+            float drillCushionY = 120f;
+            float bombMoveY = -20f;
+            float bombKnockY = -160f;
+            float bombDmgY = -300f;
+            float droneDmgY = -440f;
+            float hammerY = -580f;
+            float swapY = -720f;
+            float lineY = -860f;
 
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillSkills(),
                 startX, drillY, "◆ 드릴 이동", new Color(0.7f, 0.85f, 1f, 0.9f));
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillDamageSkills(),
                 startX, drillDmgY, "◆ 드릴 강화", new Color(0.5f, 0.75f, 1f, 0.9f));
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillCushionSkills(),
+                startX, drillCushionY, "◆ 드릴 쿠션", new Color(0.4f, 0.8f, 1f, 0.9f));
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombSkills(),
                 startX, bombMoveY, "◆ 폭탄 이동", new Color(1f, 0.7f, 0.4f, 0.9f));
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombKnockbackSkills(),
                 startX, bombKnockY, "◆ 폭탄 넉백", new Color(1f, 0.55f, 0.3f, 0.9f));
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetBombDamageSkills(),
                 startX, bombDmgY, "◆ 폭탄 데미지", new Color(1f, 0.3f, 0.15f, 0.9f));
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDroneTargetDamageSkills(),
+                startX, droneDmgY, "◆ 드론 데미지", new Color(0.3f, 0.7f, 0.95f, 0.9f));
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetHammerSkills(),
                 startX, hammerY, "◆ 망치", new Color(0.9f, 0.25f, 0.25f, 0.9f));
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetSwapSkills(),
@@ -1057,6 +1063,19 @@ namespace JewelsHexaPuzzle.UI
 
         private void ShowDetailPopup(SkillType skillType)
         {
+            // ★ 스킬 해금 취소 모드: 해금된 스킬 클릭 시 즉시 잠금 처리
+            var editorTest = FindObjectOfType<EditorTestSystem>();
+            if (editorTest != null && editorTest.IsSkillUnlockCancelMode)
+            {
+                if (SkillTreeManager.Instance != null && SkillTreeManager.Instance.IsSkillUnlocked(skillType))
+                {
+                    SkillTreeManager.Instance.LockSkill(skillType);
+                    RefreshAllNodes();
+                    Debug.Log($"[SkillTreeUI] 스킬 취소: {skillType}");
+                }
+                return;
+            }
+
             selectedSkill = skillType;
             var nodeData = SkillTreeDefinition.GetSkill(skillType);
             if (nodeData == null || detailPopup == null) return;
@@ -1172,24 +1191,26 @@ namespace JewelsHexaPuzzle.UI
                 var state = SkillTreeManager.Instance.GetSkillState(type);
                 var nodeData = SkillTreeDefinition.GetSkill(type);
 
+                // 데미지 스킬은 필드 블록 아이콘과 동일한 색상 적용
+                Color baseNodeColor = GetDamageSkillColor(type, nodeData);
+
                 switch (state)
                 {
                     case SkillState.Unlocked:
-                        // 밝고 채도 높은 색상 + 금색 테두리
-                        bg.color = nodeData != null ? nodeData.nodeColor : Color.cyan;
+                        // 밝고 채도 높은 원색 + 금색 테두리
+                        bg.color = baseNodeColor;
                         if (border != null) border.color = new Color(1f, 0.85f, 0.3f, 1f);
                         break;
 
                     case SkillState.Available:
                         // 보통 밝기 + 흰색 테두리
-                        Color availColor = nodeData != null ? nodeData.nodeColor : Color.gray;
-                        bg.color = new Color(availColor.r * 0.7f, availColor.g * 0.7f, availColor.b * 0.7f, 0.9f);
+                        bg.color = new Color(baseNodeColor.r * 0.7f, baseNodeColor.g * 0.7f, baseNodeColor.b * 0.7f, 0.9f);
                         if (border != null) border.color = new Color(0.8f, 0.8f, 0.9f, 0.9f);
                         break;
 
                     case SkillState.Locked:
-                        // 어두운 회색 + 어두운 테두리
-                        bg.color = new Color(0.25f, 0.22f, 0.3f, 0.7f);
+                        // 어두운 버전 + 어두운 테두리
+                        bg.color = new Color(baseNodeColor.r * 0.4f, baseNodeColor.g * 0.4f, baseNodeColor.b * 0.4f, 0.5f);
                         if (border != null) border.color = new Color(0.4f, 0.35f, 0.45f, 0.5f);
                         break;
                 }
@@ -1203,6 +1224,93 @@ namespace JewelsHexaPuzzle.UI
                     lockedLockIcons[type].SetActive(showLocked);
                 if (openLockIcons.ContainsKey(type) && openLockIcons[type] != null)
                     openLockIcons[type].SetActive(showOpen);
+
+                // 폭탄 데미지 노드: 검정 배경 위에 v1/v2/v3 텍스트 표시
+                if (type == SkillType.BombDamage1 || type == SkillType.BombDamage2 || type == SkillType.BombDamage3)
+                {
+                    int bombLevel = 0;
+                    if (type == SkillType.BombDamage1) bombLevel = 1;
+                    else if (type == SkillType.BombDamage2) bombLevel = 2;
+                    else if (type == SkillType.BombDamage3) bombLevel = 3;
+
+                    string vText = JewelsHexaPuzzle.Utils.BlockSkillColors.GetBombLevelText(bombLevel);
+                    UpdateBombNodeText(skillNodes[type], vText, state);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 폭탄 데미지 스킬 노드에 v1/v2/v3 텍스트 표시/갱신
+        /// </summary>
+        private void UpdateBombNodeText(GameObject nodeObj, string vText, SkillState state)
+        {
+            if (nodeObj == null) return;
+
+            Transform existing = nodeObj.transform.Find("BombVersionText");
+            Text bombText;
+
+            if (existing != null)
+            {
+                bombText = existing.GetComponent<Text>();
+            }
+            else
+            {
+                GameObject textObj = new GameObject("BombVersionText");
+                textObj.transform.SetParent(nodeObj.transform, false);
+
+                bombText = textObj.AddComponent<Text>();
+                bombText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                bombText.fontSize = 18;
+                bombText.fontStyle = FontStyle.Bold;
+                bombText.alignment = TextAnchor.MiddleCenter;
+                bombText.raycastTarget = false;
+
+                Outline outline = textObj.AddComponent<Outline>();
+                outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+                outline.effectDistance = new Vector2(1f, -1f);
+
+                RectTransform rt = textObj.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = Vector2.zero;
+                rt.sizeDelta = new Vector2(60f, 30f);
+            }
+
+            bombText.text = vText;
+            // 해금 → 흰색, 비해금 → 반투명 회색
+            bombText.color = (state == SkillState.Unlocked)
+                ? Color.white
+                : new Color(0.6f, 0.6f, 0.6f, 0.5f);
+        }
+
+        /// <summary>
+        /// 데미지 스킬 노드의 고유 색상 반환.
+        /// BlockSkillColors 중앙 색상 상수 참조 — 인게임 블록 아이콘과 동일 색상 보장.
+        /// 데미지 스킬이 아니면 기존 nodeColor 반환.
+        /// </summary>
+        private Color GetDamageSkillColor(SkillType type, SkillNodeData nodeData)
+        {
+            switch (type)
+            {
+                // 드릴 데미지 (공통 색상)
+                case SkillType.DrillDamage1: return JewelsHexaPuzzle.Utils.BlockSkillColors.CommonLevel1;
+                case SkillType.DrillDamage2: return JewelsHexaPuzzle.Utils.BlockSkillColors.CommonLevel2;
+                case SkillType.DrillDamage3: return JewelsHexaPuzzle.Utils.BlockSkillColors.CommonLevel3;
+
+                // 폭탄 데미지 (검정 배경)
+                case SkillType.BombDamage1: return JewelsHexaPuzzle.Utils.BlockSkillColors.BombLevel1;
+                case SkillType.BombDamage2: return JewelsHexaPuzzle.Utils.BlockSkillColors.BombLevel2;
+                case SkillType.BombDamage3: return JewelsHexaPuzzle.Utils.BlockSkillColors.BombLevel3;
+
+                // 드론 타겟 데미지 (공통 색상)
+                case SkillType.DroneTargetDamage1: return JewelsHexaPuzzle.Utils.BlockSkillColors.CommonLevel1;
+                case SkillType.DroneTargetDamage2: return JewelsHexaPuzzle.Utils.BlockSkillColors.CommonLevel2;
+                case SkillType.DroneTargetDamage3: return JewelsHexaPuzzle.Utils.BlockSkillColors.CommonLevel3;
+
+                // 기타 스킬: 기존 nodeColor 유지
+                default:
+                    return nodeData != null ? nodeData.nodeColor : Color.gray;
             }
         }
 
