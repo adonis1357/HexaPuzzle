@@ -849,21 +849,30 @@ private IEnumerator DrillLineWithProjectile(
                     damagedGoblinPositions.Add(target.Coord);
                     if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
                     {
-                        // ★ Heavy 고블린: 같은 라인에서 같은 Heavy의 여러 블록을 지나가도 1회만 데미지
-                        var goblinAtCoord = GoblinSystem.Instance.GetGoblinAt(target.Coord);
-                        bool shouldDamage = true;
-                        if (goblinAtCoord != null && goblinAtCoord.isHeavy)
+                        // ★ 은신 도둑 고블린: 드릴 투사체 회피
+                        if (GoblinSystem.Instance.IsGoblinStealthAt(target.Coord))
                         {
-                            if (damagedHeavyThisLine.Contains(goblinAtCoord))
-                                shouldDamage = false; // 이미 이 라인에서 데미지 적용됨
-                            else
-                                damagedHeavyThisLine.Add(goblinAtCoord);
+                            Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피: {target.Coord}");
+                            GoblinSystem.Instance.PlayDrillDodgeEffect(target.Coord);
                         }
-
-                        if (shouldDamage)
+                        else
                         {
-                            int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
-                            GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+                            // ★ Heavy 고블린: 같은 라인에서 같은 Heavy의 여러 블록을 지나가도 1회만 데미지
+                            var goblinAtCoord = GoblinSystem.Instance.GetGoblinAt(target.Coord);
+                            bool shouldDamage = true;
+                            if (goblinAtCoord != null && goblinAtCoord.isHeavy)
+                            {
+                                if (damagedHeavyThisLine.Contains(goblinAtCoord))
+                                    shouldDamage = false; // 이미 이 라인에서 데미지 적용됨
+                                else
+                                    damagedHeavyThisLine.Add(goblinAtCoord);
+                            }
+
+                            if (shouldDamage)
+                            {
+                                int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                                GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+                            }
                         }
                     }
                 }
@@ -924,6 +933,13 @@ private IEnumerator DrillLineWithProjectile(
                     if (!damagedGoblinPositions.Contains(gPos))
                     {
                         damagedGoblinPositions.Add(gPos);
+                        // ★ 은신 도둑 고블린: 드릴 투사체 회피
+                        if (GoblinSystem.Instance.IsGoblinStealthAt(gPos))
+                        {
+                            Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피 (잔여 경로): {gPos}");
+                            GoblinSystem.Instance.PlayDrillDodgeEffect(gPos);
+                            continue;
+                        }
                         // ★ Heavy 고블린: 같은 라인에서 이미 데미지를 줬으면 스킵
                         var goblinAtPos = GoblinSystem.Instance.GetGoblinAt(gPos);
                         bool shouldDamage = true;
@@ -1039,10 +1055,20 @@ private IEnumerator DrillLineWithProjectile(
                         // ★ 중복 데미지 방지: pathGoblinPositions 루프에서 이미 처리된 좌표 스킵
                         if (!damagedGoblinPositions.Contains(advanceCursor))
                         {
-                            int advDrillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
-                            GoblinSystem.Instance.ApplyDamageAtPosition(advanceCursor, advDrillDmg);
-                            damagedGoblinPositions.Add(advanceCursor);
-                            Debug.Log($"[DrillBlockSystem] advance 중 몬스터 관통: {advanceCursor} dmg={advDrillDmg}");
+                            // 은신 도둑 고블린 회피
+                            if (GoblinSystem.Instance.IsGoblinStealthAt(advanceCursor))
+                            {
+                                Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피 (advance): {advanceCursor}");
+                                GoblinSystem.Instance.PlayDrillDodgeEffect(advanceCursor);
+                                damagedGoblinPositions.Add(advanceCursor);
+                            }
+                            else
+                            {
+                                int advDrillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                                GoblinSystem.Instance.ApplyDamageAtPosition(advanceCursor, advDrillDmg);
+                                damagedGoblinPositions.Add(advanceCursor);
+                                Debug.Log($"[DrillBlockSystem] advance 중 몬스터 관통: {advanceCursor} dmg={advDrillDmg}");
+                            }
                         }
                         // ★ break 없음 — 투사체 관통, 루프 계속 진행
                     }
@@ -1392,6 +1418,18 @@ private IEnumerator DrillLineWithProjectile(
                         var goblin = cachedGoblins[gi];
                         if (goblin.visualObject == null || !goblin.isAlive) continue;
                         if (goblin.isShielded) continue;
+                        if (goblin.isThief && goblin.isStealth) // 은신 도둑 고블린 회피
+                        {
+                            // 투사체가 근접했을 때만 회피 연출 (중복 방지)
+                            Vector3 gWP = goblin.visualObject.transform.position;
+                            float gDist = Vector2.Distance(projWorld2D, new Vector2(gWP.x, gWP.y));
+                            if (gDist < hitRadius && !exitDamagedPositions.Contains(goblin.position))
+                            {
+                                GoblinSystem.Instance.PlayDrillDodgeEffect(goblin);
+                                exitDamagedPositions.Add(goblin.position);
+                            }
+                            continue;
+                        }
                         if (exitDamagedPositions.Contains(goblin.position)) continue;
 
                         Vector3 goblinWorldPos = goblin.visualObject.transform.position;

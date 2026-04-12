@@ -279,6 +279,24 @@ namespace JewelsHexaPuzzle.Managers
             return 0;
         }
 
+        /// <summary>연쇄폭탄 레벨 (0=미해금, 1~3) — 소형 폭탄 투척 개수</summary>
+        public int GetChainBombLevel()
+        {
+            if (IsSkillUnlocked(SkillType.ChainBomb3)) return 3;
+            if (IsSkillUnlocked(SkillType.ChainBomb2)) return 2;
+            if (IsSkillUnlocked(SkillType.ChainBomb1)) return 1;
+            return 0;
+        }
+
+        /// <summary>타겟 강화 레벨 (0=미해금, 1~3) — 모든 특수 블록 몬스터 데미지 +N</summary>
+        public int GetTargetDamageBonus()
+        {
+            if (IsSkillUnlocked(SkillType.TargetDamage3)) return 3;
+            if (IsSkillUnlocked(SkillType.TargetDamage2)) return 2;
+            if (IsSkillUnlocked(SkillType.TargetDamage1)) return 1;
+            return 0;
+        }
+
         // ============================================================
         // 초기화 (에디터 디버그)
         // ============================================================

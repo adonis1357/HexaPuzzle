@@ -114,7 +114,8 @@ namespace JewelsHexaPuzzle.Data
         BombGoblin = 14,        // 폭탄 고블린: 카운트다운 후 광역 폭발, 블록 대량 파괴 | 별칭: 폭탄고블린
         HealerGoblin = 15,     // 힐러 고블린: 피해 입은 아군 회복, 소환 영역에서 활동 | 별칭: 힐러
         HeavyGoblin = 16,      // 헤비급 고블린: 3블록 삼각형 점유, HP 36, 회전 불가 | 별칭: 헤비
-        WizardGoblin = 17      // 마법사 고블린: 소환 영역 전용, HP 3 | 별칭: 마법사
+        WizardGoblin = 17,     // 마법사 고블린: 소환 영역 전용, HP 3 | 별칭: 마법사
+        ThiefGoblin = 18       // 도둑 고블린: 2칸 이동+은신/수리검 교차, HP 12 | 별칭: 도둑
     }
 
     /// <summary>

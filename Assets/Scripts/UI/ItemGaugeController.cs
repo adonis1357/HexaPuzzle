@@ -118,12 +118,13 @@ namespace JewelsHexaPuzzle.UI
         {
             bool changed = false;
 
-            if (gemType == GemType.Green && hammerCount < MAX_COUNT)
+            // ★ 색상 매핑을 기존 게이지 시스템과 통일 (Red→망치, Green→스왑, Purple→라인)
+            if (gemType == GemType.Red && hammerCount < MAX_COUNT)
             {
                 hammerCount++;
                 changed = true;
             }
-            else if (gemType == GemType.Red && swapCount < MAX_COUNT)
+            else if (gemType == GemType.Green && swapCount < MAX_COUNT)
             {
                 swapCount++;
                 changed = true;

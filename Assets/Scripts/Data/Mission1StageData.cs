@@ -96,7 +96,17 @@ namespace JewelsHexaPuzzle.Managers
                 { 77, GetStage77() },
                 { 78, GetStage78() },
                 { 79, GetStage79() },
-                { 80, GetStage80() }
+                { 80, GetStage80() },
+                { 81, GetStage81() },
+                { 82, GetStage82() },
+                { 83, GetStage83() },
+                { 84, GetStage84() },
+                { 85, GetStage85() },
+                { 86, GetStage86() },
+                { 87, GetStage87() },
+                { 88, GetStage88() },
+                { 89, GetStage89() },
+                { 90, GetStage90() }
             };
         }
 
@@ -3083,7 +3093,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 74: 마법사2 + 헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1 = 11
+        // Stage 74: 마법사1 + 헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1 + [마법사1] = 11
         // 턴 22 | 미션처치 11 | 어려움
         // ============================================================
         private static StageData GetStage74()
@@ -3097,12 +3107,13 @@ namespace JewelsHexaPuzzle.Managers
                 difficulty = 3,
                 missions = new[]
                 {
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 2, description = "마법사 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 1, description = "방패 고블린 1마리 처치" }
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 1, description = "방패 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
@@ -3113,7 +3124,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 75: 마법사2 + 헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2 = 14
+        // Stage 75: 마법사1 + 헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2 + [마법사1] = 14
         // 턴 20 | 미션처치 14 | 어려움
         // ============================================================
         private static StageData GetStage75()
@@ -3127,12 +3138,13 @@ namespace JewelsHexaPuzzle.Managers
                 difficulty = 3,
                 missions = new[]
                 {
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 2, description = "마법사 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" }
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
@@ -3174,7 +3186,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 77: 마법사2 + 헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1 = 13
+        // Stage 77: 마법사1 + 헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1 + [마법사1] = 13
         // 턴 25 | 미션처치 13 | 보통
         // ============================================================
         private static StageData GetStage77()
@@ -3188,12 +3200,13 @@ namespace JewelsHexaPuzzle.Managers
                 difficulty = 2,
                 missions = new[]
                 {
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 2, description = "마법사 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
@@ -3204,7 +3217,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 78: 마법사2 + 헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1 = 14
+        // Stage 78: 마법사1 + 헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1 + [마법사1] = 14
         // 턴 24 | 미션처치 14 | 보통
         // ============================================================
         private static StageData GetStage78()
@@ -3218,12 +3231,13 @@ namespace JewelsHexaPuzzle.Managers
                 difficulty = 2,
                 missions = new[]
                 {
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 2, description = "마법사 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" }
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
@@ -3234,7 +3248,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 79: 마법사2 + 헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러2 = 16
+        // Stage 79: 마법사1 + 헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러2 + [마법사1] = 16
         // 턴 20 | 미션처치 16 | 어려움
         // ============================================================
         private static StageData GetStage79()
@@ -3248,12 +3262,13 @@ namespace JewelsHexaPuzzle.Managers
                 difficulty = 3,
                 missions = new[]
                 {
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 2, description = "마법사 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" }
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
@@ -3264,7 +3279,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         // ============================================================
-        // Stage 80: 마법사3 + 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2 = 21
+        // Stage 80: 마법사1 + 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2 + [마법사1] + [마법사1] = 21
         // 턴 18 | 미션처치 21 | 어려움
         // ============================================================
         private static StageData GetStage80()
@@ -3278,13 +3293,15 @@ namespace JewelsHexaPuzzle.Managers
                 difficulty = 3,
                 missions = new[]
                 {
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 3, description = "마법사 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 3, description = "헤비 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 5, description = "폭탄 고블린 5마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
                     new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
-                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" }
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" }
                 },
                 enemyPlacements = new EnemyPlacement[0],
                 fixedBlockPlacements = new EnemyPlacement[0],
@@ -3292,6 +3309,240 @@ namespace JewelsHexaPuzzle.Managers
                 tutorialFlags = new TutorialFlag[0]
             };
             return stage;
+        }
+
+        // ============================================================
+        // Stage 81~90: 도둑의 은신처 — 도둑 고블린 등장
+        // ============================================================
+
+        private static StageData GetStage81()
+        {
+            return new StageData
+            {
+                stageNumber = 81, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 30, difficulty = 1,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 2, description = "도둑 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 5, description = "고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 1, description = "도둑 고블린 1마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage82()
+        {
+            return new StageData
+            {
+                stageNumber = 82, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 28, difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 3, description = "도둑 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 4, description = "고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 2, description = "도둑 고블린 2마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage83()
+        {
+            return new StageData
+            {
+                stageNumber = 83, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 25, difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 4, description = "도둑 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 1, description = "힐러 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 4, description = "고블린 4마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage84()
+        {
+            return new StageData
+            {
+                stageNumber = 84, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 28, difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 3, description = "도둑 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 1, description = "헤비 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 4, description = "고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 2, description = "갑옷 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 2, description = "도둑 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage85()
+        {
+            return new StageData
+            {
+                stageNumber = 85, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 26, difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 5, description = "도둑 고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 5, description = "고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 2, description = "방패 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 3, description = "도둑 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage86()
+        {
+            return new StageData
+            {
+                stageNumber = 86, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 28, difficulty = 2,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 4, description = "도둑 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 4, description = "갑옷 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 2, description = "폭탄 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 3, description = "고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 3, description = "도둑 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage87()
+        {
+            return new StageData
+            {
+                stageNumber = 87, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 25, difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 4, description = "도둑 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 4, description = "고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 2, description = "활 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 3, description = "도둑 고블린 3마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage88()
+        {
+            return new StageData
+            {
+                stageNumber = 88, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 30, difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 5, description = "도둑 고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 5, description = "고블린 5마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 3, description = "갑옷 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 4, description = "도둑 고블린 4마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage89()
+        {
+            return new StageData
+            {
+                stageNumber = 89, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 27, difficulty = 3,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 6, description = "도둑 고블린 6마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 2, description = "헤비 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 3, description = "폭탄 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 4, description = "고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 4, description = "갑옷 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 4, description = "도둑 고블린 4마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
+        }
+
+        private static StageData GetStage90()
+        {
+            return new StageData
+            {
+                stageNumber = 90, chapterNumber = 9, chapterName = "도둑의 은신처",
+                turnLimit = 32, difficulty = 4,
+                missions = new[]
+                {
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 8, description = "도둑 고블린 8마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HeavyGoblin, targetCount = 3, description = "헤비 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.HealerGoblin, targetCount = 2, description = "힐러 고블린 2마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ShieldGoblin, targetCount = 3, description = "방패 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.BombGoblin, targetCount = 4, description = "폭탄 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.WizardGoblin, targetCount = 1, description = "마법사 고블린 1마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.Goblin, targetCount = 6, description = "고블린 6마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArmoredGoblin, targetCount = 4, description = "갑옷 고블린 4마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ArcherGoblin, targetCount = 3, description = "활 고블린 3마리 처치" },
+                    new MissionData { type = MissionType.RemoveEnemy, targetEnemyType = EnemyType.ThiefGoblin, targetCount = 5, description = "도둑 고블린 5마리 처치" }
+                },
+                enemyPlacements = new EnemyPlacement[0], fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = null, tutorialFlags = new TutorialFlag[0]
+            };
         }
 
     }

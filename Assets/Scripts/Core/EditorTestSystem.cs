@@ -36,7 +36,7 @@ namespace JewelsHexaPuzzle.Core
         private Text monsterLabel; // 버튼 라벨 텍스트 참조
 
         /// <summary>에디터 몬스터 타입 열거</summary>
-        private enum EditorGoblinType { Regular, Armored, Archer, Shield, BombGoblin, Healer, Heavy, Wizard }
+        private enum EditorGoblinType { Regular, Armored, Archer, Shield, BombGoblin, Healer, Heavy, Wizard, Thief }
 
         /// <summary>
         /// 에디터 버튼 몬스터 순환 목록.
@@ -51,7 +51,8 @@ namespace JewelsHexaPuzzle.Core
             EditorGoblinType.BombGoblin,
             EditorGoblinType.Healer,
             EditorGoblinType.Heavy,
-            EditorGoblinType.Wizard
+            EditorGoblinType.Wizard,
+            EditorGoblinType.Thief
         };
 
         /// <summary>MONSTER_CYCLE + DeleteMode 이름 배열 (UI 라벨용)</summary>
@@ -68,6 +69,7 @@ namespace JewelsHexaPuzzle.Core
                 case EditorGoblinType.Healer:     return "힐러";
                 case EditorGoblinType.Heavy:      return "헤비";
                 case EditorGoblinType.Wizard:    return "마법사";
+                case EditorGoblinType.Thief:     return "도둑";
                 default: return "???";
             }
         }
@@ -687,6 +689,7 @@ namespace JewelsHexaPuzzle.Core
                 case EditorGoblinType.Healer:     return GoblinSystem.GetGoblinSprite();
                 case EditorGoblinType.Heavy:      return GoblinSystem.GetHeavyGoblinSprite();
                 case EditorGoblinType.Wizard:    return GoblinSystem.GetWizardGoblinSprite();
+                case EditorGoblinType.Thief:     return GoblinSystem.GetThiefGoblinSprite();
                 default: return null;
             }
         }
@@ -735,6 +738,7 @@ namespace JewelsHexaPuzzle.Core
                 case 7: goblinType = EditorGoblinType.Healer;     break;
                 case 6: goblinType = EditorGoblinType.Heavy;      break;
                 case 8: goblinType = EditorGoblinType.Wizard;    break;
+                case 9: goblinType = EditorGoblinType.Thief;     break;
                 default: return -1;
             }
             for (int i = 0; i < MONSTER_CYCLE.Length; i++)
@@ -816,7 +820,8 @@ namespace JewelsHexaPuzzle.Core
             bool isHealer  = (type == EditorGoblinType.Healer);
             bool isHeavy   = (type == EditorGoblinType.Heavy);
             bool isWizard  = (type == EditorGoblinType.Wizard);
-            GoblinSystem.Instance.EditorSpawnGoblin(coord, isArmored, isArcher, isShield, isBomb, isHealer, isHeavy, isWizard);
+            bool isThief   = (type == EditorGoblinType.Thief);
+            GoblinSystem.Instance.EditorSpawnGoblin(coord, isArmored, isArcher, isShield, isBomb, isHealer, isHeavy, isWizard, isThief);
         }
 
         private Sprite GetIconSpriteForType(SpecialBlockType type, int index)

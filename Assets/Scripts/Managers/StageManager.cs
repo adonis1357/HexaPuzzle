@@ -18,12 +18,37 @@ namespace JewelsHexaPuzzle.Managers
 
         private StageData currentStageData;
         private List<MissionProgress> missionProgress = new List<MissionProgress>();
+        // ★ 미션 큐: 6개 초과 미션은 대기열에서 순차 활성화
+        private Queue<MissionData> pendingMissions = new Queue<MissionData>();
         
         // 이벤트
         public event System.Action<MissionProgress[]> OnMissionProgressUpdated;
         public event System.Action<int> OnMissionComplete;
+        /// <summary>미션 슬롯이 대기 미션으로 교체될 때 (slotIndex, newMission)</summary>
+        public event System.Action<int, MissionData> OnMissionSlotReplaced;
         
         public StageData CurrentStageData => currentStageData;
+
+        /// <summary>현재 활성 미션(완료 포함)의 MissionData 배열 반환 — UI 표시용</summary>
+        public MissionData[] GetActiveMissions()
+        {
+            var active = new List<MissionData>();
+            foreach (var p in missionProgress)
+                active.Add(p.mission);
+            return active.ToArray();
+        }
+
+        /// <summary>현재 활성 미션 중 미완료만 반환</summary>
+        public MissionData[] GetIncompleteMissions()
+        {
+            var result = new List<MissionData>();
+            foreach (var p in missionProgress)
+            {
+                if (!p.isComplete)
+                    result.Add(p.mission);
+            }
+            return result.ToArray();
+        }
         
         /// <summary>
         /// 스테이지 로드
@@ -112,10 +137,13 @@ namespace JewelsHexaPuzzle.Managers
         /// isArmored에 따라 EnemyType.Goblin 또는 ArmoredGoblin 미션 진행도 업데이트
         /// </summary>
         public void ReportGoblinKill(bool isArmored, bool isArcher = false, bool isShieldType = false,
-            bool isBomb = false, bool isHealer = false, bool isHeavy = false, bool isWizard = false)
+            bool isBomb = false, bool isHealer = false, bool isHeavy = false, bool isWizard = false,
+            bool isThief = false)
         {
             EnemyType targetType;
-            if (isWizard)
+            if (isThief)
+                targetType = EnemyType.ThiefGoblin;
+            else if (isWizard)
                 targetType = EnemyType.WizardGoblin;
             else if (isHeavy)
                 targetType = EnemyType.HeavyGoblin;
@@ -146,7 +174,7 @@ namespace JewelsHexaPuzzle.Managers
             }
 
             OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
-            string typeName = isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
+            string typeName = isThief ? "도둑" : isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
             Debug.Log($"[StageManager] {typeName} 고블린 제거 보고");
         }
 
@@ -266,11 +294,12 @@ namespace JewelsHexaPuzzle.Managers
         /// <summary>
         /// 미션 초기화 — 최대 6종 제한, 초과 시 수량 재분배
         /// </summary>
-        private const int MAX_MISSION_TYPES = 6;
+        private const int MAX_ACTIVE_MISSIONS = 6;
 
         private void InitializeMissions()
         {
             missionProgress.Clear();
+            pendingMissions.Clear();
 
             if (currentStageData?.missions == null)
             {
@@ -280,48 +309,95 @@ namespace JewelsHexaPuzzle.Managers
 
             var missions = currentStageData.missions;
 
-            // ★ 6종 초과 시 제한: 수량이 큰 미션 우선 유지, 나머지 수량 재분배
-            if (missions.Length > MAX_MISSION_TYPES)
+            Debug.Log($"[StageManager] ★ InitializeMissions: 전체 미션 {missions.Length}종, MAX_ACTIVE={MAX_ACTIVE_MISSIONS}");
+
+            // ★ 미션 큐 시스템: 처음 MAX_ACTIVE_MISSIONS개 활성화, 나머지 대기열
+            for (int i = 0; i < missions.Length; i++)
             {
-                Debug.LogWarning($"[StageManager] 미션 {missions.Length}종 → {MAX_MISSION_TYPES}종 제한 적용");
-
-                // 수량 내림차순 정렬 (수량 큰 것 = 중요 미션 우선 유지)
-                var sorted = new List<MissionData>(missions);
-                sorted.Sort((a, b) => b.targetCount.CompareTo(a.targetCount));
-
-                // 유지할 미션 (상위 6종)
-                var kept = sorted.GetRange(0, MAX_MISSION_TYPES);
-                // 제거할 미션 (하위)
-                var removed = sorted.GetRange(MAX_MISSION_TYPES, sorted.Count - MAX_MISSION_TYPES);
-
-                // 제거된 미션의 총 수량을 유지 미션에 균등 분배
-                int removedTotal = 0;
-                foreach (var m in removed)
-                    removedTotal += m.targetCount;
-
-                if (removedTotal > 0)
+                if (missionProgress.Count < MAX_ACTIVE_MISSIONS)
                 {
-                    int perMission = removedTotal / kept.Count;
-                    int remainder = removedTotal % kept.Count;
-                    for (int i = 0; i < kept.Count; i++)
+                    missionProgress.Add(new MissionProgress
                     {
-                        kept[i].targetCount += perMission + (i < remainder ? 1 : 0);
-                    }
-                    Debug.Log($"[StageManager] 제거된 미션 수량 {removedTotal}을 {kept.Count}종에 재분배");
+                        mission = missions[i],
+                        currentCount = 0,
+                        isComplete = false
+                    });
+                    Debug.Log($"[StageManager] 활성 미션 추가: [{i}] {missions[i].description}");
                 }
-
-                missions = kept.ToArray();
-            }
-
-            foreach (var mission in missions)
-            {
-                missionProgress.Add(new MissionProgress
+                else
                 {
-                    mission = mission,
-                    currentCount = 0,
-                    isComplete = false
-                });
+                    pendingMissions.Enqueue(missions[i]);
+                    Debug.Log($"[StageManager] 대기 미션 추가: [{i}] {missions[i].description}");
+                }
             }
+
+            Debug.Log($"[StageManager] ★ 미션 큐 결과: 활성 {missionProgress.Count}종, 대기 {pendingMissions.Count}종");
+        }
+
+        /// <summary>
+        /// 대기 미션을 활성 슬롯으로 승격합니다.
+        /// 활성 미션이 완료되어 빈 슬롯이 생기면 호출됩니다.
+        /// </summary>
+        private void PromotePendingMissions()
+        {
+            if (pendingMissions.Count == 0) return;
+
+            // 완료된 슬롯을 대기 미션으로 교체 (in-place)
+            for (int i = 0; i < missionProgress.Count && pendingMissions.Count > 0; i++)
+            {
+                if (missionProgress[i].isComplete)
+                {
+                    var nextMission = pendingMissions.Dequeue();
+                    missionProgress[i] = new MissionProgress
+                    {
+                        mission = nextMission,
+                        currentCount = 0,
+                        isComplete = false
+                    };
+                    OnMissionSlotReplaced?.Invoke(i, nextMission);
+                    Debug.Log($"[StageManager] 미션 슬롯 [{i}] 교체: {nextMission.description} (남은 대기: {pendingMissions.Count})");
+                }
+            }
+
+            // UI 갱신
+            OnMissionProgressUpdated?.Invoke(missionProgress.ToArray());
+        }
+
+        /// <summary>대기 중인 미션 수</summary>
+        public int PendingMissionCount => pendingMissions.Count;
+
+        /// <summary>활성 + 대기 미션 전체 MissionData 반환 (UI 초기 생성용)</summary>
+        public MissionData[] GetAllMissionData()
+        {
+            var all = new List<MissionData>();
+            foreach (var p in missionProgress)
+                all.Add(p.mission);
+            foreach (var m in pendingMissions)
+                all.Add(m);
+            return all.ToArray();
+        }
+
+        /// <summary>
+        /// 활성 + 대기 미션 전체를 MissionProgress 배열로 반환 (고블린 소환 시스템용).
+        /// 대기 미션은 currentCount=0, isComplete=false 상태로 변환.
+        /// </summary>
+        public MissionProgress[] GetAllMissionProgress()
+        {
+            var all = new List<MissionProgress>();
+            foreach (var p in missionProgress)
+                all.Add(p);
+            foreach (var m in pendingMissions)
+                all.Add(new MissionProgress { mission = m, currentCount = 0, isComplete = false });
+            return all.ToArray();
+        }
+
+        /// <summary>현재 활성(미완료+완료) 미션 수</summary>
+        public int ActiveMissionCount => missionProgress.Count;
+
+        /// <summary>대기열의 다음 미션을 제거하지 않고 반환 (UI 미리보기용)</summary>
+        public MissionData PeekNextPendingMission()
+        {
+            return pendingMissions.Count > 0 ? pendingMissions.Peek() : null;
         }
         
         /// <summary>
@@ -511,12 +587,16 @@ namespace JewelsHexaPuzzle.Managers
         private void CheckMissionCompletion(int index)
         {
             var progress = missionProgress[index];
-            
+
             if (progress.currentCount >= progress.mission.targetCount && !progress.isComplete)
             {
                 progress.isComplete = true;
                 OnMissionComplete?.Invoke(index);
                 Debug.Log($"Mission {index} complete!");
+
+                // ★ 대기 미션이 있으면 승격
+                if (pendingMissions.Count > 0)
+                    PromotePendingMissions();
             }
         }
         
@@ -525,6 +605,9 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public bool IsMissionComplete()
         {
+            // ★ 대기 미션이 남아있으면 아직 미완료
+            if (pendingMissions.Count > 0) return false;
+
             foreach (var progress in missionProgress)
             {
                 if (!progress.isComplete) return false;

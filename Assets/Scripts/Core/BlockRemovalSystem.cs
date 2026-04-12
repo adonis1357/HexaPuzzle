@@ -1624,10 +1624,11 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
 private IEnumerator CascadeWithPendingLoop()
         {
-            int maxIterations = 20;
+            int maxIterations = 40;
             int iteration = 0;
             bool fatalError = false;
             currentCascadeDepth = 0;
+            int noProgressCount = 0; // 수렴 감지: 연속 무진행 횟수
 
             try
             {
@@ -1668,11 +1669,40 @@ private IEnumerator CascadeWithPendingLoop()
                     break;
                 }
 
+                // ★ 수렴 감지: 그리드 상태 스냅샷 비교
+                int blocksBefore = 0;
+                if (hexGrid != null)
+                {
+                    foreach (var b in hexGrid.GetAllBlocks())
+                        if (b != null && b.Data != null && b.Data.gemType != GemType.None) blocksBefore++;
+                }
+
                 // 5. 매칭 있음 (pending과 함께 또는 단독) → 인라인 처리 후 루프 반복
                 if (cascadeMatches != null)
                 {
                     Debug.Log($"[BRS] Cascade #{iteration}: {(cascadePending.Count > 0 ? cascadePending.Count + " pending + " : "")}{cascadeMatches.Count} matches");
                     yield return StartCoroutine(ProcessMatchesInline(cascadeMatches, cascadePending.Count > 0 ? cascadePending : null));
+
+                    // 수렴 체크: 블록 수 변화 없으면 무진행
+                    int blocksAfter = 0;
+                    if (hexGrid != null)
+                    {
+                        foreach (var b in hexGrid.GetAllBlocks())
+                            if (b != null && b.Data != null && b.Data.gemType != GemType.None) blocksAfter++;
+                    }
+                    if (blocksAfter >= blocksBefore)
+                    {
+                        noProgressCount++;
+                        if (noProgressCount >= 3)
+                        {
+                            Debug.LogWarning($"[BRS] Cascade stalled: no blocks removed for {noProgressCount} consecutive iterations. Breaking.");
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        noProgressCount = 0;
+                    }
                     continue;
                 }
 
@@ -1703,12 +1733,14 @@ private IEnumerator CascadeWithPendingLoop()
                     SnapClearedBlocksToSlots();
                     yield return StartCoroutine(ProcessFalling());
                     yield return new WaitForSeconds(cascadeDelay);
+
+                    noProgressCount = 0; // 특수 블록 발동은 항상 진행으로 간주
                     continue;
                 }
             }
 
             if (iteration >= maxIterations)
-                Debug.LogError($"[BRS] CascadeWithPendingLoop hit max iterations ({maxIterations})! Breaking.");
+                Debug.LogWarning($"[BRS] CascadeWithPendingLoop hit max iterations ({maxIterations}). Ending safely.");
 
             } // end try
             finally
@@ -3433,20 +3465,49 @@ public void TriggerBigBang()
                     // === 규칙 1: 직격 — 매칭된 블록 위치에 몬스터가 있으면 ===
                     // 일반 블록: 본체 1 + 방패 내구도 1
                     // 깨진 블록: 본체 1 + 방패 내구도 감소 없음
+                    // ★ 은신 도둑 고블린: 깨지지 않은 블록만 데미지 가능 → 은신 즉시 해제
                     var directGoblin = GoblinSystem.Instance.GetGoblinAt(blockCoord);
                     if (directGoblin != null && !hitByThisBlock.Contains(directGoblin))
                     {
-                        hitByThisBlock.Add(directGoblin);
-                        if (goblinDamageMap.ContainsKey(directGoblin))
-                            goblinDamageMap[directGoblin] += 1;
+                        // 은신 도둑 고블린: 깨진 블록은 데미지 불가, 일반 블록만 데미지 + 은신 해제
+                        // ★ 드릴 회피 보호 중(stealthProtected)이면 은신 유지 — 데미지도 면역
+                        if (directGoblin.isThief && directGoblin.isStealth)
+                        {
+                            if (directGoblin.stealthProtected)
+                            {
+                                // 드릴 회피 후 캐스케이드: 은신 유지, 데미지 면역
+                                Debug.Log($"[BRS] 은신 도둑 고블린 드릴 회피 보호 → 데미지 면역: {blockCoord}");
+                            }
+                            else if (!isCracked)
+                            {
+                                hitByThisBlock.Add(directGoblin);
+                                if (goblinDamageMap.ContainsKey(directGoblin))
+                                    goblinDamageMap[directGoblin] += 1;
+                                else
+                                    goblinDamageMap[directGoblin] = 1;
+                                shieldDamageGoblins.Add(directGoblin);
+                                // 은신 즉시 해제
+                                directGoblin.isStealth = false;
+                                GoblinSystem.Instance.UpdateStealthVisual(directGoblin);
+                                Debug.Log($"[BRS] 은신 도둑 고블린 직격 → 은신 해제: {blockCoord}");
+                            }
+                            // 깨진 블록이면 아무 효과 없음 (회피 팝업도 없음 — 조용히 스킵)
+                        }
                         else
-                            goblinDamageMap[directGoblin] = 1;
+                        {
+                            hitByThisBlock.Add(directGoblin);
+                            if (goblinDamageMap.ContainsKey(directGoblin))
+                                goblinDamageMap[directGoblin] += 1;
+                            else
+                                goblinDamageMap[directGoblin] = 1;
 
-                        if (!isCracked)
-                            shieldDamageGoblins.Add(directGoblin); // 일반 블록 직격만 방패 내구도 감소
+                            if (!isCracked)
+                                shieldDamageGoblins.Add(directGoblin); // 일반 블록 직격만 방패 내구도 감소
+                        }
                     }
 
                     // === 규칙 2: 인접 — 일반 블록만 인접 6방향 데미지 ===
+                    // ★ 은신 도둑 고블린은 인접 매칭 데미지 면역
                     if (!isCracked)
                     {
                         foreach (var neighbor in blockCoord.GetAllNeighbors())
@@ -3454,6 +3515,10 @@ public void TriggerBigBang()
                             var adjGoblin = GoblinSystem.Instance.GetGoblinAt(neighbor);
                             if (adjGoblin != null && !hitByThisBlock.Contains(adjGoblin))
                             {
+                                // 은신 도둑 고블린: 인접 데미지 면역
+                                if (adjGoblin.isThief && adjGoblin.isStealth)
+                                    continue;
+
                                 hitByThisBlock.Add(adjGoblin);
                                 if (goblinDamageMap.ContainsKey(adjGoblin))
                                     goblinDamageMap[adjGoblin] += 1;

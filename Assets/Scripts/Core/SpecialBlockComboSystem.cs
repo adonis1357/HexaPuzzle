@@ -578,6 +578,15 @@ namespace JewelsHexaPuzzle.Core
                 }
             }
 
+            // ★ 연쇄폭탄: 폭발 직후 소형 폭탄 투척 (드릴 발사와 동시 진행)
+            Coroutine chainBombCo = null;
+            {
+                int chainLevel = SkillTreeManager.Instance != null
+                    ? SkillTreeManager.Instance.GetChainBombLevel() : 0;
+                if (chainLevel > 0 && bombSystem != null)
+                    chainBombCo = StartCoroutine(bombSystem.SpawnChainBombs(pos, chainLevel * 1));
+            }
+
             // ================================================================
             // 3단계: 폭발 범위 경계에서 드릴 방향으로 5개 병렬 드릴 발사
             //
@@ -762,6 +771,10 @@ namespace JewelsHexaPuzzle.Core
             {
                 yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(pos));
             }
+
+            // ★ 연쇄폭탄 완료 대기 (폭발 직후에 시작했으므로 여기서 대기만)
+            if (chainBombCo != null)
+                yield return chainBombCo;
 
             // 점수 (기본 700 + 블록 점수)
             int totalScore = 700 + blockScoreSum;
@@ -1067,6 +1080,9 @@ namespace JewelsHexaPuzzle.Core
                 yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(pos, 4));
             }
 
+            // ★ 연쇄폭탄 적용 (3배 — 폭탄×폭탄 강화)
+            yield return StartCoroutine(TriggerChainBombs(pos, 3));
+
             // 점수
             int totalScore = 800 + blockScoreSum;
             Debug.Log($"[ComboSystem] BombBomb complete. Score={totalScore}");
@@ -1182,6 +1198,9 @@ namespace JewelsHexaPuzzle.Core
 
             if (waited >= timeout)
                 Debug.LogWarning("[ComboSystem] BombXBlock timeout! Forcing completion.");
+
+            // ★ 연쇄폭탄 적용 (1배)
+            yield return StartCoroutine(TriggerChainBombs(pos, 1));
 
             // 점수
             int totalScore = 700 + blockScoreSum;
@@ -1920,6 +1939,9 @@ namespace JewelsHexaPuzzle.Core
             {
                 yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(bombPos));
             }
+
+            // ★ 연쇄폭탄 적용 (1배)
+            yield return StartCoroutine(TriggerChainBombs(bombPos, 1));
 
             int totalScore = 600 + blockScoreSum;
             Debug.Log($"[ComboSystem] DroneBomb complete. Score={totalScore}");
@@ -3958,6 +3980,21 @@ namespace JewelsHexaPuzzle.Core
 
             // hexGrid 없음 폴백 (비상용)
             return Vector3.zero;
+        }
+
+        /// <summary>
+        /// 연쇄폭탄 공용 트리거 — 합성 조합에서 호출.
+        /// multiplier: 소형 폭탄 개수 배수 (폭탄×폭탄=3배, 나머지=1배)
+        /// </summary>
+        private IEnumerator TriggerChainBombs(HexCoord originCoord, int multiplier)
+        {
+            int chainLevel = SkillTreeManager.Instance != null
+                ? SkillTreeManager.Instance.GetChainBombLevel() : 0;
+            if (chainLevel <= 0 || bombSystem == null) yield break;
+
+            int count = chainLevel * multiplier;
+            Debug.Log($"[ComboSystem] 연쇄폭탄 트리거: 레벨={chainLevel} × 배수={multiplier} = {count}개");
+            yield return StartCoroutine(bombSystem.SpawnChainBombs(originCoord, count));
         }
 
         /// <summary>

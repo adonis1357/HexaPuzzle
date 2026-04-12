@@ -2292,10 +2292,8 @@ namespace JewelsHexaPuzzle.Managers
             rt.anchoredPosition = new Vector2(20, -20);
             rt.sizeDelta = new Vector2(137, 77);
 
-            // 배경 (반투명 라벤더 — 다음 미션 없음을 시각적으로 표시)
-            Image bgImage = placeholderObj.AddComponent<Image>();
-            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.25f);
-            bgImage.raycastTarget = false;
+            // 배경 없음 (위치 참조용 투명 컨테이너)
+            // Image 컴포넌트 없이 RectTransform만 사용
 
             // nextMissionPreviewRect 설정 (위치 계산에 사용)
             nextMissionPreviewRect = rt;
@@ -2594,7 +2592,7 @@ namespace JewelsHexaPuzzle.Managers
         /// <summary>
         /// 미션 타입에 따라 적절한 아이콘을 Image에 적용
         /// </summary>
-        private void SetMissionIconForType(Image iconImage, MissionData mission)
+        public void SetMissionIconForType(Image iconImage, MissionData mission)
         {
             MissionType mType = mission.type;
             GemType gemType = mission.targetGemType;
@@ -2795,8 +2793,14 @@ namespace JewelsHexaPuzzle.Managers
                     // pivot을 중앙으로 변경하여 스케일 반전 시 위치 어긋남 방지
                     iconImage.rectTransform.pivot = new Vector2(0.5f, 0.5f);
                     iconImage.rectTransform.anchoredPosition = new Vector2(32f, 0f);
-                    iconImage.rectTransform.sizeDelta = new Vector2(60f, 60f);
+                    iconImage.rectTransform.sizeDelta = new Vector2(54f, 54f);
                     iconImage.rectTransform.localScale = new Vector3(-1f, -1f, 1f);
+                }
+                else if (mission.targetEnemyType == EnemyType.ThiefGoblin)
+                {
+                    // 도둑 고블린: 전용 스프라이트
+                    iconImage.sprite = GoblinSystem.GetThiefGoblinSprite();
+                    iconImage.color = Color.white;
                 }
                 else if (mission.targetEnemyType == EnemyType.Goblin)
                 {

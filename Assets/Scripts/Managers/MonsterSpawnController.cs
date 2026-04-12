@@ -1,10 +1,11 @@
 // ============================================================================
 // MonsterSpawnController.cs - 몬스터 소환 컨트롤러
 // ============================================================================
-// 3단계 소환 규칙을 자동 적용하는 중앙 소환 관리자.
-//   규칙1: 게임 시작 시 전체 미션 몬스터의 40~50%를 1차 소환
+// 활성 미션 기반 즉시 소환 시스템:
+//   규칙1: 게임 시작 시 활성 미션의 모든 몬스터를 즉시 소환 (100%)
 //   규칙2: 남은 이동 횟수가 전체의 40% 이하가 되면 잔여 전부 소환
-//   규칙3: 필드 몬스터 3마리 이하이고 잔여 있으면 1~3마리 추가 소환
+//   규칙3: 필드 몬스터 3마리 이하이고 잔여 있으면 추가 소환
+//   대기 미션 활성화 시 TriggerImmediateSpawn으로 즉시 소환
 //
 // GoblinSystem.SpawnWaveBatch에 위임하여 실제 소환 실행.
 // ============================================================================
@@ -74,11 +75,21 @@ namespace JewelsHexaPuzzle.Managers
             allSpawned = false;
             initialized = true;
 
-            // 규칙1: 1차 소환 — 전체의 40~50%
-            int firstWaveCount = Mathf.FloorToInt(totalMonsterCount * Random.Range(0.4f, 0.5f));
-            firstWaveCount = Mathf.Max(1, firstWaveCount);
+            // 규칙1: 활성 미션 몬스터 전체 즉시 소환 (100%)
+            int firstWaveCount = totalMonsterCount;
 
-            Debug.Log($"[MonsterSpawnController] 초기화: 전체={totalMonsterCount}, 이동={totalMoves}, 1차소환={firstWaveCount}");
+            // maxOnBoard를 활성 미션 총수에 맞춰 동적 확장
+            if (GoblinSystem.Instance != null)
+            {
+                var config = GoblinSystem.Instance.CurrentConfig;
+                if (config != null && config.maxOnBoard < totalMonsterCount)
+                {
+                    Debug.Log($"[MonsterSpawnController] maxOnBoard 동적 확장: {config.maxOnBoard} → {totalMonsterCount}");
+                    config.maxOnBoard = totalMonsterCount;
+                }
+            }
+
+            Debug.Log($"[MonsterSpawnController] 초기화: 전체={totalMonsterCount}, 이동={totalMoves}, 즉시소환={firstWaveCount} (활성 미션 전체)");
             yield return SpawnBatch(firstWaveCount);
         }
 

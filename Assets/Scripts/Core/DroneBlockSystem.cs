@@ -752,8 +752,8 @@ namespace JewelsHexaPuzzle.Core
         private HexBlock FindSmartTargetBlock(HexBlock droneBlock)
         {
             var goblinSystem = GoblinSystem.Instance;
-            // 모든 고블린 포함 (활 고블린도 열 우선순위 평가에 포함)
-            var allGoblins = goblinSystem.GetAliveGoblins();
+            // 모든 고블린 포함 (활 고블린도 열 우선순위 평가에 포함, 은신 도둑 제외)
+            var allGoblins = goblinSystem.GetAliveGoblins().Where(g => !(g.isThief && g.isStealth)).ToList();
             // 낙하 대미지 대상은 활 고블린 제외 (낙하 면역)
             var fallTargets = allGoblins.Where(g => !g.isArcher).ToList();
             if (allGoblins.Count == 0) return null;

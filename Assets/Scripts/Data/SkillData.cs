@@ -66,6 +66,16 @@ namespace JewelsHexaPuzzle.Data
         LineLevel1 = 900,
         LineLevel2 = 901,
         LineLevel3 = 902,
+
+        // === 연쇄폭탄 스킬 체인 ===
+        ChainBomb1 = 1000,     // 소형 폭탄 1개 투척
+        ChainBomb2 = 1001,     // 소형 폭탄 2개 투척
+        ChainBomb3 = 1002,     // 소형 폭탄 3개 투척
+
+        // === 타겟 강화 스킬 체인 ===
+        TargetDamage1 = 1100,  // 타겟 데미지 +1
+        TargetDamage2 = 1101,  // 타겟 데미지 +2
+        TargetDamage3 = 1102,  // 타겟 데미지 +3
     }
 
     /// <summary>
@@ -227,6 +237,22 @@ namespace JewelsHexaPuzzle.Data
             return result;
         }
 
+        public static List<SkillNodeData> GetChainBombSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 1000 && v <= 1099) result.Add(s); }
+            return result;
+        }
+
+        public static List<SkillNodeData> GetTargetDamageSkills()
+        {
+            var all = GetAllSkills();
+            var result = new List<SkillNodeData>();
+            foreach (var s in all) { int v = (int)s.skillType; if (v >= 1100 && v <= 1199) result.Add(s); }
+            return result;
+        }
+
         /// <summary>
         /// 특정 스킬 타입의 노드 데이터 조회
         /// </summary>
@@ -371,7 +397,7 @@ namespace JewelsHexaPuzzle.Data
                 new SkillNodeData
                 {
                     skillType = SkillType.BombDamage1,
-                    skillName = "폭탄 데미지+1",
+                    skillName = "폭탄 강화1",
                     description = "폭탄 폭발 시 전 범위 데미지가 1 추가됩니다.",
                     usageDescription = "0칸=4, 1칸=3, 2칸=2 데미지",
                     skillPointCost = 1,
@@ -384,7 +410,7 @@ namespace JewelsHexaPuzzle.Data
                 new SkillNodeData
                 {
                     skillType = SkillType.BombDamage2,
-                    skillName = "폭탄 데미지+2",
+                    skillName = "폭탄 강화2",
                     description = "폭탄 폭발 시 전 범위 데미지가 2 추가됩니다.",
                     usageDescription = "0칸=5, 1칸=4, 2칸=3 데미지",
                     skillPointCost = 2,
@@ -397,7 +423,7 @@ namespace JewelsHexaPuzzle.Data
                 new SkillNodeData
                 {
                     skillType = SkillType.BombDamage3,
-                    skillName = "폭탄 데미지+3",
+                    skillName = "폭탄 강화3",
                     description = "폭탄 폭발 시 전 범위 데미지가 3 추가됩니다.",
                     usageDescription = "0칸=6, 1칸=5, 2칸=4 데미지",
                     skillPointCost = 3,
@@ -479,7 +505,7 @@ namespace JewelsHexaPuzzle.Data
                 new SkillNodeData
                 {
                     skillType = SkillType.DroneTargetDamage1,
-                    skillName = "드론 데미지+1",
+                    skillName = "드론 강화1",
                     description = "드론 타겟 공격 시 데미지가 1 추가됩니다.",
                     usageDescription = "드론 타격 시 기본 1 + 추가 1 = 총 2 대미지",
                     skillPointCost = 1,
@@ -492,7 +518,7 @@ namespace JewelsHexaPuzzle.Data
                 new SkillNodeData
                 {
                     skillType = SkillType.DroneTargetDamage2,
-                    skillName = "드론 데미지+2",
+                    skillName = "드론 강화2",
                     description = "드론 타겟 공격 시 데미지가 2 추가됩니다.",
                     usageDescription = "드론 타격 시 기본 1 + 추가 2 = 총 3 대미지",
                     skillPointCost = 2,
@@ -505,7 +531,7 @@ namespace JewelsHexaPuzzle.Data
                 new SkillNodeData
                 {
                     skillType = SkillType.DroneTargetDamage3,
-                    skillName = "드론 데미지+3",
+                    skillName = "드론 강화3",
                     description = "드론 타겟 공격 시 데미지가 3 추가됩니다.",
                     usageDescription = "드론 타격 시 기본 1 + 추가 3 = 총 4 대미지",
                     skillPointCost = 3,
@@ -519,21 +545,21 @@ namespace JewelsHexaPuzzle.Data
                 // === 망치 아이템 레벨 체인 ===
                 new SkillNodeData
                 {
-                    skillType = SkillType.HammerLevel1, skillName = "망치 Lv.1",
+                    skillType = SkillType.HammerLevel1, skillName = "망치 파워1",
                     description = "망치 아이템 레벨 1 해금.", usageDescription = "망치 기본 해금",
                     skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
                     nodeColor = new Color(0.9f, 0.2f, 0.2f), iconSymbol = "🔨", drillMoveRange = 1
                 },
                 new SkillNodeData
                 {
-                    skillType = SkillType.HammerLevel2, skillName = "망치 Lv.2",
+                    skillType = SkillType.HammerLevel2, skillName = "망치 파워2",
                     description = "망치 아이템 레벨 2 강화.", usageDescription = "망치 강화",
                     skillPointCost = 2, goldCost = 500, prerequisite = SkillType.HammerLevel1,
                     nodeColor = new Color(0.8f, 0.15f, 0.15f), iconSymbol = "🔨🔨", drillMoveRange = 2
                 },
                 new SkillNodeData
                 {
-                    skillType = SkillType.HammerLevel3, skillName = "망치 Lv.3",
+                    skillType = SkillType.HammerLevel3, skillName = "망치 파워3",
                     description = "망치 아이템 레벨 3 최대 강화.", usageDescription = "망치 최대 강화",
                     skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.HammerLevel2,
                     nodeColor = new Color(0.7f, 0.1f, 0.1f), iconSymbol = "🔨🔨🔨", drillMoveRange = 3
@@ -542,21 +568,21 @@ namespace JewelsHexaPuzzle.Data
                 // === 스왑 아이템 레벨 체인 ===
                 new SkillNodeData
                 {
-                    skillType = SkillType.SwapLevel1, skillName = "스왑 Lv.1",
+                    skillType = SkillType.SwapLevel1, skillName = "스왑 디딤1",
                     description = "스왑 아이템 레벨 1 해금.", usageDescription = "스왑 기본 해금",
                     skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
                     nodeColor = new Color(0.2f, 0.8f, 0.3f), iconSymbol = "↔", drillMoveRange = 1
                 },
                 new SkillNodeData
                 {
-                    skillType = SkillType.SwapLevel2, skillName = "스왑 Lv.2",
+                    skillType = SkillType.SwapLevel2, skillName = "스왑 디딤2",
                     description = "스왑 아이템 레벨 2 강화.", usageDescription = "스왑 강화",
                     skillPointCost = 2, goldCost = 500, prerequisite = SkillType.SwapLevel1,
                     nodeColor = new Color(0.15f, 0.7f, 0.25f), iconSymbol = "↔↔", drillMoveRange = 2
                 },
                 new SkillNodeData
                 {
-                    skillType = SkillType.SwapLevel3, skillName = "스왑 Lv.3",
+                    skillType = SkillType.SwapLevel3, skillName = "스왑 디딤3",
                     description = "스왑 아이템 레벨 3 최대 강화.", usageDescription = "스왑 최대 강화",
                     skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.SwapLevel2,
                     nodeColor = new Color(0.1f, 0.6f, 0.2f), iconSymbol = "↔↔↔", drillMoveRange = 3
@@ -565,24 +591,76 @@ namespace JewelsHexaPuzzle.Data
                 // === 라인 아이템 레벨 체인 ===
                 new SkillNodeData
                 {
-                    skillType = SkillType.LineLevel1, skillName = "라인 Lv.1",
+                    skillType = SkillType.LineLevel1, skillName = "라인 연결1",
                     description = "라인드로우 아이템 레벨 1 해금.", usageDescription = "라인 기본 해금",
                     skillPointCost = 1, goldCost = 200, prerequisite = SkillType.None,
                     nodeColor = new Color(0.6f, 0.2f, 0.9f), iconSymbol = "━", drillMoveRange = 1
                 },
                 new SkillNodeData
                 {
-                    skillType = SkillType.LineLevel2, skillName = "라인 Lv.2",
+                    skillType = SkillType.LineLevel2, skillName = "라인 연결2",
                     description = "라인드로우 아이템 레벨 2 강화.", usageDescription = "라인 강화",
                     skillPointCost = 2, goldCost = 500, prerequisite = SkillType.LineLevel1,
                     nodeColor = new Color(0.5f, 0.15f, 0.8f), iconSymbol = "━━", drillMoveRange = 2
                 },
                 new SkillNodeData
                 {
-                    skillType = SkillType.LineLevel3, skillName = "라인 Lv.3",
+                    skillType = SkillType.LineLevel3, skillName = "라인 연결3",
                     description = "라인드로우 아이템 레벨 3 최대 강화.", usageDescription = "라인 최대 강화",
                     skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.LineLevel2,
                     nodeColor = new Color(0.4f, 0.1f, 0.7f), iconSymbol = "━━━", drillMoveRange = 3
+                },
+
+                // === 연쇄폭탄 스킬 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.ChainBomb1, skillName = "폭탄 연쇄 I",
+                    description = "폭탄 폭발 후 소형 폭탄 1개가 랜덤 블록에 투척됩니다.",
+                    usageDescription = "폭탄 발동 → 소형 폭탄 1개 랜덤 블록 설치 → 세션 종료 후 소형 폭발 (중심 2뎀 + 주변 1뎀)",
+                    skillPointCost = 1, goldCost = 300, prerequisite = SkillType.None,
+                    nodeColor = new Color(1f, 0.4f, 0.15f), iconSymbol = "💣", drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.ChainBomb2, skillName = "폭탄 연쇄 II",
+                    description = "폭탄 폭발 후 소형 폭탄 2개가 랜덤 블록에 투척됩니다.",
+                    usageDescription = "소형 폭탄 2개 투척. 폭탄 데미지 스킬 적용.",
+                    skillPointCost = 2, goldCost = 600, prerequisite = SkillType.ChainBomb1,
+                    nodeColor = new Color(1f, 0.3f, 0.1f), iconSymbol = "💣", drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.ChainBomb3, skillName = "폭탄 연쇄 III",
+                    description = "폭탄 폭발 후 소형 폭탄 3개가 랜덤 블록에 투척됩니다.",
+                    usageDescription = "소형 폭탄 3개 투척. 폭탄 강화 스킬 적용. 최대 강화.",
+                    skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.ChainBomb2,
+                    nodeColor = new Color(0.95f, 0.2f, 0.05f), iconSymbol = "💣", drillMoveRange = 3
+                },
+
+                // === 타겟 강화 스킬 체인 ===
+                new SkillNodeData
+                {
+                    skillType = SkillType.TargetDamage1, skillName = "타겟 강화 I",
+                    description = "모든 특수 블록의 몬스터 타겟 데미지 +1.",
+                    usageDescription = "드릴/폭탄/드론 등 모든 특수 블록이 몬스터에 주는 데미지 +1",
+                    skillPointCost = 1, goldCost = 400, prerequisite = SkillType.None,
+                    nodeColor = new Color(0.9f, 0.75f, 0.2f), iconSymbol = "⚔", drillMoveRange = 1
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.TargetDamage2, skillName = "타겟 강화 II",
+                    description = "모든 특수 블록의 몬스터 타겟 데미지 +2.",
+                    usageDescription = "모든 특수 블록 몬스터 데미지 +2",
+                    skillPointCost = 2, goldCost = 700, prerequisite = SkillType.TargetDamage1,
+                    nodeColor = new Color(0.95f, 0.65f, 0.1f), iconSymbol = "⚔", drillMoveRange = 2
+                },
+                new SkillNodeData
+                {
+                    skillType = SkillType.TargetDamage3, skillName = "타겟 강화 III",
+                    description = "모든 특수 블록의 몬스터 타겟 데미지 +3. 최대 강화.",
+                    usageDescription = "모든 특수 블록 몬스터 데미지 +3 (최대)",
+                    skillPointCost = 3, goldCost = 1000, prerequisite = SkillType.TargetDamage2,
+                    nodeColor = new Color(1f, 0.55f, 0.05f), iconSymbol = "⚔", drillMoveRange = 3
                 },
             };
         }
