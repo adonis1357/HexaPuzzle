@@ -509,12 +509,220 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                 yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(bombCoord));
             }
 
+            // ★ 연쇄폭탄: 스킬 레벨에 따라 소형 폭탄 투척
+            int chainBombLevel = SkillTreeManager.Instance != null
+                ? SkillTreeManager.Instance.GetChainBombLevel() : 0;
+            if (chainBombLevel > 0 && hexGrid != null)
+            {
+                yield return StartCoroutine(SpawnChainBombs(bombCoord, chainBombLevel));
+            }
+
             int totalScore = 400 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:400 + blockTierSum:{blockScoreSum})");
 
             OnBombComplete?.Invoke(totalScore);
             activeBlocks.Remove(bombBlock);
             activeBombCount--;
+        }
+
+        // ============================================================
+        // 연쇄폭탄 — 소형 폭탄 투척 + 폭발
+        // ============================================================
+
+        /// <summary>
+        /// 폭탄 폭발 후 소형 폭탄을 랜덤 블록에 투척합니다.
+        /// 레벨에 따라 1~3개 투척. 투척 후 즉시 소형 폭발.
+        /// 소형 폭발: 중심 2데미지 + 주변 6칸 1데미지 (넉백 없음).
+        /// 폭탄 데미지 스킬 적용.
+        /// </summary>
+        public IEnumerator SpawnChainBombs(HexCoord originCoord, int count)
+        {
+            // 투척 대상: 폭발 범위(2칸) 밖의 살아있는 블록 중 랜덤 선택
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+                if (block.Data.specialType != SpecialBlockType.None) continue; // 특수 블록 제외
+                int dist = block.Coord.DistanceTo(originCoord);
+                if (dist > 2) // 폭발 범위 밖만
+                    candidates.Add(block);
+            }
+
+            if (candidates.Count == 0) yield break;
+
+            // 랜덤 셔플 후 count개 선택
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = Random.Range(0, i + 1);
+                var temp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = temp;
+            }
+            int actualCount = Mathf.Min(count, candidates.Count);
+
+            List<HexBlock> targets = candidates.GetRange(0, actualCount);
+
+            // 투척 연출: 원점에서 타겟으로 소형 폭탄 비행
+            List<Coroutine> flyCos = new List<Coroutine>();
+            foreach (var target in targets)
+            {
+                flyCos.Add(StartCoroutine(ChainBombFlyEffect(originCoord, target)));
+            }
+            foreach (var co in flyCos)
+                yield return co;
+
+            // 짧은 대기 후 동시 폭발
+            yield return new WaitForSeconds(0.15f);
+
+            // 폭탄 데미지 보너스
+            int dmgBonus = SkillTreeManager.Instance != null
+                ? SkillTreeManager.Instance.GetBombDamageBonus() : 0;
+            int centerDmg = 2 + dmgBonus;
+            int ringDmg = 1 + dmgBonus;
+
+            List<Coroutine> explodeCos = new List<Coroutine>();
+            foreach (var target in targets)
+            {
+                if (target == null) continue;
+                explodeCos.Add(StartCoroutine(ChainBombExplode(target.Coord, centerDmg, ringDmg)));
+            }
+            foreach (var co in explodeCos)
+                yield return co;
+
+            Debug.Log($"[BombBlockSystem] 연쇄폭탄 {actualCount}개 폭발 완료 (dmgBonus={dmgBonus})");
+        }
+
+        /// <summary>소형 폭탄 비행 이펙트: 원점 → 타겟 블록으로 포물선 비행</summary>
+        private IEnumerator ChainBombFlyEffect(HexCoord origin, HexBlock target)
+        {
+            if (target == null || hexGrid == null) yield break;
+
+            Vector3 startPos = hexGrid.HexToWorldPosition(origin);
+            Vector3 endPos = target.transform.position;
+
+            // 소형 폭탄 오브젝트 생성
+            GameObject bombObj = new GameObject("ChainBomb");
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+            bombObj.transform.SetParent(parent, true);
+            bombObj.transform.position = startPos;
+
+            var bombImg = bombObj.AddComponent<UnityEngine.UI.Image>();
+            bombImg.color = new Color(1f, 0.4f, 0.1f, 1f);
+            bombImg.raycastTarget = false;
+            RectTransform bombRt = bombObj.GetComponent<RectTransform>();
+            bombRt.sizeDelta = new Vector2(20f, 20f);
+
+            // 포물선 비행 (0.35초)
+            float duration = 0.35f;
+            float elapsed = 0f;
+            float arcHeight = 80f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                Vector3 pos = Vector3.Lerp(startPos, endPos, t);
+                // 포물선 Y 오프셋
+                pos.y += arcHeight * 4f * t * (1f - t);
+                bombObj.transform.position = pos;
+                // 크기 애니메이션: 작게 → 크게
+                float scale = 0.5f + 0.5f * t;
+                bombRt.sizeDelta = new Vector2(20f * scale, 20f * scale);
+                yield return null;
+            }
+
+            // 착탄 플래시
+            bombImg.color = Color.white;
+            yield return new WaitForSeconds(0.05f);
+            Destroy(bombObj);
+        }
+
+        /// <summary>소형 폭탄 폭발: 중심 블록 + 주변 6칸 파괴. 넉백 없음.</summary>
+        private IEnumerator ChainBombExplode(HexCoord center, int centerDmg, int ringDmg)
+        {
+            if (hexGrid == null) yield break;
+
+            // 중심 블록 폭발 이펙트
+            Vector3 centerWorldPos = hexGrid.HexToWorldPosition(center);
+            Color explodeColor = new Color(1f, 0.5f, 0.15f);
+
+            if (effectParent != null)
+                StartCoroutine(BombExplosionEffectPublic(centerWorldPos, explodeColor));
+            StartCoroutine(ScreenShake(
+                VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            // 중심 블록 파괴
+            HexBlock centerBlock = hexGrid.GetBlock(center);
+            if (centerBlock != null && centerBlock.Data != null && centerBlock.Data.gemType != GemType.None)
+            {
+                // 미션 카운팅
+                if (centerBlock.Data.gemType != GemType.None)
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(centerBlock.Data.gemType);
+
+                if (centerBlock.Data.specialType != SpecialBlockType.None &&
+                    centerBlock.Data.specialType != SpecialBlockType.FixedBlock)
+                {
+                    // 특수 블록: pending 예약
+                    if (!pendingSpecialBlocks.Contains(centerBlock))
+                    {
+                        pendingSpecialBlocks.Add(centerBlock);
+                        centerBlock.SetPendingActivation();
+                        centerBlock.StartWarningBlink(10f);
+                    }
+                }
+                else
+                {
+                    Color blockColor = GemColors.GetColor(centerBlock.Data.gemType);
+                    StartCoroutine(DestroyBlockWithExplosionPublic(centerBlock, blockColor, centerWorldPos, true));
+                }
+            }
+
+            // 중심 몬스터 데미지 (넉백 없음)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                && GoblinSystem.Instance.HasGoblinAt(center))
+            {
+                GoblinSystem.Instance.ApplyDamageAtPosition(center, centerDmg);
+            }
+
+            // 주변 6칸 블록 파괴 + 데미지
+            var neighbors = center.GetAllNeighbors();
+            foreach (var nCoord in neighbors)
+            {
+                if (!hexGrid.IsInsideGrid(nCoord)) continue;
+
+                HexBlock nBlock = hexGrid.GetBlock(nCoord);
+                if (nBlock != null && nBlock.Data != null && nBlock.Data.gemType != GemType.None)
+                {
+                    if (nBlock.Data.gemType != GemType.None)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(nBlock.Data.gemType);
+
+                    if (nBlock.Data.specialType != SpecialBlockType.None &&
+                        nBlock.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        if (!pendingSpecialBlocks.Contains(nBlock))
+                        {
+                            pendingSpecialBlocks.Add(nBlock);
+                            nBlock.SetPendingActivation();
+                            nBlock.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        Color blockColor = GemColors.GetColor(nBlock.Data.gemType);
+                        StartCoroutine(DestroyBlockWithExplosionPublic(nBlock, blockColor, centerWorldPos, true));
+                    }
+                }
+
+                // 주변 몬스터 데미지 (넉백 없음)
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                    && GoblinSystem.Instance.HasGoblinAt(nCoord))
+                {
+                    GoblinSystem.Instance.ApplyDamageAtPosition(nCoord, ringDmg);
+                }
+            }
+
+            yield return new WaitForSeconds(0.2f);
         }
 
         // ============================================================
@@ -1048,17 +1256,12 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             Destroy(obj);
         }
 
-        private int shakeCount = 0;
-        private Vector3 shakeOriginalPos;
-
         private IEnumerator ScreenShake(float intensity, float duration)
         {
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            shakeOriginalPos = Vector3.zero; // 기본 위치 고정
-            shakeCount++;
 
             float elapsed = 0f;
             try
@@ -1070,18 +1273,13 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     float decay = 1f - VisualConstants.EaseInQuad(t);
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                shakeCount--;
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = Vector3.zero;
                 VisualConstants.EndScreenShake();
             }
         }

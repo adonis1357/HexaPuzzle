@@ -142,6 +142,13 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private void CleanupEffects()
         {
+            // 풀 내 투사체도 정리
+            while (projectilePool.Count > 0)
+            {
+                var pooled = projectilePool.Dequeue();
+                if (pooled != null) Destroy(pooled);
+            }
+
             if (effectParent == null) return;
             for (int i = effectParent.childCount - 1; i >= 0; i--)
                 Destroy(effectParent.GetChild(i).gameObject);
@@ -152,6 +159,62 @@ namespace JewelsHexaPuzzle.Core
         // 이펙트(시각 효과) 오브젝트들이 생성될 부모 Transform.
         // Canvas 내부에 별도 레이어로 만들어서 블록 위에 이펙트가 그려지도록 합니다.
         private Transform effectParent;
+
+        // ============================================================
+        // 투사체 오브젝트 풀 — Instantiate/Destroy 반복 제거
+        // ============================================================
+        private const int PROJECTILE_POOL_SIZE = 8; // 양방향 2 × 드릴 2 + 쿠션 여유
+        private Queue<GameObject> projectilePool = new Queue<GameObject>();
+
+        /// <summary>
+        /// 투사체를 풀에서 꺼내거나 새로 생성합니다.
+        /// 풀에 비활성화된 투사체가 있으면 자식을 정리하고 재활용합니다.
+        /// </summary>
+        private GameObject GetPooledProjectile(Vector3 worldPos, float angleDeg, Color color)
+        {
+            GameObject root = null;
+
+            // 풀에서 재사용 가능한 오브젝트 꺼내기
+            while (projectilePool.Count > 0)
+            {
+                var candidate = projectilePool.Dequeue();
+                if (candidate != null) { root = candidate; break; }
+            }
+
+            if (root != null)
+            {
+                // 기존 자식(Glow/Body/Trail/Coreline) 제거 후 재생성
+                for (int i = root.transform.childCount - 1; i >= 0; i--)
+                    Destroy(root.transform.GetChild(i).gameObject);
+
+                root.SetActive(true);
+                root.transform.position = worldPos;
+                root.transform.rotation = Quaternion.Euler(0, 0, angleDeg - 90f);
+
+                // 자식 파트 재생성 (색상 반영)
+                BuildProjectileParts(root, color);
+                return root;
+            }
+
+            // 풀 비어있음 → 새로 생성
+            return CreateProjectileWithAngle(worldPos, angleDeg, color);
+        }
+
+        /// <summary>
+        /// 투사체를 파괴하지 않고 풀에 반환합니다.
+        /// 비활성화 후 큐에 넣어 재사용 대기합니다.
+        /// </summary>
+        private void ReturnProjectile(GameObject projectile)
+        {
+            if (projectile == null) return;
+
+            // 자식 애니메이션 코루틴 중지를 위해 자식 제거
+            for (int i = projectile.transform.childCount - 1; i >= 0; i--)
+                Destroy(projectile.transform.GetChild(i).gameObject);
+
+            projectile.SetActive(false);
+            projectilePool.Enqueue(projectile);
+        }
 
         // ============================================================
         // 초기화
@@ -348,15 +411,17 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                 }
             }
 
-            // ★ 발동 위치에 방패가 아닌 몬스터가 있으면 드릴 관통 데미지 (스킬 강화)
+            // ★ 발동 위치에 방패가 아닌 몬스터가 있으면 양방향 드릴 관통 데미지 (스킬 강화)
             if (!shieldBlockedAll && !shieldBlockedFirst
                 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
                 && GoblinSystem.Instance.HasGoblinAt(startCoord)
                 && !GoblinSystem.Instance.HasShieldGoblinAt(startCoord))
             {
-                int startDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
-                GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, startDmg);
-                Debug.Log($"[DrillBlockSystem] 발동 위치 몬스터에 {startDmg} 데미지: {startCoord}");
+                int drillDmgPerDir = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                // 양방향 각각 데미지 적용 (위쪽 + 아래쪽 = 2회)
+                GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, drillDmgPerDir);
+                GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, drillDmgPerDir);
+                Debug.Log($"[DrillBlockSystem] 발동 위치 몬스터에 양방향 {drillDmgPerDir}×2={drillDmgPerDir * 2} 데미지: {startCoord}");
             }
 
             // 양방향 모두 차단된 경우: 짧은 이펙트 후 조기 종료
@@ -368,13 +433,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                     StartCoroutine(ScreenShake(VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
                 }
 
-                // 시작 열 낙하만 처리
-                if (removalSystem != null)
-                {
-                    Coroutine startFall = removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: false);
-                    if (startFall != null)
-                        yield return startFall;
-                }
+                // ★ 낙하는 BRS ProcessFalling()에서 일괄 처리 (시간차 방지)
 
                 int blockedScore = 200;
                 Debug.Log($"[DrillBlockSystem] === DRILL BLOCKED BY SHIELD === Score={blockedScore}");
@@ -491,30 +550,9 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                 yield return drill2;
             }
 
-            // [7b단계] 전체 라인 파괴 완료 → 영향받은 모든 열 일괄 낙하
-            // 모든 드릴 타입 통합: 발사체가 라인을 전부 파괴한 뒤 한번에 낙하
-            if (removalSystem != null)
-            {
-                List<Coroutine> fallingCoroutines = new List<Coroutine>();
-
-                // 드릴 시작 열 낙하
-                Coroutine startFall = removalSystem.ProcessFallingForColumn(drillBlock, skipGoblinCollision: false);
-                if (startFall != null)
-                    fallingCoroutines.Add(startFall);
-
-                // 각 타겟 열 낙하 (allDrillTargets = targets1 + targets2)
-                foreach (var target in allDrillTargets)
-                {
-                    if (target == null) continue;
-                    Coroutine fall = removalSystem.ProcessFallingForColumn(target, skipGoblinCollision: false);
-                    if (fall != null)
-                        fallingCoroutines.Add(fall);
-                }
-
-                // 모든 열의 낙하 완료 대기
-                foreach (var co in fallingCoroutines)
-                    yield return co;
-            }
+            // [7b단계] 낙하는 DrillCoroutine에서 처리하지 않음
+            // ★ BRS CascadeWithPendingLoop의 ProcessFalling()이 모든 열을 동시에 처리
+            // (드릴 열만 먼저 채워지는 시간차 문제 해결)
 
             // [8단계] 최종 점수 계산 (드릴 기본 200점 + 파괴한 블록들의 점수 합)
             int totalScore = 200 + blockScoreSum;
@@ -557,45 +595,41 @@ private List<HexBlock> GetBlocksInDirection(HexCoord start, DrillDirection direc
             int maxSteps = 20; // 무한 루프 방지용 최대 이동 횟수
             int step = 0;
 
-            // ★ 시작점이 그리드 밖이면 그리드 진입점까지 전진
-            if (!hexGrid.IsValidCoord(start))
+            // ★ 시작점이 게임 필드 밖이면 진입점까지 전진
+            if (!hexGrid.IsInGameField(start))
             {
-                while (!hexGrid.IsValidCoord(current) && step < maxSteps)
+                while (!hexGrid.IsInGameField(current) && step < maxSteps)
                 {
-                    // ★ 그리드 밖에서도 방패 고블린 체크 (소환 영역)
-                    if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
-                        && GoblinSystem.Instance.HasShieldGoblinAt(current))
-                    {
-                        // 방패 내구도 2 이상이면 완전 차단, 1이면 관통 (블록 수집 계속)
-                        if (GoblinSystem.Instance.GetShieldHpAt(current) >= 2)
-                            return blocks; // 완전 차단 → 빈 목록 반환
-                        // 방패 HP 1: 관통 → 계속 진행
-                    }
-
                     current = current + delta;
                     step++;
                 }
             }
 
-            // 그리드 범위 안에 있는 한 계속 전진
-            while (hexGrid.IsValidCoord(current) && step < maxSteps)
+            // ★ 게임 필드(블록 필드 + 소환 영역) 안에 있는 한 계속 전진
+            while (hexGrid.IsInGameField(current) && step < maxSteps)
             {
-                // ★ 방패 고블린이 이 좌표에 있으면: 내구도에 따라 차단 또는 관통
+                bool isBlock = hexGrid.IsInsideGrid(current);
+                bool isSpawn = !isBlock && hexGrid.IsInGameField(current);
+                Debug.Log($"[소환영역체크] ({current.q},{current.r}) inField=true isBlock={isBlock} isSpawn={isSpawn} step={step}");
+
+                // 방패 고블린 체크 (블록 필드 + 소환 영역 모두)
                 if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
                     && GoblinSystem.Instance.HasShieldGoblinAt(current))
                 {
                     if (GoblinSystem.Instance.GetShieldHpAt(current) >= 2)
                         break; // 완전 차단: 뒤의 블록 수집 중단
-                    // 방패 HP 1: 관통 → 이 블록 포함하여 계속 수집
                 }
 
+                // 블록이 있는 좌표만 targets에 추가 (소환 영역은 블록 없으므로 스킵)
                 HexBlock block = hexGrid.GetBlock(current);
-                // 유효한 블록이 있으면 목록에 추가
                 if (block != null && block.Data != null && block.Data.gemType != GemType.None)
                     blocks.Add(block);
-                current = current + delta; // 다음 칸으로 전진
+                current = current + delta;
                 step++;
             }
+            // 루프 종료 시 마지막 좌표가 왜 필드 밖인지 기록
+            if (step < maxSteps && hexGrid != null)
+                Debug.Log($"[소환영역체크] 루프종료: ({current.q},{current.r}) inField={hexGrid.IsInGameField(current)} inGrid={hexGrid.IsInsideGrid(current)} rMin={hexGrid.GetTopR(current.q)} gridR={hexGrid.GridRadius}");
             return blocks;
         }
 
@@ -649,7 +683,8 @@ private HexCoord GetDirectionDelta(DrillDirection direction, bool positive)
 private IEnumerator DrillLineWithProjectile(
             Vector3 startPos, List<HexBlock> targets, DrillDirection direction,
             bool positive, Color drillColor, HexCoord pathStartCoord, bool showEffects = true,
-            System.Action onTargetsDestroyed = null)
+            System.Action onTargetsDestroyed = null, int remainingCushions = -1,
+            GameObject existingProjectile = null)
         {
                 // 각 블록 파괴 애니메이션의 코루틴 핸들을 저장 (나중에 완료 대기용)
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
@@ -683,28 +718,33 @@ private IEnumerator DrillLineWithProjectile(
             }
             float initAngle = Mathf.Atan2(initDir.y, initDir.x) * Mathf.Rad2Deg;
 
-            // 투사체(드릴 탄환) 생성 — 첫 번째 드릴만
-            GameObject projectile = showEffects ? CreateProjectileWithAngle(startPos, initAngle, drillColor) : null;
+            // 투사체(드릴 탄환) 생성 — 기존 투사체가 있으면 재사용 (쿠션 반사 시)
+            // ★ 투사체는 항상 생성 (showEffects와 무관 — 다중 드릴 동시 발동 시에도 표시)
+            GameObject projectile;
+            if (existingProjectile != null)
+            {
+                projectile = existingProjectile;
+                // 방향만 업데이트
+                projectile.transform.rotation = Quaternion.Euler(0, 0, initAngle - 90f);
+            }
+            else
+            {
+                projectile = CreateProjectileWithAngle(startPos, initAngle, drillColor);
+            }
 
             Vector3 currentPos = startPos;
             Vector3 lastMoveDir = initDir; // 마지막 이동 방향 (투사체 퇴장 시 사용)
 
             // ★ 드릴 경로 위 고블린 위치 사전 스캔 (투사체 충돌 시 1회 대미지용)
-            // 그리드 내부 + 그리드 밖 3칸(고블린 소환 영역)까지 확장 스캔
+            // 게임 필드(블록 필드 + 소환 영역) 범위까지 스캔 — advance 루프/쿠션과 동일한 IsInGameField 사용
             // 방패 고블린을 만나면 그 뒤의 고블린은 수집하지 않음 (방패가 드릴을 차단)
             HashSet<HexCoord> pathGoblinPositions = new HashSet<HexCoord>();
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive && hexGrid != null)
             {
                 HexCoord scanCoord = pathStartCoord + pathDelta;
                 int scanLimit = 0;
-                int outsideGridCount = 0;
-                while (scanLimit < 20)
+                while (hexGrid.IsInGameField(scanCoord) && scanLimit < 20)
                 {
-                    if (!hexGrid.IsValidCoord(scanCoord))
-                    {
-                        outsideGridCount++;
-                        if (outsideGridCount > 3) break; // 그리드 밖 3칸까지 (고블린 소환 영역)
-                    }
                     // ★ 방패 고블린: 내구도 2 이상이면 스캔 중단, 1이면 관통 (뒤의 몬스터도 수집)
                     if (GoblinSystem.Instance.HasShieldGoblinAt(scanCoord))
                     {
@@ -723,11 +763,18 @@ private IEnumerator DrillLineWithProjectile(
             // ★ Heavy 고블린 라인당 1회 데미지 제한 (같은 Heavy의 여러 occupiedCoords를 지나도 1회만)
             HashSet<GoblinData> damagedHeavyThisLine = new HashSet<GoblinData>();
 
-            // lastDamageCoord를 그리드 마지막 유효 좌표로 미리 계산 (exit 애니메이션용)
+            // ★ 드릴 관통 시스템: 기본 0 (몬스터에 막힘), 스킬로 관통 횟수 증가
+            int penetrateMax = SkillTreeManager.Instance != null
+                ? SkillTreeManager.Instance.GetDrillPenetrateLevel() : 0;
+            int penetrateCount = 0; // 현재까지 관통한 몬스터 수
+            bool drillStopped = false; // 투사체가 몬스터에 의해 정지됨
+
+            // lastDamageCoord를 게임 필드 마지막 유효 좌표로 미리 계산 (exit 애니메이션용)
+            // ★ IsInGameField 사용 — advance 루프/쿠션과 동일한 경계 기준
             if (hexGrid != null)
             {
                 HexCoord testCoord = pathStartCoord + pathDelta;
-                while (hexGrid.IsValidCoord(testCoord))
+                while (hexGrid.IsInGameField(testCoord))
                 {
                     lastDamageCoord = testCoord;
                     testCoord = testCoord + pathDelta;
@@ -770,7 +817,7 @@ private IEnumerator DrillLineWithProjectile(
                     // ★ 케이스 A: 측면 타격 — 방패 내구도 1 감소, 본체 데미지 없음, 드릴 차단
                     GoblinSystem.Instance.ApplySingleDrillToShield(target.Coord);
                     Debug.Log($"[DrillBlockSystem] 측면 방패 타격: {target.Coord} → 내구도 1 감소, 드릴 차단");
-                    if (projectile != null) Destroy(projectile);
+                    if (projectile != null) ReturnProjectile(projectile);
                     onTargetsDestroyed?.Invoke();
                     yield break;
                 }
@@ -801,31 +848,64 @@ private IEnumerator DrillLineWithProjectile(
 
                 currentPos = targetPos;
 
-                // ★ 투사체가 고블린 좌표에 도달 시 데미지 (드릴 관통, 스킬 강화 적용)
-                if (pathGoblinPositions.Count > 0 && pathGoblinPositions.Contains(target.Coord)
+                // ★ 투사체가 고블린 좌표에 도달 시 데미지 + 관통 제한 체크
+                if (!drillStopped && pathGoblinPositions.Count > 0 && pathGoblinPositions.Contains(target.Coord)
                     && !damagedGoblinPositions.Contains(target.Coord))
                 {
                     damagedGoblinPositions.Add(target.Coord);
                     if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
                     {
-                        // ★ Heavy 고블린: 같은 라인에서 같은 Heavy의 여러 블록을 지나가도 1회만 데미지
-                        var goblinAtCoord = GoblinSystem.Instance.GetGoblinAt(target.Coord);
-                        bool shouldDamage = true;
-                        if (goblinAtCoord != null && goblinAtCoord.isHeavy)
+                        // ★ 은신 도둑 고블린: 드릴 투사체 회피 (관통 카운트 소모 안 함)
+                        if (GoblinSystem.Instance.IsGoblinStealthAt(target.Coord))
                         {
-                            if (damagedHeavyThisLine.Contains(goblinAtCoord))
-                                shouldDamage = false; // 이미 이 라인에서 데미지 적용됨
-                            else
-                                damagedHeavyThisLine.Add(goblinAtCoord);
+                            Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피: {target.Coord}");
+                            GoblinSystem.Instance.PlayDrillDodgeEffect(target.Coord);
                         }
-
-                        if (shouldDamage)
+                        else
                         {
-                            int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
-                            GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+                            // ★ Heavy 고블린: 같은 라인에서 같은 Heavy의 여러 블록을 지나가도 1회만 데미지
+                            var goblinAtCoord = GoblinSystem.Instance.GetGoblinAt(target.Coord);
+                            bool shouldDamage = true;
+                            bool isNewHeavyHit = false;
+                            if (goblinAtCoord != null && goblinAtCoord.isHeavy)
+                            {
+                                if (damagedHeavyThisLine.Contains(goblinAtCoord))
+                                    shouldDamage = false; // 이미 이 라인에서 데미지 적용됨
+                                else
+                                {
+                                    damagedHeavyThisLine.Add(goblinAtCoord);
+                                    isNewHeavyHit = true;
+                                }
+                            }
+
+                            if (shouldDamage)
+                            {
+                                int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                                GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+
+                                // ★ 관통 카운트 증가
+                                // Heavy 고블린: 관통 2회 소모, 잔여 관통 < 2이면 차단
+                                // 일반 고블린: 관통 1회 소모
+                                bool countPenetrate = (goblinAtCoord == null || !goblinAtCoord.isHeavy || isNewHeavyHit);
+                                if (countPenetrate)
+                                {
+                                    int penetrateCost = (goblinAtCoord != null && goblinAtCoord.isHeavy) ? 2 : 1;
+                                    penetrateCount += penetrateCost;
+                                    if (penetrateCount > penetrateMax)
+                                    {
+                                        Debug.Log($"[DrillBlockSystem] 관통 한계 도달 ({penetrateCount}/{penetrateMax}, cost={penetrateCost}) → 투사체 정지 at {target.Coord}");
+                                        drillStopped = true;
+                                        if (projectile != null) ReturnProjectile(projectile);
+                                        projectile = null;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+
+                // ★ 관통 한계로 정지 시 → 이 블록 및 이후 블록 파괴 중단, for 루프 탈출
+                if (drillStopped) break;
 
                 // 안전 검사: 다른 드릴/폭탄 등이 동시에 이 블록을 처리했을 수 있음
                 if (target.Data == null || target.Data.gemType == GemType.None) continue;
@@ -874,28 +954,58 @@ private IEnumerator DrillLineWithProjectile(
                 yield return new WaitForSeconds(drillSpeed);
             }
 
-            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 데미지 적용 (스킬 강화)
-            if (pathGoblinPositions.Count > 0 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 데미지 적용 (관통 한계 미도달 시만)
+            if (!drillStopped && pathGoblinPositions.Count > 0 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
                 int drillDmgPass = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
                 foreach (var gPos in pathGoblinPositions)
                 {
+                    if (drillStopped) break; // 관통 한계 초과 시 추가 데미지 없음
                     if (!damagedGoblinPositions.Contains(gPos))
                     {
                         damagedGoblinPositions.Add(gPos);
+                        // ★ 은신 도둑 고블린: 드릴 투사체 회피 (관통 카운트 소모 안 함)
+                        if (GoblinSystem.Instance.IsGoblinStealthAt(gPos))
+                        {
+                            Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피 (잔여 경로): {gPos}");
+                            GoblinSystem.Instance.PlayDrillDodgeEffect(gPos);
+                            continue;
+                        }
                         // ★ Heavy 고블린: 같은 라인에서 이미 데미지를 줬으면 스킵
                         var goblinAtPos = GoblinSystem.Instance.GetGoblinAt(gPos);
                         bool shouldDamage = true;
+                        bool isNewHeavyHit = false;
                         if (goblinAtPos != null && goblinAtPos.isHeavy)
                         {
                             if (damagedHeavyThisLine.Contains(goblinAtPos))
                                 shouldDamage = false;
                             else
+                            {
                                 damagedHeavyThisLine.Add(goblinAtPos);
+                                isNewHeavyHit = true;
+                            }
                         }
 
                         if (shouldDamage)
+                        {
                             GoblinSystem.Instance.ApplyDamageAtPosition(gPos, drillDmgPass);
+
+                            // ★ 관통 카운트 증가
+                            // Heavy 고블린: 관통 2회 소모
+                            bool countPenetrate = (goblinAtPos == null || !goblinAtPos.isHeavy || isNewHeavyHit);
+                            if (countPenetrate)
+                            {
+                                int penetrateCost = (goblinAtPos != null && goblinAtPos.isHeavy) ? 2 : 1;
+                                penetrateCount += penetrateCost;
+                                if (penetrateCount > penetrateMax)
+                                {
+                                    Debug.Log($"[DrillBlockSystem] 관통 한계 도달 (빈 좌표) ({penetrateCount}/{penetrateMax}, cost={penetrateCost}) → 투사체 정지 at {gPos}");
+                                    drillStopped = true;
+                                    if (projectile != null) ReturnProjectile(projectile);
+                                    projectile = null;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -908,11 +1018,216 @@ private IEnumerator DrillLineWithProjectile(
             foreach (var co in destroyCoroutines)
                 yield return co;
 
-            // --- 투사체 퇴장 ---
+            // --- 쿠션 반사 또는 퇴장 ---
             if (lastMoveDir == Vector3.zero)
                 lastMoveDir = initDir;
-            if (projectile != null)
-                StartCoroutine(ProjectileExitPhase(projectile, currentPos, lastMoveDir, damagedGoblinPositions));
+
+            // 마지막 처리된 좌표에서 경계 판별
+            HexCoord lastPathCoord = pathStartCoord;
+            if (targets.Count > 0)
+                lastPathCoord = targets[targets.Count - 1].Coord;
+
+            // ★ 소환 영역까지 전진: 마지막 블록 이후 필드 끝까지
+            // 순서: 방패 체크(1순위) → 필드 밖 체크(2순위) → 전진(3순위)
+            HexCoord advanceDelta = GetDirectionDelta(direction, positive);
+            HexCoord advanceCursor = lastPathCoord + advanceDelta;
+            int advanceSteps = 0;
+            bool hitShieldDuringAdvance = false;
+
+            while (advanceSteps < 20)
+            {
+                // ★ 1순위: 몬스터 체크 (방패/일반 모두) — IsInGameField보다 먼저!
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                {
+                    bool hasShield = GoblinSystem.Instance.HasShieldGoblinAt(advanceCursor);
+                    bool hasGoblin = !hasShield && GoblinSystem.Instance.HasGoblinAt(advanceCursor);
+
+                    // ★ 방패 고블린: 드릴 차단 (투사체 파괴 + 루프 종료)
+                    if (hasShield)
+                    {
+                        // 투사체를 방패 위치까지 이동
+                        if (projectile != null && hexGrid != null)
+                        {
+                            Vector3 shieldWorldPos = hexGrid.HexToWorldPosition(advanceCursor);
+                            float sDist = Vector3.Distance(currentPos, shieldWorldPos);
+                            if (sDist > 0.1f)
+                            {
+                                float sTime = Mathf.Max(sDist / projectileSpeed, 0.01f);
+                                float sElapsed = 0f;
+                                Vector3 sMoveStart = currentPos;
+                                Vector3 sMoveDir = (shieldWorldPos - currentPos).normalized;
+                                float sAngle = Mathf.Atan2(sMoveDir.y, sMoveDir.x) * Mathf.Rad2Deg;
+                                projectile.transform.rotation = Quaternion.Euler(0, 0, sAngle - 90f);
+
+                                while (sElapsed < sTime)
+                                {
+                                    if (projectile == null) break;
+                                    sElapsed += Time.deltaTime;
+                                    projectile.transform.position = Vector3.Lerp(sMoveStart, shieldWorldPos, Mathf.Clamp01(sElapsed / sTime));
+                                    yield return null;
+                                }
+                                currentPos = shieldWorldPos;
+                            }
+                        }
+
+                        GoblinSystem.Instance.ApplySingleDrillToShield(advanceCursor);
+                        Debug.Log($"[DrillBlockSystem] advance 중 방패 타격: {advanceCursor}");
+                        if (projectile != null) ReturnProjectile(projectile);
+                        hitShieldDuringAdvance = true;
+                        break;
+                    }
+
+                    // ★ 일반 몬스터: 데미지 + 관통 제한 체크
+                    if (hasGoblin && !drillStopped)
+                    {
+                        // 투사체를 몬스터 위치까지 이동
+                        if (projectile != null && hexGrid != null)
+                        {
+                            Vector3 goblinWorldPos = hexGrid.HexToWorldPosition(advanceCursor);
+                            float gDist = Vector3.Distance(currentPos, goblinWorldPos);
+                            if (gDist > 0.1f)
+                            {
+                                float gTime = Mathf.Max(gDist / projectileSpeed, 0.01f);
+                                float gElapsed = 0f;
+                                Vector3 gMoveStart = currentPos;
+                                Vector3 gMoveDir = (goblinWorldPos - currentPos).normalized;
+                                float gAngle = Mathf.Atan2(gMoveDir.y, gMoveDir.x) * Mathf.Rad2Deg;
+                                projectile.transform.rotation = Quaternion.Euler(0, 0, gAngle - 90f);
+
+                                while (gElapsed < gTime)
+                                {
+                                    if (projectile == null) break;
+                                    gElapsed += Time.deltaTime;
+                                    projectile.transform.position = Vector3.Lerp(gMoveStart, goblinWorldPos, Mathf.Clamp01(gElapsed / gTime));
+                                    yield return null;
+                                }
+                                currentPos = goblinWorldPos;
+                            }
+                        }
+
+                        // ★ 중복 데미지 방지: pathGoblinPositions 루프에서 이미 처리된 좌표 스킵
+                        if (!damagedGoblinPositions.Contains(advanceCursor))
+                        {
+                            // 은신 도둑 고블린 회피 (관통 카운트 소모 안 함)
+                            if (GoblinSystem.Instance.IsGoblinStealthAt(advanceCursor))
+                            {
+                                Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피 (advance): {advanceCursor}");
+                                GoblinSystem.Instance.PlayDrillDodgeEffect(advanceCursor);
+                                damagedGoblinPositions.Add(advanceCursor);
+                            }
+                            else
+                            {
+                                int advDrillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                                GoblinSystem.Instance.ApplyDamageAtPosition(advanceCursor, advDrillDmg);
+                                damagedGoblinPositions.Add(advanceCursor);
+
+                                // ★ 관통 카운트 증가: Heavy 고블린은 2회 소모
+                                var advGoblin = GoblinSystem.Instance.GetGoblinAt(advanceCursor);
+                                int advPenetrateCost = (advGoblin != null && advGoblin.isHeavy) ? 2 : 1;
+                                penetrateCount += advPenetrateCost;
+                                if (penetrateCount > penetrateMax)
+                                {
+                                    Debug.Log($"[DrillBlockSystem] advance 중 관통 한계 ({penetrateCount}/{penetrateMax}, cost={advPenetrateCost}) → 투사체 정지 at {advanceCursor}");
+                                    drillStopped = true;
+                                    if (projectile != null) ReturnProjectile(projectile);
+                                    projectile = null;
+                                    break; // advance 루프 종료
+                                }
+                                else
+                                {
+                                    Debug.Log($"[DrillBlockSystem] advance 중 몬스터 관통: {advanceCursor} dmg={advDrillDmg} ({penetrateCount}/{penetrateMax})");
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ★ 2순위: 필드 밖이면 루프 종료 → 쿠션 판별
+                if (hexGrid == null || !hexGrid.IsInGameField(advanceCursor))
+                    break;
+
+                // ★ 3순위: 유효 필드 → 전진
+                lastPathCoord = advanceCursor;
+                advanceCursor = advanceCursor + advanceDelta;
+                advanceSteps++;
+            }
+
+            // 방패에 막혔으면 쿠션 없이 즉시 종료
+            if (hitShieldDuringAdvance)
+            {
+                onTargetsDestroyed?.Invoke();
+                yield break;
+            }
+
+            // ★ 관통 한계로 정지했으면 쿠션/퇴장 없이 종료
+            if (drillStopped)
+            {
+                onTargetsDestroyed?.Invoke();
+                yield break;
+            }
+
+            // ★ 투사체를 소환 영역 끝까지 시각적으로 이동 (블록 없는 구간도 날아가는 연출)
+            if (advanceSteps > 0 && projectile != null && hexGrid != null)
+            {
+                Vector3 advanceTargetPos = hexGrid.HexToWorldPosition(lastPathCoord);
+                float advanceDist = Vector3.Distance(currentPos, advanceTargetPos);
+                if (advanceDist > 0.1f)
+                {
+                    float advanceTravelTime = Mathf.Max(advanceDist / projectileSpeed, 0.01f);
+                    float advanceElapsed = 0f;
+                    Vector3 advanceMoveStart = currentPos;
+                    Vector3 advanceMoveDir = (advanceTargetPos - currentPos).normalized;
+                    lastMoveDir = advanceMoveDir;
+
+                    float advAngle = Mathf.Atan2(advanceMoveDir.y, advanceMoveDir.x) * Mathf.Rad2Deg;
+                    projectile.transform.rotation = Quaternion.Euler(0, 0, advAngle - 90f);
+
+                    while (advanceElapsed < advanceTravelTime)
+                    {
+                        if (projectile == null) break;
+                        advanceElapsed += Time.deltaTime;
+                        float t = Mathf.Clamp01(advanceElapsed / advanceTravelTime);
+                        projectile.transform.position = Vector3.Lerp(advanceMoveStart, advanceTargetPos, t);
+                        yield return null;
+                    }
+                    currentPos = advanceTargetPos;
+                }
+            }
+
+            // 쿠션 반사: remainingCushions == -1이면 최초 호출 → 스킬에서 초기화
+            int cushions = remainingCushions;
+            if (cushions < 0)
+                cushions = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillCushionLevel() : 0;
+
+            HexCoord currentDelta = GetDirectionDelta(direction, positive);
+            HexCoord checkCoord = lastPathCoord + currentDelta;
+            bool atBoundary = hexGrid != null && !hexGrid.IsInGameField(checkCoord);
+            Debug.Log($"[DrillCushion] 경계판별: lastPath={lastPathCoord} check={checkCoord} atBoundary={atBoundary} cushions={cushions} dir=({currentDelta.q},{currentDelta.r})");
+
+            if (atBoundary && cushions > 0)
+            {
+                int newCushions = cushions - 1; // ★ 감소 먼저
+                HexCoord reflectDelta = CalcCushionReflection(lastPathCoord, currentDelta);
+                if (reflectDelta.q != 0 || reflectDelta.r != 0)
+                {
+                    Debug.Log($"[DrillCushion] 반사! 위치={lastPathCoord} delta=({currentDelta.q},{currentDelta.r}) → ({reflectDelta.q},{reflectDelta.r}) 남은쿠션={newCushions}");
+
+                    DrillDirection reflectDir; bool reflectPositive;
+                    DeltaToDrillDirection(reflectDelta, out reflectDir, out reflectPositive);
+
+                    List<HexBlock> reflectTargets = GetBlocksInDirection(lastPathCoord, reflectDir, reflectPositive);
+
+                    // ★ 투사체 유지 + 방향만 변경하여 재귀 호출
+                    yield return StartCoroutine(DrillLineWithProjectile(
+                        currentPos, reflectTargets, reflectDir, reflectPositive,
+                        drillColor, lastPathCoord, showEffects, null, newCushions, projectile));
+                    yield break;
+                }
+            }
+
+            // 반사 불가 → 퇴장 (관통 한계로 정지한 경우 퇴장 없음)
+            if (projectile != null && !drillStopped)
+                StartCoroutine(ProjectileExitPhase(projectile, currentPos, lastMoveDir, damagedGoblinPositions, penetrateCount, penetrateMax));
 
         }
 
@@ -920,12 +1235,195 @@ private IEnumerator DrillLineWithProjectile(
         // 쿠션 반사: 경계 도달 시 반사 방향으로 새 드릴 라인 발사
         // ============================================================
 
+        // HexCoord.Directions 참조 (실제 게임 방향 정의)
+        // [0]=(1,0)→, [1]=(1,-1)↗, [2]=(0,-1)↑, [3]=(-1,0)←, [4]=(-1,1)↙, [5]=(0,1)↓
+
         /// <summary>
+        /// HexCoord delta → DrillDirection + positive 변환.
+        /// </summary>
+        private void DeltaToDrillDirection(HexCoord delta, out DrillDirection dir, out bool positive)
+        {
+            if (delta.q == 0 && delta.r == 1)       { dir = DrillDirection.Vertical; positive = true; }   // ↓
+            else if (delta.q == 0 && delta.r == -1)  { dir = DrillDirection.Vertical; positive = false; }  // ↑
+            else if (delta.q == 1 && delta.r == -1)  { dir = DrillDirection.Slash; positive = true; }      // ↗
+            else if (delta.q == -1 && delta.r == 1)  { dir = DrillDirection.Slash; positive = false; }     // ↙
+            else if (delta.q == 1 && delta.r == 0)   { dir = DrillDirection.BackSlash; positive = true; }  // →
+            else if (delta.q == -1 && delta.r == 0)  { dir = DrillDirection.BackSlash; positive = false; } // ←
+            else { dir = DrillDirection.Vertical; positive = true; } // 폴백
+        }
+
+        /// <summary>
+        /// 드릴 쿠션 반사 방향 계산 (v2 — 경계 구역 기반).
+        /// 현재 좌표에서 경계를 만났을 때 반사 방향(HexCoord delta)을 반환.
+        /// drillDelta: 현재 드릴 진행 방향의 HexCoord delta.
+        /// 반환: 반사 후 새 진행 방향의 HexCoord delta. 반사 불가 시 (0,0).
+        /// </summary>
+        private HexCoord CalcCushionReflection(HexCoord currentCoord, HexCoord drillDelta)
+        {
+            if (hexGrid == null) return new HexCoord(0, 0);
+
+            var D = HexCoord.Directions; // [0]=→, [1]=↗, [2]=↑, [3]=←, [4]=↙, [5]=↓
+
+            // 경계 구역 판별: q, r 값으로 그리드 외곽 위치 결정
+            int q = currentCoord.q;
+            int r = currentCoord.r;
+            int radius = hexGrid.GridRadius;
+            int rMin = hexGrid.GetTopR(q);
+            int rMax = Mathf.Min(radius, -q + radius);
+
+            // 인접 필드 밖 방향 수집
+            int outsideCount = 0;
+            for (int d = 0; d < 6; d++)
+            {
+                if (!hexGrid.IsInGameField(currentCoord + D[d]))
+                    outsideCount++;
+            }
+
+            // ★ 경계 구역 + 진입 방향 → 반사 방향
+            // Vertical positive=(0,1)↓, negative=(0,-1)↑
+            // Slash positive=(1,-1)↗, negative=(-1,1)↙
+            // BackSlash positive=(1,0)→, negative=(-1,0)←
+
+            // 상단 구역: 소환 영역 최상단(rMin-3)에서만 상단 경계 판정
+            // 소환 영역 중간(rMin-2, rMin-1)은 상단 경계가 아님
+            bool isTopArea = (r == rMin - 3) || (r < rMin - 3);
+            // 하단 구역: r == rMax
+            bool isBottomArea = (r == rMax);
+            // 오른쪽 구역: q값 기준 (블록 필드 + 소환 영역 모두 포함)
+            bool isRightArea = (q == radius) || !hexGrid.IsInGameField(currentCoord + D[0]);
+            // 왼쪽 구역: q값 기준 (블록 필드 + 소환 영역 모두 포함)
+            // q == -radius이거나, q열에서 왼쪽(-1,0) 이웃이 게임 필드 밖이면 왼쪽 끝
+            bool isLeftArea = (q == -radius) || !hexGrid.IsInGameField(currentCoord + D[3]);
+
+            // 진입 방향별 반사 테이블
+            // ↑=(0,-1), ↓=(0,1), ↗=(1,-1), ↙=(-1,1), →=(1,0), ←=(-1,0)
+            bool goingUp    = drillDelta.q == 0 && drillDelta.r == -1;
+            bool goingDown  = drillDelta.q == 0 && drillDelta.r == 1;
+            bool goingNE    = drillDelta.q == 1 && drillDelta.r == -1;
+            bool goingSW    = drillDelta.q == -1 && drillDelta.r == 1;
+            bool goingRight = drillDelta.q == 1 && drillDelta.r == 0;
+            bool goingLeft  = drillDelta.q == -1 && drillDelta.r == 0;
+
+            // 상단 + 왼쪽 모서리 (q == -radius인 진짜 꼭지점만)
+            if (isTopArea && isLeftArea && q == -radius)
+            {
+                if (goingUp) return D[0];     // ↑ → →
+                if (goingLeft) return D[1];   // ← → ↗
+                if (goingSW) return D[0];     // ↙ → ↘ (왼쪽 끝 수평 반전)
+                return D[5];                  // 폴백 → ↓
+            }
+
+            // 상단 대각 경계 (q=-4~q=0: 소환 영역이 좁아지는 왼쪽 상단 대각선)
+            // isLeftArea는 true이지만 진짜 모서리가 아님 → 상단 반사 규칙 적용
+            if (isTopArea && isLeftArea)
+            {
+                if (goingUp) return D[0];     // ↑ → ↘
+                if (goingLeft) return D[5];   // ↖ → ↓ (상단 경계 우선)
+                if (goingNE) return D[5];     // ↗ → ↓
+                if (goingSW) return D[5];     // ↙ → ↓
+                return D[5];                  // 폴백 → ↓
+            }
+
+            // 상단 + 오른쪽 (2시 꼭지점 근처 — 최상단 소환지역)
+            if (isTopArea && isRightArea)
+            {
+                if (goingUp) return D[4];     // ↑ → ↙
+                if (goingNE) return D[5];     // ↗ → ↓ (최상단 소환지역은 아래로)
+                if (goingRight) return D[4];  // → → ↙
+                return D[5];                  // 폴백 → ↓
+            }
+
+            // 상단 구역 (중앙 상단 — q=1~q=4)
+            if (isTopArea)
+            {
+                Debug.Log($"[최상단쿠션] 진입방향=({drillDelta.q},{drillDelta.r}) goUp={goingUp} goNE={goingNE} goLeft={goingLeft} coord=({q},{r})");
+                if (goingUp) return D[4];     // ↑ → ↙
+                if (goingNE) return D[5];     // ↗ → ↓
+                if (goingLeft) return D[5];   // ← → ↓
+                return D[5];                  // 폴백 → ↓
+            }
+
+            // 하단 + 왼쪽 (8시 꼭지점 근처)
+            if (isBottomArea && isLeftArea)
+            {
+                if (goingDown) return D[1];   // ↓ → ↗
+                if (goingSW) return D[2];     // ↙ → ↑
+                if (goingLeft) return D[1];   // ← → ↗
+                return D[2];                  // 폴백 → ↑
+            }
+
+            // 하단 + 오른쪽 진짜 모서리 (q == radius인 꼭지점만)
+            if (isBottomArea && isRightArea && q == radius)
+            {
+                if (goingNE) return D[3];     // ↗ → ↖
+                if (goingRight) return D[4];  // ↘ → ↙
+                if (goingDown) return D[3];   // ↓ → ←
+                return D[2];                  // 폴백 → ↑
+            }
+
+            // 하단 + 오른쪽 대각 경계 (q=0~4: 하단이 좁아지는 오른쪽 대각선)
+            if (isBottomArea && isRightArea)
+            {
+                if (goingNE) return D[3];     // ↗ → ↖
+                if (goingRight) return D[2];  // ↘ → ↑ (하단 경계 우선)
+                if (goingDown) return D[3];   // ↓ → ←
+                return D[2];                  // 폴백 → ↑
+            }
+
+            // 하단 구역 (중앙 하단 — q=-4~q=-1 최하단)
+            if (isBottomArea)
+            {
+                if (goingDown) return D[1];   // ↓ → ↗
+                if (goingSW) return D[2];     // ↙ → ↑
+                if (goingRight) return D[2];  // → → ↑
+                return D[2];                  // 폴백 → ↑
+            }
+
+            // 오른쪽 상단 대각 경계
+            if (isRightArea && r < 0)
+            {
+                if (goingUp) return D[4];     // ↑ → ↙
+                if (goingNE) return D[3];     // ↗ → ↖ (오른쪽 경계에서 수평 반전 반사)
+                if (goingRight) return D[4];  // → → ↙
+                return D[4];
+            }
+
+            // 오른쪽 하단 대각 경계
+            if (isRightArea && r >= 0)
+            {
+                if (goingRight) return D[3];  // → → ←
+                if (goingNE) return D[3];     // ↗ → ←
+                return D[3];
+            }
+
+            // 왼쪽 상단 수직 (소환 영역 포함)
+            if (isLeftArea && r < 0)
+            {
+                if (goingUp) return D[1];     // ↑ → ↗ (왼쪽 수직 + 위 진입 → 오른쪽위 반사)
+                if (goingLeft) return D[1];   // ← → ↗
+                if (goingSW) return D[0];     // ↙ → ↘ (왼쪽 끝 수평 반전)
+                if (goingNE) return D[3];     // ↗ → ↖ (왼쪽 대각 경계에서 수평 반전 반사)
+                return D[1];                  // 폴백 → ↗
+            }
+
+            // 왼쪽 하단 수직 (최하단 위 ~ 소환 영역 포함)
+            if (isLeftArea && r >= 0)
+            {
+                if (goingUp) return D[1];     // ↑ → ↗
+                if (goingLeft) return D[1];   // ← → ↗
+                if (goingSW) return D[0];     // ↙ → ↘ (왼쪽 끝 수평 반전)
+                return D[1];                  // 폴백 → ↗
+            }
+
+            // 폴백: 진행 방향 반대
+            return new HexCoord(-drillDelta.q, -drillDelta.r);
+        }
+
         /// <summary>
         /// 투사체 퇴장 애니메이션 (백그라운드 실행 — DrillCoroutine 완료를 차단하지 않음)
         /// 화면 밖으로 이동하면서 고블린 충돌 감지
         /// </summary>
-        private IEnumerator ProjectileExitPhase(GameObject projectile, Vector3 startPos, Vector3 moveDir, HashSet<HexCoord> alreadyDamagedPositions = null)
+        private IEnumerator ProjectileExitPhase(GameObject projectile, Vector3 startPos, Vector3 moveDir, HashSet<HexCoord> alreadyDamagedPositions = null, int currentPenetrateCount = 0, int maxPenetrate = 0)
         {
             float exitElapsed = 0f;
             float exitDuration = 3f;
@@ -935,6 +1433,19 @@ private IEnumerator DrillLineWithProjectile(
                 ? new HashSet<HexCoord>(alreadyDamagedPositions)
                 : new HashSet<HexCoord>();
 
+            // ★ 관통 카운터 (이전 단계에서 이어받음)
+            int exitPenetrateCount = currentPenetrateCount;
+
+            // ★ 고블린 리스트를 루프 밖에서 1회만 조회 (매 프레임 ToList() GC 방지)
+            List<GoblinData> cachedGoblins = null;
+            bool hasGoblins = GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive;
+            if (hasGoblins)
+                cachedGoblins = GoblinSystem.Instance.GetAliveGoblins();
+
+            float hitRadius = hexGrid != null ? hexGrid.HexSize * 0.8f : 40f;
+            // 화면 밖 판정용 여유 범위
+            float screenBound = Screen.width + Screen.height;
+
             while (exitElapsed < exitDuration && projectile != null)
             {
                 exitElapsed += Time.deltaTime;
@@ -943,19 +1454,22 @@ private IEnumerator DrillLineWithProjectile(
                 Vector3 newPos = startPos + moveDir * projectileSpeed * exitElapsed;
                 projectile.transform.position = newPos;
 
-                // 이동 중 고블린 충돌 체크 (그리드 밖 포함) — 월드 좌표 기반
-                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
-                {
-                    var aliveGoblins = GoblinSystem.Instance.GetAliveGoblins();
-                    Vector2 projWorld2D = new Vector2(newPos.x, newPos.y);
-                    float hitRadius = hexGrid != null ? hexGrid.HexSize * 0.8f : 40f;
+                // ★ 화면 밖이면 조기 종료 (불필요한 고블린 순회 방지)
+                if (Mathf.Abs(newPos.x) > screenBound || Mathf.Abs(newPos.y) > screenBound)
+                    break;
 
-                    // ★ 방패 고블린 차단 체크 (exit phase) — 2발 박힘, 관통 가능
+                // 이동 중 고블린 충돌 체크 (그리드 밖 포함) — 월드 좌표 기반
+                if (hasGoblins && cachedGoblins != null)
+                {
+                    Vector2 projWorld2D = new Vector2(newPos.x, newPos.y);
+
+                    // ★ 방패 고블린 차단 체크 (exit phase)
                     bool shieldBlocked = false;
-                    foreach (var goblin in aliveGoblins)
+                    for (int gi = 0; gi < cachedGoblins.Count; gi++)
                     {
-                        if (goblin.visualObject == null) continue;
-                        if (!goblin.isShielded) continue; // 방패 활성 고블린만
+                        var goblin = cachedGoblins[gi];
+                        if (goblin.visualObject == null || !goblin.isAlive) continue;
+                        if (!goblin.isShielded) continue;
 
                         Vector3 goblinWorldPos = goblin.visualObject.transform.position;
                         float dist = Vector2.Distance(
@@ -968,20 +1482,31 @@ private IEnumerator DrillLineWithProjectile(
                             exitDamagedPositions.Add(goblin.position);
                             if (blockResult == 1)
                             {
-                                // 완전 차단
-                                if (projectile != null) Destroy(projectile);
+                                if (projectile != null) ReturnProjectile(projectile);
                                 shieldBlocked = true;
                             }
-                            // blockResult == 2: 관통 → 계속 진행
                             break;
                         }
                     }
                     if (shieldBlocked) yield break;
 
-                    foreach (var goblin in aliveGoblins)
+                    // ★ 일반 고블린 데미지 (for 루프 — foreach GC 방지) + 관통 제한
+                    for (int gi = 0; gi < cachedGoblins.Count; gi++)
                     {
-                        if (goblin.visualObject == null) continue;
-                        if (goblin.isShielded) continue; // 방패 활성 고블린은 대미지 제외
+                        var goblin = cachedGoblins[gi];
+                        if (goblin.visualObject == null || !goblin.isAlive) continue;
+                        if (goblin.isShielded) continue;
+                        if (goblin.isThief && goblin.isStealth) // 은신 도둑 고블린 회피 (관통 카운트 소모 안 함)
+                        {
+                            Vector3 gWP = goblin.visualObject.transform.position;
+                            float gDist = Vector2.Distance(projWorld2D, new Vector2(gWP.x, gWP.y));
+                            if (gDist < hitRadius && !exitDamagedPositions.Contains(goblin.position))
+                            {
+                                GoblinSystem.Instance.PlayDrillDodgeEffect(goblin);
+                                exitDamagedPositions.Add(goblin.position);
+                            }
+                            continue;
+                        }
                         if (exitDamagedPositions.Contains(goblin.position)) continue;
 
                         Vector3 goblinWorldPos = goblin.visualObject.transform.position;
@@ -994,6 +1519,17 @@ private IEnumerator DrillLineWithProjectile(
                             int exitDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
                             GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, exitDmg);
                             exitDamagedPositions.Add(goblin.position);
+
+                            // ★ 관통 카운트 증가 → 한계 초과 시 투사체 파괴
+                            // Heavy 고블린: 관통 2회 소모
+                            int exitPenetrateCost = goblin.isHeavy ? 2 : 1;
+                            exitPenetrateCount += exitPenetrateCost;
+                            if (exitPenetrateCount > maxPenetrate)
+                            {
+                                Debug.Log($"[DrillBlockSystem] exit phase 관통 한계 ({exitPenetrateCount}/{maxPenetrate}, cost={exitPenetrateCost}) → 투사체 파괴");
+                                if (projectile != null) ReturnProjectile(projectile);
+                                yield break;
+                            }
                         }
                     }
                 }
@@ -1001,7 +1537,7 @@ private IEnumerator DrillLineWithProjectile(
                 yield return null;
             }
 
-            if (projectile != null) Destroy(projectile);
+            if (projectile != null) ReturnProjectile(projectile);
         }
 
         /// <summary>
@@ -1054,37 +1590,42 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
             GameObject obj = new GameObject("DrillProjectile");
             Transform parent = effectParent != null ? effectParent : (hexGrid != null ? hexGrid.transform : null);
             if (parent != null)
-                obj.transform.SetParent(parent, true); // worldPositionStays=true로 변경
+                obj.transform.SetParent(parent, true);
             obj.transform.position = worldPos;
-            // 이동 방향에 맞게 회전 (-90도 보정: 스프라이트의 "위"가 진행 방향)
             obj.transform.rotation = Quaternion.Euler(0, 0, worldAngleDeg - 90f);
 
-            // 색상 변형: 밝은 버전과 어두운 버전을 만들어 입체감 표현
+            // 자식 파트 생성 (Glow, Body, Trail, Coreline)
+            BuildProjectileParts(obj, color);
+            return obj;
+        }
+
+        /// <summary>
+        /// 투사체 루트 오브젝트에 시각 파트(Glow, Body, Trail, Coreline)를 생성합니다.
+        /// CreateProjectileWithAngle과 GetPooledProjectile 양쪽에서 공용으로 사용합니다.
+        /// </summary>
+        private void BuildProjectileParts(GameObject obj, Color color)
+        {
             Color bright = VisualConstants.DrillBrighten(color);
             bright.a = 1f;
             Color dark = VisualConstants.Darken(color);
             dark.a = 1f;
 
-            // 각 파트의 스프라이트(이미지)를 코드로 생성
-            Sprite drillSprite = GenerateDrillSprite(color, bright, dark);  // 드릴 본체
-            Sprite glowSprite = GenerateCircleSprite(64, new Color(bright.r, bright.g, bright.b, 0.3f)); // 글로우
-            Sprite trailSprite = GenerateTrailSprite(color, bright);  // 꼬리 불꽃
+            Sprite drillSprite = GenerateDrillSprite(color, bright, dark);
+            Sprite glowSprite = GenerateCircleSprite(64, new Color(bright.r, bright.g, bright.b, 0.3f));
+            Sprite trailSprite = GenerateTrailSprite(color, bright);
 
-            // --- 1. Glow (빛나는 원) ---
-            // 투사체 주변에 은은하게 빛나는 후광 효과
+            // 1. Glow
             GameObject glow = new GameObject("Glow");
             glow.transform.SetParent(obj.transform, false);
             glow.transform.localPosition = Vector3.zero;
             var glowImg = glow.AddComponent<UnityEngine.UI.Image>();
-            glowImg.raycastTarget = false; // 터치 입력을 방해하지 않음
+            glowImg.raycastTarget = false;
             glowImg.sprite = glowSprite;
             glowImg.color = Color.white;
             glow.GetComponent<RectTransform>().sizeDelta = new Vector2(48f, 48f);
-            // 글로우가 맥동(커졌다 작아졌다)하는 애니메이션 시작
             StartCoroutine(PulseGlow(glow.GetComponent<RectTransform>(), glowImg));
 
-            // --- 2. DrillBody (드릴 본체) ---
-            // 뾰족한 드릴 모양의 메인 이미지
+            // 2. DrillBody
             GameObject body = new GameObject("DrillBody");
             body.transform.SetParent(obj.transform, false);
             body.transform.localPosition = Vector3.zero;
@@ -1092,14 +1633,13 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
             bodyImg.raycastTarget = false;
             bodyImg.sprite = drillSprite;
             bodyImg.color = Color.white;
-            bodyImg.preserveAspect = true; // 비율 유지
+            bodyImg.preserveAspect = true;
             body.GetComponent<RectTransform>().sizeDelta = new Vector2(22f, 34f);
 
-            // --- 3. Trail (꼬리 불꽃) ---
-            // 투사체 뒤쪽에 나타나는 잔상/불꽃 효과
+            // 3. Trail
             GameObject trail = new GameObject("Trail");
             trail.transform.SetParent(obj.transform, false);
-            trail.transform.localPosition = new Vector3(0, -18f, 0); // 본체 아래쪽에 위치
+            trail.transform.localPosition = new Vector3(0, -18f, 0);
             var trailImg = trail.AddComponent<UnityEngine.UI.Image>();
             trailImg.raycastTarget = false;
             trailImg.sprite = trailSprite;
@@ -1107,24 +1647,20 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
             trailImg.preserveAspect = false;
             RectTransform trailRt = trail.GetComponent<RectTransform>();
             trailRt.sizeDelta = new Vector2(10f, 22f);
-            trailRt.pivot = new Vector2(0.5f, 1f); // 위쪽 중심이 기준점
-            // 꼬리 불꽃이 출렁이는 애니메이션 시작
+            trailRt.pivot = new Vector2(0.5f, 1f);
             StartCoroutine(AnimateTrail(trailRt, trailImg, bright));
 
-            // --- 4. Coreline (중심 광선) ---
-            // 드릴 중심을 관통하는 밝은 흰색 선 (마감 효과)
+            // 4. Coreline
             GameObject coreline = new GameObject("Coreline");
             coreline.transform.SetParent(obj.transform, false);
             coreline.transform.localPosition = Vector3.zero;
             var coreImg = coreline.AddComponent<UnityEngine.UI.Image>();
             coreImg.raycastTarget = false;
-            coreImg.color = new Color(1f, 1f, 1f, 0.7f); // 반투명 흰색
+            coreImg.color = new Color(1f, 1f, 1f, 0.7f);
             RectTransform coreRt = coreline.GetComponent<RectTransform>();
-            coreRt.sizeDelta = new Vector2(2f, 28f); // 가늘고 긴 선
+            coreRt.sizeDelta = new Vector2(2f, 28f);
 
-            // 글로우를 맨 뒤로 보내서 다른 요소 뒤에 그려지게 함
             glow.transform.SetAsFirstSibling();
-            return obj;
         }
 
         // ============================================================
@@ -1695,28 +2231,16 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         /// 현재 동시에 실행 중인 화면 흔들림의 개수.
         /// 마지막 흔들림이 끝날 때만 원래 위치로 복귀합니다.
         /// </summary>
-        private int shakeCount = 0;
-
-        /// <summary>
-        /// 흔들림 시작 시 저장한 원래 위치. 흔들림이 끝나면 이 위치로 돌아옵니다.
-        /// </summary>
-        private Vector3 shakeOriginalPos;
-
         /// <summary>
         /// 화면을 랜덤하게 흔드는 코루틴.
         /// 시간이 지날수록 흔들림이 약해지다가(decay) 멈춥니다.
-        /// (비유: 지진이 점점 약해지는 것)
         /// </summary>
-        /// <param name="intensity">흔들림의 최대 세기 (픽셀 단위)</param>
-        /// <param name="duration">흔들림 지속 시간(초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            shakeOriginalPos = Vector3.zero;
-            shakeCount++;
 
             float elapsed = 0f;
             try
@@ -1728,18 +2252,13 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
                     float decay = 1f - VisualConstants.EaseInQuad(t);
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                shakeCount--;
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = Vector3.zero;
                 VisualConstants.EndScreenShake();
             }
         }
@@ -1777,11 +2296,21 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         /// 드릴 블록의 보석 색상을 가져옵니다.
         /// 이 색상은 투사체, 이펙트 등의 색상으로 사용됩니다.
         /// </summary>
+        /// <summary>
+        /// 드릴 파워 레벨(0~3)에 따른 투사체/아이콘 색상.
+        /// BlockSkillColors.Drill 배열 참조 — 아이콘과 투사체 색상 통일.
+        /// </summary>
+        public static Color GetDrillLevelColor(int level)
+        {
+            var colors = JewelsHexaPuzzle.Utils.BlockSkillColors.Drill;
+            int idx = Mathf.Clamp(level, 0, colors.Length - 1);
+            return colors[idx];
+        }
+
         private Color GetDrillColor(HexBlock block)
         {
-            if (block != null && block.Data != null && block.Data.gemType != GemType.None)
-                return GemColors.GetColor(block.Data.gemType);
-            return Color.white;
+            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0;
+            return GetDrillLevelColor(level);
         }
 
         /// <summary>

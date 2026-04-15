@@ -101,19 +101,19 @@ namespace JewelsHexaPuzzle.Core
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
                 return;
 
-            // ★ 우선순위 타겟팅: GoblinBomb → 궁수 → 방패 → 갑옷 → 일반 → 스마트 블록
+            // ★ DroneScoreSystem 통합 타겟팅 (1단계 직접 타격 포함)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                var priorityTarget = FindPriorityGoblinTarget();
-                if (priorityTarget != null)
+                var priorityCoord = JewelsHexaPuzzle.Drones.DroneScoreSystem.FindPriorityTarget();
+                if (priorityCoord.HasValue)
                 {
-                    Debug.Log($"[DroneBlockSystem] 우선순위 타겟: {priorityTarget.Value.type} at {priorityTarget.Value.coord}");
-                    ActivateDroneToGoblin(droneBlock, priorityTarget.Value.coord);
+                    Debug.Log($"[DroneBlockSystem] 1단계 직접 타격: {priorityCoord.Value}");
+                    ActivateDroneToGoblin(droneBlock, priorityCoord.Value);
                     return;
                 }
             }
 
-            Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 스마트 블록 타겟");
+            Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 점수 기반 타겟");
             StartCoroutine(DroneCoroutine(droneBlock, null));
         }
 
@@ -217,11 +217,13 @@ namespace JewelsHexaPuzzle.Core
             }
             yield return StartCoroutine(DroneGoblinStrikeEffect(goblinWorldPos, droneColor));
 
-            // 7. 고블린 직접 대미지
+            // 7. 고블린 직접 대미지 (스킬 보너스 적용)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                GoblinSystem.Instance.ApplyDamageAtPosition(goblinPos, 1);
-                Debug.Log($"[DroneBlockSystem] 고블린 직접 타격: ({goblinPos}) 1 대미지");
+                int droneDmg = 1 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
+                    ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus() : 0);
+                GoblinSystem.Instance.ApplyDamageAtPosition(goblinPos, droneDmg);
+                Debug.Log($"[DroneBlockSystem] 고블린 직접 타격: ({goblinPos}) {droneDmg} 대미지");
             }
 
             // 8. 점수
@@ -336,17 +338,19 @@ namespace JewelsHexaPuzzle.Core
             HexCoord targetCoord = target.Coord;
             ApplyDroneStrike(target);
 
-            // 7-1. 충돌 대미지: 타겟 위치에 고블린이 있으면 1 추가 대미지
+            // 7-1. 충돌 대미지: 타겟 위치에 고블린이 있으면 추가 대미지 (스킬 보너스 적용)
             if (GoblinSystem.Instance != null)
             {
                 var goblinSystem = GoblinSystem.Instance;
                 var goblinsAtTarget = goblinSystem.GetAliveGoblins();
+                int droneDmg = 1 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
+                    ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus() : 0);
                 foreach (var goblin in goblinsAtTarget)
                 {
                     if (goblin.position == targetCoord)
                     {
-                        goblinSystem.ApplyDamageAtPosition(targetCoord, 1);
-                        Debug.Log($"[DroneBlockSystem] 충돌 대미지: ({targetCoord}) 고블린에게 1 대미지");
+                        goblinSystem.ApplyDamageAtPosition(targetCoord, droneDmg);
+                        Debug.Log($"[DroneBlockSystem] 충돌 대미지: ({targetCoord}) 고블린에게 {droneDmg} 대미지");
                         break; // 같은 위치에 고블린은 1마리
                     }
                 }
@@ -365,13 +369,10 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // 타겟팅 시스템
+        // 레거시 타겟팅 (DroneScoreSystem으로 통합 — 아래 코드는 미사용)
         // ============================================================
 
-        /// <summary>
-        /// 현재 활성 미션에서 수집 대상 GemType 목록 추출
-        /// 무한모드(MissionSystem) + 스테이지모드(StageManager) 모두 지원
-        /// </summary>
+#if LEGACY_DRONE_TARGETING_HELPERS
         private HashSet<GemType> GetMissionTargetGemTypes()
         {
             HashSet<GemType> targets = new HashSet<GemType>();
@@ -466,48 +467,55 @@ namespace JewelsHexaPuzzle.Core
             }
             return false;
         }
+#endif // LEGACY_DRONE_TARGETING_HELPERS
 
         /// <summary>
-        /// 타겟 선택: 고블린 존재 시 스마트 열 기반, 없으면 기존 우선순위 기반
+        /// 타겟 선택: DroneScoreSystem 통합 알고리즘 사용
         /// </summary>
         private HexBlock FindTargetBlock(HexBlock droneBlock)
         {
-            // 점수 기반 타겟팅 (고블린 유무 모두 대응)
-            HexBlock scoreTarget = FindBestTargetByScore(droneBlock);
-            if (scoreTarget != null) return scoreTarget;
-
-            // 폴백: 기존 우선순위 기반
-            return FindPriorityTargetBlock(droneBlock);
+            return JewelsHexaPuzzle.Drones.DroneScoreSystem.FindBestTarget(hexGrid, droneBlock);
         }
 
         // ============================================================
-        // 점수 기반 드론 타겟팅
+        // 타겟팅: DroneScoreSystem으로 통합 (기존 코드 삭제됨)
         // ============================================================
 
-        /// <summary>몬스터 타입별 기본 점수</summary>
-        /// <summary>GoblinData.DroneTargetScore 중앙화 프로퍼티 사용</summary>
-        private static int GetGoblinScore(GoblinData g)
-        {
-            if (g == null || !g.isAlive) return 0;
-            return g.DroneTargetScore;
-        }
+        // ============================================================
+        // 1단계: 최우선 직접 타격 대상 (Wizard > Healer > Archer > Shield)
+        // ============================================================
 
-        /// <summary>GoblinBomb 점수 = 6</summary>
-        private const int GOBLIN_BOMB_SCORE = 6;
+        // (기존 타겟팅 메서드 전부 DroneScoreSystem으로 통합)
 
-        /// <summary>
-        /// 모든 블록에 대해 ScoreForBlock을 계산하고 최고 점수 블록 반환.
-        /// 동점 처리: 하단 행 → 외곽(|q| 큰) → 왼쪽(q 작은)
-        /// </summary>
-        private HexBlock FindBestTargetByScore(HexBlock droneBlock)
+#if LEGACY_DRONE_TARGETING // 레거시 코드 — 컴파일 제외
+        private HexBlock _legacyFindBestTargetByScore(HexBlock droneBlock)
         {
             if (hexGrid == null) return null;
+            HexCoord? priorityTarget = null; // FindPriorityDirectTarget 삭제됨
+            if (priorityTarget.HasValue)
+            {
+                // 해당 좌표가 그리드 내부면 블록 반환, 아니면 가장 가까운 블록 찾기
+                HexBlock directBlock = hexGrid.GetBlock(priorityTarget.Value);
+                if (directBlock != null && directBlock.Data != null && directBlock.Data.gemType != GemType.None)
+                    return directBlock;
 
+                // 소환 영역 몬스터: 해당 좌표와 같은 열(q)의 최상단 블록 타격
+                int q = priorityTarget.Value.q;
+                int topR = hexGrid.GetTopR(q);
+                HexBlock topBlock = hexGrid.GetBlock(new HexCoord(q, topR));
+                if (topBlock != null && topBlock.Data != null && topBlock.Data.gemType != GemType.None)
+                {
+                    Debug.Log($"[DroneTarget] 소환 영역 타겟 → 열 최상단 블록: ({q}, {topR})");
+                    return topBlock;
+                }
+            }
+
+            // 2단계: 전체 블록 점수 계산
             HexBlock bestBlock = null;
             int bestScore = 0;
-            int bestR = int.MinValue;   // 하단 행 우선 (r 큰 값)
-            int bestAbsQ = -1;          // 외곽 우선 (|q| 큰 값)
-            int bestQ = int.MaxValue;   // 왼쪽 우선 (q 작은 값)
+            int bestLevelSum = 0;       // 동점 1순위: 영향 몬스터 레벨합
+            int bestDistFromCenter = -1; // 동점 2순위: 외곽 거리 (큰 값 우선)
+            int bestQ = int.MinValue;    // 동점 3순위: q 좌표 (큰 값 우선)
 
             foreach (var block in hexGrid.GetAllBlocks())
             {
@@ -518,22 +526,22 @@ namespace JewelsHexaPuzzle.Core
                 if (block.Data.specialType == SpecialBlockType.Drone) continue;
 
                 int score = ScoreForBlock(block.Coord);
+                if (score <= 0) continue;
 
-                // 동점 처리
+                int levelSum = LevelSumForBlock(block.Coord);
+                int distFromCenter = HexDistFromCenter(block.Coord);
+                int q = block.Coord.q;
+
                 bool isBetter = false;
                 if (score > bestScore)
                     isBetter = true;
-                else if (score == bestScore && score > 0)
+                else if (score == bestScore)
                 {
-                    int r = block.Coord.r;
-                    int absQ = Mathf.Abs(block.Coord.q);
-                    int q = block.Coord.q;
-
-                    if (r > bestR)
+                    if (levelSum > bestLevelSum)
                         isBetter = true;
-                    else if (r == bestR && absQ > bestAbsQ)
+                    else if (levelSum == bestLevelSum && distFromCenter > bestDistFromCenter)
                         isBetter = true;
-                    else if (r == bestR && absQ == bestAbsQ && q < bestQ)
+                    else if (levelSum == bestLevelSum && distFromCenter == bestDistFromCenter && q > bestQ)
                         isBetter = true;
                 }
 
@@ -541,21 +549,21 @@ namespace JewelsHexaPuzzle.Core
                 {
                     bestBlock = block;
                     bestScore = score;
-                    bestR = block.Coord.r;
-                    bestAbsQ = Mathf.Abs(block.Coord.q);
-                    bestQ = block.Coord.q;
+                    bestLevelSum = levelSum;
+                    bestDistFromCenter = distFromCenter;
+                    bestQ = q;
                 }
             }
 
             if (bestBlock != null)
-                Debug.Log($"[DroneScore] 최적 타겟: {bestBlock.Coord} 점수={bestScore}");
+                Debug.Log($"[DroneScore] 2단계 최적: {bestBlock.Coord} 점수={bestScore} 레벨합={bestLevelSum} 외곽={bestDistFromCenter}");
 
             return bestBlock;
         }
 
         /// <summary>
         /// 특정 블록 좌표를 타격했을 때 얻는 총 점수.
-        /// 직접 타격 점수 + 낙하 대미지 점수.
+        /// 직접 타격 점수 + 낙하 대미지 점수 (낙하 면역 몬스터 = 0점).
         /// </summary>
         public int ScoreForBlock(HexCoord targetCoord)
         {
@@ -573,21 +581,62 @@ namespace JewelsHexaPuzzle.Core
             if (directGoblin != null)
                 score += GetGoblinScore(directGoblin);
 
-            // 낙하 대미지: targetCoord 위쪽 블록이 낙하하면서 맞는 몬스터
-            // hex 좌표에서 "위"는 r이 감소하는 방향 (flat-top: (0,-1) 또는 자체 열)
-            // 같은 열(q)에서 r < targetCoord.r 인 블록들이 낙하 후보
+            // 낙하 대미지: 같은 열(q)에서 targetCoord보다 아래(r 큼)에 있는 몬스터
             var allGoblins = GoblinSystem.Instance.GetAliveGoblins();
             foreach (var g in allGoblins)
             {
                 if (g == directGoblin) continue;
-                if (g.IsImmuneToFallDamage) continue; // 낙하 면역 (궁수, 힐러 등)
+                if (g.IsImmuneToFallDamage) continue; // 궁수/힐러/마법사 = 0점
 
-                // 같은 열에서 targetCoord보다 위(r 작음)에 있는 몬스터는 블록 낙하로 데미지 가능
-                if (g.position.q == targetCoord.q && g.position.r < targetCoord.r)
+                if (g.position.q == targetCoord.q && g.position.r > targetCoord.r)
                     score += GetGoblinScore(g);
+
+                // Heavy: occupiedCoords도 체크
+                if (g.isHeavy && g.occupiedCoords != null)
+                {
+                    foreach (var oc in g.occupiedCoords)
+                    {
+                        if (oc.q == targetCoord.q && oc.r > targetCoord.r && g != directGoblin)
+                        {
+                            score += GetGoblinScore(g);
+                            break; // 같은 Heavy 중복 방지
+                        }
+                    }
+                }
             }
 
             return score;
+        }
+
+        /// <summary>
+        /// 동점 처리용: 블록 타격 시 영향받는 모든 몬스터의 DroneTargetScore 합산.
+        /// </summary>
+        private int LevelSumForBlock(HexCoord targetCoord)
+        {
+            int sum = 0;
+            if (GoblinSystem.Instance == null) return 0;
+
+            GoblinData directGoblin = GoblinSystem.Instance.GetGoblinAt(targetCoord);
+            if (directGoblin != null) sum += GetGoblinScore(directGoblin);
+
+            var allGoblins = GoblinSystem.Instance.GetAliveGoblins();
+            foreach (var g in allGoblins)
+            {
+                if (g == directGoblin) continue;
+                if (g.position.q == targetCoord.q && g.position.r > targetCoord.r)
+                    sum += GetGoblinScore(g);
+            }
+
+            return sum;
+        }
+
+        /// <summary>
+        /// 동점 처리용: 그리드 중심(0,0)에서의 axial 거리.
+        /// </summary>
+        private int HexDistFromCenter(HexCoord coord)
+        {
+            int s = -coord.q - coord.r;
+            return Mathf.Max(Mathf.Abs(coord.q), Mathf.Max(Mathf.Abs(coord.r), Mathf.Abs(s)));
         }
 
         /// <summary>
@@ -703,8 +752,8 @@ namespace JewelsHexaPuzzle.Core
         private HexBlock FindSmartTargetBlock(HexBlock droneBlock)
         {
             var goblinSystem = GoblinSystem.Instance;
-            // 모든 고블린 포함 (활 고블린도 열 우선순위 평가에 포함)
-            var allGoblins = goblinSystem.GetAliveGoblins();
+            // 모든 고블린 포함 (활 고블린도 열 우선순위 평가에 포함, 은신 도둑 제외)
+            var allGoblins = goblinSystem.GetAliveGoblins().Where(g => !(g.isThief && g.isStealth)).ToList();
             // 낙하 대미지 대상은 활 고블린 제외 (낙하 면역)
             var fallTargets = allGoblins.Where(g => !g.isArcher).ToList();
             if (allGoblins.Count == 0) return null;
@@ -1005,6 +1054,7 @@ namespace JewelsHexaPuzzle.Core
             // 기타 특수 블록
             return 4;
         }
+#endif // LEGACY_DRONE_TARGETING
 
         // ============================================================
         // 타격 효과 적용 (1데미지)
@@ -1589,13 +1639,11 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>화면 흔들림</summary>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             if (hexGrid == null) { VisualConstants.EndScreenShake(); yield break; }
             Transform gridTrans = hexGrid.transform;
-            Vector3 origPos = Vector3.zero;
             float t = 0f;
 
             try
@@ -1606,7 +1654,7 @@ namespace JewelsHexaPuzzle.Core
                     float decay = 1f - (t / duration);
                     float offsetX = Random.Range(-intensity, intensity) * decay;
                     float offsetY = Random.Range(-intensity, intensity) * decay;
-                    gridTrans.localPosition = origPos + new Vector3(offsetX, offsetY, 0f);
+                    gridTrans.localPosition = new Vector3(offsetX, offsetY, 0f);
                     yield return null;
                 }
             }

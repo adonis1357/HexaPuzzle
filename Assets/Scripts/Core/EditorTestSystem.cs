@@ -28,9 +28,64 @@ namespace JewelsHexaPuzzle.Core
 
         // 몬스터 모드 상태
         private bool monsterMode = false;
+        private int currentMonsterIndex = 0; // MONSTER_CYCLE 인덱스 (0~Count-1) 또는 Count=DeleteMode
         private GameObject monsterButton;
         private Image monsterButtonBg;
         private Image monsterButtonOutline;
+        private GameObject monsterPreviewObj; // 버튼 내 현재 선택 몬스터 미리보기 이미지
+        private Text monsterLabel; // 버튼 라벨 텍스트 참조
+
+        /// <summary>에디터 몬스터 타입 열거</summary>
+        private enum EditorGoblinType { Regular, Armored, Archer, Shield, BombGoblin, Healer, Heavy, Wizard, Thief, Witch, RegularLv2, ArmoredLv2, ArcherLv2, ShieldLv2 }
+
+        /// <summary>
+        /// 에디터 버튼 몬스터 순환 목록.
+        /// 새 몬스터 타입 추가 시 이 배열에 원하는 위치에 삽입하면
+        /// 에디터 버튼 순환 및 필드 클릭 순환에 자동 적용됩니다.
+        /// </summary>
+        private static readonly EditorGoblinType[] MONSTER_CYCLE = {
+            EditorGoblinType.Regular,
+            EditorGoblinType.Armored,
+            EditorGoblinType.Archer,
+            EditorGoblinType.Shield,
+            EditorGoblinType.BombGoblin,
+            EditorGoblinType.Healer,
+            EditorGoblinType.Heavy,
+            EditorGoblinType.Wizard,
+            EditorGoblinType.Thief,
+            EditorGoblinType.Witch,
+            EditorGoblinType.RegularLv2,
+            EditorGoblinType.ArmoredLv2,
+            EditorGoblinType.ArcherLv2,
+            EditorGoblinType.ShieldLv2
+        };
+
+        /// <summary>MONSTER_CYCLE + DeleteMode 이름 배열 (UI 라벨용)</summary>
+        private static string GetMonsterCycleName(int index)
+        {
+            if (index < 0 || index >= MONSTER_CYCLE.Length) return "삭제";
+            switch (MONSTER_CYCLE[index])
+            {
+                case EditorGoblinType.Regular:      return "몽둥이";
+                case EditorGoblinType.Armored:     return "갑옷";
+                case EditorGoblinType.Archer:     return "궁수";
+                case EditorGoblinType.Shield:     return "방패";
+                case EditorGoblinType.BombGoblin: return "폭탄";
+                case EditorGoblinType.Healer:     return "힐러";
+                case EditorGoblinType.Heavy:      return "헤비";
+                case EditorGoblinType.Wizard:    return "마법사";
+                case EditorGoblinType.Thief:     return "도둑";
+                case EditorGoblinType.Witch:       return "마녀";
+                case EditorGoblinType.RegularLv2:  return "몽둥이Lv2";
+                case EditorGoblinType.ArmoredLv2:  return "갑옷Lv2";
+                case EditorGoblinType.ArcherLv2:   return "궁수Lv2";
+                case EditorGoblinType.ShieldLv2:   return "방패Lv2";
+                default: return "???";
+            }
+        }
+
+        /// <summary>DeleteMode 인덱스 = MONSTER_CYCLE.Length</summary>
+        private int DeleteModeIndex => MONSTER_CYCLE.Length;
 
         // 게이지 추가 모드
         private static EditorTestSystem _instance;
@@ -43,6 +98,15 @@ namespace JewelsHexaPuzzle.Core
         {
             return _instance != null && _instance.gaugeAddMode;
         }
+
+        // 스킬 해금 취소 모드
+        private bool skillUnlockCancelMode = false;
+        private GameObject skillCancelButton;
+        private Image skillCancelButtonBg;
+        private Image skillCancelButtonOutline;
+
+        /// <summary>스킬 해금 취소 모드 활성 여부 (SkillTreeUI에서 참조)</summary>
+        public bool IsSkillUnlockCancelMode => skillUnlockCancelMode;
 
         // Canvas UI 참조 — 특수 블록 버튼
         private GameObject panelContainer;
@@ -209,6 +273,7 @@ namespace JewelsHexaPuzzle.Core
             // === 게이지 추가 버튼 생성 (몬스터 버튼 아래) ===
             CreateGaugeAddButton();
             CreateMPAddButton();
+            CreateSkillCancelButton();
         }
 
         private void CreateSpecialBlockButton(int index, Vector2 position)
@@ -486,6 +551,7 @@ namespace JewelsHexaPuzzle.Core
             labelRt.anchorMax = new Vector2(1f, 0f);
             labelRt.anchoredPosition = new Vector2(0f, 10f);
             labelRt.sizeDelta = new Vector2(0f, 16f);
+            monsterLabel = label;
 
             // Button 컴포넌트
             Button btn = btnObj.AddComponent<Button>();
@@ -507,26 +573,144 @@ namespace JewelsHexaPuzzle.Core
 
         private void OnMonsterButtonClicked()
         {
-            // 이미 활성 → 비활성화
-            if (monsterMode)
+            if (!monsterMode)
             {
-                DeactivateMode();
-                return;
+                // 다른 모드 해제 후 몬스터 모드 진입
+                editorMode = false;
+                activeBlockType = SpecialBlockType.None;
+                activeButtonIndex = -1;
+                colorMode = false;
+                activeGemType = GemType.None;
+                activeColorButtonIndex = -1;
+                gaugeAddMode = false;
+
+                monsterMode = true;
+                currentMonsterIndex = 0; // MONSTER_CYCLE[0]부터 시작
+                LastModeChangeFrame = Time.frameCount;
+
+                UpdateMonsterPreview();
+                UpdateAllButtonVisuals();
+                Debug.Log($"[EditorTestSystem] 몬스터 모드: {GetMonsterCycleName(currentMonsterIndex)} (index={currentMonsterIndex})");
+            }
+            else
+            {
+                // 이미 몬스터 모드 → 다음 타입으로 순환
+                currentMonsterIndex++;
+
+                if (currentMonsterIndex > DeleteModeIndex)
+                {
+                    // DeleteMode 다음 → 비활성화
+                    DeactivateMode();
+                    Debug.Log("[EditorTestSystem] 몬스터 모드 비활성화 (순환 끝)");
+                    return;
+                }
+
+                UpdateMonsterPreview();
+                UpdateAllButtonVisuals();
+                Debug.Log($"[EditorTestSystem] 몬스터 모드: {GetMonsterCycleName(currentMonsterIndex)} (index={currentMonsterIndex})");
+            }
+        }
+
+        /// <summary>
+        /// 현재 선택된 몬스터 타입의 미리보기 이미지를 버튼에 표시
+        /// </summary>
+        private void UpdateMonsterPreview()
+        {
+            if (monsterButton == null) return;
+
+            // 기존 미리보기 제거
+            if (monsterPreviewObj != null)
+            {
+                Object.Destroy(monsterPreviewObj);
+                monsterPreviewObj = null;
             }
 
-            // 다른 모드 해제
-            editorMode = false;
-            activeBlockType = SpecialBlockType.None;
-            activeButtonIndex = -1;
-            colorMode = false;
-            activeGemType = GemType.None;
-            activeColorButtonIndex = -1;
+            // 라벨 텍스트 업데이트
+            if (monsterLabel != null)
+                monsterLabel.text = GetMonsterCycleName(currentMonsterIndex);
 
-            monsterMode = true;
-            LastModeChangeFrame = Time.frameCount;
+            float btnSize = COLOR_BTN_SIZE * 0.65f; // 버튼의 ~65% 크기
 
-            UpdateAllButtonVisuals();
-            Debug.Log($"[EditorTestSystem] 몬스터 모드 활성화 frame={Time.frameCount}");
+            if (currentMonsterIndex == DeleteModeIndex)
+            {
+                // DeleteMode: 빨간 X 텍스트
+                monsterPreviewObj = new GameObject("MonsterPreview");
+                monsterPreviewObj.transform.SetParent(monsterButton.transform, false);
+                RectTransform rt = monsterPreviewObj.AddComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = new Vector2(0f, 4f);
+                rt.sizeDelta = new Vector2(btnSize, btnSize);
+
+                Text xText = monsterPreviewObj.AddComponent<Text>();
+                xText.text = "X";
+                xText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                xText.fontSize = (int)(btnSize * 0.7f);
+                xText.fontStyle = FontStyle.Bold;
+                xText.alignment = TextAnchor.MiddleCenter;
+                xText.color = Color.red;
+                xText.raycastTarget = false;
+
+                Outline xOutline = monsterPreviewObj.AddComponent<Outline>();
+                xOutline.effectColor = new Color(0.3f, 0f, 0f, 1f);
+                xOutline.effectDistance = new Vector2(1.5f, -1.5f);
+            }
+            else if (currentMonsterIndex < MONSTER_CYCLE.Length)
+            {
+                // 몬스터 스프라이트
+                Sprite sprite = GetSpriteForGoblinType(MONSTER_CYCLE[currentMonsterIndex]);
+                if (sprite == null) return;
+
+                monsterPreviewObj = new GameObject("MonsterPreview");
+                monsterPreviewObj.transform.SetParent(monsterButton.transform, false);
+                RectTransform rt = monsterPreviewObj.AddComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = new Vector2(0f, 4f);
+                rt.sizeDelta = new Vector2(btnSize, btnSize);
+
+                Image img = monsterPreviewObj.AddComponent<Image>();
+                img.sprite = sprite;
+                img.preserveAspect = true;
+                img.raycastTarget = false;
+                var curType = MONSTER_CYCLE[currentMonsterIndex];
+                if (curType == EditorGoblinType.Healer) img.color = new Color(0.3f, 0.9f, 0.4f, 1f);
+                else if (curType == EditorGoblinType.RegularLv2 || curType == EditorGoblinType.ArmoredLv2
+                      || curType == EditorGoblinType.ArcherLv2 || curType == EditorGoblinType.ShieldLv2)
+                    img.color = new Color(0.85f, 0.15f, 0.15f, 1f); // Lv2 통일 색상
+                else img.color = Color.white;
+                // 마법사: 스프라이트 Y축 반전 보정
+                if (MONSTER_CYCLE[currentMonsterIndex] == EditorGoblinType.Wizard
+                    || MONSTER_CYCLE[currentMonsterIndex] == EditorGoblinType.Witch)
+                    rt.localRotation = Quaternion.Euler(0, 0, 180);
+            }
+        }
+
+        /// <summary>
+        /// EditorGoblinType별 스프라이트 반환 (MONSTER_CYCLE 기반)
+        /// </summary>
+        private Sprite GetSpriteForGoblinType(EditorGoblinType type)
+        {
+            switch (type)
+            {
+                case EditorGoblinType.Regular:    return GoblinSystem.GetGoblinSprite();
+                case EditorGoblinType.Armored:    return GoblinSystem.GetArmoredGoblinSprite();
+                case EditorGoblinType.Archer:     return GoblinSystem.GetArcherGoblinSprite();
+                case EditorGoblinType.Shield:     return GoblinSystem.GetShieldGoblinSprite();
+                case EditorGoblinType.BombGoblin: return GoblinSystem.GetBombGoblinSprite();
+                case EditorGoblinType.Healer:      return GoblinSystem.GetGoblinSprite();
+                case EditorGoblinType.Heavy:       return GoblinSystem.GetHeavyGoblinSprite();
+                case EditorGoblinType.Wizard:      return GoblinSystem.GetWizardGoblinSprite();
+                case EditorGoblinType.Thief:       return GoblinSystem.GetThiefGoblinSprite();
+                case EditorGoblinType.Witch:       return GoblinSystem.GetWitchGoblinSprite();
+                case EditorGoblinType.RegularLv2:  return GoblinSystem.GetGoblinSprite();
+                case EditorGoblinType.ArmoredLv2:  return GoblinSystem.GetArmoredGoblinSprite();
+                case EditorGoblinType.ArcherLv2:   return GoblinSystem.GetArcherGoblinSprite();
+                case EditorGoblinType.ShieldLv2:   return GoblinSystem.GetShieldGoblinSprite();
+                default: return null;
+            }
         }
 
         // ============================================================
@@ -534,14 +718,14 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 몬스터 모드에서 블록 클릭 시 순환 배치.
-        /// 순서: 몽둥이(1) → 갑옷(2) → 궁수(3) → 방패(4) → 제거(0) → 반복
+        /// 몬스터 모드에서 블록 필드 클릭 시 배치/삭제/순환 교체.
+        /// block이 null이면 빈 곳 → 즉시 비활성화.
         /// </summary>
         private bool TryPlaceMonster(HexBlock block)
         {
             if (block == null)
             {
-                // 빈 공간 → 비활성화
+                // 빈 곳 클릭 → 즉시 비활성화
                 DeactivateMode();
                 return true;
             }
@@ -552,38 +736,119 @@ namespace JewelsHexaPuzzle.Core
                 return false;
             }
 
-            HexCoord coord = block.Coord;
-            int currentType = GoblinSystem.Instance.EditorGetGoblinType(coord);
+            PlaceMonsterAtCoord(block.Coord);
+            return true;
+        }
 
-            // 순환: 0→1(몽둥이) → 2(갑옷) → 3(궁수) → 4(방패) → 0(제거)
-            int nextType = (currentType + 1) % 5;
-
-            if (nextType == 0)
+        /// <summary>
+        /// EditorGetGoblinType 반환값 → MONSTER_CYCLE 인덱스 변환.
+        /// MONSTER_CYCLE 배열에서 동적으로 탐색하므로 배열 변경 시 자동 대응.
+        /// </summary>
+        private int EditorTypeToMonsterCycleIndex(int editorType)
+        {
+            EditorGoblinType goblinType;
+            switch (editorType)
             {
-                // 제거
-                GoblinSystem.Instance.EditorRemoveGoblin(coord);
-                Debug.Log($"[EditorTestSystem] 몬스터 제거: ({coord})");
+                case 1: goblinType = EditorGoblinType.Regular;    break;
+                case 2: goblinType = EditorGoblinType.Armored;    break;
+                case 3: goblinType = EditorGoblinType.Archer;     break;
+                case 4: goblinType = EditorGoblinType.Shield;     break;
+                case 5: goblinType = EditorGoblinType.BombGoblin; break;
+                case 7: goblinType = EditorGoblinType.Healer;     break;
+                case 6: goblinType = EditorGoblinType.Heavy;      break;
+                case 8: goblinType = EditorGoblinType.Wizard;    break;
+                case 9: goblinType = EditorGoblinType.Thief;     break;
+                case 10: goblinType = EditorGoblinType.Witch;       break;
+                case 11: goblinType = EditorGoblinType.RegularLv2;  break;
+                case 12: goblinType = EditorGoblinType.ArmoredLv2;  break;
+                case 13: goblinType = EditorGoblinType.ArcherLv2;   break;
+                case 14: goblinType = EditorGoblinType.ShieldLv2;   break;
+                default: return -1;
+            }
+            for (int i = 0; i < MONSTER_CYCLE.Length; i++)
+            {
+                if (MONSTER_CYCLE[i] == goblinType) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 좌표 기반 몬스터 배치/삭제/순환 교체 공통 로직.
+        /// DeleteMode: 몬스터 있으면 삭제, 없으면 무동작.
+        /// 기타: 몬스터 없으면 버튼 설정 타입으로 생성.
+        /// 있으면 버튼 설정 타입을 시작점으로 MONSTER_CYCLE을 순환.
+        /// 시작점에서 한 바퀴 돌아오면(= 시작 직전 타입 다음) 삭제.
+        /// 예: 버튼=Healer(5) → Healer→Heavy→Regular→Armored→Archer→Shield→Bomb→삭제
+        /// </summary>
+        private void PlaceMonsterAtCoord(HexCoord coord)
+        {
+            int existingType = GoblinSystem.Instance.EditorGetGoblinType(coord);
+            Debug.Log($"[에디터클릭] 위치={coord} 기존몬스터={existingType} 버튼타입={currentMonsterIndex}({GetMonsterCycleName(currentMonsterIndex)})");
+
+            if (currentMonsterIndex == DeleteModeIndex)
+            {
+                // DeleteMode: 몬스터가 있으면 삭제
+                if (existingType != 0)
+                {
+                    GoblinSystem.Instance.EditorRemoveGoblin(coord);
+                    Debug.Log($"[EditorTestSystem] 몬스터 삭제: ({coord})");
+                }
+                return;
+            }
+
+            if (existingType != 0)
+            {
+                // 기존 몬스터가 있음 → MONSTER_CYCLE에서 현재 타입의 다음으로 교체
+                int existingIndex = EditorTypeToMonsterCycleIndex(existingType);
+                int len = MONSTER_CYCLE.Length;
+
+                // 다음 인덱스 (순환)
+                int nextIndex = (existingIndex + 1) % len;
+
+                // 시작점(버튼 설정 타입) 직전 인덱스 = 한 바퀴 완료 지점
+                // 현재 타입이 시작점 직전이면 → 다음 클릭에서 삭제
+                int lastBeforeStart = (currentMonsterIndex - 1 + len) % len;
+                if (existingIndex == lastBeforeStart)
+                {
+                    // 한 바퀴 완료 → 삭제
+                    GoblinSystem.Instance.EditorRemoveGoblin(coord);
+                    Debug.Log($"[EditorTestSystem] 몬스터 순환 삭제 (한 바퀴 완료): ({coord})");
+                    return;
+                }
+
+                // 다음 타입으로 교체
+                SpawnMonsterByCycleIndex(coord, nextIndex);
+                Debug.Log($"[EditorTestSystem] 몬스터 순환 교체: ({coord}) → {GetMonsterCycleName(nextIndex)}");
             }
             else
             {
-                bool isArmored = (nextType == 2);
-                bool isArcher = (nextType == 3);
-                bool isShield = (nextType == 4);
-                GoblinSystem.Instance.EditorSpawnGoblin(coord, isArmored, isArcher, isShield);
-
-                string typeName;
-                switch (nextType)
-                {
-                    case 1: typeName = "몽둥이"; break;
-                    case 2: typeName = "갑옷"; break;
-                    case 3: typeName = "궁수"; break;
-                    case 4: typeName = "방패"; break;
-                    default: typeName = "???"; break;
-                }
-                Debug.Log($"[EditorTestSystem] 몬스터 배치: ({coord}) → {typeName}");
+                // 몬스터 없음 → 버튼에 설정된 타입으로 생성
+                SpawnMonsterByCycleIndex(coord, currentMonsterIndex);
+                Debug.Log($"[EditorTestSystem] 몬스터 배치: ({coord}) → {GetMonsterCycleName(currentMonsterIndex)}");
             }
+        }
 
-            return true;
+        /// <summary>
+        /// MONSTER_CYCLE 인덱스에 해당하는 몬스터를 좌표에 소환.
+        /// EditorGoblinType → GoblinSystem.EditorSpawnGoblin bool 플래그 변환.
+        /// </summary>
+        private void SpawnMonsterByCycleIndex(HexCoord coord, int cycleIndex)
+        {
+            if (cycleIndex < 0 || cycleIndex >= MONSTER_CYCLE.Length) return;
+            EditorGoblinType type = MONSTER_CYCLE[cycleIndex];
+
+            bool isArmored = (type == EditorGoblinType.Armored || type == EditorGoblinType.ArmoredLv2);
+            bool isArcher  = (type == EditorGoblinType.Archer || type == EditorGoblinType.ArcherLv2);
+            bool isShield  = (type == EditorGoblinType.Shield || type == EditorGoblinType.ShieldLv2);
+            bool isBomb    = (type == EditorGoblinType.BombGoblin);
+            bool isHealer  = (type == EditorGoblinType.Healer);
+            bool isHeavy   = (type == EditorGoblinType.Heavy);
+            bool isWizard  = (type == EditorGoblinType.Wizard);
+            bool isThief   = (type == EditorGoblinType.Thief);
+            bool isWitch   = (type == EditorGoblinType.Witch);
+            int mLevel = (type == EditorGoblinType.RegularLv2 || type == EditorGoblinType.ArmoredLv2
+                       || type == EditorGoblinType.ArcherLv2 || type == EditorGoblinType.ShieldLv2) ? 2 : 1;
+            GoblinSystem.Instance.EditorSpawnGoblin(coord, isArmored, isArcher, isShield, isBomb, isHealer, isHeavy, isWizard, isThief, isWitch, mLevel);
         }
 
         private Sprite GetIconSpriteForType(SpecialBlockType type, int index)
@@ -743,6 +1008,9 @@ namespace JewelsHexaPuzzle.Core
                     monsterButtonOutline.color = monsterMode ? ACTIVE_BORDER : INACTIVE_BORDER;
                 monsterButton.transform.localScale = monsterMode ? Vector3.one * 1.15f : Vector3.one;
             }
+
+            // 스킬 취소 버튼 업데이트
+            UpdateSkillCancelButtonVisual();
         }
 
         public void DeactivateMode()
@@ -756,7 +1024,12 @@ namespace JewelsHexaPuzzle.Core
             activeColorButtonIndex = -1;
 
             monsterMode = false;
+            currentMonsterIndex = 0;
+            if (monsterPreviewObj != null) { Object.Destroy(monsterPreviewObj); monsterPreviewObj = null; }
+            if (monsterLabel != null) monsterLabel.text = "몬스터";
             gaugeAddMode = false;
+            skillUnlockCancelMode = false;
+            UpdateSkillCancelButtonVisual();
 
             LastModeChangeFrame = Time.frameCount;
 
@@ -1133,9 +1406,138 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         public bool IsEditorModeActive => editorMode || colorMode || monsterMode || gaugeAddMode;
+        public bool IsMonsterMode => monsterMode;
         public SpecialBlockType ActiveBlockType => activeBlockType;
         public GemType ActiveGemType => activeGemType;
         public bool IsColorMode => colorMode;
         public GameObject PanelObject => panelContainer;
+
+        /// <summary>
+        /// 소환 영역 좌표에 몬스터를 배치한다 (InputSystem에서 호출).
+        /// 그리드 밖 좌표이므로 HexBlock 없이 좌표 기반으로 직접 GoblinSystem 호출.
+        /// </summary>
+        public bool TryPlaceMonsterAtCoord(HexCoord coord)
+        {
+            if (!monsterMode) return false;
+            if (GoblinSystem.Instance == null)
+            {
+                Debug.LogWarning("[EditorTestSystem] GoblinSystem이 없어 몬스터를 배치할 수 없습니다.");
+                return false;
+            }
+
+            PlaceMonsterAtCoord(coord);
+            return true;
+        }
+
+        // ============================================================
+        // 스킬 해금 취소 버튼
+        // ============================================================
+
+        private void CreateSkillCancelButton()
+        {
+            // MP 추가 버튼 아래에 배치
+            GameObject refBtn = null;
+            var mpBtn = panelContainer != null ? panelContainer.transform.Find("TestBtn_MPAdd") : null;
+            if (mpBtn != null) refBtn = mpBtn.gameObject;
+            else if (gaugeAddButton != null) refBtn = gaugeAddButton;
+            else if (monsterButton != null) refBtn = monsterButton;
+            if (refBtn == null || panelContainer == null) return;
+
+            float sqrt3 = Mathf.Sqrt(3f);
+            RectTransform refRt = refBtn.GetComponent<RectTransform>();
+            Vector2 refPos = refRt.anchoredPosition;
+            float btnHalfH = COLOR_BTN_SIZE * sqrt3 / 4f;
+
+            string btnName = "TestBtn_SkillCancel";
+            GameObject btnObj = new GameObject(btnName);
+            btnObj.transform.SetParent(panelContainer.transform, false);
+
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
+            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
+            btnRt.pivot = new Vector2(0.5f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(refPos.x, refPos.y - btnHalfH * 2f - 8f);
+            btnRt.sizeDelta = new Vector2(COLOR_BTN_SIZE, COLOR_BTN_SIZE);
+
+            Color inactiveColor = new Color(0.65f, 0.25f, 0.25f, 0.90f);
+            Image bgImage = btnObj.AddComponent<Image>();
+            bgImage.sprite = HexBlock.GetHexFlashSprite();
+            bgImage.type = Image.Type.Simple;
+            bgImage.preserveAspect = true;
+            bgImage.color = inactiveColor;
+
+            GameObject outlineObj = new GameObject("Outline");
+            outlineObj.transform.SetParent(btnObj.transform, false);
+            RectTransform outRt = outlineObj.AddComponent<RectTransform>();
+            outRt.anchorMin = Vector2.zero; outRt.anchorMax = Vector2.one;
+            outRt.offsetMin = Vector2.zero; outRt.offsetMax = Vector2.zero;
+            Image outImg = outlineObj.AddComponent<Image>();
+            outImg.sprite = HexBlock.GetHexBorderSprite();
+            outImg.type = Image.Type.Simple;
+            outImg.preserveAspect = true;
+            outImg.color = INACTIVE_BORDER;
+            outImg.raycastTarget = false;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            Text label = labelObj.AddComponent<Text>();
+            label.text = "스킬취소";
+            label.font = font;
+            label.fontSize = 10;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = new Color(1f, 1f, 1f, 0.85f);
+            label.raycastTarget = false;
+            label.fontStyle = FontStyle.Bold;
+            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(1f, 0f);
+            labelRt.anchoredPosition = new Vector2(0f, 10f);
+            labelRt.sizeDelta = new Vector2(0f, 16f);
+
+            Button btn = btnObj.AddComponent<Button>();
+            var bc = btn.colors;
+            bc.normalColor = Color.white;
+            bc.highlightedColor = new Color(1.2f, 1.2f, 1.2f, 1f);
+            bc.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
+            btn.colors = bc;
+            btn.onClick.AddListener(OnSkillCancelButtonClicked);
+
+            skillCancelButton = btnObj;
+            skillCancelButtonBg = bgImage;
+            skillCancelButtonOutline = outImg;
+        }
+
+        private void OnSkillCancelButtonClicked()
+        {
+            if (skillUnlockCancelMode)
+            {
+                skillUnlockCancelMode = false;
+                UpdateSkillCancelButtonVisual();
+                return;
+            }
+
+            // 다른 모드 해제
+            if (editorMode || colorMode || monsterMode || gaugeAddMode)
+                DeactivateMode();
+
+            skillUnlockCancelMode = true;
+            LastModeChangeFrame = Time.frameCount;
+            UpdateSkillCancelButtonVisual();
+            Debug.Log("[EditorTestSystem] 스킬 해금 취소 모드 활성화");
+        }
+
+        private void UpdateSkillCancelButtonVisual()
+        {
+            if (skillCancelButton == null) return;
+            Color inactiveColor = new Color(0.65f, 0.25f, 0.25f, 0.90f);
+            Color activeColor = new Color(1.0f, 0.40f, 0.40f, 1f);
+
+            if (skillCancelButtonBg != null)
+                skillCancelButtonBg.color = skillUnlockCancelMode ? activeColor : inactiveColor;
+            if (skillCancelButtonOutline != null)
+                skillCancelButtonOutline.color = skillUnlockCancelMode ? ACTIVE_BORDER : INACTIVE_BORDER;
+            skillCancelButton.transform.localScale = skillUnlockCancelMode ? Vector3.one * 1.15f : Vector3.one;
+        }
     }
 }

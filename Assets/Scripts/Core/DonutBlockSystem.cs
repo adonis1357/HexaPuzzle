@@ -1052,40 +1052,16 @@ namespace JewelsHexaPuzzle.Core
         /// 여러 흔들림이 동시에 발생할 수 있으므로 카운터로 추적합니다.
         /// 모든 흔들림이 끝나야(shakeCount==0) 원래 위치로 복원됩니다.
         /// </summary>
-        private int shakeCount = 0;
-
-        /// <summary>
-        /// 화면 흔들림이 시작되기 전의 원래 위치.
-        /// 흔들림이 끝나면 이 위치로 정확히 복원합니다.
-        /// </summary>
-        private Vector3 shakeOriginalPos;
-
         /// <summary>
         /// 화면 흔들림 효과.
-        ///
         /// 게임판(hexGrid)의 위치를 랜덤하게 흔들어 임팩트감을 줍니다.
-        /// 시간이 지남에 따라 흔들림 강도가 점점 줄어들다 멈춥니다 (감쇠 진동).
-        ///
-        /// 여러 흔들림이 동시에 발생해도 안전합니다:
-        /// - shakeCount로 중첩 관리
-        /// - 첫 번째 흔들림 시작 시 원래 위치를 저장
-        /// - 마지막 흔들림이 끝나면 원래 위치로 정확히 복원
-        ///
-        /// 비유: 지진이 발생한 것처럼 화면이 진동하다 잦아드는 것입니다.
         /// </summary>
-        /// <param name="intensity">흔들림 강도 (픽셀 단위, 클수록 크게 흔들림)</param>
-        /// <param name="duration">흔들림 지속 시간 (초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 항상 Vector3.zero를 기준으로 (중첩 시 원래 위치 보존)
-            if (shakeCount == 0)
-                shakeOriginalPos = Vector3.zero;
-            shakeCount++;
 
             float elapsed = 0f;
 
@@ -1095,23 +1071,16 @@ namespace JewelsHexaPuzzle.Core
                 {
                     elapsed += Time.deltaTime;
                     float t = Mathf.Clamp01(elapsed / duration);
-                    float decay = 1f - VisualConstants.EaseInQuad(t);  // 시간에 따라 감쇠 (1→0)
-                    // 랜덤 방향으로 흔들되, 시간이 지나면서 흔들림 폭이 줄어듦
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                shakeCount--;
-                // 모든 흔들림이 끝나면 정확히 원래 위치로 복원
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = Vector3.zero;
                 VisualConstants.EndScreenShake();
             }
         }

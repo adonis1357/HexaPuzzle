@@ -7294,6 +7294,41 @@ private void OnDestroy()
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 70: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+
+                // ============================================================
+                // 스테이지 81~90: 챕터 9 — 도둑의 은신처 (도둑 고블린 등장)
+                // HP: 몽둥이5, 갑옷15, 활1, 방패10(내구3), 폭탄10, 헤비36, 도둑12
+                // ============================================================
+                case 81: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 12, maxOnBoard = 6,
+                    thiefRatio = 0.15f, thiefGoblinHp = 12, archerRatio = 0.1f, armoredRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 82: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 14, maxOnBoard = 7,
+                    thiefRatio = 0.15f, thiefGoblinHp = 12, shieldRatio = 0.1f, archerRatio = 0.05f, armoredRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 83: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 15, maxOnBoard = 7,
+                    thiefRatio = 0.2f, thiefGoblinHp = 12, archerRatio = 0.1f, armoredRatio = 0.05f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 84: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 16, maxOnBoard = 7,
+                    thiefRatio = 0.15f, thiefGoblinHp = 12, shieldRatio = 0.1f, heavyRatio = 0.05f, armoredRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 85: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 8,
+                    thiefRatio = 0.2f, thiefGoblinHp = 12, archerRatio = 0.1f, armoredRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 86: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 7,
+                    thiefRatio = 0.2f, thiefGoblinHp = 12, shieldRatio = 0.15f, armoredRatio = 0.15f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 87: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 20, maxOnBoard = 8,
+                    thiefRatio = 0.2f, thiefGoblinHp = 12, heavyRatio = 0.1f, archerRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 88: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 8,
+                    thiefRatio = 0.2f, thiefGoblinHp = 12, shieldRatio = 0.1f, heavyRatio = 0.1f, armoredRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 89: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    thiefRatio = 0.25f, thiefGoblinHp = 12, heavyRatio = 0.1f, archerRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 90: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    thiefRatio = 0.25f, thiefGoblinHp = 12, shieldRatio = 0.1f, heavyRatio = 0.1f, armoredRatio = 0.1f,
+                    archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 default: return null;
             }
         }

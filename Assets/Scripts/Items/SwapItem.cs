@@ -39,10 +39,6 @@ namespace JewelsHexaPuzzle.Items
         // 이펙트 부모
         private Transform effectParent;
 
-        // 화면 흔들림 중첩 관리
-        private int shakeCount = 0;
-        private Vector3 shakeOriginalPos;
-
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 

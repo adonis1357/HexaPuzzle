@@ -971,32 +971,15 @@ namespace JewelsHexaPuzzle.Core
         /// 현재 동시에 실행 중인 화면 흔들림의 수.
         /// 여러 흔들림이 동시에 실행될 때 원래 위치를 올바르게 복원하기 위한 카운터.
         /// </summary>
-        private int shakeCount = 0;
-
-        /// <summary>
-        /// 화면 흔들림 시작 전의 원래 위치. 흔들림이 끝나면 이 위치로 복원.
-        /// </summary>
-        private Vector3 shakeOriginalPos;
-
         /// <summary>
         /// 화면(게임판) 흔들림 효과 코루틴.
-        /// 게임판 전체를 랜덤하게 좌우상하로 떨리게 하여 충격감을 줌.
-        /// 시간이 지날수록 떨림이 약해지며 자연스럽게 멈춤.
-        /// 비유: 지진이 나서 테이블이 흔들리다가 점점 잠잠해지는 것.
         /// </summary>
-        /// <param name="intensity">흔들림의 세기 (픽셀 단위). 클수록 격하게 흔들림.</param>
-        /// <param name="duration">흔들림 지속 시간 (초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 항상 Vector3.zero를 기준으로 (중첩 흔들림 시 위치 안전 보장)
-            if (shakeCount == 0)
-                shakeOriginalPos = Vector3.zero;
-            shakeCount++;
 
             float elapsed = 0f;
 
@@ -1006,24 +989,16 @@ namespace JewelsHexaPuzzle.Core
                 {
                     elapsed += Time.deltaTime;
                     float t = Mathf.Clamp01(elapsed / duration);
-                    // decay: 시간이 지남에 따라 흔들림 세기가 줄어드는 감쇠 계수
                     float decay = 1f - VisualConstants.EaseInQuad(t);
-                    // 랜덤한 방향으로 흔들림 (세기 * 감쇠)
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                // 흔들림 종료: 카운터 감소 및 원래 위치 복원
-                shakeCount--;
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = Vector3.zero;
                 VisualConstants.EndScreenShake();
             }
         }

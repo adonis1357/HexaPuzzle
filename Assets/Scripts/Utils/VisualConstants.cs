@@ -278,16 +278,19 @@ namespace JewelsHexaPuzzle.Core
         private static int activeShakeCount = 0;
         private static int activeZoomPunchCount = 0;
 
-        /// <summary>ScreenShake 시작 가능 여부 (첫 번째만 허용)</summary>
+        /// <summary>ScreenShake 시작 가능 여부 (첫 번째만 허용).
+        /// false 반환 시 카운터를 증가시키지 않으므로 EndScreenShake() 호출 불필요.</summary>
         public static bool TryBeginScreenShake()
         {
-            activeShakeCount++;
-            return activeShakeCount == 1; // 첫 번째만 true
+            if (activeShakeCount > 0)
+                return false; // 이미 실행 중 → 카운터 증가 없이 거부
+            activeShakeCount = 1;
+            return true;
         }
         /// <summary>ScreenShake 종료 알림</summary>
         public static void EndScreenShake()
         {
-            activeShakeCount = Mathf.Max(0, activeShakeCount - 1);
+            activeShakeCount = 0;
         }
         /// <summary>모든 ScreenShake 카운터 리셋 (안전장치)</summary>
         public static void ResetScreenShake()

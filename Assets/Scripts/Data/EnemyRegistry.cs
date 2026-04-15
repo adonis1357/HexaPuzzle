@@ -313,6 +313,53 @@ namespace JewelsHexaPuzzle.Data
                 baseScore = 1200,
                 defaultMaxOnBoard = 3
             });
+            // --- #15 힐러 고블린 (HealerGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.HealerGoblin,
+                name = "힐러 고블린",
+                alias = "힐러",
+                description = "피해 입은 아군 고블린을 회복시키는 지원형 고블린",
+                overlayColor = new Color(0.3f, 0.8f, 0.4f, 0.9f),
+                baseScore = 900,
+                defaultMaxOnBoard = 3
+            });
+
+            // --- #16 헤비급 고블린 (HeavyGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.HeavyGoblin,
+                name = "헤비급 고블린",
+                alias = "헤비",
+                description = "3블록 삼각형을 점유하는 거대 고블린. HP 36, 회전 불가",
+                overlayColor = new Color(0.45f, 0.3f, 0.2f, 0.9f),
+                baseScore = 2000,
+                defaultMaxOnBoard = 2
+            });
+
+            // --- #17 도둑 고블린 (ThiefGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.ThiefGoblin,
+                name = "도둑 고블린",
+                alias = "도둑",
+                description = "은신하며 블록을 훔치는 교활한 고블린",
+                overlayColor = new Color(0.3f, 0.25f, 0.35f, 0.9f),
+                baseScore = 1100,
+                defaultMaxOnBoard = 4
+            });
+
+            // --- #18 마법사 고블린 (WizardGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.WizardGoblin,
+                name = "마법사 고블린",
+                alias = "마법사",
+                description = "마법으로 블록을 변환하는 고블린",
+                overlayColor = new Color(0.4f, 0.2f, 0.6f, 0.9f),
+                baseScore = 1300,
+                defaultMaxOnBoard = 3
+            });
         }
 
         private static void Register(EnemyMetadata meta)

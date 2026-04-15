@@ -31,10 +31,6 @@ namespace JewelsHexaPuzzle.Items
         // 이펙트 부모
         private Transform effectParent;
 
-        // 화면 흔들림 중첩 관리
-        private int shakeCount = 0;
-        private Vector3 shakeOriginalPos;
-
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 
@@ -1004,29 +1000,25 @@ namespace JewelsHexaPuzzle.Items
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
 
-            if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
-            shakeCount++;
-
             float elapsed = 0f;
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                target.localPosition = Vector3.zero;
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
