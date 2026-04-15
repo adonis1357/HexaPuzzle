@@ -6602,7 +6602,7 @@ private void OnBigBang()
         }
 
         /// <summary>
-        /// 레벨 모두해금 버튼 생성 (튜토리얼 초기화 버튼 오른쪽)
+        /// 레벨 해금/잠금 토글 버튼 생성 (튜토리얼 초기화 버튼 오른쪽)
         /// </summary>
         private void CreateUnlockAllButton(GameObject parent, Font font)
         {
@@ -6613,17 +6613,14 @@ private void OnBigBang()
             btnRt.anchorMin = new Vector2(0f, 0f);
             btnRt.anchorMax = new Vector2(0f, 0f);
             btnRt.pivot = new Vector2(0f, 0f);
-            // 튜토리얼 초기화 버튼 오른쪽: X = 20(좌측여백) + 180(버튼폭) + 10(간격) = 210
             btnRt.anchoredPosition = new Vector2(210f, 20f);
             btnRt.sizeDelta = new Vector2(180f, 45f);
 
             // 배경
             Image btnBg = btnObj.AddComponent<Image>();
-            btnBg.color = new Color(0.2f, 0.3f, 0.45f, 0.85f);
 
             // 아웃라인
             Outline btnOutline = btnObj.AddComponent<Outline>();
-            btnOutline.effectColor = new Color(0.4f, 0.6f, 0.9f, 0.6f);
             btnOutline.effectDistance = new Vector2(1f, 1f);
 
             // 버튼 컴포넌트
@@ -6646,30 +6643,61 @@ private void OnBigBang()
             btnText.font = font;
             btnText.fontSize = 16;
             btnText.alignment = TextAnchor.MiddleCenter;
-            btnText.color = new Color(0.8f, 0.9f, 1f, 1f);
             btnText.raycastTarget = false;
-            btnText.text = "레벨 모두해금";
 
-            // 클릭 이벤트
+            // 현재 상태에 따라 초기 비주얼 설정
+            UpdateUnlockToggleVisual(btnBg, btnOutline, btnText);
+
+            // 클릭 이벤트 — 토글
             btn.onClick.AddListener(() =>
             {
-                LevelRegistry.UnlockAllLevels();
+                if (LevelRegistry.AreAllLevelsUnlocked())
+                {
+                    // 현재 모두해금 → 모두잠금
+                    LevelRegistry.LockAllLevels();
+                    btnText.text = "잠금 완료!";
+                    btnText.color = new Color(1f, 0.6f, 0.4f, 1f);
+                }
+                else
+                {
+                    // 현재 잠김 → 모두해금
+                    LevelRegistry.UnlockAllLevels();
+                    btnText.text = "해금 완료!";
+                    btnText.color = new Color(0.4f, 1f, 0.5f, 1f);
+                }
 
-                // 피드백: 텍스트 변경
-                btnText.text = "✓ 해금 완료!";
-                btnText.color = new Color(0.4f, 1f, 0.5f, 1f);
-
-                // 로비 UI 재생성하여 잠금 비주얼 갱신
-                StartCoroutine(UnlockAllButtonFeedback(btnText));
+                // 로비 UI 재생성
+                StartCoroutine(UnlockToggleButtonFeedback(btnBg, btnOutline, btnText));
             });
         }
 
         /// <summary>
-        /// 레벨 모두해금 버튼 피드백 코루틴 — 로비 UI 재생성 + 마지막 오픈 레벨로 스크롤
-        /// 주의: ShowLobby() 내부의 StopAllCoroutines()로 이 코루틴이 중단되므로,
-        /// ShowLobby 호출 전에 필요한 처리를 완료하고, 스크롤은 ShowLobby 내부에서 실행.
+        /// 해금/잠금 토글 버튼 비주얼 업데이트
         /// </summary>
-        private IEnumerator UnlockAllButtonFeedback(Text btnText)
+        private void UpdateUnlockToggleVisual(Image bg, Outline outline, Text text)
+        {
+            if (LevelRegistry.AreAllLevelsUnlocked())
+            {
+                // 모두 해금 상태 → "모두잠금" 표시 (빨간 톤)
+                bg.color = new Color(0.45f, 0.2f, 0.2f, 0.85f);
+                outline.effectColor = new Color(0.9f, 0.4f, 0.4f, 0.6f);
+                text.text = "모두잠금";
+                text.color = new Color(1f, 0.8f, 0.8f, 1f);
+            }
+            else
+            {
+                // 잠김 상태 → "모두해금" 표시 (파란 톤)
+                bg.color = new Color(0.2f, 0.3f, 0.45f, 0.85f);
+                outline.effectColor = new Color(0.4f, 0.6f, 0.9f, 0.6f);
+                text.text = "모두해금";
+                text.color = new Color(0.8f, 0.9f, 1f, 1f);
+            }
+        }
+
+        /// <summary>
+        /// 해금/잠금 토글 버튼 피드백 코루틴 — 로비 UI 재생성 + 스크롤
+        /// </summary>
+        private IEnumerator UnlockToggleButtonFeedback(Image bg, Outline outline, Text btnText)
         {
             yield return new WaitForSeconds(0.8f);
 
@@ -6679,10 +6707,8 @@ private void OnBigBang()
             {
                 Destroy(lobbyContainer);
                 lobbyContainer = null;
-                yield return null; // 1프레임 대기 (Destroy 반영)
+                yield return null;
                 CreateLobbyUI(canvas);
-                // ShowLobby 내부에서 RecalculateLobbyScrollHeight + ScrollToHighestUnlockedLevel 실행
-                // (StopAllCoroutines 후 새 코루틴 시작이므로 정상 작동)
                 ShowLobby();
             }
         }
