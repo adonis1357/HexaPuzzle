@@ -75,6 +75,11 @@ namespace JewelsHexaPuzzle.Managers
         private int[] lastDisplayedCounts;
         private Coroutine[] stageMissionCountDownCos;    // 레벨 미션별 카운트다운 코루틴
 
+        // 대기 미션 인디케이터 (화면 좌상단)
+        private GameObject pendingIndicatorObj;
+        private Text pendingIndicatorCountText;
+        private Image pendingIndicatorIcon;
+
         // 무한도전 미션 순차 감소 추적
         private int infiniteMissionDisplayed = -1;      // 현재 화면에 표시된 remaining 값
         private int infiniteMissionTarget = -1;          // 목표 remaining 값
@@ -237,7 +242,37 @@ namespace JewelsHexaPuzzle.Managers
                     skillTreeUI.Initialize(canvas);
                 }
             }
+            // ★ 스킬 해금/초기화 시 특수 블록 아이콘 색상 갱신
+            if (SkillTreeManager.Instance != null)
+            {
+                SkillTreeManager.Instance.OnSkillUnlocked += OnSkillUnlockedRefreshBlocks;
+                SkillTreeManager.Instance.OnSkillTreeReset += OnSkillResetRefreshBlocks;
+            }
+
             ShowLobby();
+        }
+
+        /// <summary>스킬 해금 시 모든 특수 블록 아이콘 색상 갱신</summary>
+        private void OnSkillUnlockedRefreshBlocks(SkillType _)
+        {
+            RefreshAllSpecialBlockVisuals();
+        }
+
+        /// <summary>스킬 초기화 시 모든 특수 블록 아이콘 색상 갱신</summary>
+        private void OnSkillResetRefreshBlocks()
+        {
+            RefreshAllSpecialBlockVisuals();
+        }
+
+        /// <summary>모든 블록의 UpdateVisuals 호출 (특수 블록 아이콘 색조 갱신)</summary>
+        private void RefreshAllSpecialBlockVisuals()
+        {
+            if (hexGrid == null) return;
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block != null && block.Data != null && block.Data.IsSpecial())
+                    block.UpdateVisuals();
+            }
         }
 
         /// <summary>
@@ -266,6 +301,8 @@ namespace JewelsHexaPuzzle.Managers
         private Text lobbyGoldText;
         private Text hudLevelBestText;    // 레벨 최고 점수
         private Text hudPersonalBestText; // 개인 최고 점수
+        private Text hudDifficultyText;   // 인게임 난이도 표시 (상단)
+        private Text hudLevelNumText;     // 인게임 레벨 번호 표시 (난이도 바로 밑)
         private GameObject sfxToggleBtnObj;   // SFX 토글 버튼 (로비/인게임 공용)
         private GameObject bgmToggleBtnObj;   // BGM 토글 버튼 (로비/인게임 공용)
 
@@ -397,7 +434,7 @@ namespace JewelsHexaPuzzle.Managers
             scoreLabelText.raycastTarget = false;
             scoreLabelText.text = "SCORE";
 
-            // === 난이도 표시 (SCORE 라벨 우측) ===
+            // === 레벨 정보 표시 (난이도 위, 레벨 번호 아래 — 2행) ===
             {
                 var levelData = LevelRegistry.GetLevel(selectedStage);
                 DifficultyType diff = levelData != null ? levelData.difficultyType : DifficultyType.Easy;
@@ -407,59 +444,63 @@ namespace JewelsHexaPuzzle.Managers
                 switch (diff)
                 {
                     case DifficultyType.Easy:
-                        diffLabel = "EASY";
+                        diffLabel = "쉬움";
                         diffColor = new Color(0.3f, 0.9f, 0.3f);
                         break;
                     case DifficultyType.Normal:
-                        diffLabel = "NORMAL";
+                        diffLabel = "보통";
                         diffColor = new Color(1f, 0.85f, 0.2f);
                         break;
                     case DifficultyType.Hard:
                     default:
-                        diffLabel = "HARD";
+                        diffLabel = "어려움";
                         diffColor = new Color(1f, 0.3f, 0.3f);
                         break;
                 }
 
-                GameObject diffObj = new GameObject("HUD_DifficultyText");
+                // ★ 난이도 텍스트 (상단)
+                GameObject diffObj = new GameObject("HUD_Difficulty");
                 diffObj.transform.SetParent(canvas.transform, false);
                 RectTransform diffRt = diffObj.AddComponent<RectTransform>();
                 diffRt.anchorMin = new Vector2(0f, 1f);
                 diffRt.anchorMax = new Vector2(0f, 1f);
                 diffRt.pivot = new Vector2(0f, 1f);
-                diffRt.anchoredPosition = new Vector2(20f, -20f);
-                diffRt.sizeDelta = new Vector2(120f, 28f);
-                Text diffText = diffObj.AddComponent<Text>();
-                diffText.font = font;
-                diffText.fontSize = 18;
-                diffText.fontStyle = FontStyle.Bold;
-                diffText.alignment = TextAnchor.MiddleLeft;
-                diffText.color = diffColor;
-                diffText.raycastTarget = false;
-                diffText.text = diffLabel;
+                diffRt.anchoredPosition = new Vector2(190f, -20f); // ★ 기존 180 → 190 (10px 오른쪽)
+                diffRt.sizeDelta = new Vector2(200f, 24f);
+                hudDifficultyText = diffObj.AddComponent<Text>();
+                hudDifficultyText.font = font;
+                hudDifficultyText.fontSize = 18;
+                hudDifficultyText.fontStyle = FontStyle.Bold;
+                hudDifficultyText.alignment = TextAnchor.MiddleLeft;
+                hudDifficultyText.color = diffColor;
+                hudDifficultyText.raycastTarget = false;
+                hudDifficultyText.text = diffLabel;
                 Outline diffOutline = diffObj.AddComponent<Outline>();
                 diffOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
                 diffOutline.effectDistance = new Vector2(1, 1);
-
-                // Stage 라벨 (난이도 아래)
-                GameObject stageLabelObj = new GameObject("HUD_StageLabel");
-                stageLabelObj.transform.SetParent(canvas.transform, false);
-                RectTransform stageLabelRt = stageLabelObj.AddComponent<RectTransform>();
-                stageLabelRt.anchorMin = new Vector2(0f, 1f);
-                stageLabelRt.anchorMax = new Vector2(0f, 1f);
-                stageLabelRt.pivot = new Vector2(0f, 1f);
-                stageLabelRt.anchoredPosition = new Vector2(20f, -46f);
-                stageLabelRt.sizeDelta = new Vector2(120f, 22f);
-                Text stageLabelText = stageLabelObj.AddComponent<Text>();
-                stageLabelText.font = font;
-                stageLabelText.fontSize = 14;
-                stageLabelText.alignment = TextAnchor.MiddleLeft;
-                stageLabelText.color = new Color(0.8f, 0.8f, 0.8f, 0.8f);
-                stageLabelText.raycastTarget = false;
-                stageLabelText.text = $"STAGE {selectedStage}";
-
                 hudElements.Add(diffObj);
-                hudElements.Add(stageLabelObj);
+
+                // ★ 레벨 번호 텍스트 (난이도 바로 아래)
+                GameObject levelNumObj = new GameObject("HUD_LevelNum");
+                levelNumObj.transform.SetParent(canvas.transform, false);
+                RectTransform levelNumRt = levelNumObj.AddComponent<RectTransform>();
+                levelNumRt.anchorMin = new Vector2(0f, 1f);
+                levelNumRt.anchorMax = new Vector2(0f, 1f);
+                levelNumRt.pivot = new Vector2(0f, 1f);
+                levelNumRt.anchoredPosition = new Vector2(190f, -44f); // ★ 난이도 바로 아래 (20+24=44)
+                levelNumRt.sizeDelta = new Vector2(200f, 22f);
+                hudLevelNumText = levelNumObj.AddComponent<Text>();
+                hudLevelNumText.font = font;
+                hudLevelNumText.fontSize = 16;
+                hudLevelNumText.fontStyle = FontStyle.Bold;
+                hudLevelNumText.alignment = TextAnchor.MiddleLeft;
+                hudLevelNumText.color = new Color(0.9f, 0.9f, 0.9f, 0.9f);
+                hudLevelNumText.raycastTarget = false;
+                hudLevelNumText.text = $"LEVEL {selectedStage}";
+                Outline levelNumOutline = levelNumObj.AddComponent<Outline>();
+                levelNumOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+                levelNumOutline.effectDistance = new Vector2(1, 1);
+                hudElements.Add(levelNumObj);
             }
 
             // === 레벨 최고 점수 (중앙 상단, SCORE 아래) ===
@@ -2079,62 +2120,11 @@ private void InitializeSystems()
         private Dictionary<ItemType, Text> itemCountBadges = new Dictionary<ItemType, Text>();
 
         /// <summary>
-        /// 아이템 버튼 하단 중앙에 MP 소모량 배지 생성 (파란 바탕 + 흰 텍스트)
+        /// 아이템 버튼 MP 소모량 배지 — 비활성화 (게이지 시스템으로 대체됨)
         /// </summary>
         private void CreateItemCountBadge(GameObject btnObj, ItemType itemType)
         {
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-
-            // MP 소모량 조회
-            int mpCost = MPManager.Instance != null ? MPManager.Instance.GetItemCost(itemType) : 0;
-
-            // 배지 배경 (파란색, 하단 중앙)
-            GameObject badgeBg = new GameObject("MPCostBadgeBg");
-            badgeBg.transform.SetParent(btnObj.transform, false);
-            Image bgImg = badgeBg.AddComponent<Image>();
-            bgImg.color = new Color(0.18f, 0.42f, 0.85f, 0.92f);
-            bgImg.raycastTarget = false;
-            RectTransform bgRt = badgeBg.GetComponent<RectTransform>();
-            bgRt.anchorMin = new Vector2(0.5f, 0f);
-            bgRt.anchorMax = new Vector2(0.5f, 0f);
-            bgRt.pivot = new Vector2(0.5f, 0.5f);
-            bgRt.anchoredPosition = new Vector2(0f, 14f);
-            bgRt.sizeDelta = new Vector2(38f, 16f);
-
-            // 배지 아웃라인 (진한 파랑, 배경 뒤)
-            GameObject outlineObj = new GameObject("MPCostBadgeOutline");
-            outlineObj.transform.SetParent(badgeBg.transform, false);
-            Image outlineImg = outlineObj.AddComponent<Image>();
-            outlineImg.color = new Color(0.08f, 0.18f, 0.45f, 0.85f);
-            outlineImg.raycastTarget = false;
-            RectTransform outlineRt = outlineObj.GetComponent<RectTransform>();
-            outlineRt.anchorMin = Vector2.zero;
-            outlineRt.anchorMax = Vector2.one;
-            outlineRt.offsetMin = new Vector2(-1.5f, -1.5f);
-            outlineRt.offsetMax = new Vector2(1.5f, 1.5f);
-            outlineObj.transform.SetAsFirstSibling();
-
-            // MP 소모량 텍스트 (흰색)
-            GameObject textObj = new GameObject("MPCostBadgeText");
-            textObj.transform.SetParent(badgeBg.transform, false);
-            Text countText = textObj.AddComponent<Text>();
-            countText.text = mpCost > 0 ? $"{mpCost}" : "0";
-            countText.font = font;
-            countText.fontSize = 11;
-            countText.fontStyle = FontStyle.Bold;
-            countText.alignment = TextAnchor.MiddleCenter;
-            countText.color = Color.white;
-            countText.raycastTarget = false;
-            countText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            countText.verticalOverflow = VerticalWrapMode.Overflow;
-            RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
-
-            // 딕셔너리에 저장
-            itemCountBadges[itemType] = countText;
+            // MP 배지 제거됨 — 아이템 게이지 시스템이 비용을 관리
         }
 
         /// <summary>
@@ -3195,14 +3185,14 @@ private void InitializeSystems()
                     // 고블린 킬 이벤트 → 미션 시스템 연동
                     goblinSystem.OnGoblinKilled -= OnGoblinKilledForMission;
                     goblinSystem.OnGoblinKilled += OnGoblinKilledForMission;
-                    // MonsterSpawnController 초기화 + 1차 소환 (40~50%)
+                    // MonsterSpawnController 초기화 + 활성 미션 몬스터 전체 즉시 소환 (100%)
                     secondWaveTriggered = false;
                     if (MonsterSpawnController.Instance != null)
                     {
                         int totalMission = goblinSystem.GetTotalMissionTargetPublic();
                         yield return StartCoroutine(MonsterSpawnController.Instance.Initialize(totalMission, initialTurns));
                     }
-                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + MonsterSpawnController 1차 소환 완료: 스테이지 {selectedStage}");
+                    Debug.Log($"[GameManager] 고블린 시스템 활성화 + 활성 미션 몬스터 전체 소환 완료: 스테이지 {selectedStage}");
 
                     // 고블린 출현 알림 메시지
                     ShowFloatingMessage("⚔️ 고블린이 출현! 블록을 떨어뜨려 처치하세요!");
@@ -3258,7 +3248,8 @@ private void InitializeSystems()
                 Canvas canvas = FindObjectOfType<Canvas>();
                 if (canvas != null && stageManager.CurrentStageData.missions.Length > 0)
                 {
-                    var missions = stageManager.CurrentStageData.missions;
+                    // ★ 활성 미션만 표시 (큐 시스템: 최대 6개)
+                    var missions = stageManager.GetActiveMissions();
 
                     // 미션 등장 애니메이션 (무한도전과 동일한 슬라이드인)
                     yield return StartCoroutine(SetupAndAnimateStageMission(missions));
@@ -3270,6 +3261,12 @@ private void InitializeSystems()
 
                     // 미션 진행도 업데이트 콜백 (명명 메서드로 구독 — 해제 가능)
                     stageManager.OnMissionProgressUpdated += HandleMissionProgressUpdated;
+                    // ★ 미션 슬롯 교체 시 애니메이션
+                    stageManager.OnMissionSlotReplaced += HandleMissionSlotReplaced;
+
+                    // ★ 대기 미션 인디케이터 (화면 좌상단)
+                    if (stageManager.PendingMissionCount > 0)
+                        CreatePendingMissionIndicator(canvas);
                 }
             }
 
@@ -3605,6 +3602,317 @@ private void OnRotationComplete(bool matchFound)
         }
 
         /// <summary>
+        /// 미션 큐 승격 시 UI 재구성 — 완료 미션 축소 애니메이션 → 재배치 → 새 미션 슬라이드인
+        /// </summary>
+        /// <summary>
+        /// 미션 큐 승격 시 — UI를 재구성하지 않고 기존 프레임 유지.
+        /// 대기 미션이 승격되었으므로 lastDisplayedCounts 배열만 확장.
+        /// </summary>
+        // ============================================================
+        // 미션 슬롯 교체 시스템 (대기 미션 → 활성 슬롯)
+        // ============================================================
+
+        /// <summary>미션 슬롯이 대기 미션으로 교체될 때 호출</summary>
+        private void HandleMissionSlotReplaced(int slotIndex, MissionData newMission)
+        {
+            Debug.Log($"[GameManager] ★ 미션 슬롯 [{slotIndex}] 교체 → {newMission.description}");
+
+            // 즉시 lastDisplayedCounts 갱신 (OnMissionProgressUpdated가 뒤이어 발생 → 스킵되도록)
+            if (lastDisplayedCounts != null && slotIndex < lastDisplayedCounts.Length)
+                lastDisplayedCounts[slotIndex] = newMission.targetCount;
+
+            // 기존 카운트다운 코루틴 정지
+            if (stageMissionCountDownCos != null && slotIndex < stageMissionCountDownCos.Length)
+            {
+                if (stageMissionCountDownCos[slotIndex] != null)
+                    StopCoroutine(stageMissionCountDownCos[slotIndex]);
+                stageMissionCountDownCos[slotIndex] = null;
+            }
+
+            // 교체 애니메이션 시작
+            StartCoroutine(AnimateMissionSlotReplacement(slotIndex, newMission));
+
+            // ★ 새 미션이 RemoveEnemy면 즉시 몬스터 소환 트리거
+            if (newMission.type == MissionType.RemoveEnemy && goblinSystem != null && goblinSystem.IsActive)
+            {
+                goblinSystem.TriggerImmediateSpawn();
+                Debug.Log($"[GameManager] 대기 미션 활성화 → 몬스터 즉시 소환: {newMission.description}");
+            }
+        }
+
+        /// <summary>
+        /// 미션 슬롯 교체 애니메이션: 완료 행 축소 제거 → 대기 미션 슬라이드인 → 활성화
+        /// </summary>
+        private IEnumerator AnimateMissionSlotReplacement(int slotIndex, MissionData newMission)
+        {
+            // Phase 0: 완료 이펙트(체크마크) 잠깐 보여주기
+            yield return new WaitForSeconds(0.5f);
+
+            // Phase 1: 완료된 미션 행 축소 → 사라짐
+            string rowName = $"GameMissionUI_Row_{slotIndex}";
+            GameObject oldRow = GameObject.Find(rowName);
+            Vector2 targetPosition = new Vector2(40f, -102f); // 기본 위치
+
+            if (oldRow != null)
+            {
+                RectTransform oldRt = oldRow.GetComponent<RectTransform>();
+                if (oldRt != null)
+                    targetPosition = oldRt.anchoredPosition;
+
+                CanvasGroup oldCg = oldRow.GetComponent<CanvasGroup>();
+                if (oldCg == null) oldCg = oldRow.AddComponent<CanvasGroup>();
+                Vector3 startScale = oldRt != null ? oldRt.localScale : Vector3.one;
+
+                // 축소 애니메이션 (0.3초)
+                float shrinkDuration = 0.3f;
+                float elapsed = 0f;
+                while (elapsed < shrinkDuration)
+                {
+                    if (oldRow == null || oldRt == null) break;
+                    elapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(elapsed / shrinkDuration);
+                    float eased = t * t; // ease-in
+                    oldRt.localScale = Vector3.Lerp(startScale, Vector3.zero, eased);
+                    oldCg.alpha = 1f - eased;
+                    yield return null;
+                }
+
+                if (oldRow != null) Destroy(oldRow);
+            }
+
+            yield return new WaitForSeconds(0.15f);
+
+            // Phase 2: 대기 인디케이터 위치에서 새 행 생성 → 슬롯 위치로 슬라이드
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) yield break;
+
+            int totalMissions = stageManager != null ? stageManager.ActiveMissionCount : 6;
+
+            // 새 미션 행 생성 (UIManager 활용)
+            RectTransform newRt = uiManager.CreateIndividualMissionRow(canvas, newMission, slotIndex, totalMissions);
+            if (newRt == null) yield break;
+
+            // gameMissionCountTexts 순서 정리 (CreateIndividualMissionRow가 끝에 추가하므로 올바른 인덱스로 이동)
+            int lastIdx = UIManager.gameMissionCountTexts.Count - 1;
+            if (lastIdx > slotIndex && slotIndex < UIManager.gameMissionCountTexts.Count)
+            {
+                UIManager.gameMissionCountTexts[slotIndex] = UIManager.gameMissionCountTexts[lastIdx];
+                UIManager.gameMissionCountTexts.RemoveAt(lastIdx);
+            }
+
+            // 시작 위치: 대기 인디케이터 위치 (화면 좌상단)
+            Vector2 startPos = pendingIndicatorObj != null
+                ? pendingIndicatorObj.GetComponent<RectTransform>().anchoredPosition
+                : new Vector2(12, -12);
+            float startScaleVal = 0.5f;
+
+            newRt.anchoredPosition = startPos;
+            newRt.localScale = Vector3.one * startScaleVal;
+
+            CanvasGroup newCg = newRt.GetComponent<CanvasGroup>();
+            if (newCg == null) newCg = newRt.gameObject.AddComponent<CanvasGroup>();
+            newCg.alpha = 0.5f;
+
+            // 슬라이드 애니메이션 (0.4초, EaseOutBack)
+            float slideDuration = 0.4f;
+            float slideElapsed = 0f;
+
+            while (slideElapsed < slideDuration)
+            {
+                if (newRt == null) yield break;
+                slideElapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(slideElapsed / slideDuration);
+                float eased = VisualConstants.EaseOutBack(t);
+
+                newRt.anchoredPosition = Vector2.LerpUnclamped(startPos, targetPosition, eased);
+                float s = Mathf.LerpUnclamped(startScaleVal, 1f, eased);
+                newRt.localScale = new Vector3(s, s, 1f);
+                newCg.alpha = Mathf.Lerp(0.5f, 1f, t);
+
+                yield return null;
+            }
+
+            // 최종값 확정
+            if (newRt != null)
+            {
+                newRt.anchoredPosition = targetPosition;
+                newRt.localScale = Vector3.one;
+            }
+            if (newCg != null) newCg.alpha = 1f;
+
+            // Phase 3: 활성화 펄스
+            yield return new WaitForSeconds(0.05f);
+            if (newRt != null)
+            {
+                float pulseDuration = 0.15f;
+                float pulseElapsed = 0f;
+                while (pulseElapsed < pulseDuration)
+                {
+                    if (newRt == null) yield break;
+                    pulseElapsed += Time.unscaledDeltaTime;
+                    float t = pulseElapsed / pulseDuration;
+                    float pulse = t < 0.5f
+                        ? Mathf.Lerp(1f, 1.15f, t * 2f)
+                        : Mathf.Lerp(1.15f, 1f, (t - 0.5f) * 2f);
+                    newRt.localScale = new Vector3(pulse, pulse, 1f);
+                    yield return null;
+                }
+                newRt.localScale = Vector3.one;
+            }
+
+            // 추적 데이터 갱신
+            if (lastDisplayedCounts != null && slotIndex < lastDisplayedCounts.Length)
+                lastDisplayedCounts[slotIndex] = newMission.targetCount;
+
+            // 대기 인디케이터 업데이트
+            UpdatePendingMissionIndicator();
+        }
+
+        // ============================================================
+        // 대기 미션 인디케이터 (화면 좌상단, 아이콘+숫자)
+        // ============================================================
+
+        /// <summary>대기 미션 인디케이터 생성 — 화면 좌상단에 다음 대기 미션 아이콘+목표수 표시</summary>
+        private void CreatePendingMissionIndicator(Canvas canvas)
+        {
+            if (pendingIndicatorObj != null) Destroy(pendingIndicatorObj);
+            if (stageManager == null || stageManager.PendingMissionCount <= 0) return;
+
+            var nextPending = stageManager.PeekNextPendingMission();
+            if (nextPending == null) return;
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // 활성 미션 수에 따른 대기 인디케이터 크기 조정
+            // 활성 2개 이하: 활성 UI가 크므로 대기 UI를 20% 축소하여 겹침 방지
+            int totalActive = stageManager.ActiveMissionCount;
+            float activeScale = totalActive >= 3 ? 0.7f : 1.0f;
+            float pendingScale = totalActive <= 2 ? activeScale * 0.76f : activeScale * 0.96f;
+            float rowHeight = 90f * pendingScale;
+            float containerWidth = 196f * pendingScale;
+            float iconSize = 60f * pendingScale;
+            float iconX = 10f * pendingScale;
+            float countX = 75f * pendingScale;
+            float countW = 112f * pendingScale;
+            int fontSize = Mathf.RoundToInt(48f * pendingScale);
+
+            // 컨테이너 — 화면 좌상단
+            pendingIndicatorObj = new GameObject("PendingMissionIndicator");
+            pendingIndicatorObj.transform.SetParent(canvas.transform, false);
+            RectTransform rt = pendingIndicatorObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0, 1);
+            rt.anchorMax = new Vector2(0, 1);
+            rt.pivot = new Vector2(0, 1);
+            rt.anchoredPosition = new Vector2(12, -12);
+            rt.sizeDelta = new Vector2(containerWidth, rowHeight + 20f * pendingScale);
+
+            // 배경 (반투명 어두운 라벤더)
+            Image bg = pendingIndicatorObj.AddComponent<Image>();
+            bg.color = new Color(0.5f, 0.45f, 0.65f, 0.7f);
+            bg.raycastTarget = false;
+
+            // 반투명 표시
+            CanvasGroup cg = pendingIndicatorObj.AddComponent<CanvasGroup>();
+            cg.alpha = 0.7f;
+
+            // 미션 아이콘
+            GameObject iconObj = new GameObject("PendingIcon");
+            iconObj.transform.SetParent(pendingIndicatorObj.transform, false);
+            RectTransform iconRt = iconObj.AddComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0, 0.5f);
+            iconRt.anchorMax = new Vector2(0, 0.5f);
+            iconRt.pivot = new Vector2(0, 0.5f);
+            iconRt.anchoredPosition = new Vector2(iconX, 0);
+            iconRt.sizeDelta = new Vector2(iconSize, iconSize);
+
+            pendingIndicatorIcon = iconObj.AddComponent<Image>();
+            pendingIndicatorIcon.raycastTarget = false;
+            if (uiManager != null)
+                uiManager.SetMissionIconForType(pendingIndicatorIcon, nextPending);
+
+            Outline iconOutline = iconObj.AddComponent<Outline>();
+            iconOutline.effectColor = Color.white;
+            iconOutline.effectDistance = new Vector2(1, 1);
+
+            // 목표 수 텍스트
+            GameObject countObj = new GameObject("PendingTargetCount");
+            countObj.transform.SetParent(pendingIndicatorObj.transform, false);
+            RectTransform countRt = countObj.AddComponent<RectTransform>();
+            countRt.anchorMin = new Vector2(0, 0.5f);
+            countRt.anchorMax = new Vector2(0, 0.5f);
+            countRt.pivot = new Vector2(0, 0.5f);
+            countRt.anchoredPosition = new Vector2(countX, 0);
+            countRt.sizeDelta = new Vector2(countW, iconSize);
+
+            Text countText = countObj.AddComponent<Text>();
+            countText.font = font;
+            countText.fontSize = fontSize;
+            countText.fontStyle = FontStyle.Bold;
+            countText.alignment = TextAnchor.MiddleLeft;
+            countText.color = Color.white;
+            countText.raycastTarget = false;
+            countText.text = nextPending.targetCount.ToString();
+
+            Outline countOutline = countObj.AddComponent<Outline>();
+            countOutline.effectColor = Color.black;
+            countOutline.effectDistance = new Vector2(1, -1);
+
+            // 대기 잔여 수 배지 (2개 이상일 때만 표시)
+            if (stageManager.PendingMissionCount > 1)
+            {
+                GameObject badgeObj = new GameObject("PendingBadge");
+                badgeObj.transform.SetParent(pendingIndicatorObj.transform, false);
+                RectTransform badgeRt = badgeObj.AddComponent<RectTransform>();
+                badgeRt.anchorMin = new Vector2(1, 1);
+                badgeRt.anchorMax = new Vector2(1, 1);
+                badgeRt.pivot = new Vector2(1, 1);
+                badgeRt.anchoredPosition = new Vector2(8, 8);
+                badgeRt.sizeDelta = new Vector2(32, 32);
+
+                Image badgeBg = badgeObj.AddComponent<Image>();
+                badgeBg.color = new Color(0.9f, 0.3f, 0.2f, 0.95f);
+                badgeBg.raycastTarget = false;
+
+                GameObject numObj = new GameObject("BadgeNum");
+                numObj.transform.SetParent(badgeObj.transform, false);
+                RectTransform numRt = numObj.AddComponent<RectTransform>();
+                numRt.anchoredPosition = Vector2.zero;
+                numRt.sizeDelta = new Vector2(32, 32);
+
+                pendingIndicatorCountText = numObj.AddComponent<Text>();
+                pendingIndicatorCountText.font = font;
+                pendingIndicatorCountText.fontSize = 18;
+                pendingIndicatorCountText.fontStyle = FontStyle.Bold;
+                pendingIndicatorCountText.alignment = TextAnchor.MiddleCenter;
+                pendingIndicatorCountText.color = Color.white;
+                pendingIndicatorCountText.raycastTarget = false;
+                pendingIndicatorCountText.text = stageManager.PendingMissionCount.ToString();
+            }
+        }
+
+        /// <summary>대기 인디케이터 업데이트 — 다음 미션 아이콘/숫자 갱신, 0이면 제거</summary>
+        private void UpdatePendingMissionIndicator()
+        {
+            if (stageManager == null) return;
+
+            int remaining = stageManager.PendingMissionCount;
+            if (remaining <= 0)
+            {
+                // 대기 미션 없음 → 인디케이터 제거
+                if (pendingIndicatorObj != null) Destroy(pendingIndicatorObj);
+                pendingIndicatorObj = null;
+                pendingIndicatorCountText = null;
+                pendingIndicatorIcon = null;
+                return;
+            }
+
+            // 인디케이터 재생성 (다음 미션 아이콘/숫자 업데이트)
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (canvas != null)
+                CreatePendingMissionIndicator(canvas);
+        }
+
+        /// <summary>
         /// Infinite 모드 미션 진행도 UI 업데이트 핸들러
         /// </summary>
         private void HandleInfiniteMissionProgressUpdated(MissionProgress[] missionProgress)
@@ -3633,6 +3941,7 @@ private void OnRotationComplete(bool matchFound)
             if (stageManager != null)
             {
                 stageManager.OnMissionProgressUpdated -= HandleMissionProgressUpdated;
+                stageManager.OnMissionSlotReplaced -= HandleMissionSlotReplaced;
                 stageManager.OnMissionProgressUpdated -= HandleInfiniteMissionProgressUpdated;
                 stageManager.OnMissionComplete -= HandleMissionComplete;
             }
@@ -4089,7 +4398,8 @@ private IEnumerator ProcessSpecialBlockAftermath()
                     Debug.LogWarning("[GameManager] BRS still processing before falling. Waiting...");
                     float waited = 0f;
                     int lastDepth = blockRemovalSystem.CurrentCascadeDepth;
-                    while (blockRemovalSystem.IsProcessing && waited < 5f)
+                    // ★ 타임아웃 10초 — 드릴 쿠션 반사 + 다수 특수 블록 연쇄 시 5초 초과 가능
+                    while (blockRemovalSystem.IsProcessing && waited < 10f)
                     {
                         waited += Time.deltaTime;
                         processingStartTime = Time.time; // stuck 오판 방지
@@ -4099,13 +4409,22 @@ private IEnumerator ProcessSpecialBlockAftermath()
                             lastDepth = curDepth;
                             waited = 0f;
                         }
+                        // ★ 드릴/폭탄 등 특수 블록 활성 중이면 진행 중으로 간주 → 타이머 리셋
+                        if ((drillSystem != null && drillSystem.IsDrilling)
+                            || (bombSystem != null && bombSystem.IsBombing)
+                            || (donutSystem != null && donutSystem.IsActivating)
+                            || (droneSystem != null && droneSystem.IsActivating))
+                        {
+                            waited = 0f;
+                        }
                         yield return null;
                     }
                     if (blockRemovalSystem.IsProcessing)
                     {
                         Debug.LogWarning("[GameManager] BRS timeout before falling — Force resetting.");
                         blockRemovalSystem.ForceReset();
-                        yield return null; // ForceReset 후 1프레임 대기
+                        if (drillSystem != null && drillSystem.IsDrilling) drillSystem.ForceReset();
+                        yield return null;
                     }
                 }
 
@@ -4283,7 +4602,15 @@ private IEnumerator ActivateSpecialAndWait(HexBlock block)
                         drillSystem.ActivateDrill(block);
                         yield return new WaitForSeconds(0.1f);
                         waited = 0f;
-                        while (drillSystem.IsBlockActive(block) && waited < timeout) { waited += Time.deltaTime; processingStartTime = Time.time; yield return null; }
+                        // ★ 드릴 타임아웃 10초 — 쿠션 반사 시 5초 초과 가능
+                        float drillTimeout = 10f;
+                        while (drillSystem.IsBlockActive(block) && waited < drillTimeout)
+                        {
+                            waited += Time.deltaTime;
+                            processingStartTime = Time.time;
+                            if (drillSystem.IsDrilling) waited = Mathf.Min(waited, drillTimeout * 0.5f);
+                            yield return null;
+                        }
                         if (drillSystem.IsBlockActive(block)) { Debug.LogError("[GM] Drill timeout!"); drillSystem.ForceReset(); }
                     }
                     break;
@@ -4504,7 +4831,7 @@ private void OnBigBang()
             if (AudioManager.Instance != null)
                 AudioManager.Instance.StopBGM();
 
-            Debug.Log($"Stage {currentStage} Clear!");
+            Debug.Log($"Level {currentStage} Clear!");
 
             // 남은 이동횟수만큼 랜덤 위치에 보너스 드릴 생성
             processingStartTime = Time.time;
@@ -4544,6 +4871,18 @@ private void OnBigBang()
 
             // 골드 즉시 지급
             AddGold(goldReward);
+
+            // ★ 다음 레벨 해금
+            int nextLevel = selectedStage + 1;
+            LevelRegistry.UnlockLevel(nextLevel);
+            Debug.Log($"[GameManager] 레벨 {nextLevel} 해금!");
+
+            // SP 보상: 스테이지 클리어 시 1 SP 지급
+            if (SkillTreeManager.Instance != null)
+            {
+                SkillTreeManager.Instance.AddSkillPoints(1);
+                Debug.Log("[GameManager] 스테이지 클리어 SP +1");
+            }
 
             // 특수 블록 연쇄 완료 후 1초 대기 후 클리어 팝업 표시
             yield return new WaitForSeconds(1f);
@@ -4603,9 +4942,10 @@ private void OnBigBang()
                 block.Data.drillDirection = directions[Random.Range(0, directions.Length)];
                 block.UpdateVisuals();
 
-                // 이동횟수 1 감소 + UI 갱신
+                // 이동횟수 1 감소 + UI 즉시 갱신
                 currentTurns = Mathf.Max(0, currentTurns - 1);
                 OnTurnChanged?.Invoke(currentTurns);
+                if (uiManager != null) uiManager.UpdateTurnDisplay(currentTurns);
 
                 // 스케일 팝 애니메이션
                 StartCoroutine(DrillSpawnPopAnimation(block.transform));
@@ -6368,6 +6708,12 @@ private void OnBigBang()
             if (uiManager != null)
                 uiManager.CleanupGameMissionUI();
 
+            // 대기 미션 인디케이터 정리
+            if (pendingIndicatorObj != null) Destroy(pendingIndicatorObj);
+            pendingIndicatorObj = null;
+            pendingIndicatorCountText = null;
+            pendingIndicatorIcon = null;
+
             // 그리드 숨기기 (SetActive 대신 CanvasGroup으로 — 다른 시스템의 FindObjectOfType 유지)
             if (hexGrid != null)
                 SetCanvasGroupVisible(hexGrid.gameObject, false);
@@ -6406,9 +6752,10 @@ private void OnBigBang()
             if (lobbyGoldText != null)
                 lobbyGoldText.text = currentGold.ToString();
 
-            // 로비 레벨 버튼 최고 점수 갱신 + 스크롤 위치 설정
+            // 로비 레벨 버튼 해금 상태 + 최고 점수 갱신 + 스크롤 위치 설정
             if (stageScrollBuilder != null)
             {
+                stageScrollBuilder.RefreshUnlockStates();
                 stageScrollBuilder.RefreshHighScores();
                 stageScrollBuilder.ScrollToHighestUnlocked();
             }
@@ -6432,6 +6779,30 @@ private void OnBigBang()
             foreach (var hud in hudElements)
             {
                 if (hud != null) hud.SetActive(true);
+            }
+
+            // ★ 인게임 난이도/레벨 표시 갱신 (현재 선택된 스테이지 기준)
+            {
+                var levelData = LevelRegistry.GetLevel(selectedStage);
+                DifficultyType diff = levelData != null ? levelData.difficultyType : DifficultyType.Easy;
+                string diffLabel;
+                Color diffColor;
+                switch (diff)
+                {
+                    case DifficultyType.Easy:
+                        diffLabel = "쉬움"; diffColor = new Color(0.3f, 0.9f, 0.3f); break;
+                    case DifficultyType.Normal:
+                        diffLabel = "보통"; diffColor = new Color(1f, 0.85f, 0.2f); break;
+                    case DifficultyType.Hard: default:
+                        diffLabel = "어려움"; diffColor = new Color(1f, 0.3f, 0.3f); break;
+                }
+                if (hudDifficultyText != null)
+                {
+                    hudDifficultyText.text = diffLabel;
+                    hudDifficultyText.color = diffColor;
+                }
+                if (hudLevelNumText != null)
+                    hudLevelNumText.text = $"LEVEL {selectedStage}";
             }
 
             // 아이템 오버레이 강제 비활성화 (아이템 미활성 상태에서 오버레이가 보이지 않도록)
@@ -6464,6 +6835,10 @@ private void OnBigBang()
         public void ExitToLobby()
         {
             Time.timeScale = 1f;
+
+            // ★ 진행 중인 모든 게임 시스템 강제 초기화 (드릴 투사체 등 코루틴 잔류 방지)
+            ForceResetAllGameSystems();
+
             if (scoreManager != null) scoreManager.ResetScore();
             // ★ MPGaugeUI가 비활성 상태에서 ResetMP 호출 시 코루틴 에러 방지
             // → 게이지 비활성 상태이므로 이벤트 구독 해제 후 리셋
@@ -6478,11 +6853,52 @@ private void OnBigBang()
         public void ReturnToLobby()
         {
             Time.timeScale = 1f;
+
+            // ★ 진행 중인 모든 게임 시스템 강제 초기화
+            ForceResetAllGameSystems();
+
             if (scoreManager != null) scoreManager.ResetScore();
             if (MPManager.Instance != null) MPManager.Instance.ResetMPSilent();
             if (MonsterSpawnController.Instance != null) MonsterSpawnController.Instance.Reset();
             Debug.Log("[GameManager] ReturnToLobby: 로비로 돌아갑니다");
             ShowLobby();
+        }
+
+        /// <summary>
+        /// 게임 나가기/재시작 시 모든 게임 시스템의 코루틴과 상태를 강제 초기화합니다.
+        /// 드릴 투사체, 폭탄 이펙트 등 진행 중인 코루틴이 다음 게임에 영향주지 않도록 정리.
+        /// </summary>
+        private void ForceResetAllGameSystems()
+        {
+            // 1. GameManager 자체 코루틴 중지 + 상태 플래그 리셋
+            StopAllCoroutines();
+            isProcessingChainDrill = false;
+            isInPostRecovery = false;
+            processingStartTime = 0f;
+            lastAftermathProgressTime = 0f;
+
+            // 2. 블록 제거/낙하 시스템
+            if (blockRemovalSystem != null)
+                blockRemovalSystem.ForceReset();
+
+            // 3. 모든 특수 블록 시스템
+            if (drillSystem != null) drillSystem.ForceReset();
+            if (bombSystem != null) bombSystem.ForceReset();
+            if (donutSystem != null) donutSystem.ForceReset();
+            if (xBlockSystem != null) xBlockSystem.ForceReset();
+            if (droneSystem != null) droneSystem.ForceReset();
+
+            // 4. 합성 시스템
+            var comboSystem = FindObjectOfType<SpecialBlockComboSystem>();
+            if (comboSystem != null)
+                comboSystem.StopAllCoroutines();
+
+            // 5. 아이템 시스템
+            var lineItem = FindObjectOfType<JewelsHexaPuzzle.Items.LineDrawItem>();
+            if (lineItem != null && lineItem.IsActive)
+                lineItem.StopAllCoroutines();
+
+            Debug.Log("[GameManager] ForceResetAllGameSystems: 모든 게임 시스템 초기화 완료");
         }
 
 // ============================================================
@@ -7106,6 +7522,7 @@ private void OnDestroy()
             if (stageManager != null)
             {
                 stageManager.OnMissionProgressUpdated -= HandleMissionProgressUpdated;
+                stageManager.OnMissionSlotReplaced -= HandleMissionSlotReplaced;
                 stageManager.OnMissionProgressUpdated -= HandleInfiniteMissionProgressUpdated;
                 stageManager.OnMissionComplete -= HandleMissionComplete;
             }
@@ -7129,15 +7546,16 @@ private void OnDestroy()
         /// 고블린 제거 시 미션 시스템에 보고
         /// blockRemovalSystem.OnEnemyRemoved 이벤트를 통해 StageManager에 전달
         /// </summary>
-        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer, bool isHeavy)
+        private void OnGoblinKilledForMission(int totalKills, bool isArmored, bool isArcher, bool isShieldType, bool isBomb, bool isHealer, bool isHeavy, bool isWizard, bool isThief, bool isWitch, int monsterLevel)
         {
-            string typeName = isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
-            Debug.Log($"[GameManager] {typeName} 고블린 제거 미션 보고: 총 {totalKills}킬");
+            string lvStr = monsterLevel >= 2 ? "Lv2 " : "";
+            string typeName = isWitch ? "마녀" : isThief ? "도둑" : isWizard ? "마법사" : isHeavy ? "헤비" : isHealer ? "힐러" : isBomb ? "폭탄" : isShieldType ? "방패" : (isArcher ? "활" : (isArmored ? "갑옷" : "몽둥이"));
+            Debug.Log($"[GameManager] {lvStr}{typeName} 고블린 제거 미션 보고: 총 {totalKills}킬");
 
             // StageManager에 고블린 타입 정보 전달
             if (stageManager != null)
             {
-                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer, isHeavy);
+                stageManager.ReportGoblinKill(isArmored, isArcher, isShieldType, isBomb, isHealer, isHeavy, isWizard, isThief, isWitch, monsterLevel);
 
                 // 미션 완료 시 추가 소환 중단
                 if (stageManager.IsMissionComplete() && goblinSystem != null)
@@ -7294,10 +7712,30 @@ private void OnDestroy()
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 70: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                // 스테이지 71~80: 챕터 8 — 마법사의 탑 (마법사 고블린 등장)
+                case 71: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 8, maxOnBoard = 5,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 72: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 73: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 9, maxOnBoard = 5,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 74: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 11, maxOnBoard = 6,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 75: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 14, maxOnBoard = 7,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 76: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 12, maxOnBoard = 6,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 77: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 13, maxOnBoard = 6,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 78: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 14, maxOnBoard = 6,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 79: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 16, maxOnBoard = 7,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+                case 80: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 21, maxOnBoard = 8,
+                    wizardGoblinHp = 3, archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
 
                 // ============================================================
-                // 스테이지 81~90: 챕터 9 — 도둑의 은신처 (도둑 고블린 등장)
-                // HP: 몽둥이5, 갑옷15, 활1, 방패10(내구3), 폭탄10, 헤비36, 도둑12
+                // 챕터 9: 도둑의 은신처 (81~90) — 도둑 고블린 등장
                 // ============================================================
                 case 81: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 12, maxOnBoard = 6,
                     thiefRatio = 0.15f, thiefGoblinHp = 12, archerRatio = 0.1f, armoredRatio = 0.1f,
@@ -7313,22 +7751,206 @@ private void OnDestroy()
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 85: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 8,
                     thiefRatio = 0.2f, thiefGoblinHp = 12, archerRatio = 0.1f, armoredRatio = 0.1f,
+                    wizardGoblinHp = 3,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 86: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 7,
                     thiefRatio = 0.2f, thiefGoblinHp = 12, shieldRatio = 0.15f, armoredRatio = 0.15f,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 87: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 20, maxOnBoard = 8,
                     thiefRatio = 0.2f, thiefGoblinHp = 12, heavyRatio = 0.1f, archerRatio = 0.1f,
+                    wizardGoblinHp = 3,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 88: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 8,
                     thiefRatio = 0.2f, thiefGoblinHp = 12, shieldRatio = 0.1f, heavyRatio = 0.1f, armoredRatio = 0.1f,
+                    wizardGoblinHp = 3,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 89: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
                     thiefRatio = 0.25f, thiefGoblinHp = 12, heavyRatio = 0.1f, archerRatio = 0.1f,
+                    wizardGoblinHp = 3,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
                 case 90: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
                     thiefRatio = 0.25f, thiefGoblinHp = 12, shieldRatio = 0.1f, heavyRatio = 0.1f, armoredRatio = 0.1f,
+                    wizardGoblinHp = 3,
                     archerHp = 1, armoredHp = 15, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10, heavyGoblinHp = 36 };
+
+                // ============================================================
+                // 챕터 10: 최종 전장 (91~100) — 전 몬스터 총출동
+                // ============================================================
+                case 91: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 12, maxOnBoard = 7,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.1f, thiefGoblinHp = 12, heavyRatio = 0.08f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 92: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 13, maxOnBoard = 7,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.1f, thiefGoblinHp = 12, heavyRatio = 0.1f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 93: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 15, maxOnBoard = 8,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.1f, thiefGoblinHp = 12, heavyRatio = 0.1f, archerRatio = 0.08f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 94: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 10, maxOnBoard = 7,
+                    witchRatio = 0.2f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.15f, thiefGoblinHp = 12, heavyRatio = 0.1f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 95: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 8,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.1f, thiefGoblinHp = 12, heavyRatio = 0.08f, shieldRatio = 0.08f, archerRatio = 0.08f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 96: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 8,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.1f, thiefGoblinHp = 12, heavyRatio = 0.08f, shieldRatio = 0.08f, archerRatio = 0.08f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 97: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 17, maxOnBoard = 8,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.1f, thiefGoblinHp = 12, heavyRatio = 0.08f, shieldRatio = 0.08f, archerRatio = 0.08f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 98: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 12, maxOnBoard = 8,
+                    witchRatio = 0.2f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.15f, thiefGoblinHp = 12, heavyRatio = 0.1f, shieldRatio = 0.05f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 99: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 17, maxOnBoard = 9,
+                    witchRatio = 0.15f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.12f, thiefGoblinHp = 12, heavyRatio = 0.1f, shieldRatio = 0.08f, archerRatio = 0.08f, armoredRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 100: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 24, maxOnBoard = 10,
+                    witchRatio = 0.2f, witchGoblinHp = 6, undeadHp = 3,
+                    thiefRatio = 0.12f, thiefGoblinHp = 12, shieldRatio = 0.08f, heavyRatio = 0.1f, armoredRatio = 0.08f, archerRatio = 0.08f,
+                    wizardGoblinHp = 3,
+                    archerHp = 1, armoredHp = 16, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40 };
+
+                // ============================================================
+                // 스테이지 101~150: 엘리트 전장 — Lv2 몬스터 등장
+                // ============================================================
+
+                // Ch11 (101-110): Lv2 기본 등장, 기존 몬스터와 혼합
+                case 101: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 14, maxOnBoard = 5,
+                    armoredHp = 15, archerHp = 1, shieldGoblinHp = 10, shieldHp = 3 };
+                case 102: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 14, maxOnBoard = 5,
+                    armoredHp = 15, archerHp = 1, shieldGoblinHp = 10, shieldHp = 3 };
+                case 103: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 16, maxOnBoard = 6,
+                    armoredHp = 15, archerHp = 1, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 104: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 2, missionKillCount = 16, maxOnBoard = 6,
+                    armoredHp = 15, archerHp = 1, shieldGoblinHp = 10, shieldHp = 3 };
+                case 105: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 6,
+                    armoredHp = 15, archerHp = 1, shieldGoblinHp = 10, shieldHp = 3, bombGoblinHp = 10 };
+                case 106: return new GoblinStageConfig { minSpawnPerTurn = 1, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 10 };
+                case 107: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 20, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3 };
+                case 108: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 20, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 36 };
+                case 109: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11 };
+                case 110: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+
+                // Ch12 (111-120): Lv2 비율 증가 + 특수 몬스터 혼합
+                case 111: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11,
+                    wizardGoblinHp = 3 };
+                case 112: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 18, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, heavyGoblinHp = 38 };
+                case 113: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 20, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11 };
+                case 114: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 20, maxOnBoard = 7,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3,
+                    thiefGoblinHp = 12 };
+                case 115: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 116: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, wizardGoblinHp = 3 };
+                case 117: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11 };
+                case 118: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3,
+                    witchGoblinHp = 6, undeadHp = 3 };
+                case 119: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 26, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 120: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    thiefGoblinHp = 12, wizardGoblinHp = 3 };
+
+                // Ch13 (121-130): 전병종 + Lv2 혼합
+                case 121: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11 };
+                case 122: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 22, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, heavyGoblinHp = 38, wizardGoblinHp = 3 };
+                case 123: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, thiefGoblinHp = 12 };
+                case 124: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, witchGoblinHp = 6, undeadHp = 3 };
+                case 125: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 26, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 126: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, thiefGoblinHp = 12, wizardGoblinHp = 3 };
+                case 127: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 26, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11 };
+                case 128: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 26, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, witchGoblinHp = 6, undeadHp = 3, heavyGoblinHp = 38 };
+                case 129: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, thiefGoblinHp = 12 };
+                case 130: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 30, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    thiefGoblinHp = 12, wizardGoblinHp = 3, witchGoblinHp = 6, undeadHp = 3 };
+
+                // Ch14 (131-140): Lv2 주력 + 고난도
+                case 131: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11 };
+                case 132: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, heavyGoblinHp = 38 };
+                case 133: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 26, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, thiefGoblinHp = 12 };
+                case 134: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 24, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, wizardGoblinHp = 3, witchGoblinHp = 6, undeadHp = 3 };
+                case 135: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 38 };
+                case 136: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 3, missionKillCount = 26, maxOnBoard = 8,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, thiefGoblinHp = 12 };
+                case 137: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, witchGoblinHp = 6, undeadHp = 3 };
+                case 138: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, heavyGoblinHp = 40, wizardGoblinHp = 3 };
+                case 139: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 30, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, thiefGoblinHp = 12, heavyGoblinHp = 40 };
+                case 140: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 32, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    thiefGoblinHp = 12, wizardGoblinHp = 3, witchGoblinHp = 6, undeadHp = 3 };
+
+                // Ch15 (141-150): 엘리트 총력전
+                case 141: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 26, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40 };
+                case 142: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, thiefGoblinHp = 12, wizardGoblinHp = 3 };
+                case 143: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 28, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, witchGoblinHp = 6, undeadHp = 3 };
+                case 144: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 30, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, heavyGoblinHp = 40, thiefGoblinHp = 12 };
+                case 145: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 30, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    wizardGoblinHp = 3, witchGoblinHp = 6, undeadHp = 3 };
+                case 146: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 30, maxOnBoard = 9,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, thiefGoblinHp = 12 };
+                case 147: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 32, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    witchGoblinHp = 6, undeadHp = 3 };
+                case 148: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 32, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, thiefGoblinHp = 12, wizardGoblinHp = 3, heavyGoblinHp = 40 };
+                case 149: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 34, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    thiefGoblinHp = 12, witchGoblinHp = 6, undeadHp = 3 };
+                case 150: return new GoblinStageConfig { minSpawnPerTurn = 2, maxSpawnPerTurn = 4, missionKillCount = 36, maxOnBoard = 10,
+                    armoredHp = 16, archerHp = 1, shieldGoblinHp = 11, shieldHp = 3, bombGoblinHp = 11, heavyGoblinHp = 40,
+                    thiefGoblinHp = 12, wizardGoblinHp = 3, witchGoblinHp = 6, undeadHp = 3 };
+
                 default: return null;
             }
         }
