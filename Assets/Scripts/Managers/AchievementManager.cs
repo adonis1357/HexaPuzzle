@@ -162,14 +162,15 @@ namespace JewelsHexaPuzzle.Managers
             // 통계 로드
             foreach (StatType type in System.Enum.GetValues(typeof(StatType)))
             {
-                long value = long.Parse(PlayerPrefs.GetString($"Stat_{type}", "0"));
+                // ★ 보안+견고성: 서명 검증 로드 + TryParse (변조/손상 문자열로 인한 부팅 크래시 방지)
+                long value = long.TryParse(JewelsHexaPuzzle.Utils.SecurePrefs.GetString($"Stat_{type}", "0"), out var v) ? v : 0L;
                 stats[type] = value;
             }
-            
+
             // 업적 완료 상태 로드
             foreach (var kvp in achievements)
             {
-                bool completed = PlayerPrefs.GetInt($"Achievement_{kvp.Key}", 0) == 1;
+                bool completed = JewelsHexaPuzzle.Utils.SecurePrefs.GetInt($"Achievement_{kvp.Key}", 0) == 1;
                 progress[kvp.Key] = new AchievementProgress
                 {
                     achievementId = kvp.Key,
@@ -184,16 +185,17 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         private void SaveProgress()
         {
+            // ★ 보안: 통계/업적 HMAC 서명 저장
             foreach (var kvp in stats)
             {
-                PlayerPrefs.SetString($"Stat_{kvp.Key}", kvp.Value.ToString());
+                JewelsHexaPuzzle.Utils.SecurePrefs.SetString($"Stat_{kvp.Key}", kvp.Value.ToString());
             }
-            
+
             foreach (var kvp in progress)
             {
-                PlayerPrefs.SetInt($"Achievement_{kvp.Key}", kvp.Value.isCompleted ? 1 : 0);
+                JewelsHexaPuzzle.Utils.SecurePrefs.SetInt($"Achievement_{kvp.Key}", kvp.Value.isCompleted ? 1 : 0);
             }
-            
+
             PlayerPrefs.Save();
         }
         

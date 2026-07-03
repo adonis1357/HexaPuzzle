@@ -100,10 +100,11 @@ namespace JewelsHexaPuzzle.Utils
                         mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.Rainbow:
+                        // 타겟 레이저: 원래 gemType 색상 유지 (hue 순환 제거)
                         mat.SetFloat("_ShimmerSpeed", 1.5f);
                         mat.SetFloat("_ShimmerIntensity", 0.10f);
                         mat.SetFloat("_EnergyPulse", 0.15f);
-                        mat.SetFloat("_RainbowStrength", 0.4f);
+                        mat.SetFloat("_RainbowStrength", 0f);
                         break;
                     case SpecialBlockType.Drone:
                         mat.SetFloat("_ShimmerSpeed", 2.0f);

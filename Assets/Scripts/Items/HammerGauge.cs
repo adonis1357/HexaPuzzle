@@ -1,0 +1,514 @@
+using UnityEngine;
+using UnityEngine.UI;
+using System.Collections;
+using JewelsHexaPuzzle.Managers;
+
+namespace JewelsHexaPuzzle.Items
+{
+    public class HammerGauge : MonoBehaviour
+    {
+        public static HammerGauge Instance { get; private set; }
+
+        public enum HammerState
+        {
+            Inactive,    // 비활성
+            Ready,       // gaugeLayer>=1, 클릭 대기
+            UseReady     // 망치 사용 준비 (드래그로 레벨 결정)
+        }
+
+        // 레이어별 색상
+        private static readonly Color COLOR_LAYER_0 = new Color(0.8f, 0.1f, 0.1f, 1f);    // 기본 빨간
+        private static readonly Color COLOR_LAYER_1 = new Color(1f, 0f, 0f, 1f);           // 진한 빨간
+        private static readonly Color COLOR_LAYER_2 = new Color(1f, 0.3f, 0f, 1f);         // 주황빨간
+        private static readonly Color COLOR_LAYER_3 = new Color(1f, 0.5f, 0f, 1f);         // 밝은 주황
+
+        // UseReady 오버레이 색상 — Ready(빨강)와 구분되도록 밝은 금색으로 활성 표시
+        private static readonly Color COLOR_USE_READY0 = new Color(1f, 0.78f, 0.15f, 1f);  // 밝은 금색 (활성 중)
+
+        private static readonly Color COLOR_FLASH       = Color.white;
+        private static readonly Color COLOR_OUTLINE_ACTIVE  = new Color(1f, 0.9f, 0f, 1f);
+        private static readonly Color COLOR_OUTLINE_OFF     = new Color(0f, 0f, 0f, 0f);
+
+        // ★ 레이어(단계)별 요구 게이지 — 1~4단계 모두 10 (각 단계 동일). 인덱스 0=1단계.
+        private static readonly int[] LAYER_THRESHOLDS = { 10, 10, 10, 10 };
+        private int LayerThreshold(int layer) => LAYER_THRESHOLDS[Mathf.Clamp(layer, 0, LAYER_THRESHOLDS.Length - 1)];
+
+        // 레이어 시스템
+        private int gaugeLayer = 0;       // 0~4 (완성된 레이어 수)
+        private int gaugeInLayer = 0;     // 현재 레이어 내 진행 (그 단계 임계값 미만)
+
+        private HammerState currentState = HammerState.Inactive;
+
+        private Button hammerButton;
+        private HammerItem hammerItem;
+        private Image buttonImage;
+        private Outline buttonOutline;
+        private Text layerText;
+        private bool initialized = false;
+
+        /// <summary>현재 해금된 스킬에 따른 최대 레이어 수</summary>
+        public int GetCurrentMaxLayer() => GetMaxLayer();
+        private int GetMaxLayer()
+        {
+            // ★ 기본 능력치로 4단계까지 충전 (리워드 없이). 스킬은 더 이상 최대 레이어를 게이팅하지 않음.
+            return 4;
+        }
+
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+            else if (Instance != this) Destroy(gameObject);
+        }
+
+        private void Start()
+        {
+            gaugeLayer = 0;
+            gaugeInLayer = 0;
+            currentState = HammerState.Inactive;
+            // 즉시 버튼을 찾아 비활성화 색상 적용 (AutoInit 대기 전 흰색 방지)
+            ApplyInactiveColorImmediate();
+            StartCoroutine(AutoInitCoroutine());
+        }
+
+        /// <summary>Start에서 즉시 호출: 버튼이 이미 존재하면 비활성화 색상 즉시 적용</summary>
+        private void ApplyInactiveColorImmediate()
+        {
+            Button btn = null;
+            var hi = FindObjectOfType<HammerItem>();
+            if (hi != null && hi.HammerButton != null) btn = hi.HammerButton;
+            if (btn == null)
+            {
+                var uiMgr = FindObjectOfType<UIManager>();
+                if (uiMgr != null && uiMgr.ItemButtons != null)
+                    foreach (var ib in uiMgr.ItemButtons)
+                        if (ib != null && ib.CurrentItemType == ItemType.Hammer && ib.ButtonComponent != null)
+                        { btn = ib.ButtonComponent; break; }
+            }
+            if (btn != null)
+            {
+                var img = btn.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = COLOR_LAYER_0;
+                    img.fillAmount = 0f;
+                }
+                btn.interactable = false;
+            }
+        }
+
+        private IEnumerator AutoInitCoroutine()
+        {
+            yield return null;
+            yield return null;
+            int round = 0;
+            while (!initialized)
+            {
+                round++;
+                TryFindButton();
+                if (initialized) yield break;
+                float wait = round <= 5 ? 0.5f : (round <= 15 ? 2f : 5f);
+                yield return new WaitForSeconds(wait);
+            }
+        }
+
+        private void TryFindButton()
+        {
+            if (initialized) return;
+            if (hammerButton == null)
+            {
+                if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
+                if (hammerItem != null && hammerItem.HammerButton != null)
+                    hammerButton = hammerItem.HammerButton;
+            }
+            if (hammerButton == null)
+            {
+                var uiMgr = FindObjectOfType<UIManager>();
+                if (uiMgr != null && uiMgr.ItemButtons != null)
+                    foreach (var ib in uiMgr.ItemButtons)
+                        if (ib != null && ib.CurrentItemType == ItemType.Hammer && ib.ButtonComponent != null)
+                        { hammerButton = ib.ButtonComponent; break; }
+            }
+            if (hammerButton == null)
+                foreach (var btn in FindObjectsOfType<Button>())
+                {
+                    if (btn == null) continue;
+                    string n = btn.gameObject.name.ToLower();
+                    if (n.Contains("hammer") || n.Contains("망치")) { hammerButton = btn; break; }
+                }
+            if (hammerButton == null)
+            {
+                if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
+                if (hammerItem != null) { var btn = hammerItem.GetComponentInChildren<Button>(); if (btn != null) hammerButton = btn; }
+            }
+            if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
+
+            if (hammerButton != null)
+            {
+                initialized = true;
+                hammerButton.onClick.RemoveAllListeners();
+                hammerButton.onClick.AddListener(OnHammerButtonClicked);
+                buttonImage = hammerButton.GetComponent<Image>();
+                if (buttonImage != null)
+                {
+                    buttonImage.type = Image.Type.Filled;
+                    buttonImage.fillMethod = Image.FillMethod.Vertical;
+                    buttonImage.fillOrigin = (int)Image.OriginVertical.Bottom;
+                }
+                buttonOutline = hammerButton.GetComponent<Outline>();
+                if (buttonOutline == null) buttonOutline = hammerButton.gameObject.AddComponent<Outline>();
+                buttonOutline.effectColor = COLOR_OUTLINE_OFF;
+
+                // 레이어 숫자 텍스트 생성
+                CreateLayerText();
+
+                ForceAlphaOne(hammerButton.gameObject);
+                SetState(HammerState.Inactive);
+            }
+        }
+
+        private void CreateLayerText()
+        {
+            if (hammerButton == null) return;
+
+            // 기존 텍스트가 있으면 재사용
+            var existing = hammerButton.transform.Find("LayerText");
+            if (existing != null)
+            {
+                layerText = existing.GetComponent<Text>();
+                return;
+            }
+
+            GameObject textObj = new GameObject("LayerText");
+            textObj.transform.SetParent(hammerButton.transform, false);
+
+            layerText = textObj.AddComponent<Text>();
+            layerText.text = "";
+            layerText.fontSize = 24;
+            layerText.fontStyle = FontStyle.Bold;
+            layerText.alignment = TextAnchor.UpperRight;
+            layerText.color = Color.white;
+            layerText.raycastTarget = false;
+            layerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // Outline 추가
+            var outline = textObj.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 1f);
+            outline.effectDistance = new Vector2(1.5f, -1.5f);
+
+            RectTransform rt = textObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(30f, 30f);
+            rt.anchoredPosition = new Vector2(-19f, -8f);
+        }
+
+        private void SetState(HammerState newState)
+        {
+            currentState = newState;
+            RefreshUI();
+            // ★ 보류 충전 반영 (감사 M12) — UseReady 중 도착한 영혼 충전을 상태 복귀 시 합산.
+            //   (이전: UseReady 중 AddGauge가 무조건 return → 비행 중이던 영혼들의 충전 전량 소실)
+            if (pendingGauge > 0 &&
+                (newState == HammerState.Inactive || newState == HammerState.Ready))
+            {
+                int p = pendingGauge;
+                pendingGauge = 0;
+                AddGauge(p);
+            }
+        }
+
+        // UseReady 등 충전 불가 상태에 도착한 충전 보류분 (상태 복귀 시 합산 — 감사 M12)
+        private int pendingGauge = 0;
+
+        // ============================================================
+        // 버튼 클릭: Ready → UseReady → Inactive
+        // ============================================================
+
+        private void OnHammerButtonClicked()
+        {
+            if (JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode()) { AddGaugeEditor(); return; }
+
+            if (currentState == HammerState.Ready)
+            {
+                // Ready → UseReady (활성화)
+                SetState(HammerState.UseReady);
+                if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
+                if (hammerItem != null) hammerItem.Activate();
+
+                // 튜토리얼 이벤트 알림 (Stage 6 HammerActivated 대기 해제)
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnHammerActivated();
+            }
+            else if (currentState == HammerState.UseReady)
+            {
+                // 튜토리얼 타겟 제한 중에는 재클릭으로 취소되지 않도록 차단 + 토스트
+                // (블록 클릭 전까지 망치 활성 상태 유지)
+                var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                if (tm != null && tm.HasHammerTargetRestriction)
+                {
+                    tm.ShowHammerWrongClickHint();
+                    return;
+                }
+                // UseReady → 취소하고 복귀
+                CancelAndReturn();
+            }
+        }
+
+        private void CancelAndReturn()
+        {
+            if (hammerItem != null) hammerItem.Deactivate();
+            SetState(gaugeLayer >= 1 ? HammerState.Ready : HammerState.Inactive);
+        }
+
+        /// <summary>
+        /// ChargeBar(외부 비주얼 버튼) 탭에서 호출 — OnHammerButtonClicked의 Ready→UseReady 분기와 동일.
+        /// 버튼 onClick 바인딩에 의존하지 않고 게이지 상태로 직접 발동(타이밍 안전).
+        /// </summary>
+        public void ActivateUseReady()
+        {
+            // ★ 토글 — 차지바 버튼 탭으로 활성/취소 모두 가능(기존 활성화 전용이라 버튼으로 취소가 안 되던 버그 수정).
+            if (currentState == HammerState.Ready)
+            {
+                SetState(HammerState.UseReady);
+                if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
+                if (hammerItem != null) hammerItem.Activate();
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnHammerActivated();
+            }
+            else if (currentState == HammerState.UseReady)
+            {
+                // 튜토리얼 타겟 제한 중에는 재탭으로 취소되지 않도록 차단 (OnHammerButtonClicked와 동일)
+                var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                if (tm != null && tm.HasHammerTargetRestriction) { tm.ShowHammerWrongClickHint(); return; }
+                CancelAndReturn();
+            }
+        }
+
+        // ============================================================
+        // 외부 호출
+        // ============================================================
+
+        /// <summary>망치 사용 완료 — 현재 UseReady 레벨에 따라 게이지 레이어 차감</summary>
+        public void OnHammerUsedWithLevel(int layerCost)
+        {
+            gaugeLayer = Mathf.Max(0, gaugeLayer - layerCost);
+            SetState(gaugeLayer >= 1 ? HammerState.Ready : HammerState.Inactive);
+        }
+
+        /// <summary>기본 망치 사용 완료 (1칸 파괴) — 레이어 1 소모</summary>
+        public void OnHammerUsed()
+        {
+            OnHammerUsedWithLevel(1);
+        }
+
+        /// <summary>1레벨 망치 사용 완료 (7칸 파괴) — 레이어 2 소모</summary>
+        public void OnHammerUsedLevel1()
+        {
+            OnHammerUsedWithLevel(2);
+        }
+
+        /// <summary>2레벨 망치 사용 완료 (19칸 파괴) — 레이어 3 소모</summary>
+        public void OnHammerUsedLevel2()
+        {
+            OnHammerUsedWithLevel(3);
+        }
+
+        /// <summary>3레벨 망치 사용 완료 (37칸 파괴) — 레이어 4 소모</summary>
+        public void OnHammerUsedLevel3()
+        {
+            OnHammerUsedWithLevel(4);
+        }
+
+        public void OnHammerCancelled()
+        {
+            if (currentState == HammerState.UseReady)
+                SetState(gaugeLayer >= 1 ? HammerState.Ready : HammerState.Inactive);
+        }
+
+        public void ResetGauge()
+        {
+            gaugeLayer = 0;
+            gaugeInLayer = 0;
+            currentState = HammerState.Inactive;
+            if (hammerButton != null) hammerButton.interactable = false;
+            RefreshUI();
+        }
+
+        // ============================================================
+        // 게이지 충전: 레이어 시스템
+        // ============================================================
+
+        public void AddGauge(int amount)
+        {
+            // ★ 사용 중(UseReady 등) 도착한 충전은 버리지 않고 보류 → 상태 복귀 시 합산 (감사 M12)
+            if (currentState != HammerState.Inactive && currentState != HammerState.Ready)
+            {
+                pendingGauge += amount;
+                return;
+            }
+
+            int maxLayer = GetMaxLayer();
+
+            // 이미 최대 레이어이면 더 이상 증가 안 함
+            if (gaugeLayer >= maxLayer) return;
+
+            gaugeInLayer += amount;
+
+            // 레이어 승격 처리 (단계별 임계값 1~4단계=10/8/6/4)
+            while (gaugeLayer < maxLayer && gaugeInLayer >= LayerThreshold(gaugeLayer))
+            {
+                gaugeInLayer -= LayerThreshold(gaugeLayer);
+                gaugeLayer++;
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayGaugeFullSound(); // ★ 효과음: 게이지 레이어 완성
+            }
+
+            // 최대 레이어 도달 시 잔여 게이지 초기화
+            if (gaugeLayer >= maxLayer)
+            {
+                gaugeInLayer = 0;
+            }
+
+            if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
+            {
+                SetState(HammerState.Ready);
+                StartCoroutine(FlashEffect());
+            }
+            else
+            {
+                RefreshUI();
+            }
+        }
+
+        public void OnTurnEnd() { AddGauge(1); } // 단계 임계값 10/8/6/4에 맞춰 턴당 패시브 충전 +5→+1 (매칭 위주로)
+
+        private IEnumerator FlashEffect()
+        {
+            if (buttonImage == null) yield break;
+            Color readyColor = GetLayerColor(gaugeLayer - 1);
+            for (int i = 0; i < 3; i++)
+            {
+                buttonImage.color = COLOR_FLASH;
+                yield return new WaitForSeconds(0.1f);
+                buttonImage.color = readyColor;
+                yield return new WaitForSeconds(0.1f);
+            }
+        }
+
+        // ============================================================
+        // UI
+        // ============================================================
+
+        private Color GetLayerColor(int layer)
+        {
+            switch (layer)
+            {
+                case 0: return COLOR_LAYER_0;
+                case 1: return COLOR_LAYER_1;
+                case 2: return COLOR_LAYER_2;
+                case 3: return COLOR_LAYER_3;
+                default: return COLOR_LAYER_3;
+            }
+        }
+
+        private void RefreshUI()
+        {
+            if (buttonImage == null) return;
+
+            switch (currentState)
+            {
+                case HammerState.Inactive:
+                    // fillAmount = 현재 레이어 내 진행률
+                    buttonImage.fillAmount = gaugeInLayer / (float)LayerThreshold(gaugeLayer);
+                    buttonImage.color = GetLayerColor(gaugeLayer);
+                    if (hammerButton != null) hammerButton.interactable = JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode();
+                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
+                    break;
+
+                case HammerState.Ready:
+                    // 현재 진행 중인 레이어의 fillAmount
+                    int maxLayer = GetMaxLayer();
+                    if (gaugeLayer >= maxLayer)
+                        buttonImage.fillAmount = 1f;
+                    else
+                        buttonImage.fillAmount = gaugeInLayer / (float)LayerThreshold(gaugeLayer);
+                    buttonImage.color = GetLayerColor(Mathf.Max(0, gaugeLayer - 1));
+                    if (hammerButton != null) hammerButton.interactable = true;
+                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
+                    break;
+
+                case HammerState.UseReady:
+                    // 활성화 상태를 명확히 구분: 금색 + 살짝 큰 스케일 + 두꺼운 외곽선
+                    buttonImage.fillAmount = 1f;
+                    buttonImage.color = COLOR_USE_READY0;
+                    if (hammerButton != null) hammerButton.interactable = true;
+                    if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one * 1.1f;
+                    break;
+            }
+
+            // 레이어 텍스트 업데이트
+            UpdateLayerText();
+        }
+
+        private void UpdateLayerText()
+        {
+            if (layerText == null) return;
+
+            if (gaugeLayer <= 0)
+            {
+                layerText.text = "";
+            }
+            else
+            {
+                layerText.text = gaugeLayer.ToString();
+            }
+        }
+
+        private void ForceAlphaOne(GameObject obj)
+        {
+            if (obj == null) return;
+            Transform t = obj.transform;
+            while (t != null)
+            {
+                CanvasGroup cg = t.GetComponent<CanvasGroup>();
+                if (cg != null && cg.alpha < 1f) cg.alpha = 1f;
+                t = t.parent;
+            }
+        }
+
+        public int GaugeLayer => gaugeLayer;
+        public int GaugeInLayer => gaugeInLayer;
+        /// <summary>현재 채우는 단계의 진행 비율 (gaugeInLayer / 그 단계 임계값) — 차지바 fill용.</summary>
+        public float CurrentLayerFillRatio => Mathf.Clamp01(gaugeInLayer / (float)LayerThreshold(gaugeLayer));
+        public int TotalGauge { get { int t = gaugeInLayer; for (int i = 0; i < gaugeLayer; i++) t += LayerThreshold(i); return t; } }
+        public HammerState CurrentState => currentState;
+
+        // 하위 호환용 (기존 코드에서 CurrentGauge 참조하는 곳)
+        public int CurrentGauge => TotalGauge;
+
+        /// <summary>에디터 테스트용: gaugeLayer 1 증가. 풀이면 0으로 초기화</summary>
+        public void AddGaugeEditor()
+        {
+            int maxLayer = GetMaxLayer();
+            bool isFull = gaugeLayer >= maxLayer && gaugeInLayer == 0;
+            if (isFull)
+            {
+                Debug.Log($"[EditorGauge] 망치 게이지 풀 → 초기화 (gaugeLayer: {gaugeLayer} → 0)");
+                gaugeLayer = 0;
+                gaugeInLayer = 0;
+                SetState(HammerState.Inactive);
+            }
+            else
+            {
+                Debug.Log($"[EditorGauge] 망치 게이지 증가 — gaugeLayer: {gaugeLayer} → {Mathf.Min(gaugeLayer + 1, maxLayer)}");
+                gaugeLayer = Mathf.Min(gaugeLayer + 1, maxLayer);
+                gaugeInLayer = 0;
+                if (gaugeLayer >= 1 && currentState == HammerState.Inactive)
+                    SetState(HammerState.Ready);
+                else
+                    RefreshUI();
+            }
+        }
+    }
+}

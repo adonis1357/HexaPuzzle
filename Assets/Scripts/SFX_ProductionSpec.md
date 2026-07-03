@@ -13,7 +13,7 @@
 |-----------|-----------|-----------|----------|
 | **Drill** | 4매치 | 한 방향 라인 제거 (Vertical/Slash/BackSlash) | 발사체 projectile, 빠른 속도, 웜 옐로우 플래시 |
 | **Bomb** | 5매치 이상 | 인접 6칸 폭발 | 강한 셰이크, 넓은 파편, 웜 골드 플래시 |
-| **Rainbow/Donut** | 7매치 이상 (도넛 패턴) | 보드 전체 같은 색 제거 | 링 회전, 물결 파동, 24개 스파크 |
+| **Rainbow/Donut** | 7매치 이상 (타겟 레이저 패턴) | 보드 전체 같은 색 제거 | 링 회전, 물결 파동, 24개 스파크 |
 | **XBlock** | 중앙+주변6개 동색 | 보드 전체 같은 색 제거 | 물결 파동, 20개 스파크 |
 | **Laser** | 6매치 | 헥사 3축 전체 직선 제거 | 빔 0.3초, 쿨 블루 플래시 |
 
@@ -377,9 +377,9 @@ A magical fairy wand light beam sound, like Tinkerbell casting a gentle spell. N
 
 ---
 
-### 4. 도넛/레인보우 (Donut/Rainbow)
+### 4. 타겟 레이저/레인보우 (Donut/Rainbow)
 
-**게임 메커닉**: 7매치 이상의 도넛 패턴에서 생성. 보드 전체에서 같은 색 블록을 물결 파동으로 제거. waveDelay=0.04s, sparkCount=24, 링 회전.
+**게임 메커닉**: 7매치 이상의 타겟 레이저 패턴에서 생성. 보드 전체에서 같은 색 블록을 물결 파동으로 제거. waveDelay=0.04s, sparkCount=24, 링 회전.
 
 **ElevenLabs Prompt:**
 ```
@@ -474,7 +474,7 @@ A playful ascending musical scale sound, about 1 second long, like a xylophone o
 | 1 | 드릴 발동 | 0.4-0.6s | cute, toy, candy drill | 뮤직박스 + 장난감 모터 |
 | 2 | 폭탄 폭발 | 0.25-0.4s | poof, confetti, cotton candy | 만화 폭발 + 글리터 |
 | 3 | 레이저 빔 | 0.4-0.6s | fairy wand, starlight, dreamy | 글라스 하모니카 |
-| 4 | 도넛/레인보우 | 0.6-1.0s | rainbow, prism, expanding waves | 윈드차임 + 뮤직박스 |
+| 4 | 타겟 레이저/레인보우 | 0.6-1.0s | rainbow, prism, expanding waves | 윈드차임 + 뮤직박스 |
 | 5 | X블록 | 0.5-0.7s | crossing sparkle, fairy dust | 첼레스타 + 글로켄슈필 |
 | 6 | 스테이지 클리어 | 1.5-2.5s | celebration, cozy, congratulatory | 뮤직박스 팡파레 |
 | 7 | 게임 오버 | 1.2-1.8s | gentle, comforting, encouraging | 뮤직박스 와인딩 다운 |
@@ -510,7 +510,7 @@ A playful ascending musical scale sound, about 1 second long, like a xylophone o
          경고 비프
          3매치 성공
          버튼 클릭
-         특수 블록 발동 (드릴/폭탄/레이저/도넛/X)
+         특수 블록 발동 (드릴/폭탄/레이저/타겟 레이저/X)
          블록 파괴/팝
          게임 오버
          블록 착지

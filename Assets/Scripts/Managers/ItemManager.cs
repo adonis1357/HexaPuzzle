@@ -46,6 +46,159 @@ namespace JewelsHexaPuzzle.Managers
         private Dictionary<ItemType, int> itemCounts = new Dictionary<ItemType, int>();
 
         // ============================================================
+        // 게이지 시스템: 블록 제거로 아이템 카운트 충전 (10개=100%)
+        // 망치=Green, 스왑=Red, 라인드로우=Purple, 역회전=게이지 없음
+        // ============================================================
+
+        /// <summary>아이템별 충전 카운트 (0~10)</summary>
+        private int hammerCount = 0;
+        private int swapCount = 0;  // Bomb = 스왑
+        private int lineCount = 0;  // SixWayLaser/SSD = 라인 (Purple)
+        private int reverseCount = 0;  // ReverseRotation 진행 카운터 (0~9, 10도달 시 스택+1로 환산)
+        // ★ 역회전 스택 시스템 — 무브수 10회마다 +1 스택, 최대 2 스택까지 충전 후 1번씩 사용.
+        private int reverseStacks = 0;
+        private const int REVERSE_STACK_MAX = 2;
+
+        private const int GAUGE_MAX = 10;
+
+        /// <summary>게이지 변경 이벤트 (타입, 현재 게이지 0f~1f)</summary>
+        public event System.Action<ItemType, float> OnGaugeChanged;
+
+        /// <summary>아이템 ↔ GemType 매핑 (역회전 제외)</summary>
+        private static readonly Dictionary<ItemType, GemType> itemToGem = new Dictionary<ItemType, GemType>
+        {
+            { ItemType.Hammer, GemType.Green },
+            { ItemType.Bomb, GemType.Red },
+            { ItemType.SixWayLaser, GemType.Purple },
+            { ItemType.SSD, GemType.Purple }   // 라인 아이템(SSD)도 Purple 게이지 공유
+        };
+
+        /// <summary>블록 제거 시 호출 — 해당 색상의 아이템 카운트 증가</summary>
+        public void OnBlockRemoved(GemType type)
+        {
+            // (진단 로그 제거됨 — 블록 1개 제거당 1회 호출되는 핫패스, 감사 M5)
+            bool changed = false;
+            if (type == GemType.Green)
+            {
+                if (hammerCount < GAUGE_MAX) { hammerCount++; changed = true; }
+                if (hammerCount >= GAUGE_MAX) hammerCount = GAUGE_MAX;
+                if (changed) OnGaugeChanged?.Invoke(ItemType.Hammer, GetGauge(ItemType.Hammer));
+            }
+            else if (type == GemType.Red)
+            {
+                if (swapCount < GAUGE_MAX) { swapCount++; changed = true; }
+                if (swapCount >= GAUGE_MAX) swapCount = GAUGE_MAX;
+                if (changed) OnGaugeChanged?.Invoke(ItemType.Bomb, GetGauge(ItemType.Bomb));
+            }
+            else if (type == GemType.Purple)
+            {
+                if (lineCount < GAUGE_MAX) { lineCount++; changed = true; }
+                if (lineCount >= GAUGE_MAX) lineCount = GAUGE_MAX;
+                if (changed)
+                {
+                    OnGaugeChanged?.Invoke(ItemType.SixWayLaser, GetGauge(ItemType.SixWayLaser));
+                    OnGaugeChanged?.Invoke(ItemType.SSD, GetGauge(ItemType.SSD)); // 충전바 라인(SSD) 동기화
+                }
+            }
+        }
+
+        /// <summary>
+        /// 이동횟수 1회 소모 시 호출 — 역회전 게이지 +1 (10회=풀). GameManager.UseTurn에서 호출.
+        /// </summary>
+        public void OnMoveConsumed()
+        {
+            // 스택이 이미 최대치(2)면 추가 충전 정지 — 사용자 요청 "2번까지 충전".
+            if (reverseStacks >= REVERSE_STACK_MAX) return;
+
+            reverseCount++;
+            if (reverseCount >= GAUGE_MAX)
+            {
+                reverseCount = 0;
+                reverseStacks = Mathf.Min(REVERSE_STACK_MAX, reverseStacks + 1);
+            }
+            OnGaugeChanged?.Invoke(ItemType.ReverseRotation, GetGauge(ItemType.ReverseRotation));
+        }
+
+        /// <summary>레거시 호환: AddGauge → OnBlockRemoved 위임</summary>
+        public void AddGauge(GemType color, int count)
+        {
+            for (int i = 0; i < count; i++)
+                OnBlockRemoved(color);
+        }
+
+        /// <summary>아이템 게이지 값 반환 (0f~1f)</summary>
+        public float GetGauge(ItemType type)
+        {
+            if (type == ItemType.Hammer) return hammerCount / (float)GAUGE_MAX;
+            if (type == ItemType.Bomb) return swapCount / (float)GAUGE_MAX;
+            if (type == ItemType.SixWayLaser || type == ItemType.SSD) return lineCount / (float)GAUGE_MAX;
+            if (type == ItemType.ReverseRotation)
+            {
+                // 스택이 있으면 풀(1.0) 표시 — ChargeBar가 사용 가능 상태로 보이게 한다.
+                // 스택 0일 때만 진행률(0~0.9) 반환 — 다음 충전까지의 채움.
+                if (reverseStacks >= 1) return 1f;
+                return reverseCount / (float)GAUGE_MAX;
+            }
+            return 0f;
+        }
+
+        /// <summary>아이템 카운트 raw 반환 (역회전은 스택 수 0~2, 그 외 0~10)</summary>
+        public int GetGaugeCount(ItemType type)
+        {
+            if (type == ItemType.Hammer) return hammerCount;
+            if (type == ItemType.Bomb) return swapCount;
+            if (type == ItemType.SixWayLaser || type == ItemType.SSD) return lineCount;
+            if (type == ItemType.ReverseRotation) return reverseStacks;  // 사용 가능 스택 수
+            return 0;
+        }
+
+        /// <summary>게이지가 100%인지 확인</summary>
+        public bool IsGaugeFull(ItemType type)
+        {
+            return GetGaugeCount(type) >= GAUGE_MAX;
+        }
+
+        /// <summary>게이지 초기화 (아이템 사용 후)</summary>
+        public void ResetGauge(ItemType type)
+        {
+            if (type == ItemType.Hammer) hammerCount = 0;
+            else if (type == ItemType.Bomb) swapCount = 0;
+            else if (type == ItemType.SixWayLaser || type == ItemType.SSD) lineCount = 0;
+            else if (type == ItemType.ReverseRotation)
+            {
+                // ★ 역회전 "사용 1회" — 스택 -1 (진행 카운터는 보존, 다음 스택까지 그대로 진행).
+                //   사용자 요청: 풀 충전된 스택을 1번 소비. 진행 중인 충전은 유지.
+                if (reverseStacks > 0) reverseStacks--;
+            }
+            OnGaugeChanged?.Invoke(type, GetGauge(type));
+        }
+
+        /// <summary>
+        /// 게임 시작/로비 복귀 시 모든 게이지 완전 초기화 (스택·진행 카운터 모두 0).
+        /// 다른 버튼들과 동일하게 역회전도 빈 게이지로 시작하도록 보장.
+        /// </summary>
+        public void ResetAllGauges()
+        {
+            hammerCount = 0;
+            swapCount = 0;
+            lineCount = 0;
+            reverseCount = 0;
+            reverseStacks = 0;
+            OnGaugeChanged?.Invoke(ItemType.Hammer, 0f);
+            OnGaugeChanged?.Invoke(ItemType.Bomb, 0f);
+            OnGaugeChanged?.Invoke(ItemType.SixWayLaser, 0f);
+            OnGaugeChanged?.Invoke(ItemType.SSD, 0f);
+            OnGaugeChanged?.Invoke(ItemType.ReverseRotation, 0f);
+            Debug.Log("[ItemManager] ResetAllGauges — 모든 아이템 게이지 + 역회전 스택 초기화");
+        }
+
+        /// <summary>아이템에 연결된 GemType 반환</summary>
+        public static GemType GetLinkedGemType(ItemType type)
+        {
+            return itemToGem.ContainsKey(type) ? itemToGem[type] : GemType.None;
+        }
+
+        // ============================================================
         // 게임당 사용 제한 시스템
         // ============================================================
         private Dictionary<ItemType, int> perGameUsageCount = new Dictionary<ItemType, int>();
@@ -97,7 +250,14 @@ namespace JewelsHexaPuzzle.Managers
 
             // Awake에서 먼저 로드 (GameManager.Start보다 앞서 데이터 준비)
             LoadItemCounts();
-            Debug.Log($"[ItemManager] Awake: 아이템 수량 로드 완료 (PlayerPrefs)");
+
+            // 게이지 카운트 초기화
+            hammerCount = 0;
+            swapCount = 0;
+            lineCount = 0;
+            reverseCount = 0;
+
+            Debug.Log($"[ItemManager] Awake: 아이템 수량 로드 + 게이지 초기화 완료");
         }
 
         private void Start()
@@ -146,7 +306,7 @@ namespace JewelsHexaPuzzle.Managers
                     {
                         type = ItemType.SSD,
                         name = "SSD",
-                        description = "같은 종류 원석을 한붓그리기로 연결하여 제거",
+                        description = "같은 종류 원석을 라인로 연결하여 제거",
                         price = 1.99f,
                         unlockStage = 100
                     }
@@ -164,7 +324,8 @@ namespace JewelsHexaPuzzle.Managers
         {
             foreach (ItemType type in System.Enum.GetValues(typeof(ItemType)))
             {
-                int count = PlayerPrefs.GetInt($"Item_{type}", 0);
+                // ★ 보안: 서명 검증 로드 + 상한 클램프 (유료 아이템 평문 복제 차단)
+                int count = Mathf.Clamp(JewelsHexaPuzzle.Utils.SecurePrefs.GetInt($"Item_{type}", 0), 0, 999);
                 itemCounts[type] = count;
             }
         }
@@ -174,9 +335,10 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         private void SaveItemCounts()
         {
+            // ★ 보안: HMAC 서명 저장
             foreach (var kvp in itemCounts)
             {
-                PlayerPrefs.SetInt($"Item_{kvp.Key}", kvp.Value);
+                JewelsHexaPuzzle.Utils.SecurePrefs.SetInt($"Item_{kvp.Key}", kvp.Value);
             }
             PlayerPrefs.Save();
         }
@@ -216,6 +378,15 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public bool CanUseItem(ItemType type)
         {
+            // 역회전: 항상 사용 가능 (게이지 없음)
+            if (type == ItemType.ReverseRotation)
+                return true;
+
+            // 게이지 기반: 100% 충전 시에만 사용 가능
+            if (itemToGem.ContainsKey(type))
+                return IsGaugeFull(type);
+
+            // 게이지 미적용 아이템(TurnPlus5 등): 기존 수량 기반
             int count = GetItemCount(type);
             if (count <= 0) return false;
 
@@ -241,11 +412,25 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void ConsumeItem(ItemType type)
         {
-            // 보유 수량 감소
-            if (itemCounts.ContainsKey(type) && itemCounts[type] > 0)
+            // 역회전: 소모 없음 (게이지/수량 모두 불필요)
+            if (type == ItemType.ReverseRotation)
             {
-                itemCounts[type]--;
-                SaveItemCounts();
+                Debug.Log($"[ItemManager] {type} 사용 (소모 없음)");
+            }
+            // 게이지 기반 아이템: 게이지 초기화
+            else if (itemToGem.ContainsKey(type))
+            {
+                ResetGauge(type);
+                Debug.Log($"[ItemManager] {type} 게이지 소모 → 0%");
+            }
+            else
+            {
+                // 게이지 미적용 아이템: 기존 수량 감소
+                if (itemCounts.ContainsKey(type) && itemCounts[type] > 0)
+                {
+                    itemCounts[type]--;
+                    SaveItemCounts();
+                }
             }
 
             // 게임당 사용 횟수 증가
@@ -257,7 +442,7 @@ namespace JewelsHexaPuzzle.Managers
             OnItemCountChanged?.Invoke(type, GetItemCount(type));
             UpdateItemUI();
 
-            Debug.Log($"[ItemManager] {type} 소모됨. 보유: {GetItemCount(type)}, 이번게임 사용: {perGameUsageCount[type]}/{perGameUsageLimit}");
+            Debug.Log($"[ItemManager] {type} 소모됨. 게이지: {GetGauge(type):P0}, 이번게임 사용: {perGameUsageCount[type]}/{perGameUsageLimit}");
         }
 
         // ============================================================
@@ -299,18 +484,27 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void UseItem(ItemType type)
         {
-            // 수량 확인
-            if (!itemCounts.ContainsKey(type) || itemCounts[type] <= 0)
+            // 게이지/수량 확인
+            if (!CanUseItem(type))
             {
-                Debug.Log($"No {type} available");
+                Debug.Log($"[ItemManager] {type} 사용 불가 (게이지 미충전 또는 제한 초과)");
                 return;
             }
 
-            // 게임당 사용 제한 확인
-            if (!CanUseItem(type))
+            // ★ MP 체크 — 부족 시 타겟 선택 모드로 진입하지 않음 (이전 버그: MP 부족 시
+            //   타겟 모드 진입 → 입력이 블록 회전으로 흘러가 회전이 발생함)
+            if (MPManager.Instance != null)
             {
-                Debug.Log($"[ItemManager] {type} 게임당 사용 제한 초과");
-                return;
+                int mpCost = MPManager.Instance.GetItemCost(type);
+                if (!MPManager.Instance.CanAfford(mpCost))
+                {
+                    Debug.Log($"[ItemManager] {type} MP 부족 (필요 {mpCost}) — 사용 차단, 회전 유발 방지");
+                    Vector3 popupPos = hexGrid != null ? hexGrid.transform.position : Vector3.zero;
+                    MPManager.Instance.SpawnInsufficientPopup(popupPos);
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return;
+                }
             }
 
             // 해금 확인
@@ -404,10 +598,15 @@ namespace JewelsHexaPuzzle.Managers
                     break;
             }
 
+            // ★ 충전바 게이지 리셋 — 사용한 아이템의 ItemManager 카운트를 0으로 (충전바가 비워짐)
+            ResetGauge(type);
+
             // 아이템 소모는 개별 아이템 스크립트의 ConsumeItem()에서 처리
-            // (여기서 중복 차감하면 2번 빠지는 버그 발생)
-            // 혹시 개별 스크립트가 ConsumeItem을 안 한 경우 대비 보정
             UpdateItemUI();
+
+            // ★ 새 독립 게이지 컨트롤러에 사용 알림
+            if (JewelsHexaPuzzle.UI.ItemGaugeController.Instance != null)
+                JewelsHexaPuzzle.UI.ItemGaugeController.Instance.OnItemUsed(type);
 
             // 상태 초기화
             activeItem = null;
@@ -530,7 +729,7 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
-        /// SSD - 한붓그리기 연결 제거
+        /// SSD - 라인 연결 제거
         /// </summary>
         private IEnumerator ExecuteSSD(HexBlock startBlock)
         {

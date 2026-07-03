@@ -6,1717 +6,1410 @@ using JewelsHexaPuzzle.Data;
 namespace JewelsHexaPuzzle.Managers
 {
     /// <summary>
-    /// 미션 1: 고블린 소탕 - Stage 1-10 데이터
-    ///
-    /// 레벨 디자인:
-    /// 고블린이 그리드 상단 빈 공간 3줄에서 포털을 통해 소환되고,
-    /// 매 턴 아래로 이동하며 블록을 공격해 "깨진 블록"으로 만든다.
-    /// 블록 낙하 시 고블린에게 충돌 데미지를 주어 제거하는 미션.
-    ///
-    /// 난이도 곡선:
-    /// Stage 1-2: 소환 0~1마리/턴, 제거 2~3마리 (⭐ 튜토리얼)
-    /// Stage 3-4: 소환 1~2마리/턴, 제거 4~5마리 (⭐ 초급)
-    /// Stage 5-6: 소환 1~2마리/턴, 제거 6~8마리 (⭐⭐ 중급)
-    /// Stage 7-8: 소환 1~3마리/턴, 제거 10~12마리 (⭐⭐ 중상)
-    /// Stage 9-10: 소환 2~4마리/턴, 제거 14~16마리 (⭐⭐⭐ 상급)
-    ///
-    /// 모든 스테이지 턴 제한: 15턴
+    /// 미션 1: 고블린 소탕 - Stage 1~100 데이터
+    /// 설계 원칙:
+    ///   - 미션 리스트 3~15개 (순차 소환)
+    ///   - 미션당 수량: 기본 몬스터(몽둥이/갑옷) 2~12, 특수 몬스터 1~3
+    ///   - 1~3종 타입을 적절히 섞어 구성
+    ///   - 동시 활성 미션 최대 4개 (MAX_ACTIVE_MISSIONS=4)
+    ///   - 점진적 난이도 상승 + 변칙 레벨 (짧은 리스트/높은 수량)
     /// </summary>
     public static class Mission1StageData
     {
+        // 헬퍼 — 미션 데이터 생성 간소화
+        private static MissionData M(EnemyType enemy, int count, string desc)
+        {
+            return new MissionData
+            {
+                type = MissionType.RemoveEnemy,
+                targetEnemyType = enemy,
+                targetCount = count,
+                description = desc
+            };
+        }
+
+        // 블록 수집 미션 헬퍼
+        private static MissionData Collect(GemType gem, int n, string desc) => new MissionData
+        {
+            type = MissionType.CollectGem,
+            targetGemType = gem,
+            targetCount = n,
+            description = desc
+        };
+        private static MissionData RedBlock(int n) => Collect(GemType.Red, n, $"빨간 블록 {n}개 정화");
+        private static MissionData GreenBlock(int n) => Collect(GemType.Green, n, $"초록 블록 {n}개 정화");
+
+        // 흙더미 제거 미션 헬퍼
+        private static MissionData Dirt(int n) => new MissionData
+        {
+            type = MissionType.RemoveDirtMound,
+            targetCount = n,
+            description = $"흙더미 {n}개 제거"
+        };
+
+        // 약칭
+        private static MissionData G(int n) => M(EnemyType.Goblin, n, $"고블린 {n}마리 처치");
+        private static MissionData A(int n) => M(EnemyType.ArmoredGoblin, n, $"갑옷 고블린 {n}마리 처치");
+        private static MissionData R(int n) => M(EnemyType.ArcherGoblin, n, $"활 고블린 {n}마리 처치");
+        private static MissionData S(int n) => M(EnemyType.ShieldGoblin, n, $"방패 고블린 {n}마리 처치");
+        private static MissionData B(int n) => M(EnemyType.BombGoblin, n, $"폭탄 고블린 {n}마리 처치");
+        private static MissionData H(int n) => M(EnemyType.HealerGoblin, n, $"힐러 고블린 {n}마리 처치");
+        private static MissionData V(int n) => M(EnemyType.HeavyGoblin, n, $"헤비 고블린 {n}마리 처치");
+        private static MissionData W(int n) => M(EnemyType.WizardGoblin, n, $"마법사 고블린 {n}마리 처치");
+        private static MissionData T(int n) => M(EnemyType.ThiefGoblin, n, $"도둑 고블린 {n}마리 처치");
+        private static MissionData Wi(int n) => M(EnemyType.WitchGoblin, n, $"마녀 고블린 {n}마리 처치");
+
+        // Lv2 약칭
+        private static MissionData G2(int n) => M(EnemyType.GoblinLv2, n, $"엘리트 고블린 {n}마리 처치");
+        private static MissionData A2(int n) => M(EnemyType.ArmoredGoblinLv2, n, $"엘리트 갑옷 {n}마리 처치");
+        private static MissionData R2(int n) => M(EnemyType.ArcherGoblinLv2, n, $"엘리트 궁수 {n}마리 처치");
+        private static MissionData S2(int n) => M(EnemyType.ShieldGoblinLv2, n, $"엘리트 방패 {n}마리 처치");
+
         /// <summary>
         /// 모든 미션 1 스테이지 데이터 반환
         /// </summary>
         public static Dictionary<int, StageData> GetAllMission1Stages()
         {
-            return new Dictionary<int, StageData>
+            var stages = new Dictionary<int, StageData>();
+            for (int i = 1; i <= 150; i++)
+                stages[i] = GetStage(i);
+            return stages;
+        }
+
+        private static StageData GetStage(int n)
+        {
+            switch (n)
             {
-                { 1, GetStage1() },
-                { 2, GetStage2() },
-                { 3, GetStage3() },
-                { 4, GetStage4() },
-                { 5, GetStage5() },
-                { 6, GetStage6() },
-                { 7, GetStage7() },
-                { 8, GetStage8() },
-                { 9, GetStage9() },
-                { 10, GetStage10() },
-                { 11, GetStage11() },
-                { 12, GetStage12() },
-                { 13, GetStage13() },
-                { 14, GetStage14() },
-                { 15, GetStage15() },
-                { 16, GetStage16() },
-                { 17, GetStage17() },
-                { 18, GetStage18() },
-                { 19, GetStage19() },
-                { 20, GetStage20() },
-                { 21, GetStage21() },
-                { 22, GetStage22() },
-                { 23, GetStage23() },
-                { 24, GetStage24() },
-                { 25, GetStage25() },
-                { 26, GetStage26() },
-                { 27, GetStage27() },
-                { 28, GetStage28() },
-                { 29, GetStage29() },
-                { 30, GetStage30() }
+                case 1: return GetStage1();
+                case 2: return GetStage2();
+                case 3: return GetStage3();
+                case 4: return GetStage4();
+                case 5: return GetStage5();
+                case 6: return GetStage6();
+                case 7: return GetStage7();
+                case 8: return GetStage8();
+                case 9: return GetStage9();
+                case 10: return GetStage10();
+                case 11: return GetStage11();
+                case 12: return GetStage12();
+                case 13: return GetStage13();
+                case 14: return GetStage14();
+                case 15: return GetStage15();
+                case 16: return GetStage16();
+                case 17: return GetStage17();
+                case 18: return GetStage18();
+                case 19: return GetStage19();
+                case 20: return GetStage20();
+                case 21: return GetStage21();
+                case 22: return GetStage22();
+                case 23: return GetStage23();
+                case 24: return GetStage24();
+                case 25: return GetStage25();
+                case 26: return GetStage26();
+                case 27: return GetStage27();
+                case 28: return GetStage28();
+                case 29: return GetStage29();
+                case 30: return GetStage30();
+                case 31: return GetStage31();
+                case 32: return GetStage32();
+                case 33: return GetStage33();
+                case 34: return GetStage34();
+                case 35: return GetStage35();
+                case 36: return GetStage36();
+                case 37: return GetStage37();
+                case 38: return GetStage38();
+                case 39: return GetStage39();
+                case 40: return GetStage40();
+                case 41: return GetStage41();
+                case 42: return GetStage42();
+                case 43: return GetStage43();
+                case 44: return GetStage44();
+                case 45: return GetStage45();
+                case 46: return GetStage46();
+                case 47: return GetStage47();
+                case 48: return GetStage48();
+                case 49: return GetStage49();
+                case 50: return GetStage50();
+                case 51: return GetStage51();
+                case 52: return GetStage52();
+                case 53: return GetStage53();
+                case 54: return GetStage54();
+                case 55: return GetStage55();
+                case 56: return GetStage56();
+                case 57: return GetStage57();
+                case 58: return GetStage58();
+                case 59: return GetStage59();
+                case 60: return GetStage60();
+                case 61: return GetStage61();
+                case 62: return GetStage62();
+                case 63: return GetStage63();
+                case 64: return GetStage64();
+                case 65: return GetStage65();
+                case 66: return GetStage66();
+                case 67: return GetStage67();
+                case 68: return GetStage68();
+                case 69: return GetStage69();
+                case 70: return GetStage70();
+                case 71: return GetStage71();
+                case 72: return GetStage72();
+                case 73: return GetStage73();
+                case 74: return GetStage74();
+                case 75: return GetStage75();
+                case 76: return GetStage76();
+                case 77: return GetStage77();
+                case 78: return GetStage78();
+                case 79: return GetStage79();
+                case 80: return GetStage80();
+                case 81: return GetStage81();
+                case 82: return GetStage82();
+                case 83: return GetStage83();
+                case 84: return GetStage84();
+                case 85: return GetStage85();
+                case 86: return GetStage86();
+                case 87: return GetStage87();
+                case 88: return GetStage88();
+                case 89: return GetStage89();
+                case 90: return GetStage90();
+                case 91: return GetStage91();
+                case 92: return GetStage92();
+                case 93: return GetStage93();
+                case 94: return GetStage94();
+                case 95: return GetStage95();
+                case 96: return GetStage96();
+                case 97: return GetStage97();
+                case 98: return GetStage98();
+                case 99: return GetStage99();
+                case 100: return GetStage100();
+                // === 엘리트 전장 (101-150) — Lv2 몬스터 등장 ===
+                case 101: return GetStage101();
+                case 102: return GetStage102();
+                case 103: return GetStage103();
+                case 104: return GetStage104();
+                case 105: return GetStage105();
+                case 106: return GetStage106();
+                case 107: return GetStage107();
+                case 108: return GetStage108();
+                case 109: return GetStage109();
+                case 110: return GetStage110();
+                case 111: return GetStage111();
+                case 112: return GetStage112();
+                case 113: return GetStage113();
+                case 114: return GetStage114();
+                case 115: return GetStage115();
+                case 116: return GetStage116();
+                case 117: return GetStage117();
+                case 118: return GetStage118();
+                case 119: return GetStage119();
+                case 120: return GetStage120();
+                case 121: return GetStage121();
+                case 122: return GetStage122();
+                case 123: return GetStage123();
+                case 124: return GetStage124();
+                case 125: return GetStage125();
+                case 126: return GetStage126();
+                case 127: return GetStage127();
+                case 128: return GetStage128();
+                case 129: return GetStage129();
+                case 130: return GetStage130();
+                case 131: return GetStage131();
+                case 132: return GetStage132();
+                case 133: return GetStage133();
+                case 134: return GetStage134();
+                case 135: return GetStage135();
+                case 136: return GetStage136();
+                case 137: return GetStage137();
+                case 138: return GetStage138();
+                case 139: return GetStage139();
+                case 140: return GetStage140();
+                case 141: return GetStage141();
+                case 142: return GetStage142();
+                case 143: return GetStage143();
+                case 144: return GetStage144();
+                case 145: return GetStage145();
+                case 146: return GetStage146();
+                case 147: return GetStage147();
+                case 148: return GetStage148();
+                case 149: return GetStage149();
+                case 150: return GetStage150();
+                default: return GetStage1();
+            }
+        }
+
+        // 스테이지 생성 헬퍼
+        private static StageData Stg(int num, int ch, string chName, int turns, int diff, MissionData[] missions, StoryData story = null, int maxActive = 0)
+        {
+            return new StageData
+            {
+                stageNumber = num,
+                chapterNumber = ch,
+                chapterName = chName,
+                turnLimit = turns,
+                difficulty = diff,
+                missions = missions,
+                enemyPlacements = new EnemyPlacement[0],
+                fixedBlockPlacements = new EnemyPlacement[0],
+                storyData = story,
+                tutorialFlags = new TutorialFlag[0],
+                maxActiveMissions = maxActive
             };
         }
 
         // ============================================================
-        // Stage 1: 고블린 소개 - 고블린 6마리 제거
+        // Chapter 1: 크리스탈 숲 (1-10) — 고블린만
+        // 대기 미션 없이 단일 미션 구성 — 점진적 수량 증가
         // ============================================================
+
         private static StageData GetStage1()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 1,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 15,
-                difficulty = 1,
-                missions = new[]
+            // ★ Stage 1 (2026-04-24 재설계): 몬스터 없음, 블록 매칭 튜토리얼 집중
+            //   Mission 1: 빨간 블록 10개 정화 → Mission 2: 초록 블록 10개 정화
+            //   maxActive: 1 → 미션 1 완료 후 미션 2로 순차 진행
+            return Stg(1, 1, "크리스탈 숲", 15, 1,
+                new[] { RedBlock(10), GreenBlock(10) },
+                new StoryData
                 {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 6,
-                        description = "고블린 6마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    chapterIntroduction = "루나가 크리스탈 숲에 발을 디딘다.",
-                    beforeStageCutscene = "숲 속에서 이상한 소리가 들린다...\n프리즘: \"저기 봐! 녹색 괴물들이 나타나고 있어!\"",
+                    chapterIntroduction = "루나가 정령섬의 엘프마을에 도착한다.",
+                    beforeStageCutscene = "마을의 정령 블록이 빨강과 초록 두 가지 색으로 빛나고 있다.",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"저건 고블린이다. 블록을 공격해서 금간 블록으로 만들어 버리지.\"",
-                        "오라클리온: \"블록을 낙하시켜 고블린에게 충돌 데미지를 줄 수 있단다.\"",
-                        "루나: \"알겠어요! 블록을 떨어뜨려서 고블린을 처치할게요!\""
+                        "엘라시온: \"블록 3개를 삼각형으로 맞추면 정화할 수 있어.\"",
+                        "엘라시온: \"한 번 탭하면 120도, 두 번 탭하면 240도, 세 번 탭하면 원위치!\"",
+                        "루나: \"360도 돌아오면 이동 횟수가 소모되지 않는군요!\""
                     },
                     stageClearDialogues = new[]
                     {
-                        "오라클리온: \"훌륭하군! 고블린을 물리치는 법을 잘 익혔구나.\""
+                        "엘라시온: \"훌륭하군! 회전의 기본을 잘 익혔구나.\""
                     }
                 },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 2: 고블린 9마리 제거
-        // ============================================================
         private static StageData GetStage2()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 2,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 17,
-                difficulty = 1,
-                missions = new[]
+            // ★ Stage 2 (2026-04-27 재설계): 흙더미 학습 — 외곽 12블록 흙더미 정화 미션
+            //   필드 반경 2 (19블록) + 소환 2줄 + 외곽 12개 흙더미 제거
+            //   몽둥이 고블린은 등장하지만 미션 카운트 없음 (처치 보너스만)
+            return Stg(2, 1, "크리스탈 숲", 13, 1,
+                new[] { Dirt(12) },
+                new StoryData
                 {
-                    new MissionData
+                    chapterIntroduction = "엘프마을 입구에 고블린이 등장한다!",
+                    beforeStageCutscene = "프리즘: \"어! 저기 고블린이 나타났어요!\"",
+                    stageIntroDialogues = new[]
                     {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 9,
-                        description = "고블린 9마리 제거"
+                        "엘라시온: \"몽둥이를 든 고블린이다. 블록을 낙하시켜 처치해 보자.\"",
+                        "엘라시온: \"위에서 떨어지는 블록이 고블린을 지나가면 데미지를 줘.\"",
+                        "루나: \"블록을 매칭해서 낙하를 유도하면 되겠네요!\""
+                    },
+                    stageClearDialogues = new[]
+                    {
+                        "엘라시온: \"훌륭해! 고블린 처치 기본을 익혔구나.\""
                     }
                 },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = null,
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 3: 고블린 12마리 제거
-        // ============================================================
         private static StageData GetStage3()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 3,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 18,
-                difficulty = 1,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 12,
-                        description = "고블린 12마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = null,
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // ★ Stage 3 (2026-04-27 재설계): 반경 2 필드 + 몽둥이 고블린 2→3 순차 웨이브
+            //   maxActive: 1 → 첫 미션 (2마리) 클리어 후 두번째 미션 (3마리) 활성화
+            return Stg(3, 1, "크리스탈 숲", 12, 1,
+                new[] { G(2), G(3) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 4: 고블린 15마리 제거
-        // ============================================================
         private static StageData GetStage4()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 4,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 20,
-                difficulty = 1,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 15,
-                        description = "고블린 15마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나가 더 깊은 숲으로 진입한다.\n오라클리온: \"고블린의 수가 점점 늘어나고 있구나.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"루나, 조심해! 고블린이 더 많이 나타나고 있어!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"루나, 또 해냈어!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(4, 1, "크리스탈 숲", 16, 1,
+                new[] { G(9) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 5: 고블린 18마리 제거
-        // ============================================================
         private static StageData GetStage5()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 5,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 22,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 18,
-                        description = "고블린 18마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나: \"고블린들이 점점 더 몰려오네요.\"\n오라클리온: \"침착하게, 블록을 효율적으로 낙하시켜라.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"루나는 할 수 있어! 이겨내!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"좋아. 계속 진행하자.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(5, 1, "크리스탈 숲", 19, 1,
+                new[] { G(11) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 6: 고블린 24마리 제거
-        // ============================================================
         private static StageData GetStage6()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 6,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 23,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 18,
-                        description = "몽둥이 고블린 18마리 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 4,
-                        description = "갑옷 고블린 4마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나가 숲의 더 깊숙한 곳으로 진입한다.\n프리즘: \"고블린 대장이 부하들을 더 보내고 있어! 갑옷을 입은 고블린도 보여!\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"갑옷 고블린은 체력이 높다. 자신감을 잃지 말고 차근차근 제거하거라.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"좋아. 계속이다.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(6, 1, "크리스탈 숲", 20, 1,
+                new[] { G(12) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 7: 고블린 30마리 제거
-        // ============================================================
         private static StageData GetStage7()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 7,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 25,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 19,
-                        description = "몽둥이 고블린 19마리 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 7,
-                        description = "갑옷 고블린 7마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"고블린의 공세가 더 거세지고 있다.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"루나, 계속 해내고 있어!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(7, 1, "크리스탈 숲", 21, 1,
+                new[] { G(12) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 8: 고블린 36마리 제거
-        // ============================================================
         private static StageData GetStage8()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 8,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 27,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 21,
-                        description = "몽둥이 고블린 21마리 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 10,
-                        description = "갑옷 고블린 10마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"거의 다 왔다.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "루나: \"거의 끝이 보이네요!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(8, 1, "크리스탈 숲", 21, 1,
+                new[] { G(12) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 9: 고블린 42마리 제거
-        // ============================================================
         private static StageData GetStage9()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 9,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 28,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 22,
-                        description = "몽둥이 고블린 22마리 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 14,
-                        description = "갑옷 고블린 14마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나가 숲의 깊은 곳에 도달한다.\n거대한 고블린 무리가 모습을 드러낸다!",
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"와, 고블린이 엄청 많아! 갑옷 고블린도 잔뜩이야!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"대단하다, 루나! 이제 마지막 시험만 남았구나.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(9, 1, "크리스탈 숲", 22, 1,
+                new[] { G(13) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 10: 챕터 1 보스 - 고블린 48마리 제거
-        // ============================================================
+        // 챕터 보스
         private static StageData GetStage10()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 10,
-                chapterNumber = 1,
-                chapterName = "크리스탈 숲",
-                turnLimit = 30,
-                difficulty = 3,
-                isBossStage = true,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 22,
-                        description = "몽둥이 고블린 22마리 제거"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 18,
-                        description = "갑옷 고블린 18마리 제거"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나가 크리스탈 숲의 중심에 도달한다.\n거대한 고블린 대장이 몽둥이를 휘두르며 나타난다!\n프리즘: \"저게 고블린 대장인가 봐! 부하들이 끝없이 밀려와!\"\n루나: \"지금까지 배운 모든 것을 써야겠어요!\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"루나, 마지막 시험이다. 고블린 무리를 소탕하거라.\"",
-                        "오라클리온: \"블록을 매칭시켜 낙하를 만들어 고블린을 쓰러뜨려라!\"",
-                        "루나: \"알겠습니다! 꼭 해내겠어요!\""
-                    },
-                    stageClearCutscene = "고블린 대장이 쓰러지며 나머지 고블린들이 달아난다.\n크리스탈 숲이 다시 평화를 되찾는다.\n루나가 숨을 고른다.\n루나: \"해냈어요! 고블린들을 모두 물리쳤어요!\"\n프리즘: \"우와! 루나, 정말 멋있었어!\"\n오라클리온: \"훌륭하군, 루나. 이제 넌 진정한 크리스탈 수호자의 길을 시작했다.\"",
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"이제 사파이어 호수로 나아가자. 더 큰 도전이 기다리고 있다.\"",
-                        "루나: \"네, 준비됐어요!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0],
-                rewards = new RewardData
-                {
-                    baseExperience = 150,
-                    comboReward = 50,
-                    perfectClearReward = 100,
-                    badgeReward = "크리스탈 숲의 수호자"
-                }
-            };
-
-            return stage;
+            return Stg(10, 1, "크리스탈 숲", 23, 2,
+                new[] { G(15) },
+                maxActive: 1);
         }
 
         // ============================================================
-        // Stage 11: 활 고블린 첫 등장 — 활 2마리(HP2) + 소규모 3종 혼합 입문
-        // 턴 22 | 몽둥이 8 + 갑옷 4 + 활 2(HP2)
+        // Chapter 2: 안개의 골짜기 (11-20) — 고블린 + 갑옷
+        // 갑옷 첫 등장, 2종 조합으로 다양성 확보
+        // maxActive=2 (2종 동시 표시), 후반부터 3~4 혼합
         // ============================================================
+
         private static StageData GetStage11()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 11,
-                chapterNumber = 2,
-                chapterName = "사파이어 호수",
-                turnLimit = 22,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 2,
-                        description = "활 고블린 2마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 8,
-                        description = "고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 4,
-                        description = "갑옷 고블린 4마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "프리즘: \"저기... 저 고블린들은 활을 들고 있어!\"\n오라클리온: \"활 고블린이다. 멀리서 화살을 쏴 블록을 금간 블록으로 만들지.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"활 고블린은 위에서 움직이지 않고 화살을 쏜다. 드론이나 드릴로 처치해야 한다.\"",
-                        "루나: \"낙하 블록으로는 안 되나요?\"\n오라클리온: \"안타깝지만 그렇다. 신중하게 특수 블록을 활용하렴.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"잘했다! 활 고블린의 약점을 잘 파악했구나.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // ★ tut_swap 튜토리얼 진행 — 갑옷 첫 등장은 Stage 12로 이동(중복 방지)
+            //   몽둥이만 등장하여 스왑 학습에 집중
+            return Stg(11, 2, "안개의 골짜기", 14, 1,
+                new[] { G(7) });
         }
 
-        // ============================================================
-        // Stage 12: 활 2마리(HP2) 유지 + 갑옷 비율 증가 — 적응기
-        // 턴 25 | 몽둥이 10 + 갑옷 7 + 활 2(HP2)
-        // ============================================================
         private static StageData GetStage12()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 12,
-                chapterNumber = 2,
-                chapterName = "사파이어 호수",
-                turnLimit = 25,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 2,
-                        description = "활 고블린 2마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 10,
-                        description = "고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 7,
-                        description = "갑옷 고블린 7마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "루나: \"고블린 무리가 점점 더 많아지고 있어요!\"\n오라클리온: \"침착하게 특수 블록을 활용하렴.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"루나 실력이 정말 늘었어!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 갑옷 첫 등장 (Stage 11에서 이동) — 갑옷 hint가 자연스럽게 발동
+            return Stg(12, 2, "안개의 골짜기", 15, 1,
+                new[] { A(2), G(4), A(3) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 13: 활 3마리(HP3) — 활 HP 첫 강화 + 갑옷 증가
-        // 턴 28 | 몽둥이 12 + 갑옷 9 + 활 3(HP3)
-        // ============================================================
         private static StageData GetStage13()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 13,
-                chapterNumber = 2,
-                chapterName = "사파이어 호수",
-                turnLimit = 28,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 3,
-                        description = "활 고블린 3마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 12,
-                        description = "고블린 12마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 9,
-                        description = "갑옷 고블린 9마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"고블린 궁수들이 더 강해졌다. 화살을 3번은 맞아야 쓰러진다.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "루나: \"점점 어려워지지만 해낼 수 있어요!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 동시 2종
+            return Stg(13, 2, "안개의 골짜기", 18, 1,
+                new[] { G(6), A(4) });
         }
 
-        // ============================================================
-        // Stage 14: 활 3마리(HP3) + 대규모 군단 — 갑옷 주력 상급
-        // 턴 32 | 몽둥이 14 + 갑옷 12 + 활 3(HP3)
-        // ============================================================
         private static StageData GetStage14()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 14,
-                chapterNumber = 2,
-                chapterName = "사파이어 호수",
-                turnLimit = 32,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 3,
-                        description = "활 고블린 3마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 14,
-                        description = "고블린 14마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 12,
-                        description = "갑옷 고블린 12마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"갑옷 고블린이 더 많아졌어! 조심해 루나!\"\n루나: \"걱정 마, 특수 블록으로 해결할 수 있어!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"강해졌구나. 이제 마지막 관문이 남았다.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 4웨이브 교차: 갑옷-몽둥이 번갈아
+            return Stg(14, 2, "안개의 골짜기", 21, 1,
+                new[] { A(2), G(3), A(3), G(4) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 15: 챕터 2 보스 — 활 4마리(HP4) + 최대 규모 군단
-        // 턴 35 | 몽둥이 15 + 갑옷 15 + 활 4(HP4)
-        // ============================================================
+        // 변칙 — 갑옷 집중
         private static StageData GetStage15()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 15,
-                chapterNumber = 2,
-                chapterName = "사파이어 호수",
-                turnLimit = 35,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 4,
-                        description = "활 고블린 4마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 15,
-                        description = "고블린 15마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 15,
-                        description = "갑옷 고블린 15마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "오라클리온: \"이곳은 사파이어 호수의 심장부다. 고블린 군단장이 기다리고 있다.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "루나: \"모든 힘을 다해 싸울게요!\"\n프리즘: \"우리가 함께라면 해낼 수 있어!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"대단하구나! 사파이어 호수를 해방시켰다!\"\n루나: \"이제 다음 모험이 기다리고 있겠죠?\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(15, 2, "안개의 골짜기", 15, 1,
+                new[] { A(5), G(3) });
         }
 
-        // ============================================================
-        // Stage 16: 방패 고블린 등장 — 방패3 + 갑옷8 + 궁수2 + 기본12
-        // 턴 30 | 챕터 3: 철벽 요새
-        // ============================================================
         private static StageData GetStage16()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 16,
-                chapterNumber = 3,
-                chapterName = "철벽 요새",
-                turnLimit = 30,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 3,
-                        description = "방패 고블린 3마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 12,
-                        description = "고블린 12마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "루나: \"저 고블린... 방패를 들고 있어!\"\n프리즘: \"드릴이 통하지 않을 수도 있어. 조심해!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "루나: \"방패도 결국 깨지는구나!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 5웨이브 순차 소환
+            return Stg(16, 2, "안개의 골짜기", 22, 1,
+                new[] { G(3), A(2), G(3), A(2), G(3) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 17: 방패+갑옷 혼합 — 방패4 + 갑옷10 + 궁수3 + 기본13
-        // 턴 33
-        // ============================================================
         private static StageData GetStage17()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 17,
-                chapterNumber = 3,
-                chapterName = "철벽 요새",
-                turnLimit = 33,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 4,
-                        description = "방패 고블린 4마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 10,
-                        description = "갑옷 고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 13,
-                        description = "고블린 13마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"방패 고블린과 갑옷 고블린이 함께 오고 있어!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "루나: \"점점 강해지고 있는 것 같아!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 동시 2종, 대규모
+            return Stg(17, 2, "안개의 골짜기", 20, 2,
+                new[] { G(8), A(5) });
         }
 
-        // ============================================================
-        // Stage 18: 대규모 혼합 — 방패6 + 갑옷12 + 궁수4 + 기본14
-        // 턴 36
-        // ============================================================
         private static StageData GetStage18()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 18,
-                chapterNumber = 3,
-                chapterName = "철벽 요새",
-                turnLimit = 36,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 6,
-                        description = "방패 고블린 6마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 12,
-                        description = "갑옷 고블린 12마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"요새의 방어가 점점 강해지고 있다. 침착하게 대응하거라.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"거의 다 왔어! 요새의 핵심이 코앞이야!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 4웨이브 강도 상승형
+            return Stg(18, 2, "안개의 골짜기", 21, 2,
+                new[] { G(2), A(3), G(4), A(5) },
+                maxActive: 1);
         }
 
-        // ============================================================
-        // Stage 19: 강화 혼합 — 방패8 + 갑옷14 + 궁수4 + 기본16
-        // 턴 40
-        // ============================================================
         private static StageData GetStage19()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 19,
-                chapterNumber = 3,
-                chapterName = "철벽 요새",
-                turnLimit = 40,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 8,
-                        description = "방패 고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 16,
-                        description = "고블린 16마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 14,
-                        description = "갑옷 고블린 14마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "루나: \"여기서 포기할 수 없어! 끝까지 가보자!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"놀라운 성장이다. 최후의 관문만 남았구나.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // 변칙 — 갑옷 대량
+            return Stg(19, 2, "안개의 골짜기", 18, 2,
+                new[] { A(6), G(5) });
         }
 
-        // ============================================================
-        // Stage 20: 챕터 3 보스 — 방패10 + 갑옷15 + 궁수5 + 기본18
-        // 턴 45 | 최대 규모 전투
-        // ============================================================
+        // 챕터 보스 — 동시 2종 대규모
         private static StageData GetStage20()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 20,
-                chapterNumber = 3,
-                chapterName = "철벽 요새",
-                turnLimit = 45,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 10,
-                        description = "방패 고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 15,
-                        description = "갑옷 고블린 15마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 5,
-                        description = "활 고블린 5마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "오라클리온: \"철벽 요새의 최심부다. 고블린 대장군이 모든 병력을 동원했다.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "루나: \"모든 것을 쏟아붓겠어!\"\n프리즘: \"함께라면 어떤 방패도 뚫을 수 있어!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"철벽 요새를 함락시켰다! 정말 대단하구나!\"\n루나: \"다음엔 어떤 모험이 기다리고 있을까?\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(20, 2, "안개의 골짜기", 23, 2,
+                new[] { G(7), A(8) });
         }
-        // ============================================================
-        // 챕터 4: 화산 심장 — 4종 몬스터 전체 혼합 (21~30)
-        // ============================================================
 
         // ============================================================
-        // Stage 21: 4종 혼합 입문 — 기본10 + 갑옷8 + 궁수3 + 방패4 = 25
-        // 턴 32
+        // Chapter 3: 화산 심장 (21-30) — + 궁수, 방패
+        // 기본 4~7, 궁수/방패 2~3, 리스트 3~5
         // ============================================================
+
         private static StageData GetStage21()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 21,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 32,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 10,
-                        description = "고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 8,
-                        description = "갑옷 고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 3,
-                        description = "활 고블린 3마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 4,
-                        description = "방패 고블린 4마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    chapterIntroduction = "루나가 화산 심장부로 향한다.",
-                    beforeStageCutscene = "프리즘: \"여기 열기가 장난이 아니야!\"\n오라클리온: \"화산 심장부다. 고블린 사천왕이 모든 병종을 동원했다.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"이제 모든 유형의 고블린이 동시에 나타난다. 전략적으로 대응하거라.\"",
-                        "루나: \"지금까지 배운 모든 것을 활용할게요!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"좋아. 4종 혼합 전투에 잘 적응했구나.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(21, 3, "화산 심장", 18, 1,
+                new[] { G(5), R(2), A(3) });
         }
 
-        // ============================================================
-        // Stage 22: 궁수 강화 — 기본12 + 갑옷10 + 궁수5 + 방패5 = 32
-        // 턴 35
-        // ============================================================
         private static StageData GetStage22()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 22,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 35,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 12,
-                        description = "고블린 12마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 10,
-                        description = "갑옷 고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 5,
-                        description = "활 고블린 5마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 5,
-                        description = "방패 고블린 5마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"활 고블린이 더 많아졌어! 뒤에서 계속 쏘고 있어!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "루나: \"궁수들도 문제없어!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(22, 3, "화산 심장", 19, 1,
+                new[] { R(3), G(6), A(2) });  // R2+R1 합산
         }
 
-        // ============================================================
-        // Stage 23: 방패 요새 — 기본8 + 갑옷12 + 궁수4 + 방패8 = 32
-        // 턴 37 | 방패 비율 급증
-        // ============================================================
         private static StageData GetStage23()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 23,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 37,
-                difficulty = 2,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 8,
-                        description = "방패 고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 12,
-                        description = "갑옷 고블린 12마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 8,
-                        description = "고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 4,
-                        description = "활 고블린 4마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"방패 고블린이 전면에 나섰다. 드론으로 직접 타격해야 한다.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"방패를 이렇게 많이 부수다니, 대단해!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            // ★ tut_targetlaser 튜토리얼 진행 — 방패 첫 등장은 Stage 24로 이동(중복 방지)
+            //   타겟 레이저 학습에 집중하도록 방패 제외, 기존 종류만 등장
+            return Stg(23, 3, "화산 심장", 23, 1,
+                new[] { A(4), R(2), G(7) });
         }
 
-        // ============================================================
-        // Stage 24: 궁수 대공세 — 기본14 + 갑옷8 + 궁수7 + 방패6 = 35
-        // 턴 38 | 궁수 최다 등장
-        // ============================================================
+        // 변칙 — 방패 첫 등장 (Stage 23에서 이동) — 방패 hint 자연 발동
         private static StageData GetStage24()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 24,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 38,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 7,
-                        description = "활 고블린 7마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 14,
-                        description = "고블린 14마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 8,
-                        description = "갑옷 고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 6,
-                        description = "방패 고블린 6마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"사방에서 화살이 날아와! 궁수들이 엄청 많아!\"\n루나: \"드릴과 드론으로 하나씩 처리할게!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"궁수 연대를 돌파했구나. 훌륭하다.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(24, 3, "화산 심장", 19, 1,
+                new[] { G(6), S(3), R(2) });
         }
 
-        // ============================================================
-        // Stage 25: 중간 보스 — 기본16 + 갑옷14 + 궁수6 + 방패8 = 44
-        // 턴 42 | 보스 스테이지
-        // ============================================================
+        // 스토리 스테이지
         private static StageData GetStage25()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 25,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 42,
-                difficulty = 3,
-                isBossStage = true,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 16,
-                        description = "고블린 16마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 14,
-                        description = "갑옷 고블린 14마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 6,
-                        description = "활 고블린 6마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 8,
-                        description = "방패 고블린 8마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
+            return Stg(25, 3, "화산 심장", 20, 2,
+                new[] { R(3), S(2), A(4), G(5) },
+                new StoryData
                 {
                     beforeStageCutscene = "루나가 화산의 중심부에 도달한다.\n거대한 용암 폭포 앞에 고블린 사천왕 중 하나가 서 있다!\n프리즘: \"저건... 화염 장군이야!\"",
                     stageIntroDialogues = new[]
                     {
-                        "오라클리온: \"화염 장군이 모든 병종을 이끌고 있다. 전력을 다해야 한다.\"",
+                        "엘라시온: \"화염 장군이 모든 병종을 이끌고 있다. 전력을 다해야 한다.\"",
                         "루나: \"여기서 물러설 순 없어요!\""
                     },
                     stageClearCutscene = "화염 장군이 쓰러지며 용암 폭포가 잠잠해진다.\n루나: \"하나 쓰러뜨렸어!\"\n프리즘: \"하지만 아직 더 깊은 곳에 더 강한 적이 있어...\"",
                     stageClearDialogues = new[]
                     {
-                        "오라클리온: \"잘 싸웠다. 하지만 진짜 시련은 이제부터다.\""
+                        "엘라시온: \"잘 싸웠다. 하지만 진짜 시련은 이제부터다.\""
                     }
-                },
-                tutorialFlags = new TutorialFlag[0],
-                rewards = new RewardData
-                {
-                    baseExperience = 200,
-                    comboReward = 60,
-                    perfectClearReward = 120,
-                    badgeReward = "화염 장군 격파"
-                }
-            };
-
-            return stage;
+                });
         }
 
-        // ============================================================
-        // Stage 26: 갑옷 탱커 — 기본10 + 갑옷18 + 궁수5 + 방패7 = 40
-        // 턴 40 | 갑옷 주력
-        // ============================================================
         private static StageData GetStage26()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 26,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 40,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 18,
-                        description = "갑옷 고블린 18마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 10,
-                        description = "고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 7,
-                        description = "방패 고블린 7마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 5,
-                        description = "활 고블린 5마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"갑옷 고블린이 벽처럼 밀려온다! 체력이 장난 아니야!\"\n오라클리온: \"폭탄과 드릴을 적극 활용하거라.\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "루나: \"아무리 단단해도 결국 무너지는 법이지!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(26, 3, "화산 심장", 20, 2,
+                new[] { S(2), G(6), R(2), A(3) });
         }
 
-        // ============================================================
-        // Stage 27: 방패+궁수 연합 — 기본12 + 갑옷12 + 궁수6 + 방패10 = 40
-        // 턴 42 | 방패 대거 투입
-        // ============================================================
         private static StageData GetStage27()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 27,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 42,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 10,
-                        description = "방패 고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 12,
-                        description = "고블린 12마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 12,
-                        description = "갑옷 고블린 12마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 6,
-                        description = "활 고블린 6마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "오라클리온: \"방패병이 전면을 막고 궁수가 후방에서 지원한다. 최악의 조합이다.\"",
-                        "루나: \"드론으로 방패를 먼저 부수고, 드릴로 궁수를 노릴게요!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "프리즘: \"완벽한 전략이었어!\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(27, 3, "화산 심장", 20, 2,
+                new[] { A(5), S(2), R(2), G(4) });
         }
 
-        // ============================================================
-        // Stage 28: 궁수+갑옷 연합 — 기본14 + 갑옷14 + 궁수8 + 방패8 = 44
-        // 턴 44 | 궁수 최대 + 균형 편성
-        // ============================================================
+        // 변칙 — 짧은 리스트, 높은 수량
         private static StageData GetStage28()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 28,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 44,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 14,
-                        description = "고블린 14마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 14,
-                        description = "갑옷 고블린 14마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 8,
-                        description = "활 고블린 8마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 8,
-                        description = "방패 고블린 8마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    stageIntroDialogues = new[]
-                    {
-                        "프리즘: \"모든 종류의 고블린이 균형 있게 나온다! 방심하면 안 돼!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"이 정도 전투를 해내다니, 놀랍구나.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(28, 3, "화산 심장", 21, 2,
+                new[] { G(8), S(3), R(3) });
         }
 
-        // ============================================================
-        // Stage 29: 최강 군단 — 기본16 + 갑옷16 + 궁수7 + 방패10 = 49
-        // 턴 48 | 최대 규모
-        // ============================================================
         private static StageData GetStage29()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 29,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 48,
-                difficulty = 3,
-                missions = new[]
-                {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 16,
-                        description = "고블린 16마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 16,
-                        description = "갑옷 고블린 16마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 10,
-                        description = "방패 고블린 10마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 7,
-                        description = "활 고블린 7마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "화산 깊은 곳에서 땅이 울린다.\n오라클리온: \"마왕의 친위대다. 최정예 고블린 군단이 모두 집결했다.\"",
-                    stageIntroDialogues = new[]
-                    {
-                        "루나: \"이 많은 고블린을... 해낼 수 있을까?\"\n프리즘: \"지금까지 해온 것처럼 하면 돼!\""
-                    },
-                    stageClearDialogues = new[]
-                    {
-                        "오라클리온: \"놀랍다... 최강 군단을 격파했다. 이제 마지막 관문뿐이다.\""
-                    }
-                },
-                tutorialFlags = new TutorialFlag[0]
-            };
-
-            return stage;
+            return Stg(29, 3, "화산 심장", 24, 2,
+                new[] { R(3), S(2), A(4), G(5), R(2) });
         }
 
-        // ============================================================
-        // Stage 30: 최종 보스 — 기본18 + 갑옷18 + 궁수8 + 방패12 = 56
-        // 턴 52 | 챕터 4 보스
-        // ============================================================
+        // 챕터 보스 — 스토리
         private static StageData GetStage30()
         {
-            StageData stage = new StageData
-            {
-                stageNumber = 30,
-                chapterNumber = 4,
-                chapterName = "화산 심장",
-                turnLimit = 52,
-                difficulty = 3,
-                isBossStage = true,
-                missions = new[]
+            return Stg(30, 3, "화산 심장", 25, 2,
+                new[] { S(3), R(3), A(5), G(6) },
+                new StoryData
                 {
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.Goblin,
-                        targetCount = 18,
-                        description = "고블린 18마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArmoredGoblin,
-                        targetCount = 18,
-                        description = "갑옷 고블린 18마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ShieldGoblin,
-                        targetCount = 12,
-                        description = "방패 고블린 12마리 처치"
-                    },
-                    new MissionData
-                    {
-                        type = MissionType.RemoveEnemy,
-                        targetEnemyType = EnemyType.ArcherGoblin,
-                        targetCount = 8,
-                        description = "활 고블린 8마리 처치"
-                    }
-                },
-                enemyPlacements = new EnemyPlacement[0],
-                fixedBlockPlacements = new EnemyPlacement[0],
-                storyData = new StoryData
-                {
-                    beforeStageCutscene = "루나가 화산의 최심부, 마그마 왕좌에 도달한다.\n거대한 마왕 고블린이 일어선다!\n프리즘: \"저건... 고블린 마왕이야!\"\n오라클리온: \"루나, 이것이 최후의 전투다. 모든 것을 걸어라!\"",
+                    beforeStageCutscene = "루나가 화산의 최심부, 마그마 왕좌에 도달한다.\n거대한 마왕 고블린이 일어선다!\n프리즘: \"저건... 고블린 마왕이야!\"\n엘라시온: \"루나, 이것이 최후의 전투다. 모든 것을 걸어라!\"",
                     stageIntroDialogues = new[]
                     {
                         "루나: \"여기까지 왔는데 물러설 순 없어! 모든 걸 쏟아붓겠어!\"\n프리즘: \"우리가 함께라면 이길 수 있어!\""
                     },
-                    stageClearCutscene = "고블린 마왕이 쓰러지며 화산이 잠잠해진다.\n마그마가 식으며 크리스탈이 피어오른다.\n루나: \"해냈어... 정말로 해냈어!\"\n프리즘: \"루나, 넌 정말 최고야!\"\n오라클리온: \"축하한다, 루나. 넌 진정한 크리스탈 수호자가 되었다.\"\n오라클리온: \"하지만 이것은 끝이 아니다. 새로운 모험이 너를 기다리고 있을 것이다...\"",
+                    stageClearCutscene = "고블린 마왕이 쓰러지며 화산이 잠잠해진다.\n마그마가 식으며 크리스탈이 피어오른다.\n루나: \"해냈어... 정말로 해냈어!\"\n프리즘: \"루나, 넌 정말 최고야!\"\n엘라시온: \"축하한다, 루나. 넌 진정한 크리스탈 수호자가 되었다.\"\n엘라시온: \"하지만 이것은 끝이 아니다. 새로운 모험이 너를 기다리고 있을 것이다...\"",
                     stageClearDialogues = new[]
                     {
-                        "루나: \"다음엔 어떤 모험이 기다리고 있을까요?\"\n오라클리온: \"그건 네가 직접 찾아가야 할 길이다, 수호자여.\""
+                        "루나: \"다음엔 어떤 모험이 기다리고 있을까요?\"\n엘라시온: \"그건 네가 직접 찾아가야 할 길이다, 수호자여.\""
                     }
-                },
-                tutorialFlags = new TutorialFlag[0],
-                rewards = new RewardData
-                {
-                    baseExperience = 300,
-                    comboReward = 80,
-                    perfectClearReward = 200,
-                    badgeReward = "화산 심장의 수호자"
-                }
-            };
+                });
+        }
 
-            return stage;
+        // ============================================================
+        // Chapter 4: 폭염의 화약고 (31-40) — + 폭탄
+        // 기본 4~8, 폭탄 2~3, 리스트 3~6
+        // ============================================================
+
+        private static StageData GetStage31()
+        {
+            return Stg(31, 4, "폭염의 화약고", 18, 1,
+                new[] { G(5), B(2), A(3) });
+        }
+
+        private static StageData GetStage32()
+        {
+            return Stg(32, 4, "폭염의 화약고", 21, 1,
+                new[] { B(4), G(6), A(2) });  // B2+B2 합산
+        }
+
+        private static StageData GetStage33()
+        {
+            return Stg(33, 4, "폭염의 화약고", 23, 1,
+                new[] { A(4), B(2), R(2), G(5) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage34()
+        {
+            return Stg(34, 4, "폭염의 화약고", 22, 1,
+                new[] { G(6), B(3), A(4) });
+        }
+
+        private static StageData GetStage35()
+        {
+            return Stg(35, 4, "폭염의 화약고", 22, 2,
+                new[] { B(2), S(2), G(6), R(2), A(3) });
+        }
+
+        private static StageData GetStage36()
+        {
+            return Stg(36, 4, "폭염의 화약고", 24, 2,
+                new[] { R(3), B(2), G(5), A(4), S(2) });
+        }
+
+        private static StageData GetStage37()
+        {
+            return Stg(37, 4, "폭염의 화약고", 23, 2,
+                new[] { B(3), G(6), A(3), R(2), S(2) });
+        }
+
+        // 변칙 — 짧고 무거운
+        private static StageData GetStage38()
+        {
+            return Stg(38, 4, "폭염의 화약고", 17, 2,
+                new[] { A(5), B(3), S(3) });
+        }
+
+        private static StageData GetStage39()
+        {
+            return Stg(39, 4, "폭염의 화약고", 25, 2,
+                new[] { G(6), B(3), R(2), S(2), A(4) });
+        }
+
+        // 챕터 보스
+        private static StageData GetStage40()
+        {
+            return Stg(40, 4, "폭염의 화약고", 27, 2,
+                new[] { B(3), A(5), R(3), G(7) });
+        }
+
+        // ============================================================
+        // Chapter 5: 그림자 협곡 (41-50) — + 힐러
+        // 기본 4~8, 힐러 1~2, 폭탄 2~3, 리스트 3~6
+        // ============================================================
+
+        private static StageData GetStage41()
+        {
+            return Stg(41, 5, "그림자 협곡", 20, 2,
+                new[] { G(5), H(2), A(4), B(2) });
+        }
+
+        private static StageData GetStage42()
+        {
+            return Stg(42, 5, "그림자 협곡", 22, 2,
+                new[] { H(2), G(6), A(3), B(2), R(2) });
+        }
+
+        private static StageData GetStage43()
+        {
+            return Stg(43, 5, "그림자 협곡", 22, 2,
+                new[] { B(2), H(2), G(5), S(2), A(3) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage44()
+        {
+            return Stg(44, 5, "그림자 협곡", 20, 2,
+                new[] { G(8), H(2), B(3) });
+        }
+
+        private static StageData GetStage45()
+        {
+            return Stg(45, 5, "그림자 협곡", 27, 2,
+                new[] { A(4), H(2), B(2), G(6), S(2), R(2) });
+        }
+
+        private static StageData GetStage46()
+        {
+            return Stg(46, 5, "그림자 협곡", 24, 2,
+                new[] { R(3), H(2), G(5), A(4), B(2) });
+        }
+
+        private static StageData GetStage47()
+        {
+            return Stg(47, 5, "그림자 협곡", 25, 2,
+                new[] { H(2), B(3), A(4), G(6), R(2) });
+        }
+
+        // 변칙 — 짧고 무거운
+        private static StageData GetStage48()
+        {
+            return Stg(48, 5, "그림자 협곡", 21, 2,
+                new[] { B(3), H(2), G(6), S(3) });
+        }
+
+        private static StageData GetStage49()
+        {
+            return Stg(49, 5, "그림자 협곡", 26, 2,
+                new[] { G(7), A(4), H(2), B(2), R(2) });
+        }
+
+        // 챕터 보스
+        private static StageData GetStage50()
+        {
+            return Stg(50, 5, "그림자 협곡", 27, 3,
+                new[] { H(2), B(3), R(3), A(5), G(8) });
+        }
+
+        // ============================================================
+        // Chapter 6: 폭풍의 탑 (51-60) — + 헤비
+        // 기본 4~8, 헤비 1~2, 리스트 3~6
+        // ============================================================
+
+        private static StageData GetStage51()
+        {
+            return Stg(51, 6, "폭풍의 탑", 22, 2,
+                new[] { G(5), V(2), A(4), B(2) });
+        }
+
+        private static StageData GetStage52()
+        {
+            return Stg(52, 6, "폭풍의 탑", 23, 2,
+                new[] { V(2), G(6), A(3), H(2), R(2) });
+        }
+
+        private static StageData GetStage53()
+        {
+            return Stg(53, 6, "폭풍의 탑", 24, 2,
+                new[] { B(2), V(2), G(5), A(4), S(2) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage54()
+        {
+            return Stg(54, 6, "폭풍의 탑", 20, 2,
+                new[] { V(2), G(8), B(3) });
+        }
+
+        private static StageData GetStage55()
+        {
+            return Stg(55, 6, "폭풍의 탑", 26, 2,
+                new[] { A(5), V(2), H(2), G(6), B(2) });
+        }
+
+        private static StageData GetStage56()
+        {
+            return Stg(56, 6, "폭풍의 탑", 26, 2,
+                new[] { V(2), B(3), G(6), A(4), R(2) });
+        }
+
+        private static StageData GetStage57()
+        {
+            return Stg(57, 6, "폭풍의 탑", 28, 2,
+                new[] { R(3), V(2), B(2), G(7), A(3), H(2) });
+        }
+
+        // 변칙 — 짧고 무거운
+        private static StageData GetStage58()
+        {
+            return Stg(58, 6, "폭풍의 탑", 19, 3,
+                new[] { V(3), B(3), G(6) });
+        }
+
+        private static StageData GetStage59()
+        {
+            return Stg(59, 6, "폭풍의 탑", 28, 2,
+                new[] { G(7), V(2), A(4), B(3), S(2) });
+        }
+
+        // 챕터 보스
+        private static StageData GetStage60()
+        {
+            return Stg(60, 6, "폭풍의 탑", 29, 3,
+                new[] { V(3), B(3), A(5), G(8), R(3) });
+        }
+
+        // ============================================================
+        // Chapter 7: 거인의 둥지 (61-70) — + 마법사
+        // 기본 4~8, 마법사 1~2, 리스트 3~7
+        // ============================================================
+
+        private static StageData GetStage61()
+        {
+            return Stg(61, 7, "거인의 둥지", 24, 2,
+                new[] { G(6), W(2), V(2), A(4) });
+        }
+
+        private static StageData GetStage62()
+        {
+            return Stg(62, 7, "거인의 둥지", 25, 2,
+                new[] { W(2), G(5), V(2), B(2), A(3) });
+        }
+
+        private static StageData GetStage63()
+        {
+            return Stg(63, 7, "거인의 둥지", 26, 2,
+                new[] { A(5), W(2), V(2), G(6), B(2) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage64()
+        {
+            return Stg(64, 7, "거인의 둥지", 19, 2,
+                new[] { W(2), V(2), G(8) });
+        }
+
+        private static StageData GetStage65()
+        {
+            return Stg(65, 7, "거인의 둥지", 28, 2,
+                new[] { B(3), W(2), V(2), G(5), A(4), H(2) });
+        }
+
+        private static StageData GetStage66()
+        {
+            return Stg(66, 7, "거인의 둥지", 28, 2,
+                new[] { V(2), W(2), G(6), B(2), A(4), R(2) });
+        }
+
+        private static StageData GetStage67()
+        {
+            return Stg(67, 7, "거인의 둥지", 30, 2,
+                new[] { W(2), B(3), V(2), G(7), A(3), S(2) });
+        }
+
+        // 변칙 — 짧고 무거운
+        private static StageData GetStage68()
+        {
+            return Stg(68, 7, "거인의 둥지", 20, 3,
+                new[] { W(2), V(3), B(3), G(6) });
+        }
+
+        private static StageData GetStage69()
+        {
+            return Stg(69, 7, "거인의 둥지", 30, 2,
+                new[] { G(8), W(2), V(2), A(4), B(3), R(2) });
+        }
+
+        // 챕터 보스
+        private static StageData GetStage70()
+        {
+            return Stg(70, 7, "거인의 둥지", 31, 3,
+                new[] { W(2), V(3), B(3), A(6), G(10) });
+        }
+
+        // ============================================================
+        // Chapter 8: 마법사의 서재 (71-80) — 모든 기본 타입
+        // 기본 5~10, 특수 2~3, 리스트 4~8
+        // ============================================================
+
+        private static StageData GetStage71()
+        {
+            return Stg(71, 8, "마법사의 서재", 28, 2,
+                new[] { W(2), G(6), V(2), B(2), A(4) });
+        }
+
+        private static StageData GetStage72()
+        {
+            return Stg(72, 8, "마법사의 서재", 28, 2,
+                new[] { V(2), W(2), B(2), G(7), A(4) });
+        }
+
+        private static StageData GetStage73()
+        {
+            return Stg(73, 8, "마법사의 서재", 30, 2,
+                new[] { B(3), H(2), W(2), G(6), V(2), A(5) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage74()
+        {
+            return Stg(74, 8, "마법사의 서재", 20, 3,
+                new[] { W(2), V(3), G(10) });
+        }
+
+        private static StageData GetStage75()
+        {
+            return Stg(75, 8, "마법사의 서재", 34, 2,
+                new[] { G(8), A(5), W(2), V(2), B(3), R(3) });
+        }
+
+        private static StageData GetStage76()
+        {
+            return Stg(76, 8, "마법사의 서재", 32, 2,
+                new[] { W(2), V(2), B(3), G(7), A(5), H(2) });
+        }
+
+        private static StageData GetStage77()
+        {
+            return Stg(77, 8, "마법사의 서재", 32, 3,
+                new[] { H(2), W(2), V(2), G(8), B(3), A(4) });
+        }
+
+        // 변칙 — 짧고 무거운
+        private static StageData GetStage78()
+        {
+            return Stg(78, 8, "마법사의 서재", 22, 3,
+                new[] { W(2), V(3), B(3), G(8) });
+        }
+
+        private static StageData GetStage79()
+        {
+            return Stg(79, 8, "마법사의 서재", 34, 3,
+                new[] { B(3), W(2), V(2), G(8), A(5), H(2), R(3) });
+        }
+
+        // 챕터 보스
+        private static StageData GetStage80()
+        {
+            return Stg(80, 8, "마법사의 서재", 35, 3,
+                new[] { W(2), V(3), B(3), A(6), G(10), R(3) });
+        }
+
+        // ============================================================
+        // Chapter 9: 도둑의 은신처 (81-90) — + 도둑
+        // 기본 5~10, 도둑 2~3, 리스트 4~8
+        // ============================================================
+
+        private static StageData GetStage81()
+        {
+            return Stg(81, 9, "도둑의 은신처", 28, 2,
+                new[] { G(6), T(2), V(2), A(4), B(2) });
+        }
+
+        private static StageData GetStage82()
+        {
+            return Stg(82, 9, "도둑의 은신처", 30, 2,
+                new[] { T(2), G(7), V(2), B(2), A(4) });
+        }
+
+        private static StageData GetStage83()
+        {
+            return Stg(83, 9, "도둑의 은신처", 30, 2,
+                new[] { A(5), T(2), V(2), G(6), B(3), W(2) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage84()
+        {
+            return Stg(84, 9, "도둑의 은신처", 22, 3,
+                new[] { T(3), V(2), G(10) });
+        }
+
+        private static StageData GetStage85()
+        {
+            return Stg(85, 9, "도둑의 은신처", 32, 2,
+                new[] { B(3), T(2), W(2), V(2), G(7), A(5) });
+        }
+
+        private static StageData GetStage86()
+        {
+            return Stg(86, 9, "도둑의 은신처", 32, 2,
+                new[] { T(3), V(2), W(2), G(6), B(3), A(4) });
+        }
+
+        private static StageData GetStage87()
+        {
+            return Stg(87, 9, "도둑의 은신처", 34, 3,
+                new[] { W(2), T(2), V(2), B(3), G(8), A(5) });
+        }
+
+        // 변칙 — 짧고 무거운
+        private static StageData GetStage88()
+        {
+            return Stg(88, 9, "도둑의 은신처", 22, 3,
+                new[] { T(3), V(3), G(8), B(3) });
+        }
+
+        private static StageData GetStage89()
+        {
+            return Stg(89, 9, "도둑의 은신처", 34, 3,
+                new[] { G(8), T(3), W(2), V(2), A(5), B(3) });
+        }
+
+        // 챕터 보스
+        private static StageData GetStage90()
+        {
+            return Stg(90, 9, "도둑의 은신처", 35, 3,
+                new[] { T(3), W(2), V(3), B(3), A(6), G(10) });
+        }
+
+        // ============================================================
+        // Chapter 10: 마녀의 영역 (91-100) — + 마녀
+        // 기본 5~12, 마녀 1~3, 리스트 4~8
+        // ============================================================
+
+        private static StageData GetStage91()
+        {
+            return Stg(91, 10, "마녀의 영역", 27, 3,
+                new[] { Wi(2), G(6), T(2), A(4) });
+        }
+
+        private static StageData GetStage92()
+        {
+            return Stg(92, 10, "마녀의 영역", 29, 3,
+                new[] { Wi(2), V(2), T(2), G(7), A(4) });
+        }
+
+        private static StageData GetStage93()
+        {
+            return Stg(93, 10, "마녀의 영역", 32, 3,
+                new[] { Wi(2), T(2), V(2), G(8), B(3), A(4) });
+        }
+
+        // 변칙 — 짧은 리스트, 높은 수량
+        private static StageData GetStage94()
+        {
+            return Stg(94, 10, "마녀의 영역", 24, 3,
+                new[] { Wi(3), T(3), G(10) });
+        }
+
+        private static StageData GetStage95()
+        {
+            return Stg(95, 10, "마녀의 영역", 34, 3,
+                new[] { Wi(2), G(8), T(2), V(2), A(5), B(3) });
+        }
+
+        private static StageData GetStage96()
+        {
+            return Stg(96, 10, "마녀의 영역", 34, 3,
+                new[] { Wi(2), V(2), T(2), B(3), G(7), A(5), R(3) });
+        }
+
+        private static StageData GetStage97()
+        {
+            return Stg(97, 10, "마녀의 영역", 35, 3,
+                new[] { Wi(2), T(3), V(2), G(8), B(3), A(5) });
+        }
+
+        // 변칙 — 짧고 무거운 (최종 난이도)
+        private static StageData GetStage98()
+        {
+            return Stg(98, 10, "마녀의 영역", 27, 3,
+                new[] { Wi(3), T(3), V(3), G(12) });
+        }
+
+        private static StageData GetStage99()
+        {
+            return Stg(99, 10, "마녀의 영역", 35, 3,
+                new[] { Wi(2), G(10), T(3), V(2), A(5), B(3) });
+        }
+
+        // 최종 보스 + 엔딩 스토리
+        private static StageData GetStage100()
+        {
+            return Stg(100, 10, "마녀의 영역", 35, 4,
+                new[] { Wi(3), T(3), V(3), B(3), A(6), G(12) },
+                new StoryData
+                {
+                    beforeStageCutscene = "루나가 최종 전장의 중심에 도달한다.\n모든 종류의 고블린들이 한꺼번에 몰려든다!\n프리즘: \"이건... 역대 최대 규모야!\"\n엘라시온: \"루나, 이것이 진정한 최후의 결전이다!\"",
+                    stageIntroDialogues = new[]
+                    {
+                        "루나: \"지금까지 배운 모든 것을 쏟아부을게요!\"\n프리즘: \"우리 셋이 함께라면 반드시 이길 수 있어!\""
+                    },
+                    stageClearCutscene = "모든 고블린이 물러가고 평화가 찾아온다.\n크리스탈이 찬란하게 빛나며 숲이 되살아난다.\n루나: \"드디어... 모든 고블린을 물리쳤어!\"\n프리즘: \"루나, 넌 진짜 대단해!\"\n엘라시온: \"네 여정은 여기서 끝나지 않는다. 새로운 세계가 너를 기다리고 있을 것이다...\"",
+                    stageClearDialogues = new[]
+                    {
+                        "루나: \"고마워요, 엘라시온. 그리고 프리즘도.\"\n엘라시온: \"진정한 수호자여, 언제든 다시 만나게 될 것이다.\""
+                    }
+                });
+        }
+
+        // ============================================================
+        // 엘리트 전장 (101~150) — Lv2 몬스터 + 기존 몬스터 다채롭게 혼합
+        // 설계 원칙:
+        //   - 첫 레벨(101)부터 다양한 몬스터 조합 (단조로운 단일 타입 지양)
+        //   - 기존 특수 몬스터(폭탄/마법사/도둑/마녀/헤비/힐러)와 Lv2를 섞어 풍성한 전투
+        //   - 변칙 레벨(짧지만 빡빡 / 길지만 물량전) 포함
+        //   - 챕터별 테마: 서서히 Lv2 비율 증가, 특수 몬스터 복합도 상승
+        // ============================================================
+
+        // === 챕터 11: 엘리트 초원 (101-110) — 다양한 기존 몬스터 + Lv2 첫 등장 ===
+        private static StageData GetStage101()
+        {
+            // 기존 4종 + 엘리트 몽둥이 첫 등장
+            return Stg(101, 11, "엘리트 초원", 22, 2,
+                new[] { G(4), A(3), R(2), G2(2) });
+        }
+        private static StageData GetStage102()
+        {
+            // 폭탄 고블린 + 엘리트 갑옷 첫 등장
+            return Stg(102, 11, "엘리트 초원", 21, 2,
+                new[] { B(2), G(4), A(3), A2(2) });
+        }
+        private static StageData GetStage103()
+        {
+            // 방패 + 궁수 + 엘리트 몽둥이
+            return Stg(103, 11, "엘리트 초원", 21, 2,
+                new[] { S(2), R(3), G(3), G2(3) });
+        }
+        private static StageData GetStage104()
+        {
+            // 도둑 첫 등장 + 다종 혼합 — 변칙(짧고 빡빡)
+            return Stg(104, 11, "엘리트 초원", 17, 2,
+                new[] { T(2), G2(3), A2(2) });
+        }
+        private static StageData GetStage105()
+        {
+            // 힐러 + 폭탄 + 엘리트
+            return Stg(105, 11, "엘리트 초원", 25, 2,
+                new[] { H(2), B(2), G(3), G2(3), A(3) });
+        }
+        private static StageData GetStage106()
+        {
+            // 마법사 + 갑옷 + 엘리트 궁수 첫 등장
+            return Stg(106, 11, "엘리트 초원", 23, 2,
+                new[] { W(1), A(4), R(2), R2(2), G2(3) });
+        }
+        private static StageData GetStage107()
+        {
+            // 엘리트 방패 첫 등장 + 기존 혼합
+            return Stg(107, 11, "엘리트 초원", 23, 2,
+                new[] { S(3), G(4), S2(2), G2(3) });
+        }
+        private static StageData GetStage108()
+        {
+            // 헤비 + 엘리트 4종 혼합
+            return Stg(108, 11, "엘리트 초원", 25, 3,
+                new[] { V(1), G2(4), A2(3), R(3), S(2) });
+        }
+        private static StageData GetStage109()
+        {
+            // 마녀 + 기존 기본 + 엘리트 — 변칙(물량)
+            return Stg(109, 11, "엘리트 초원", 27, 3,
+                new[] { Wi(1), G(5), A(4), G2(4), A2(2) });
+        }
+        private static StageData GetStage110()
+        {
+            // 챕터 보스: 특수 3종 + 엘리트 전종
+            return Stg(110, 11, "엘리트 초원", 32, 3,
+                new[] { B(3), T(2), G2(5), A2(3), R2(2), S2(2), G(4) });
+        }
+
+        // === 챕터 12: 엘리트 협곡 (111-120) — Lv2 비율 증가, 특수 몬스터 복합 ===
+        private static StageData GetStage111()
+        {
+            // 마법사 + 엘리트 궁수/갑옷
+            return Stg(111, 12, "엘리트 협곡", 23, 2,
+                new[] { W(2), R2(3), A2(3), G(4) });
+        }
+        private static StageData GetStage112()
+        {
+            // 도둑 + 폭탄 + 엘리트 방패
+            return Stg(112, 12, "엘리트 협곡", 24, 3,
+                new[] { T(2), B(3), S2(2), G2(4), A(3) });
+        }
+        private static StageData GetStage113()
+        {
+            // 마녀 + 힐러 + 엘리트 혼합
+            return Stg(113, 12, "엘리트 협곡", 25, 3,
+                new[] { Wi(1), H(2), G2(4), A2(3), R(3) });
+        }
+        private static StageData GetStage114()
+        {
+            // 헤비 + 엘리트 4종 — 변칙(적은 수 고체력)
+            return Stg(114, 12, "엘리트 협곡", 22, 3,
+                new[] { V(2), G2(3), A2(2), S2(2) });
+        }
+        private static StageData GetStage115()
+        {
+            // 전 기본 타입 + Lv2 기본
+            return Stg(115, 12, "엘리트 협곡", 27, 3,
+                new[] { G(4), A(3), R(3), S(2), G2(4), A2(2) });
+        }
+        private static StageData GetStage116()
+        {
+            // 마법사 + 도둑 콤보 + 엘리트
+            return Stg(116, 12, "엘리트 협곡", 27, 3,
+                new[] { W(2), T(2), G2(5), R2(3), A(4) });
+        }
+        private static StageData GetStage117()
+        {
+            // 마녀 + 폭탄 + 엘리트 방패/갑옷
+            return Stg(117, 12, "엘리트 협곡", 29, 3,
+                new[] { Wi(1), B(3), A2(4), S2(3), G(4) });
+        }
+        private static StageData GetStage118()
+        {
+            // 힐러 + 헤비 + 엘리트 궁수 — 변칙(힐러가 계속 회복)
+            return Stg(118, 12, "엘리트 협곡", 25, 3,
+                new[] { H(2), V(2), R2(3), G2(4), A(3) });
+        }
+        private static StageData GetStage119()
+        {
+            // 도둑 + 마녀 + 엘리트 전종
+            return Stg(119, 12, "엘리트 협곡", 30, 3,
+                new[] { T(2), Wi(1), G2(5), A2(3), R2(2), S2(2) });
+        }
+        private static StageData GetStage120()
+        {
+            // 챕터 보스: 특수 전종 + 엘리트 물량
+            return Stg(120, 12, "엘리트 협곡", 35, 3,
+                new[] { Wi(1), B(3), W(1), G2(6), A2(4), R2(3), S2(2), G(4) });
+        }
+
+        // === 챕터 13: 엘리트 화산 (121-130) — 고난도 혼합, 변칙 패턴 ===
+        private static StageData GetStage121()
+        {
+            // 마녀 + 도둑 + 엘리트 갑옷/몽둥이
+            return Stg(121, 13, "엘리트 화산", 27, 3,
+                new[] { Wi(1), T(2), G2(5), A2(3), G(4) });
+        }
+        private static StageData GetStage122()
+        {
+            // 헤비 + 폭탄 + 엘리트 궁수
+            return Stg(122, 13, "엘리트 화산", 27, 3,
+                new[] { V(2), B(3), R2(3), G2(4), A(3) });
+        }
+        private static StageData GetStage123()
+        {
+            // 마법사 + 힐러 + 엘리트 방패/갑옷
+            return Stg(123, 13, "엘리트 화산", 27, 3,
+                new[] { W(2), H(2), A2(4), S2(3), G2(3) });
+        }
+        private static StageData GetStage124()
+        {
+            // 마녀2 + 엘리트 — 변칙(마녀 집중)
+            return Stg(124, 13, "엘리트 화산", 25, 3,
+                new[] { Wi(2), G2(5), A2(3), R(3) });
+        }
+        private static StageData GetStage125()
+        {
+            // 도둑 + 폭탄 + 엘리트 전종
+            return Stg(125, 13, "엘리트 화산", 29, 3,
+                new[] { T(2), B(3), G2(5), A2(3), R2(2), S2(2) });
+        }
+        private static StageData GetStage126()
+        {
+            // 헤비2 + 마법사 + 엘리트 물량
+            return Stg(126, 13, "엘리트 화산", 30, 3,
+                new[] { V(2), W(2), G2(5), A2(4), R2(3) });
+        }
+        private static StageData GetStage127()
+        {
+            // 마녀 + 힐러 + 폭탄 + 엘리트 방패
+            return Stg(127, 13, "엘리트 화산", 30, 3,
+                new[] { Wi(1), H(2), B(3), S2(3), G2(4), A(4) });
+        }
+        private static StageData GetStage128()
+        {
+            // 도둑 + 헤비 + 엘리트 궁수/갑옷 — 변칙(은신+탱크)
+            return Stg(128, 13, "엘리트 화산", 27, 3,
+                new[] { T(3), V(2), R2(3), A2(4), G(4) });
+        }
+        private static StageData GetStage129()
+        {
+            // 마녀 + 마법사 + 엘리트 전종
+            return Stg(129, 13, "엘리트 화산", 35, 4,
+                new[] { Wi(1), W(2), G2(6), A2(4), R2(3), S2(2) });
+        }
+        private static StageData GetStage130()
+        {
+            // 챕터 보스: 전 특수 + 엘리트 대규모
+            return Stg(130, 13, "엘리트 화산", 38, 4,
+                new[] { Wi(2), B(3), T(2), V(2), G2(6), A2(4), R2(3), S2(3) });
+        }
+
+        // === 챕터 14: 엘리트 심연 (131-140) — 극한 난이도, 복합 전략 ===
+        private static StageData GetStage131()
+        {
+            // 마녀 + 도둑 + 엘리트 대규모 혼합
+            return Stg(131, 14, "엘리트 심연", 30, 3,
+                new[] { Wi(2), T(2), G2(5), A2(4), R(3), B(3) });
+        }
+        private static StageData GetStage132()
+        {
+            // 헤비 + 마법사 + 엘리트 방패/궁수
+            return Stg(132, 14, "엘리트 심연", 30, 3,
+                new[] { V(2), W(2), S2(3), R2(3), G2(4), A(4) });
+        }
+        private static StageData GetStage133()
+        {
+            // 마녀 + 힐러 + 엘리트 전종
+            return Stg(133, 14, "엘리트 심연", 32, 3,
+                new[] { Wi(1), H(2), G2(6), A2(4), R2(3), S(3) });
+        }
+        private static StageData GetStage134()
+        {
+            // 헤비2 + 폭탄 + 엘리트 갑옷/방패 — 변칙(탱크 집중)
+            return Stg(134, 14, "엘리트 심연", 30, 4,
+                new[] { V(2), B(4), A2(5), S2(3), G(4) });
+        }
+        private static StageData GetStage135()
+        {
+            // 마녀 + 도둑 + 마법사 + 엘리트
+            return Stg(135, 14, "엘리트 심연", 36, 4,
+                new[] { Wi(1), T(2), W(2), G2(5), A2(4), R2(3) });
+        }
+        private static StageData GetStage136()
+        {
+            // 힐러 + 폭탄 대규모 + 엘리트 전종
+            return Stg(136, 14, "엘리트 심연", 36, 4,
+                new[] { H(2), B(4), G2(6), A2(4), R2(3), S2(2) });
+        }
+        private static StageData GetStage137()
+        {
+            // 마녀2 + 도둑 + 헤비 + 엘리트 — 고난도
+            return Stg(137, 14, "엘리트 심연", 38, 4,
+                new[] { Wi(2), T(2), V(2), G2(5), A2(4), R2(3), S(3) });
+        }
+        private static StageData GetStage138()
+        {
+            // 마법사 + 힐러 + 엘리트 물량전
+            return Stg(138, 14, "엘리트 심연", 36, 4,
+                new[] { W(2), H(2), G2(6), A2(5), R2(4), S2(3) });
+        }
+        private static StageData GetStage139()
+        {
+            // 마녀2 + 도둑3 — 변칙(은신 지옥)
+            return Stg(139, 14, "엘리트 심연", 35, 4,
+                new[] { Wi(2), T(3), G2(6), A2(4), B(3) });
+        }
+        private static StageData GetStage140()
+        {
+            // 챕터 보스: 전 특수 + 엘리트 대규모
+            return Stg(140, 14, "엘리트 심연", 40, 4,
+                new[] { Wi(2), V(2), B(4), T(2), W(2), G2(7), A2(5), R2(3), S2(3) });
+        }
+
+        // === 챕터 15: 최종 엘리트 (141-150) — 전면전, 최고 난이도 ===
+        private static StageData GetStage141()
+        {
+            // 마녀 + 헤비 + 폭탄 + 엘리트 4종
+            return Stg(141, 15, "최종 엘리트", 36, 4,
+                new[] { Wi(1), V(2), B(3), G2(6), A2(4), R2(3), S2(3) });
+        }
+        private static StageData GetStage142()
+        {
+            // 마녀2 + 도둑 + 마법사 + 엘리트
+            return Stg(142, 15, "최종 엘리트", 37, 4,
+                new[] { Wi(2), T(3), W(2), G2(6), A2(4), R2(3) });
+        }
+        private static StageData GetStage143()
+        {
+            // 헤비2 + 힐러 + 엘리트 물량
+            return Stg(143, 15, "최종 엘리트", 37, 4,
+                new[] { V(2), H(2), G2(7), A2(5), R2(3), S2(3) });
+        }
+        private static StageData GetStage144()
+        {
+            // 마녀2 + 폭탄 + 엘리트 전종 — 변칙(마녀+폭탄 시너지)
+            return Stg(144, 15, "최종 엘리트", 35, 4,
+                new[] { Wi(2), B(4), G2(5), A2(4), R2(3), S2(3) });
+        }
+        private static StageData GetStage145()
+        {
+            // 도둑 + 헤비 + 마법사 + 엘리트 대규모
+            return Stg(145, 15, "최종 엘리트", 38, 4,
+                new[] { T(3), V(2), W(2), G2(7), A2(5), R2(4), S2(3) });
+        }
+        private static StageData GetStage146()
+        {
+            // 마녀2 + 힐러 + 도둑 + 엘리트 전종
+            return Stg(146, 15, "최종 엘리트", 38, 4,
+                new[] { Wi(2), H(2), T(2), G2(7), A2(5), R2(4), S2(3) });
+        }
+        private static StageData GetStage147()
+        {
+            // 헤비3 + 마법사 + 엘리트 물량 — 변칙(탱커 지옥)
+            return Stg(147, 15, "최종 엘리트", 40, 4,
+                new[] { V(3), W(2), G2(8), A2(5), R2(4), S2(3) });
+        }
+        private static StageData GetStage148()
+        {
+            // 마녀2 + 전 특수 + 엘리트 전종
+            return Stg(148, 15, "최종 엘리트", 42, 4,
+                new[] { Wi(2), B(4), T(3), V(2), G2(8), A2(5), R2(4), S2(3) });
+        }
+        private static StageData GetStage149()
+        {
+            // 마녀3 + 도둑3 + 엘리트 대규모 — 변칙(극한)
+            return Stg(149, 15, "최종 엘리트", 42, 4,
+                new[] { Wi(3), T(3), V(2), G2(9), A2(6), R2(4), S2(4) });
+        }
+        private static StageData GetStage150()
+        {
+            // ★ 최종 보스: 전 특수 + 엘리트 전종 총출동
+            return Stg(150, 15, "최종 엘리트", 45, 4,
+                new[] { Wi(3), V(3), B(4), T(3), W(2), H(2), G2(10), A2(6), R2(5), S2(4) },
+                new StoryData
+                {
+                    beforeStageCutscene = "루나가 엘리트 전장의 최심부에 도착한다.\n강화된 고블린 엘리트 군단이 총출동한다!\n프리즘: \"이건... 평범한 고블린이 아니야! 엘리트급이라고!\"\n엘라시온: \"루나, 진정한 힘을 보여줄 때다.\"",
+                    stageIntroDialogues = new[]
+                    {
+                        "루나: \"더 강해진 적들... 하지만 나도 성장했어!\"\n프리즘: \"우리의 실력을 증명할 때야!\""
+                    },
+                    stageClearCutscene = "엘리트 고블린 군단이 완전히 무너진다.\n강화된 크리스탈이 더욱 찬란하게 빛난다.\n루나: \"해냈어... 엘리트 군단까지 물리쳤어!\"\n프리즘: \"루나, 넌 이제 진정한 전사야!\"\n엘라시온: \"대단하다, 수호자여. 하지만 더 큰 도전이 기다리고 있을지 모른다...\"",
+                    stageClearDialogues = new[]
+                    {
+                        "루나: \"어떤 적이 와도 준비됐어요!\"\n엘라시온: \"그 자신감, 바로 수호자의 자격이다.\""
+                    }
+                });
+        }
+    }
+
+    /// <summary>
+    /// 몬스터 첫 등장 스테이지 매핑.
+    /// 새 몬스터가 등장하는 레벨에서 미션 UI 아이콘에 노란색 아웃라인을 강조하기 위한 헬퍼.
+    /// (몬스터 특성 설명은 OnFirstEnemyEncounter 트리거 hint가 별도로 처리)
+    /// </summary>
+    public static class MonsterFirstAppearance
+    {
+        // ★ Mission1StageData 미션 정의에서 도출한 첫 등장 스테이지
+        //   (M(...) 호출의 첫 사용 위치)
+        private static readonly Dictionary<EnemyType, int> firstAppearStage = new Dictionary<EnemyType, int>
+        {
+            { EnemyType.Goblin,           3 },    // 몽둥이 고블린 (Stage 3 — 2→3 웨이브)
+            { EnemyType.ArmoredGoblin,   12 },    // 갑옷 고블린
+            { EnemyType.ArcherGoblin,    21 },    // 활 고블린
+            { EnemyType.ShieldGoblin,    24 },    // 방패 고블린
+            { EnemyType.BombGoblin,      31 },    // 폭탄 고블린
+            { EnemyType.HealerGoblin,    41 },    // 힐러 고블린
+            { EnemyType.HeavyGoblin,     51 },    // 헤비 고블린
+            { EnemyType.WizardGoblin,    61 },    // 마법사 고블린
+            { EnemyType.ThiefGoblin,     81 },    // 도둑 고블린
+            { EnemyType.WitchGoblin,     91 },    // 마녀 고블린
+            { EnemyType.GoblinLv2,      101 },    // 엘리트 몽둥이
+            { EnemyType.ArmoredGoblinLv2, 102 },  // 엘리트 갑옷
+            { EnemyType.ArcherGoblinLv2, 106 },   // 엘리트 궁수
+            { EnemyType.ShieldGoblinLv2, 107 },   // 엘리트 방패
+        };
+
+        /// <summary>
+        /// 주어진 스테이지가 해당 몬스터 타입의 첫 등장 스테이지인지 판정.
+        /// </summary>
+        public static bool IsFirstAppearance(int stageNumber, EnemyType type)
+        {
+            return firstAppearStage.TryGetValue(type, out int firstStage) && firstStage == stageNumber;
+        }
+
+        /// <summary>
+        /// 주어진 몬스터 타입의 첫 등장 스테이지 번호 반환 (없으면 -1).
+        /// </summary>
+        public static int GetFirstAppearStage(EnemyType type)
+        {
+            return firstAppearStage.TryGetValue(type, out int s) ? s : -1;
         }
     }
 }

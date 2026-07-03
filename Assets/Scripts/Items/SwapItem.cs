@@ -24,12 +24,13 @@ namespace JewelsHexaPuzzle.Items
         [SerializeField] private InputSystem inputSystem;
 
         [Header("Settings")]
-        [SerializeField] private Color activeOverlayColor = new Color(0.4f, 0.7f, 1f, 0.25f);
+        [SerializeField] private Color activeOverlayColor = new Color(0f, 1f, 0f, 0.15f);
 
         private bool isActive = false;
         private bool isProcessing = false;
 
         public bool IsActive => isActive;
+        public Button SwapButton => swapButton;
 
         // 드래그 상태
         private HexBlock selectedBlock = null;
@@ -38,10 +39,6 @@ namespace JewelsHexaPuzzle.Items
 
         // 이펙트 부모
         private Transform effectParent;
-
-        // 화면 흔들림 중첩 관리
-        private int shakeCount = 0;
-        private Vector3 shakeOriginalPos;
 
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
@@ -64,12 +61,7 @@ namespace JewelsHexaPuzzle.Items
                 backgroundOverlay.gameObject.SetActive(false);
                 backgroundOverlay.raycastTarget = false;
             }
-            // 버튼 초기 색상을 비활성화 색상으로 설정
-            if (swapButton != null)
-            {
-                var img = swapButton.GetComponent<Image>();
-                if (img != null) img.color = btnOriginalColor;
-            }
+            // 버튼 색상은 SwapGauge가 관리
         }
 
         private void AutoFindReferences()
@@ -119,12 +111,10 @@ namespace JewelsHexaPuzzle.Items
                 return;
             }
 
-            // MP 체크: MP가 부족하면 사용 불가
-            if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.Bomb))
+            // ★ 게이지 시스템: SwapGauge가 버튼 활성화를 제어
+            if (SwapGauge.Instance != null && SwapGauge.Instance.GaugeLayer < 1)
             {
-                Debug.Log($"[SwapItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.Bomb)}, 현재 {MPManager.Instance.CurrentMP}");
-                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                Debug.Log("[SwapItem] 게이지 부족: 매칭으로 게이지를 채우세요");
                 return;
             }
 
@@ -145,6 +135,10 @@ namespace JewelsHexaPuzzle.Items
             isActive = true;
             if (inputSystem != null) inputSystem.SetEnabled(false);
 
+            // 튜토리얼 이벤트: 스왑 활성화 (타겟 선택 대기)
+            if (JewelsHexaPuzzle.Managers.TutorialManager.Instance != null)
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance.OnSwapActivated();
+
             // 오버레이 페이드인
             if (backgroundOverlay != null)
             {
@@ -157,7 +151,7 @@ namespace JewelsHexaPuzzle.Items
             if (swapButton != null)
             {
                 var img = swapButton.GetComponent<Image>();
-                if (img != null) img.color = BtnActiveColor;
+                // 색상은 SwapGauge가 관리
                 StartCoroutine(ButtonActivatePulse());
             }
 
@@ -192,6 +186,10 @@ namespace JewelsHexaPuzzle.Items
                 StartCoroutine(ButtonDeactivateAnim());
             }
 
+            // 게이지 상태 복원 (UseReady → Ready/Inactive)
+            if (SwapGauge.Instance != null)
+                SwapGauge.Instance.OnItemCancelled();
+
             Debug.Log("[SwapItem] Deactivated");
         }
 
@@ -222,6 +220,9 @@ namespace JewelsHexaPuzzle.Items
             if (!isActive || isProcessing) return;
             // 구매 팝업 열려있으면 입력 차단
             if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+            // ★ 마나 구매 팝업/리워드 모달 차단 (감사 H4) — InputSystem과 동일한 3종 게이트
+            if (MPManager.Instance != null && MPManager.Instance.IsManaPurchasePopupOpen) return;
+            if (SkillUpgradeOfferSystem.Instance != null && SkillUpgradeOfferSystem.Instance.IsChoiceModalOpen) return;
 
 #if UNITY_EDITOR || UNITY_STANDALONE
             HandleMouseSwapInput();
@@ -244,7 +245,11 @@ namespace JewelsHexaPuzzle.Items
                     es.RaycastAll(pd, results);
                     foreach (var r in results)
                     {
-                        if (r.gameObject == swapButton?.gameObject)
+                        // ★ 차지바 아이템 버튼(또는 임의 UI 버튼) 위 클릭이면 필드 입력으로 처리 안 함 → 버튼 onClick 토글과 충돌 방지.
+                        //   (기존엔 숨겨진 구 swapButton만 검사해 차지바 버튼 클릭을 '빈공간'으로 오인 → Deactivate 충돌)
+                        if (r.gameObject.GetComponentInParent<HexaPuzzle.ChargeButton>() != null
+                            || r.gameObject.GetComponentInParent<UnityEngine.UI.Button>() != null
+                            || r.gameObject == swapButton?.gameObject)
                             return;
                     }
                 }
@@ -253,6 +258,14 @@ namespace JewelsHexaPuzzle.Items
                 HexBlock block = FindBlockAtPosition(Input.mousePosition);
                 if (block != null && block.Data != null && block.Data.gemType != GemType.None && block.Data.CanMove())
                 {
+                    // 튜토리얼 스왑 타겟 제한: 지정 좌표 외 선택 시 토스트 + 선택 취소 (활성 유지)
+                    var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                    if (tm != null && tm.HasSwapTargetRestriction && !tm.IsSwapCoordAllowed(block.Coord))
+                    {
+                        tm.ShowSwapWrongClickHint();
+                        return;
+                    }
+
                     selectedBlock = block;
                     selectedBlock.SetHighlighted(true);
                     isDragging = true;
@@ -260,7 +273,13 @@ namespace JewelsHexaPuzzle.Items
                 }
                 else
                 {
-                    // 유효하지 않은 블록 → 비활성화
+                    // 유효하지 않은 블록 → 비활성화 (튜토리얼 중이면 토스트 후 유지)
+                    var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                    if (tm != null && tm.HasSwapTargetRestriction)
+                    {
+                        tm.ShowSwapWrongClickHint();
+                        return;
+                    }
                     Deactivate();
                 }
             }
@@ -276,8 +295,18 @@ namespace JewelsHexaPuzzle.Items
                 isDragging = false;
                 if (selectedBlock != null && dragTargetBlock != null)
                 {
+                    // 튜토리얼 스왑 타겟 제한: 두 번째 블록도 허용 좌표인지 검증
+                    var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                    if (tm != null && tm.HasSwapTargetRestriction && !tm.IsSwapCoordAllowed(dragTargetBlock.Coord))
+                    {
+                        tm.ShowSwapWrongClickHint();
+                        ClearSelection();
+                        return;
+                    }
+
                     HexBlock blockA = selectedBlock;
                     HexBlock blockB = dragTargetBlock;
+                    if (!CheckSwapMPKeepActive(blockA, blockB)) return; // ★ MP 부족 시 활성 유지 (망치와 동일)
                     isProcessing = true;
                     Deactivate();
                     StartCoroutine(ExecuteSwap(blockA, blockB));
@@ -306,7 +335,11 @@ namespace JewelsHexaPuzzle.Items
                     es.RaycastAll(pd, results);
                     foreach (var r in results)
                     {
-                        if (r.gameObject == swapButton?.gameObject)
+                        // ★ 차지바 아이템 버튼(또는 임의 UI 버튼) 위 클릭이면 필드 입력으로 처리 안 함 → 버튼 onClick 토글과 충돌 방지.
+                        //   (기존엔 숨겨진 구 swapButton만 검사해 차지바 버튼 클릭을 '빈공간'으로 오인 → Deactivate 충돌)
+                        if (r.gameObject.GetComponentInParent<HexaPuzzle.ChargeButton>() != null
+                            || r.gameObject.GetComponentInParent<UnityEngine.UI.Button>() != null
+                            || r.gameObject == swapButton?.gameObject)
                             return;
                     }
                 }
@@ -337,6 +370,7 @@ namespace JewelsHexaPuzzle.Items
                 {
                     HexBlock blockA = selectedBlock;
                     HexBlock blockB = dragTargetBlock;
+                    if (!CheckSwapMPKeepActive(blockA, blockB)) return; // ★ MP 부족 시 활성 유지 (망치와 동일)
                     isProcessing = true;
                     Deactivate();
                     StartCoroutine(ExecuteSwap(blockA, blockB));
@@ -354,8 +388,15 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
+        /// <summary>현재 스왑 레벨에 따른 최대 스왑 거리 (기본 1, 레벨당 +2칸: UseReady0=1, 1=3, 2=5, 3=7)</summary>
+        private int GetMaxSwapDistance()
+        {
+            if (SwapGauge.Instance == null) return 1;
+            return 1 + 2 * SwapGauge.Instance.GetUseReadyLevel();
+        }
+
         /// <summary>
-        /// 드래그 중 인접 블록 감지 및 하이라이트
+        /// 드래그 중 블록 감지 및 하이라이트 — 레벨별 거리 제한 적용
         /// </summary>
         private void UpdateDragTarget(Vector2 screenPos)
         {
@@ -373,8 +414,16 @@ namespace JewelsHexaPuzzle.Items
             HexBlock hoverBlock = FindBlockAtPosition(screenPos);
             if (hoverBlock == null || hoverBlock == selectedBlock) return;
 
-            // 인접 블록인지 확인
-            if (selectedBlock.Coord.DistanceTo(hoverBlock.Coord) != 1) return;
+            // 레벨별 거리 제한 확인
+            int maxDist = GetMaxSwapDistance();
+            int dist = selectedBlock.Coord.DistanceTo(hoverBlock.Coord);
+            if (dist < 1 || dist > maxDist)
+            {
+                // 거리 초과 시 빨간 깜빡임 피드백
+                if (dist > maxDist && hoverBlock.Data != null && hoverBlock.Data.gemType != GemType.None)
+                    StartCoroutine(FlashBlockRed(hoverBlock));
+                return;
+            }
 
             // CanMove 체크
             if (hoverBlock.Data == null || hoverBlock.Data.gemType == GemType.None || !hoverBlock.Data.CanMove()) return;
@@ -382,6 +431,18 @@ namespace JewelsHexaPuzzle.Items
             dragTargetBlock = hoverBlock;
             dragTargetBlock.SetHighlighted(true);
             CreateTargetIndicator(hoverBlock);
+        }
+
+        /// <summary>거리 초과 시 빨간 깜빡임 피드백</summary>
+        private IEnumerator FlashBlockRed(HexBlock block)
+        {
+            if (block == null) yield break;
+            var img = block.GetComponent<Image>();
+            if (img == null) yield break;
+            Color orig = img.color;
+            img.color = new Color(1f, 0.2f, 0.2f, 1f);
+            yield return new WaitForSeconds(0.1f);
+            if (block != null && img != null) img.color = orig;
         }
 
         // ============================================================
@@ -409,21 +470,82 @@ namespace JewelsHexaPuzzle.Items
             return closest;
         }
 
+        /// <summary>스왑 실행 직전 MP 사전 체크. 부족하면 시각 피드백 + 선택만 해제(활성 유지) 후 false 반환.
+        ///   ★ 망치 아이템과 동일하게, MP 부족이어도 버튼 활성화는 유지 → 마나 구매 후 곧바로 재사용 가능.
+        ///   (기존 버그: 호출자가 Deactivate 후 ExecuteSwap 안에서 MP 체크 → 부족 시 이미 비활성 상태)</summary>
+        private bool CheckSwapMPKeepActive(HexBlock blockA, HexBlock blockB)
+        {
+            if (MPManager.Instance == null) return true;
+            int mpCost = MPManager.Instance.GetItemCost(ItemType.Bomb); // ItemType.Bomb = 스왑
+            if (MPManager.Instance.CanAfford(mpCost)) return true;
+
+            Debug.Log($"[SwapItem] MP 부족: 스왑 차단 (필요 {mpCost}) — 활성 유지(망치와 동일)");
+            if (blockA != null) blockA.PlayInsufficientShake();
+            if (blockB != null) blockB.PlayInsufficientShake();
+            if (blockA != null && blockB != null)
+                MPManager.Instance.SpawnInsufficientPopup((blockA.transform.position + blockB.transform.position) * 0.5f);
+            var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+            if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+            ClearSelection(); // 드래그 선택만 해제 (isActive 유지)
+            return false;
+        }
+
         // ============================================================
         // 스왑 실행
         // ============================================================
 
         private IEnumerator ExecuteSwap(HexBlock blockA, HexBlock blockB)
         {
-            isProcessing = true;
-            Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord}");
-
-            // MP 소모 (두 블록 중간 위치에 팝업)
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySwapSound(); // ★ 효과음: 스왑 휙휙
+            // ★ MP 게이트 — 부족 시 능력 차단 + 시각 피드백
+            //   호출자가 이미 isProcessing=true로 설정 → 부족 시 false로 복원해야 재활성화 가능
             if (MPManager.Instance != null)
             {
-                Vector3 midPos = (blockA.transform.position + blockB.transform.position) * 0.5f;
-                MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.Bomb), midPos);
+                int mpCost = MPManager.Instance.GetItemCost(ItemType.Bomb); // ItemType.Bomb = 스왑
+                if (!MPManager.Instance.CanAfford(mpCost))
+                {
+                    Debug.Log($"[SwapItem] MP 부족: 스왑 차단 (필요 {mpCost})");
+                    if (blockA != null) blockA.PlayInsufficientShake();
+                    if (blockB != null) blockB.PlayInsufficientShake();
+                    if (blockA != null && blockB != null)
+                    {
+                        Vector3 midPos = (blockA.transform.position + blockB.transform.position) * 0.5f;
+                        MPManager.Instance.SpawnInsufficientPopup(midPos);
+                    }
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+
+                    // ★ 처리 플래그 복원 + 입력 재활성화
+                    isProcessing = false;
+                    if (inputSystem != null && GameManager.Instance != null &&
+                        GameManager.Instance.CurrentState == GameState.Playing)
+                        inputSystem.SetEnabled(true);
+                    yield break;
+                }
             }
+
+            isProcessing = true;
+
+            // 거리 기반 게이지 소모 (거리 1=1레이어, 2=2레이어, 3=3레이어, 4=4레이어)
+            int swapDist = blockA.Coord.DistanceTo(blockB.Coord);
+            if (SwapGauge.Instance != null)
+            {
+                SwapGauge.Instance.ConsumeGauge(swapDist);
+                SwapGauge.Instance.ForceRefreshUI();
+            }
+
+            // ★ MP 소모 — 두 블록 중간 위치에 파란 "-N" 팝업 표시
+            //   특수블록 직접 사용보다 다소 높은 비용 (스왑 13)
+            if (MPManager.Instance != null && blockA != null && blockB != null)
+            {
+                int mpCost = MPManager.Instance.GetItemCost(ItemType.Bomb); // ItemType.Bomb = 스왑
+                Vector3 midPos = (blockA.transform.position + blockB.transform.position) * 0.5f;
+                MPManager.Instance.TryConsumeMP(mpCost, midPos);
+            }
+
+            Debug.Log($"[SwapItem] Swapping blocks: {blockA.Coord} <-> {blockB.Coord} (dist={swapDist})");
+
+            // ★ 게이지 소모는 위에서 SwapGauge.ConsumeGauge(swapDist)로 이미 처리됨
 
             RectTransform rtA = blockA.GetComponent<RectTransform>();
             RectTransform rtB = blockB.GetComponent<RectTransform>();
@@ -488,6 +610,10 @@ namespace JewelsHexaPuzzle.Items
                 GameManager.Instance.CurrentState == GameState.Playing)
                 inputSystem.SetEnabled(true);
 
+            // 튜토리얼 이벤트: 스왑 사용 완료
+            if (JewelsHexaPuzzle.Managers.TutorialManager.Instance != null)
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance.OnSwapUsed();
+
             Debug.Log("[SwapItem] Swap complete");
         }
 
@@ -509,6 +635,9 @@ namespace JewelsHexaPuzzle.Items
             int origIndexB = rtB.GetSiblingIndex();
             rtA.SetAsLastSibling();
             rtB.SetAsLastSibling();
+            // ★ 스왑 블록을 최상위로 올린 직후 고블린 깊이 정렬을 무효화 → 다음 프레임에 캐릭터가 블록 위로 재정렬.
+            //   (스왑한 블록 위에 캐릭터가 깔려 안 보이던 버그 수정. Y-sort 최적화가 childCount 불변 시 재정렬을 건너뛰어 발생)
+            JewelsHexaPuzzle.Core.GoblinSystem.Instance?.RequestDepthResort();
 
             while (elapsed < duration)
             {
@@ -621,7 +750,8 @@ namespace JewelsHexaPuzzle.Items
             hlRt.sizeDelta = new Vector2(60f, 60f);
 
             Image hlImg = selectedHighlight.AddComponent<Image>();
-            hlImg.color = new Color(0.4f, 0.85f, 1f, 0.5f);
+            hlImg.sprite = HexBlock.GetCircleIndicatorSprite(); hlImg.preserveAspect = true; // ★ 사각→원형
+            hlImg.color = HexBlock.IndicatorInitial; // ★ 처음 지정 — 흰색 통일
             hlImg.raycastTarget = false;
 
             StartCoroutine(PulseIndicator(selectedHighlight));
@@ -640,7 +770,8 @@ namespace JewelsHexaPuzzle.Items
             hlRt.sizeDelta = new Vector2(60f, 60f);
 
             Image hlImg = targetHighlight.AddComponent<Image>();
-            hlImg.color = new Color(1f, 0.85f, 0.2f, 0.5f);
+            hlImg.sprite = HexBlock.GetCircleIndicatorSprite(); hlImg.preserveAspect = true; // ★ 사각→원형
+            hlImg.color = HexBlock.IndicatorTarget; // ★ 드래그 목표 — 호박색 통일
             hlImg.raycastTarget = false;
         }
 
@@ -734,14 +865,12 @@ namespace JewelsHexaPuzzle.Items
                 float scale = 1f - 0.1f * Mathf.Sin(t * Mathf.PI);
                 btnTransform.localScale = Vector3.one * scale;
 
-                if (btnImg != null)
-                    btnImg.color = Color.Lerp(startColor, btnOriginalColor, VisualConstants.EaseOutCubic(t));
+                // 색상은 SwapGauge가 관리
 
                 yield return null;
             }
 
             btnTransform.localScale = Vector3.one;
-            if (btnImg != null) btnImg.color = btnOriginalColor;
         }
 
         // ============================================================

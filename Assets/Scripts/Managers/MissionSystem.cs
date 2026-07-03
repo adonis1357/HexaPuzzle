@@ -846,7 +846,7 @@ namespace JewelsHexaPuzzle.Managers
             {
                 case SpecialBlockType.Drill: return "드릴";
                 case SpecialBlockType.Bomb: return "폭탄";
-                case SpecialBlockType.Rainbow: return "무지개";
+                case SpecialBlockType.Rainbow: return "타겟 레이저";
                 case SpecialBlockType.XBlock: return "X블록";
                 default: return "특수 블록";
             }

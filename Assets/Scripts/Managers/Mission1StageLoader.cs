@@ -163,7 +163,7 @@ namespace JewelsHexaPuzzle.Managers
                 // UIManager.ShowCutscene(stageData.storyData.beforeStageCutscene);
             }
 
-            // 게임 시작 시 오라클리온 대사
+            // 게임 시작 시 엘라시온 대사
             if (stageData.storyData.stageIntroDialogues != null && stageData.storyData.stageIntroDialogues.Length > 0)
             {
                 Debug.Log($"[게임 시작 대사]");

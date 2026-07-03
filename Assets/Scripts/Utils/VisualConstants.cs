@@ -263,11 +263,39 @@ namespace JewelsHexaPuzzle.Core
         private static float lastHitStopTime = -1f;
         public static bool CanHitStop()
         {
+            // ★ 외부 일시정지(퍼즈/마나 팝업/리워드 모달) 중에는 HitStop 진입 금지 (감사 M13)
+            //   — 진입하면 종료 시 timeScale=1 강제로 모달의 0을 덮어써 정지 화면 뒤로 게임이 진행됨.
+            if (IsGamePausedExternally()) return false;
             return Time.unscaledTime - lastHitStopTime > HitStopCooldown;
         }
         public static void RecordHitStop()
         {
             lastHitStopTime = Time.unscaledTime;
+        }
+
+        /// <summary>
+        /// 외부 일시정지 상태(퍼즈 메뉴/마나 구매 팝업/리워드 선택 모달) 여부.
+        /// 이 상태에서는 HitStop 등 연출 코루틴이 Time.timeScale을 건드리면 안 된다 (감사 M13).
+        /// </summary>
+        public static bool IsGamePausedExternally()
+        {
+            var gm = JewelsHexaPuzzle.Managers.GameManager.Instance;
+            if (gm != null && gm.IsPaused) return true;
+            var mp = JewelsHexaPuzzle.Managers.MPManager.Instance;
+            if (mp != null && mp.IsManaPurchasePopupOpen) return true;
+            var offer = JewelsHexaPuzzle.Managers.SkillUpgradeOfferSystem.Instance;
+            if (offer != null && offer.IsChoiceModalOpen) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// HitStop 전용 timeScale 쓰기 — HitStop 진행 도중 모달/퍼즈가 열리면
+        /// timeScale 소유권을 외부에 넘기고 쓰기를 중단한다 (감사 M13).
+        /// </summary>
+        public static void HitStopSetTimeScale(float value)
+        {
+            if (IsGamePausedExternally()) return;
+            Time.timeScale = value;
         }
 
         // ============================================================
@@ -278,16 +306,19 @@ namespace JewelsHexaPuzzle.Core
         private static int activeShakeCount = 0;
         private static int activeZoomPunchCount = 0;
 
-        /// <summary>ScreenShake 시작 가능 여부 (첫 번째만 허용)</summary>
+        /// <summary>ScreenShake 시작 가능 여부 (첫 번째만 허용).
+        /// false 반환 시 카운터를 증가시키지 않으므로 EndScreenShake() 호출 불필요.</summary>
         public static bool TryBeginScreenShake()
         {
-            activeShakeCount++;
-            return activeShakeCount == 1; // 첫 번째만 true
+            if (activeShakeCount > 0)
+                return false; // 이미 실행 중 → 카운터 증가 없이 거부
+            activeShakeCount = 1;
+            return true;
         }
         /// <summary>ScreenShake 종료 알림</summary>
         public static void EndScreenShake()
         {
-            activeShakeCount = Mathf.Max(0, activeShakeCount - 1);
+            activeShakeCount = 0;
         }
         /// <summary>모든 ScreenShake 카운터 리셋 (안전장치)</summary>
         public static void ResetScreenShake()

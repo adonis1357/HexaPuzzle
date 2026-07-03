@@ -25,6 +25,11 @@ namespace JewelsHexaPuzzle.Core
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
         private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
 
+        // ★ 지원폭격(GameManager): base 폭탄 동작 강제(스킬 리워드 무시) + 연쇄 횟수 강제 지정.
+        //   "폭탄"과 별개의 "폭격" 능력 — 폭탄 데미지/연쇄 리워드를 적용하지 않는다.
+        private bool supportBombingMode = false;
+        private int supportChainCount = 0;
+
         public bool IsBombing => activeBombCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
         public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
@@ -35,6 +40,11 @@ namespace JewelsHexaPuzzle.Core
             activeBlocks.Clear();
             StopAllCoroutines();
             CleanupEffects();
+            // ★ 폭탄 사망 연출 지연 해제 (감사 M18) — Begin~End 사이에 stuck 복구가 발동하면
+            //   EndBombDeathDefer 호출처(KnockbackFromBomb 완료)가 사라져 모든 사망 연출이
+            //   영구 지연(유령 시체 잔존)된다. DeathAnimation은 GoblinSystem 코루틴이라 여기 StopAllCoroutines 영향 없음.
+            if (JewelsHexaPuzzle.Core.GoblinSystem.Instance != null)
+                JewelsHexaPuzzle.Core.GoblinSystem.Instance.EndBombDeathDefer();
             Debug.Log("[BombBlockSystem] ForceReset called");
         }
 
@@ -54,6 +64,11 @@ namespace JewelsHexaPuzzle.Core
 
         // 폭탄 아이콘 스프라이트 (static 캐시)
         private static Sprite bombIconSprite;
+
+        // ★ 매 재생 시작 시 캐시 클리어 → 새 PNG로 강제 재로드.
+        //   Reload Domain 옵션이 꺼져있어도 Resources/Icons/icon_bomb_base.png 변경 즉시 반영.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetBombIconCache() { bombIconSprite = null; }
 
         private void Start()
         {
@@ -105,7 +120,19 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetBombIconSprite()
         {
             if (bombIconSprite == null)
-                bombIconSprite = CreateBombSprite(256);
+            {
+                // 외부 PNG(Resources/Icons/icon_bomb_base) 우선 로드, 실패 시 프로시저럴 폴백
+                Texture2D tex = Resources.Load<Texture2D>("Icons/icon_bomb_base");
+                if (tex != null)
+                {
+                    bombIconSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+                }
+                else
+                {
+                    Debug.LogWarning("[BombBlockSystem] Resources/Icons/icon_bomb_base 미발견 → 프로시저럴 폴백");
+                    bombIconSprite = CreateBombSprite(256);
+                }
+            }
             return bombIconSprite;
         }
 
@@ -247,11 +274,33 @@ namespace JewelsHexaPuzzle.Core
 
         public void ActivateBomb(HexBlock bombBlock)
         {
+            Debug.Log($"[폭탄진입] ActivateBomb 호출됨, bombBlock={bombBlock}, Data={bombBlock?.Data}, specialType={bombBlock?.Data?.specialType}");
             if (bombBlock == null) return;
             if (bombBlock.Data == null || bombBlock.Data.specialType != SpecialBlockType.Bomb)
                 return;
-            Debug.Log($"[BombBlockSystem] Activating bomb at {bombBlock.Coord}");
+            Debug.Log($"[폭탄진입] BombCoroutine 시작 at {bombBlock.Coord}");
             StartCoroutine(BombCoroutine(bombBlock));
+        }
+
+        /// <summary>
+        /// 지원폭격 전용 발동 — base 폭탄 동작(스킬 리워드 무시) + 강제 N연쇄. ("폭격" 능력, "폭탄"과 별개)
+        /// </summary>
+        public void ActivateSupportBombing(HexBlock bombBlock, int chainCount)
+        {
+            if (bombBlock == null || bombBlock.Data == null || bombBlock.Data.specialType != SpecialBlockType.Bomb)
+                return;
+            supportBombingMode = true;
+            supportChainCount = Mathf.Max(0, chainCount);
+            Debug.Log($"[BombBlockSystem] 지원폭격 발동 at {bombBlock.Coord}, 강제 연쇄={supportChainCount} (리워드 무시)");
+            StartCoroutine(SupportBombWrapper(bombBlock));
+        }
+
+        private IEnumerator SupportBombWrapper(HexBlock bombBlock)
+        {
+            yield return StartCoroutine(BombCoroutine(bombBlock));
+            // 폭발 완료 후 모드 해제 (단일 폭탄만 동작하는 게임오버 컨텍스트라 경합 없음)
+            supportBombingMode = false;
+            supportChainCount = 0;
         }
 
 private IEnumerator BombCoroutine(HexBlock bombBlock)
@@ -280,6 +329,9 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             if (isFirstBomb)
                 StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleLarge));
 
+            // ★ 폭탄 자신의 색상도 대응 게이지/리워드에 충전 (제거되는 색상이므로) — ClearData 전에 호출
+            if (bombBlock.Data != null && bombBlock.Data.gemType != GemType.None)
+                GameManager.Instance?.ChargeResourcesForGemWithSoul(bombBlock.Data.gemType, bombBlock.transform.position);
             // 발사 순간 블록 클리어
             bombBlock.ClearData();
 
@@ -287,38 +339,45 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             List<HexBlock> ring1Targets = new List<HexBlock>();
             List<HexBlock> ring2Targets = new List<HexBlock>();
             HashSet<HexCoord> visitedCoords = new HashSet<HexCoord>();
-            HashSet<HexCoord> ring1Coords = new HashSet<HexCoord>(); // 1칸 범위 좌표 (블록 유무 무관)
-            HashSet<HexCoord> ring2Coords = new HashSet<HexCoord>(); // 2칸 범위 좌표 (블록 유무 무관)
+            HashSet<HexCoord> ring1Coords = new HashSet<HexCoord>(); // 1칸 범위 좌표 (스폰 영역 포함)
+            HashSet<HexCoord> ring2Coords = new HashSet<HexCoord>(); // 2칸 범위 좌표 (스폰 영역 포함)
             visitedCoords.Add(bombCoord);
 
             if (hexGrid != null)
             {
-                // 1칸 인접
-                var ring1 = hexGrid.GetNeighbors(bombCoord);
-                foreach (var neighbor in ring1)
+                // 1칸 인접: 순수 좌표 연산으로 스폰 영역까지 포함
+                var ring1NeighborCoords = bombCoord.GetAllNeighbors();
+                foreach (var neighborCoord in ring1NeighborCoords)
                 {
-                    if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
+                    if (visitedCoords.Contains(neighborCoord)) continue;
+                    visitedCoords.Add(neighborCoord);
+                    ring1Coords.Add(neighborCoord);
+
+                    // 그리드 내 블록이면 파괴 타겟에 추가
+                    if (hexGrid.IsValidCoord(neighborCoord))
                     {
-                        visitedCoords.Add(neighbor.Coord);
-                        ring1Coords.Add(neighbor.Coord);
-                        if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
-                            ring1Targets.Add(neighbor);
+                        var block = hexGrid.GetBlock(neighborCoord);
+                        if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                            ring1Targets.Add(block);
                     }
                 }
 
-                // 2칸 인접
-                foreach (var ring1Block in ring1)
+                // 2칸 인접: ring1 좌표 각각의 이웃 (순수 좌표 연산)
+                foreach (var ring1Coord in ring1NeighborCoords)
                 {
-                    if (ring1Block == null) continue;
-                    var ring2 = hexGrid.GetNeighbors(ring1Block.Coord);
-                    foreach (var neighbor in ring2)
+                    var ring2NeighborCoords = ring1Coord.GetAllNeighbors();
+                    foreach (var neighborCoord in ring2NeighborCoords)
                     {
-                        if (neighbor != null && !visitedCoords.Contains(neighbor.Coord))
+                        if (visitedCoords.Contains(neighborCoord)) continue;
+                        visitedCoords.Add(neighborCoord);
+                        ring2Coords.Add(neighborCoord);
+
+                        // 그리드 내 블록이면 파괴 타겟에 추가
+                        if (hexGrid.IsValidCoord(neighborCoord))
                         {
-                            visitedCoords.Add(neighbor.Coord);
-                            ring2Coords.Add(neighbor.Coord);
-                            if (neighbor.Data != null && neighbor.Data.gemType != GemType.None)
-                                ring2Targets.Add(neighbor);
+                            var block = hexGrid.GetBlock(neighborCoord);
+                            if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                                ring2Targets.Add(block);
                         }
                     }
                 }
@@ -336,28 +395,40 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                     AudioManager.Instance.PlayBombSound();
             }
 
-            // ★ 1칸 폭발 시점: 중심(3) + ring1(2) + ring2(1) 고블린 데미지 일괄 적용
+            // ★ 폭탄 데미지: 기본(중심2, ring1=1, ring2=0) + 스킬 보너스(N)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                var damageMap = new Dictionary<HexCoord, int>();
-                // 중심: 피해 3
-                damageMap[bombCoord] = 3;
-                // 1칸 범위: 피해 2
+                int dmgBonus = 0, directBonus = 0, adjacentBonus = 0;
+                // ★ 지원폭격(supportBombingMode)은 리워드 무시 base 데미지만 사용
+                if (!supportBombingMode && SkillTreeManager.Instance != null)
+                {
+                    dmgBonus = SkillTreeManager.Instance.GetBombDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus(); // ★ 폭탄 데미지 + 전역 타겟강화
+                    directBonus = SkillTreeManager.Instance.GetDirectHitBonus();     // 중심 = 직접 타격
+                    adjacentBonus = SkillTreeManager.Instance.GetAdjacentHitBonus(); // ring = 인접(범위) 타격
+                }
+
+                var bombDamageMap = new Dictionary<HexCoord, int>();
+                bombDamageMap[bombCoord] = 2 + dmgBonus + directBonus;          // 중심(직접)
                 foreach (var coord in ring1Coords)
-                    damageMap[coord] = 2;
-                // 2칸 범위: 피해 1
+                    bombDamageMap[coord] = 1 + dmgBonus + adjacentBonus;          // 1칸(인접)
                 foreach (var coord in ring2Coords)
                 {
-                    if (!damageMap.ContainsKey(coord))
-                        damageMap[coord] = 1;
+                    if (!bombDamageMap.ContainsKey(coord))
+                    {
+                        int r2dmg = 0 + dmgBonus + adjacentBonus;
+                        if (r2dmg > 0) bombDamageMap[coord] = r2dmg; // 0이면 데미지 없음
+                    }
                 }
-                // ★ 폭발 범위 = 직접 타격 (방패 고블린에게 대미지 전달)
-                var directHitCoords = new HashSet<HexCoord>(damageMap.Keys);
-                GoblinSystem.Instance.ApplyBatchDamage(damageMap, directHitCoords);
-
-                // ★ 넉백: 폭발 범위 내 고블린을 밖으로 밀어냄
-                yield return StartCoroutine(GoblinSystem.Instance.ApplyBombKnockback(bombCoord, ring1Coords, ring2Coords));
+                var directHitCoords = new HashSet<HexCoord>(bombDamageMap.Keys);
+                // ★ 사망 연출을 KnockbackFromBomb 이후로 지연 — 죽은 몬스터도 넉백되며 목적지에서 사망
+                GoblinSystem.Instance.BeginBombDeathDefer();
+                GoblinSystem.Instance.ApplyBatchDamage(bombDamageMap, directHitCoords);
             }
+
+            // ★ 블록 파괴 좌표 수집 (블록 파괴 데미지 +1 적용용)
+            // 직격 위치도 폭탄 블록이 ClearData되었으므로 블록 파괴 데미지 대상
+            HashSet<HexCoord> destroyedBlockCoords = new HashSet<HexCoord>();
+            destroyedBlockCoords.Add(bombCoord);
 
             List<Coroutine> destroyCoroutines = new List<Coroutine>();
             int blockScoreSum = 0;
@@ -393,7 +464,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
                     // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
                     if (target.Data.gemType != GemType.None)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType, target.Data.isCracked || target.Data.isShell, target.transform.position, GameManager.IsSoulSuppressedBlock(target));
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -409,6 +480,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                                 RemovalCondition.Normal, target.transform.position);
                     }
 
+                    destroyedBlockCoords.Add(target.Coord);
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos, isFirstBomb)));
                 }
@@ -453,7 +525,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
                     // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
                     if (target.Data.gemType != GemType.None)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType, target.Data.isCracked || target.Data.isShell, target.transform.position, GameManager.IsSoulSuppressedBlock(target));
 
                     // 적군 점수 (폭탄 = SpecialBasic)
                     if (sm != null)
@@ -469,6 +541,7 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
                                 RemovalCondition.Normal, target.transform.position);
                     }
 
+                    destroyedBlockCoords.Add(target.Coord);
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithExplosion(target, blockColor, bombWorldPos, isFirstBomb)));
                 }
@@ -478,15 +551,336 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             foreach (var co in destroyCoroutines)
                 yield return co;
 
+            // ★ 블록 파괴 데미지 (+1): 몬스터가 서 있는 칸의 블록이 파괴된 경우 추가 적용
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive && destroyedBlockCoords.Count > 0)
+            {
+                var blockDestroyDamageMap = new Dictionary<HexCoord, int>();
+                foreach (var coord in destroyedBlockCoords)
+                    blockDestroyDamageMap[coord] = 1;
+                var blockDirectHits = new HashSet<HexCoord>(destroyedBlockCoords);
+                GoblinSystem.Instance.ApplyBatchDamage(blockDestroyDamageMap, blockDirectHits);
+            }
+
+            // ★ 넉백: 블록 파괴 완료 직후 실행 (이동 연출 포함 코루틴)
+            //   폭탄 데미지로 죽은 몬스터들도 함께 넉백된 후 목적지에서 사망 연출 재생
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            {
+                yield return StartCoroutine(GoblinSystem.Instance.KnockbackFromBomb(bombCoord));
+                // 지연 모드 종료 (혹시 KnockbackFromBomb에서 누락된 사망자 안전망 풀어주기)
+                GoblinSystem.Instance.EndBombDeathDefer();
+            }
+
+            // ★ 연쇄폭탄: 지원폭격은 강제 N연쇄(리워드 무시), 일반은 스킬 레벨
+            int chainBombLevel = supportBombingMode
+                ? supportChainCount
+                : (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetChainBombLevel() : 0);
+            if (chainBombLevel > 0 && hexGrid != null)
+            {
+                yield return StartCoroutine(SpawnChainBombs(bombCoord, chainBombLevel));
+            }
+
             int totalScore = 400 + blockScoreSum;
             Debug.Log($"[BombBlockSystem] === BOMB COMPLETE === Score={totalScore} (base:400 + blockTierSum:{blockScoreSum})");
-
-            // 미션 카운팅은 파괴 루프에서 OnSingleGemDestroyedForMission()으로 개별 처리
-
 
             OnBombComplete?.Invoke(totalScore);
             activeBlocks.Remove(bombBlock);
             activeBombCount--;
+
+            // 튜토리얼 콜백: 폭탄 발동 완료
+            JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnBombActivated();
+        }
+
+        // ============================================================
+        // 연쇄폭탄 — 소형 폭탄 투척 + 폭발
+        // ============================================================
+
+        /// <summary>
+        /// 폭탄 폭발 후 소형 폭탄을 랜덤 블록에 투척합니다.
+        /// 레벨에 따라 1~3개 투척. 투척 후 즉시 소형 폭발.
+        /// 소형 폭발: 중심 2데미지 + 주변 6칸 1데미지 (넉백 없음).
+        /// 폭탄 데미지 스킬 적용.
+        /// </summary>
+        public IEnumerator SpawnChainBombs(HexCoord originCoord, int count)
+        {
+            // 투척 대상: 폭발 범위(2칸) 밖의 살아있는 블록 중 랜덤 선택
+            List<HexBlock> candidates = new List<HexBlock>();
+            foreach (var block in hexGrid.GetAllBlocks())
+            {
+                if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+                if (block.Data.specialType != SpecialBlockType.None) continue; // 특수 블록 제외
+                int dist = block.Coord.DistanceTo(originCoord);
+                if (dist > 2) // 폭발 범위 밖만
+                    candidates.Add(block);
+            }
+
+            if (candidates.Count == 0) yield break;
+
+            // 랜덤 셔플 후 count개 선택
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = Random.Range(0, i + 1);
+                var temp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = temp;
+            }
+            int actualCount = Mathf.Min(count, candidates.Count);
+
+            List<HexBlock> targets = candidates.GetRange(0, actualCount);
+
+            // 투척 연출: 원점에서 타겟으로 소형 폭탄 비행
+            List<Coroutine> flyCos = new List<Coroutine>();
+            foreach (var target in targets)
+            {
+                flyCos.Add(StartCoroutine(ChainBombFlyEffect(originCoord, target)));
+            }
+            foreach (var co in flyCos)
+                yield return co;
+
+            // 짧은 대기 후 동시 폭발
+            yield return new WaitForSeconds(0.15f);
+
+            // 폭탄 데미지 보너스 (중심=직접, ring=인접) — 지원폭격은 리워드 무시 base
+            int dmgBonus = (!supportBombingMode && SkillTreeManager.Instance != null)
+                ? SkillTreeManager.Instance.GetBombDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() : 0; // ★ 폭탄 데미지 + 전역 타겟강화
+            int directBonus = (!supportBombingMode && SkillTreeManager.Instance != null) ? SkillTreeManager.Instance.GetDirectHitBonus() : 0;
+            int adjacentBonus = (!supportBombingMode && SkillTreeManager.Instance != null) ? SkillTreeManager.Instance.GetAdjacentHitBonus() : 0;
+            int centerDmg = 2 + dmgBonus + directBonus;
+            int ringDmg = 1 + dmgBonus + adjacentBonus;
+
+            List<Coroutine> explodeCos = new List<Coroutine>();
+            foreach (var target in targets)
+            {
+                if (target == null) continue;
+                explodeCos.Add(StartCoroutine(ChainBombExplode(target.Coord, centerDmg, ringDmg)));
+            }
+            foreach (var co in explodeCos)
+                yield return co;
+
+            Debug.Log($"[BombBlockSystem] 연쇄폭탄 {actualCount}개 폭발 완료 (dmgBonus={dmgBonus})");
+        }
+
+        /// <summary>소형 폭탄 비행 이펙트: 원점 → 타겟 블록으로 포물선 비행</summary>
+        private IEnumerator ChainBombFlyEffect(HexCoord origin, HexBlock target)
+        {
+            if (target == null || hexGrid == null) yield break;
+
+            Vector3 startPos = hexGrid.HexToWorldPosition(origin);
+            Vector3 endPos = target.transform.position;
+
+            // 소형 폭탄 오브젝트 생성
+            GameObject bombObj = new GameObject("ChainBomb");
+            Transform parent = effectParent != null ? effectParent : hexGrid.transform;
+            bombObj.transform.SetParent(parent, true);
+            bombObj.transform.position = startPos;
+
+            var bombImg = bombObj.AddComponent<UnityEngine.UI.Image>();
+            bombImg.color = new Color(1f, 0.4f, 0.1f, 1f);
+            bombImg.raycastTarget = false;
+            RectTransform bombRt = bombObj.GetComponent<RectTransform>();
+            bombRt.sizeDelta = new Vector2(20f, 20f);
+
+            // 포물선 비행 (0.35초)
+            float duration = 0.35f;
+            float elapsed = 0f;
+            float arcHeight = 80f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                Vector3 pos = Vector3.Lerp(startPos, endPos, t);
+                // 포물선 Y 오프셋
+                pos.y += arcHeight * 4f * t * (1f - t);
+                bombObj.transform.position = pos;
+                // 크기 애니메이션: 작게 → 크게
+                float scale = 0.5f + 0.5f * t;
+                bombRt.sizeDelta = new Vector2(20f * scale, 20f * scale);
+                yield return null;
+            }
+
+            // 착탄 플래시
+            bombImg.color = Color.white;
+            yield return new WaitForSeconds(0.05f);
+            Destroy(bombObj);
+        }
+
+        /// <summary>소형 폭탄 폭발: 중심 블록 + 주변 6칸 파괴. 넉백 없음.</summary>
+        private IEnumerator ChainBombExplode(HexCoord center, int centerDmg, int ringDmg)
+        {
+            if (hexGrid == null) yield break;
+
+            // 중심 블록 폭발 이펙트
+            Vector3 centerWorldPos = hexGrid.HexToWorldPosition(center);
+            Color explodeColor = new Color(1f, 0.5f, 0.15f);
+
+            if (effectParent != null)
+                StartCoroutine(BombExplosionEffectPublic(centerWorldPos, explodeColor));
+            StartCoroutine(ScreenShake(
+                VisualConstants.ShakeSmallIntensity, VisualConstants.ShakeSmallDuration));
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayBombSound();
+
+            // 중심 블록 파괴
+            HexBlock centerBlock = hexGrid.GetBlock(center);
+            if (centerBlock != null && centerBlock.Data != null && centerBlock.Data.gemType != GemType.None)
+            {
+                if (centerBlock.Data.specialType != SpecialBlockType.None &&
+                    centerBlock.Data.specialType != SpecialBlockType.FixedBlock)
+                {
+                    // 특수 블록: pending 예약 — 미션/게이지 집계 없음 (감사 M10)
+                    //   집계는 이후 특수 블록 발동(ActivateSpecialAndWaitLocal) 시 1회만 수행되어야 함.
+                    //   (이전: 예약 전에 집계 → 발동 시 한 번 더 집계 = 이중 집계)
+                    if (!pendingSpecialBlocks.Contains(centerBlock))
+                    {
+                        pendingSpecialBlocks.Add(centerBlock);
+                        centerBlock.SetPendingActivation();
+                        centerBlock.StartWarningBlink(10f);
+                    }
+                }
+                else
+                {
+                    // 실제 파괴되는 블록만 미션 카운팅 (감사 M10)
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(centerBlock.Data.gemType, centerBlock.Data.isCracked || centerBlock.Data.isShell, centerBlock.transform.position, GameManager.IsSoulSuppressedBlock(centerBlock));
+                    Color blockColor = GemColors.GetColor(centerBlock.Data.gemType);
+                    StartCoroutine(DestroyBlockWithExplosionPublic(centerBlock, blockColor, centerWorldPos, true));
+                }
+            }
+
+            // 중심 몬스터 데미지 (넉백 없음)
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                && GoblinSystem.Instance.HasGoblinAt(center))
+            {
+                GoblinSystem.Instance.ApplyDamageAtPosition(center, centerDmg);
+            }
+
+            // 주변 6칸 블록 파괴 + 데미지
+            var neighbors = center.GetAllNeighbors();
+            foreach (var nCoord in neighbors)
+            {
+                if (!hexGrid.IsInsideGrid(nCoord)) continue;
+
+                HexBlock nBlock = hexGrid.GetBlock(nCoord);
+                if (nBlock != null && nBlock.Data != null && nBlock.Data.gemType != GemType.None)
+                {
+                    if (nBlock.Data.specialType != SpecialBlockType.None &&
+                        nBlock.Data.specialType != SpecialBlockType.FixedBlock)
+                    {
+                        // 특수 블록: pending 예약 — 집계는 발동 시 1회만 (감사 M10, 이중 집계 방지)
+                        if (!pendingSpecialBlocks.Contains(nBlock))
+                        {
+                            pendingSpecialBlocks.Add(nBlock);
+                            nBlock.SetPendingActivation();
+                            nBlock.StartWarningBlink(10f);
+                        }
+                    }
+                    else
+                    {
+                        // 실제 파괴되는 블록만 미션 카운팅 (감사 M10)
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(nBlock.Data.gemType, nBlock.Data.isCracked || nBlock.Data.isShell, nBlock.transform.position, GameManager.IsSoulSuppressedBlock(nBlock));
+                        Color blockColor = GemColors.GetColor(nBlock.Data.gemType);
+                        StartCoroutine(DestroyBlockWithExplosionPublic(nBlock, blockColor, centerWorldPos, true));
+                    }
+                }
+
+                // 주변 몬스터 데미지 (넉백 없음)
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive
+                    && GoblinSystem.Instance.HasGoblinAt(nCoord))
+                {
+                    GoblinSystem.Instance.ApplyDamageAtPosition(nCoord, ringDmg);
+                }
+            }
+
+            yield return new WaitForSeconds(0.2f);
+        }
+
+        // ============================================================
+        // 폭탄 넉백 — 폭탄 범위 밖(3칸째) 블록 위로 이동
+        // ============================================================
+
+        /// <summary>
+        /// 폭발 범위 내 몬스터를 폭탄 중심에서 3칸째 위치(범위 밖 첫 칸)로 이동.
+        /// 목적지 = bombPos + 방향 × 3. 그리드 밖이면 즉사.
+        /// </summary>
+        private IEnumerator ApplyBombKnockbackAll(HexCoord bombPos, List<HexCoord> coords)
+        {
+            if (hexGrid == null || GoblinSystem.Instance == null) yield break;
+
+            var processed = new HashSet<GoblinData>();
+
+            foreach (var coord in coords)
+            {
+                GoblinData goblin = GoblinSystem.Instance.GetGoblinAt(coord);
+                if (goblin == null || !goblin.isAlive || goblin.visualObject == null) continue;
+                if (processed.Contains(goblin)) continue;
+                processed.Add(goblin);
+
+                // === 넉백: 폭탄→몬스터 직선 방향으로 bombPos에서 3칸째로 밀어냄 ===
+                HexCoord offset = coord - bombPos;
+                HexCoord destination;
+
+                if (offset.q == 0 && offset.r == 0)
+                {
+                    // 직격: 6방향 랜덤, bombPos + dir×3
+                    HexCoord randDir = HexCoord.Directions[Random.Range(0, 6)];
+                    destination = bombPos + new HexCoord(randDir.q * 3, randDir.r * 3);
+                }
+                else
+                {
+                    // 면으로 이어진 직선 판별: offset이 6방향 단위벡터의 정수배인지
+                    HexCoord unitDir = new HexCoord(0, 0);
+                    bool isStraight = false;
+                    foreach (var d in HexCoord.Directions)
+                    {
+                        if (d.q != 0 && offset.q % d.q == 0)
+                        {
+                            int n = offset.q / d.q;
+                            if (n > 0 && offset.r == d.r * n) { unitDir = d; isStraight = true; break; }
+                        }
+                        else if (d.q == 0 && offset.q == 0 && d.r != 0 && offset.r % d.r == 0)
+                        {
+                            int n = offset.r / d.r;
+                            if (n > 0) { unitDir = d; isStraight = true; break; }
+                        }
+                    }
+
+                    if (isStraight)
+                    {
+                        // 직선: bombPos + 단위방향 × 3 (폭발 범위 바깥 첫 칸)
+                        destination = bombPos + new HexCoord(unitDir.q * 3, unitDir.r * 3);
+                    }
+                    else
+                    {
+                        // 꺾임: 실제 벡터 방향 그대로 연장 (coord + offset)
+                        destination = coord + offset;
+                    }
+                }
+
+                // 경계 체크
+                // 목적지 경계 판정
+                int boundResult = GoblinSystem.Instance.CheckBoundsType(destination);
+                if (boundResult == 2)
+                {
+                    // 좌/우/하단 밖 → 즉사
+                    Vector2 deathWorldPos = hexGrid.CalculateFlatTopHexPosition(destination);
+                    yield return StartCoroutine(GoblinSystem.Instance.AnimateKnockback(goblin, deathWorldPos));
+                    GoblinSystem.Instance.KillGoblinByKnockback(goblin);
+                    continue;
+                }
+
+                // 목적지에 블록이 있으면 이동 불가 → 스킵
+                if (hexGrid.IsInsideGrid(destination))
+                {
+                    HexBlock block = hexGrid.GetBlock(destination);
+                    if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                        continue;
+                }
+
+                // 이동
+                goblin.position = destination;
+                Vector2 worldPos = hexGrid.CalculateFlatTopHexPosition(destination);
+                yield return StartCoroutine(GoblinSystem.Instance.AnimateKnockback(goblin, worldPos));
+
+                Debug.Log($"[BombKnockback] {coord} → {destination} (offset={offset})");
+            }
         }
 
         /// <summary>
@@ -708,10 +1102,21 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
         {
             if (block == null) yield break;
 
+            // ★ 흙더미 블록 보호 — 폭탄 효과 무효
+            if (block.Data != null && block.Data.dirtMound > 0)
+            {
+                Debug.Log($"[Bomb] 흙더미 블록 보호: ({block.Coord}) — 폭탄 무효");
+                yield break;
+            }
+
             // 고블린 데미지는 BombCoroutine에서 폭발 범위 전체에 일괄 적용 (블록 유무 무관)
 
             Vector3 blockPos = block.transform.position;
             Vector3 pushDir = (blockPos - bombCenter).normalized;
+
+            // ★ 쉘 블록이면 폭발 연출과 함께 파편 이펙트도 발동
+            if (showEffects && removalSystem != null && block.Data != null && block.Data.isShell)
+                removalSystem.TryPlayShellBurst(block);
 
             if (showEffects)
             {
@@ -929,40 +1334,34 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             Destroy(obj);
         }
 
-        private int shakeCount = 0;
-        private Vector3 shakeOriginalPos;
-
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
-            shakeCount++;
+            // ★ 원래 위치 저장 — Vector3.zero로 강제 복원 시 그리드가 어긋남
+            Vector3 originalPos = target.localPosition;
 
             float elapsed = 0f;
-
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = originalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                target.localPosition = originalPos;
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1002,10 +1401,11 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
 
         private IEnumerator HitStop(float stopDuration)
         {
+            // CanHitStop이 외부 일시정지(모달/퍼즈)도 검사 — HitStopSetTimeScale은 도중 개입 대비 (감사 M13)
             if (!VisualConstants.CanHitStop()) yield break;
             VisualConstants.RecordHitStop();
 
-            Time.timeScale = 0f;
+            VisualConstants.HitStopSetTimeScale(0f);
             yield return new WaitForSecondsRealtime(stopDuration);
 
             float elapsed = 0f;
@@ -1013,42 +1413,46 @@ private IEnumerator BombCoroutine(HexBlock bombBlock)
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
-                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                VisualConstants.HitStopSetTimeScale(Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t)));
                 yield return null;
             }
-            Time.timeScale = 1f;
+            VisualConstants.HitStopSetTimeScale(1f);
         }
 
         private IEnumerator ZoomPunch(float targetScale)
         {
-            // 다수 특수 블록 동시 발동 시 줌 펀치는 하나만 실행
             bool isOwner = VisualConstants.TryBeginZoomPunch();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 origScale = target.localScale;
+            Vector3 origScale = Vector3.one; // 기본 스케일 고정
             Vector3 punchScale = origScale * targetScale;
 
-            float elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
-                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
-            }
+                float elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchInDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                    target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
 
-            elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                    target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
+            }
+            finally
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
-                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
+                target.localScale = Vector3.one;
+                VisualConstants.EndZoomPunch();
             }
-
-            target.localScale = origScale;
-            VisualConstants.EndZoomPunch();
         }
 
         private IEnumerator DestroyFlashOverlay(HexBlock block)

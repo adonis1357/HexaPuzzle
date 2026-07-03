@@ -1,0 +1,186 @@
+{
+  "$schema": "HexaPuzzle Skill Catalog v1",
+  "note": "스킬 선택 시스템의 단일 소스. 각 스킬은 id로 식별. levels[].value = 게임 로직이 읽는 수치, label = UI 표기. sprite = Sprites/<sprite>.png (레벨별 다르면 levelSprites). 에디터 메뉴가 이 JSON으로 SkillCatalog.asset 을 빌드합니다.",
+  "categories": [
+    { "id": "PowerUpUpgrade", "nameKo": "파워업 강화", "nameEn": "Power-Up Upgrade" },
+    { "id": "ItemUpgrade",    "nameKo": "아이템 강화", "nameEn": "Item Upgrade" },
+    { "id": "Combat",         "nameKo": "전투/치명타", "nameEn": "Combat & Crit" },
+    { "id": "Deploy",         "nameKo": "즉시 랜덤 배치", "nameEn": "Instant Deploy" },
+    { "id": "Meta",           "nameKo": "메타 진행", "nameEn": "Meta Progression" }
+  ],
+  "skills": [
+    {
+      "id": "drill_damage", "category": "PowerUpUpgrade", "powerup": "Drill", "sprite": "Drill_damage",
+      "nameKo": "드릴 강화", "nameEn": "Drill Damage", "desc": "드릴 데미지가 1 증가합니다.",
+      "stat": "drillDamage", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "drill_move", "category": "PowerUpUpgrade", "powerup": "Drill", "sprite": "Drill_move",
+      "nameKo": "드릴 기동", "nameEn": "Drill Move", "desc": "드릴을 1칸 이동시켜 사용할 수 있습니다.",
+      "stat": "drillMove", "maxLevel": 1,
+      "levels": [ { "level": 1, "value": 1, "label": "ON" } ]
+    },
+    {
+      "id": "drill_cushion", "category": "PowerUpUpgrade", "powerup": "Drill", "sprite": "Drill_cushion",
+      "nameKo": "드릴 쿠션", "nameEn": "Drill Cushion", "desc": "드릴 쿠션이 1 증가합니다.",
+      "stat": "drillCushion", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "drill_pierce", "category": "PowerUpUpgrade", "powerup": "Drill", "sprite": "Drill_pierce",
+      "nameKo": "드릴 관통", "nameEn": "Drill Pierce", "desc": "드릴이 블록을 관통합니다.",
+      "stat": "drillPierce", "maxLevel": 1,
+      "levels": [ { "level": 1, "value": 1, "label": "ON" } ]
+    },
+    {
+      "id": "bomb_damage", "category": "PowerUpUpgrade", "powerup": "Bomb", "sprite": "Bomb_damage",
+      "nameKo": "폭탄 강화", "nameEn": "Bomb Damage", "desc": "폭탄 데미지가 1 증가합니다.",
+      "stat": "bombDamage", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "bomb_move", "category": "PowerUpUpgrade", "powerup": "Bomb", "sprite": "Bomb_move",
+      "nameKo": "폭탄 기동", "nameEn": "Bomb Move", "desc": "폭탄을 1칸 이동시켜 사용할 수 있습니다.",
+      "stat": "bombMove", "maxLevel": 1,
+      "levels": [ { "level": 1, "value": 1, "label": "ON" } ]
+    },
+    {
+      "id": "bomb_chain", "category": "PowerUpUpgrade", "powerup": "Bomb", "sprite": "Bomb_chain",
+      "nameKo": "폭탄 연쇄", "nameEn": "Bomb Chain", "desc": "폭발이 주변 폭탄으로 연쇄됩니다.",
+      "stat": "bombChain", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "Lv.1" }, { "level": 2, "value": 2, "label": "Lv.2" }, { "level": 3, "value": 3, "label": "Lv.3" } ]
+    },
+    {
+      "id": "bomb_knockback", "category": "PowerUpUpgrade", "powerup": "Bomb", "sprite": "Bomb_knockback",
+      "nameKo": "폭탄 넉백", "nameEn": "Bomb Knockback", "desc": "폭탄 넉백이 1 증가합니다.",
+      "stat": "bombKnockback", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "drone_damage", "category": "PowerUpUpgrade", "powerup": "Drone", "sprite": "Drone_damage",
+      "nameKo": "드론 강화", "nameEn": "Drone Damage", "desc": "드론 데미지가 1 증가합니다.",
+      "stat": "droneDamage", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "drone_clone", "category": "PowerUpUpgrade", "powerup": "Drone", "sprite": "Drone_clone",
+      "nameKo": "드론 분신", "nameEn": "Drone Clone", "desc": "드론 분신이 1 증가합니다.",
+      "stat": "droneClone", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "cannon_damage", "category": "PowerUpUpgrade", "powerup": "Cannon", "sprite": "Cannon_damage",
+      "nameKo": "레이저포 강화", "nameEn": "Cannon Damage", "desc": "레이저포 데미지가 1 증가합니다.",
+      "stat": "cannonDamage", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+
+    {
+      "id": "hammer_damage", "category": "ItemUpgrade", "item": "Hammer", "sprite": "Hammer_damage",
+      "nameKo": "망치 공격력", "nameEn": "Hammer Damage", "desc": "망치 공격력이 1 증가합니다.",
+      "stat": "hammerDamage", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "hammer_range", "category": "ItemUpgrade", "item": "Hammer", "sprite": "Hammer_range",
+      "nameKo": "망치 범위", "nameEn": "Hammer Range", "desc": "망치 파괴 범위가 1 증가합니다.",
+      "stat": "hammerRange", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "swap_step", "category": "ItemUpgrade", "item": "Swap", "sprite": "Swap_step",
+      "nameKo": "스왑 디딤", "nameEn": "Swap Step", "desc": "디딤돌처럼 블록을 건너뛰어 스왑할 수 있습니다.",
+      "stat": "swapStep", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "1칸" }, { "level": 2, "value": 2, "label": "2칸" }, { "level": 3, "value": 3, "label": "3칸" } ]
+    },
+    {
+      "id": "line_damage", "category": "ItemUpgrade", "item": "Line", "sprite": "LineBtn_damage",
+      "nameKo": "라인 강화", "nameEn": "Line Damage", "desc": "라인 데미지가 1 증가합니다.",
+      "stat": "lineDamage", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "line_connect", "category": "ItemUpgrade", "item": "Line", "sprite": "LineBtn_connect",
+      "nameKo": "라인 연결", "nameEn": "Line Connect", "desc": "시작 블록과 다른 색 블록을 라인으로 연결할 수 있습니다. 레벨마다 연결 가능한 다른 블록 수가 1개 증가합니다.",
+      "stat": "lineConnect", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "1종" }, { "level": 2, "value": 2, "label": "2종" }, { "level": 3, "value": 3, "label": "3종" } ]
+    },
+
+    {
+      "id": "direct_hit", "category": "Combat", "sprite": "Skill_DirectHit",
+      "nameKo": "직접 타격", "nameEn": "Direct Hit", "desc": "블록 회전 매칭이 몬스터 칸에서 일어나면 몬스터를 직접 타격합니다.",
+      "stat": "directHit", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "adjacent_hit", "category": "Combat", "sprite": "Skill_AdjacentHit",
+      "nameKo": "인접 타격", "nameEn": "Adjacent Hit", "desc": "몬스터에 인접한 블록을 매칭하면 모든 인접 몬스터를 타격합니다.",
+      "stat": "adjacentHit", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "+1" }, { "level": 2, "value": 2, "label": "+2" }, { "level": 3, "value": 3, "label": "+3" } ]
+    },
+    {
+      "id": "crit_chance", "category": "Combat", "sprite": "Skill_CritChance",
+      "nameKo": "낙하 치명타 확률", "nameEn": "Crit Chance", "desc": "낙하 데미지 치명타 확률이 증가합니다. 치명타 시 데미지 +1.",
+      "stat": "critChancePct", "baseValue": 10, "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 30, "label": "30%" }, { "level": 2, "value": 50, "label": "50%" }, { "level": 3, "value": 70, "label": "70%" } ]
+    },
+    {
+      "id": "crit_damage", "category": "Combat", "sprite": "Skill_CritDamage",
+      "nameKo": "치명타 데미지", "nameEn": "Crit Damage", "desc": "치명타 추가 데미지가 증가합니다.",
+      "stat": "critBonus", "baseValue": 1, "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 2, "label": "+2" }, { "level": 2, "value": 3, "label": "+3" }, { "level": 3, "value": 4, "label": "+4" } ]
+    },
+
+    {
+      "id": "deploy_drill", "category": "Deploy", "powerup": "Drill", "sprite": "Deploy_Drill",
+      "nameKo": "드릴 즉시 배치", "nameEn": "Drill Deploy", "desc": "드릴을 보드 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployDrill", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 3, "label": "×3" }, { "level": 2, "value": 4, "label": "×4" }, { "level": 3, "value": 5, "label": "×5" } ]
+    },
+    {
+      "id": "deploy_bomb", "category": "Deploy", "powerup": "Bomb", "sprite": "Deploy_Bomb",
+      "nameKo": "폭탄 즉시 배치", "nameEn": "Bomb Deploy", "desc": "폭탄을 보드 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployBomb", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 2, "label": "×2" }, { "level": 2, "value": 3, "label": "×3" }, { "level": 3, "value": 4, "label": "×4" } ]
+    },
+    {
+      "id": "deploy_drone", "category": "Deploy", "powerup": "Drone", "sprite": "Deploy_Drone",
+      "nameKo": "드론 즉시 배치", "nameEn": "Drone Deploy", "desc": "드론을 보드 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployDrone", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 2, "label": "×2" }, { "level": 2, "value": 3, "label": "×3" }, { "level": 3, "value": 4, "label": "×4" } ]
+    },
+    {
+      "id": "deploy_cannon", "category": "Deploy", "powerup": "Cannon", "sprite": "Deploy_Cannon",
+      "nameKo": "레이저포 즉시 배치", "nameEn": "Cannon Deploy", "desc": "레이저포를 보드 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployCannon", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "×1" }, { "level": 2, "value": 2, "label": "×2" }, { "level": 3, "value": 3, "label": "×3" } ]
+    },
+    {
+      "id": "deploy_mix2", "category": "Deploy", "sprite": "Deploy_Mix2",
+      "nameKo": "혼합 2종 배치", "nameEn": "Mixed Deploy ×2", "desc": "드릴·폭탄을 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployMix2", "mix": ["Drill", "Bomb"], "maxLevel": 1,
+      "levels": [ { "level": 1, "value": 2, "label": "2종" } ]
+    },
+    {
+      "id": "deploy_mix3", "category": "Deploy", "sprite": "Deploy_Mix3",
+      "nameKo": "혼합 3종 배치", "nameEn": "Mixed Deploy ×3", "desc": "드릴·폭탄·드론을 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployMix3", "mix": ["Drill", "Bomb", "Drone"], "maxLevel": 1,
+      "levels": [ { "level": 1, "value": 3, "label": "3종" } ]
+    },
+    {
+      "id": "deploy_mix4", "category": "Deploy", "sprite": "Deploy_Mix4",
+      "nameKo": "혼합 4종 배치", "nameEn": "Mixed Deploy ×4", "desc": "드릴·폭탄·드론·레이저포를 무작위 칸에 즉시 배치합니다.",
+      "stat": "deployMix4", "mix": ["Drill", "Bomb", "Drone", "Cannon"], "maxLevel": 1,
+      "levels": [ { "level": 1, "value": 4, "label": "4종" } ]
+    },
+
+    {
+      "id": "gauge_reduce", "category": "Meta", "sprite": "GaugeReduce_Lv1",
+      "levelSprites": ["GaugeReduce_Lv1", "GaugeReduce_Lv2", "GaugeReduce_Lv3"],
+      "nameKo": "달성 게이지 감소", "nameEn": "Gauge Reduction", "desc": "스킬 선택에 필요한 달성 게이지 칸을 줄입니다.",
+      "stat": "gaugeReduce", "maxLevel": 3,
+      "levels": [ { "level": 1, "value": 1, "label": "−1" }, { "level": 2, "value": 2, "label": "−2" }, { "level": 3, "value": 3, "label": "−3" } ]
+    }
+  ]
+}

@@ -13,6 +13,18 @@ namespace JewelsHexaPuzzle.Managers
     /// </summary>
     public class UIManager : MonoBehaviour
     {
+        public static UIManager Instance { get; private set; }
+
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
         [Header("HUD Elements")]
         [SerializeField] private Text turnText;
         [SerializeField] private Text stageText;
@@ -43,6 +55,8 @@ namespace JewelsHexaPuzzle.Managers
 
         [Header("Item Buttons")]
         [SerializeField] private ItemButtonUI[] itemButtons;
+        /// <summary>아이템 버튼 배열 외부 접근</summary>
+        public ItemButtonUI[] ItemButtons => itemButtons;
 
         [Header("Popups")]
         [SerializeField] private GameObject pausePopup;
@@ -87,6 +101,10 @@ namespace JewelsHexaPuzzle.Managers
 
         // 복수 미션 진행도
         public static List<Text> gameMissionCountTexts = new List<Text>();
+
+        // ★ 미션 행 하단 진행바 fill (anchorMax.x = 진행률) + 목표 수량 (행 인덱스 동기)
+        public static List<RectTransform> gameMissionProgressFills = new List<RectTransform>();
+        public static List<int> gameMissionTargets = new List<int>();
         public static RectTransform gameMissionContainerRect;
 
         // 다음 미션 미리보기
@@ -105,6 +123,7 @@ namespace JewelsHexaPuzzle.Managers
         {
             SetupButtons();
             HideAllPopups();
+            InitToastPool();
 
             if (goldText != null)
                 scoreDefaultColor = goldText.color;
@@ -155,7 +174,7 @@ namespace JewelsHexaPuzzle.Managers
         {
             if (turnText == null) return;
 
-            turnText.text = turns.ToString();
+            JewelsHexaPuzzle.Utils.NumberRoller.Roll(turnText, turns, v => v.ToString());
 
             // 무한모드: 경고/펄스 비활성화, 항상 흰색
             if (isInfiniteMode)
@@ -330,7 +349,8 @@ namespace JewelsHexaPuzzle.Managers
         {
             if (hudGoldText != null)
             {
-                hudGoldText.text = gold.ToString();
+                // 골드는 또렷하게 카운트업 보이도록 더 긴 가시 지속시간(min 0.35s, 상한 0.7s)
+                JewelsHexaPuzzle.Utils.NumberRoller.Roll(hudGoldText, gold, v => v.ToString(), 0.7f, 0.35f);
             }
         }
 
@@ -536,10 +556,12 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void UpdateItemButtons(ItemData[] items)
         {
+            Debug.Log($"[아이템진단4] UpdateItemButtons 호출됨 itemButtons={(itemButtons != null ? itemButtons.Length.ToString() : "null")} items={items?.Length}");
             if (itemButtons == null) return;
 
             for (int i = 0; i < itemButtons.Length; i++)
             {
+                Debug.Log($"[아이템진단4] 버튼[{i}]={itemButtons[i]} null={itemButtons[i] == null}");
                 if (i < items.Length)
                 {
                     itemButtons[i].SetItem(items[i]);
@@ -640,9 +662,7 @@ namespace JewelsHexaPuzzle.Managers
             // 타이틀 표시
             if (clearTitleText != null)
             {
-                int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
-                clearTitleText.text = $"STAGE {stage} CLEAR!";
-                clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
+                clearTitleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
             }
 
             // 획득 점수 표시 (카운팅 애니메이션)
@@ -744,9 +764,7 @@ namespace JewelsHexaPuzzle.Managers
             // 타이틀 표시
             if (clearTitleText != null)
             {
-                int stage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 1;
-                clearTitleText.text = $"STAGE {stage} CLEAR!";
-                clearTitleText.text += "\n수고하셨습니다!\n멋진 플레이였어요!";
+                clearTitleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
             }
 
             // 점수 표시
@@ -1105,7 +1123,7 @@ namespace JewelsHexaPuzzle.Managers
             bgRect.anchorMax = Vector2.one;
             bgRect.sizeDelta = Vector2.zero;
             Image bgImage = background.AddComponent<Image>();
-            bgImage.color = new Color(0, 0, 0, 0.7f);
+            bgImage.color = ClaudeTheme.Overlay;
             bgImage.raycastTarget = true;
 
             // 팝업 패널 (중앙)
@@ -1117,14 +1135,16 @@ namespace JewelsHexaPuzzle.Managers
             panelRect.sizeDelta = new Vector2(650, 650);
             panelRect.anchoredPosition = Vector2.zero;
 
-            // 패널 배경 (어두운 보라/남색)
+            // 패널 배경 (크림 둥근 패널)
             Image panelBg = panel.AddComponent<Image>();
-            panelBg.color = new Color(0.2f, 0.15f, 0.35f, 0.95f);
+            panelBg.sprite = ClaudeTheme.PanelSprite;
+            panelBg.type = Image.Type.Sliced;
+            panelBg.color = ClaudeTheme.Surface;
 
-            // 패널 테두리 (금색)
+            // 패널 테두리 (소프트 코랄)
             Outline outline = panel.AddComponent<Outline>();
-            outline.effectColor = new Color(0.84f, 0.68f, 0.1f, 1f);
-            outline.effectDistance = new Vector2(3, 3);
+            outline.effectColor = new Color(ClaudeTheme.Coral.r, ClaudeTheme.Coral.g, ClaudeTheme.Coral.b, 0.35f);
+            outline.effectDistance = new Vector2(2, 2);
 
             // 패널 코너 라운드 처리 (직사각형은 가능하지만 정확한 라운드는 어려우므로 스케일로 표현)
 
@@ -1139,11 +1159,11 @@ namespace JewelsHexaPuzzle.Managers
 
             Text titleText = titleObj.AddComponent<Text>();
             titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            titleText.text = "STAGE CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
+            titleText.text = "LEVEL CLEAR!\n수고하셨습니다!\n멋진 플레이였어요!";
             titleText.fontSize = 36;
             titleText.fontStyle = FontStyle.Bold;
             titleText.alignment = TextAnchor.UpperCenter;
-            titleText.color = new Color(1f, 0.84f, 0f, 1f); // 노란색
+            titleText.color = ClaudeTheme.CoralDark; // 코랄 (클리어 타이틀)
             titleText.horizontalOverflow = HorizontalWrapMode.Wrap;
             clearTitleText = titleText;
 
@@ -1161,7 +1181,7 @@ namespace JewelsHexaPuzzle.Managers
             scoreText.text = "획득 점수: 0";
             scoreText.fontSize = 32;
             scoreText.alignment = TextAnchor.MiddleCenter;
-            scoreText.color = Color.white;
+            scoreText.color = ClaudeTheme.Ink;
             clearBaseScoreText = scoreText;
 
             // 획득 골드 텍스트
@@ -1191,10 +1211,13 @@ namespace JewelsHexaPuzzle.Managers
             buttonRect.anchoredPosition = new Vector2(0, -230);
 
             Image buttonImage = buttonObj.AddComponent<Image>();
-            buttonImage.color = new Color(0.5f, 0.2f, 0.7f, 1f); // 보라색
+            buttonImage.sprite = ClaudeTheme.CoralSprite;
+            buttonImage.type = Image.Type.Sliced;
+            buttonImage.color = ClaudeTheme.Coral; // 주 버튼 (코랄)
 
             Button buttonComponent = buttonObj.AddComponent<Button>();
             buttonComponent.targetGraphic = buttonImage;
+            ClaudeTheme.StylePrimary(buttonComponent, buttonImage);
 
             // 버튼 텍스트
             GameObject buttonTextObj = new GameObject("Text");
@@ -1604,7 +1627,7 @@ namespace JewelsHexaPuzzle.Managers
             Vector2 start = new Vector2(-340f, -10f);
             rt.anchoredPosition = start;
 
-            float duration = 0.4f;
+            float duration = 0.2f;
             float elapsed = 0f;
 
             while (elapsed < duration)
@@ -2049,6 +2072,167 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
+        /// 미션 행의 아이콘/수량 메트릭(몬스터면 얼굴 2배 + 수량 우측 이동) 일괄 계산.
+        /// 모든 미션 UI 경로(활성/단일/대기/미리보기)가 공용으로 사용 → 중복 제거 + 일관성 보장.
+        /// 비몬스터는 base 값 그대로(기존 동작 유지). 반환값에 스케일 반영.
+        /// </summary>
+        public struct MissionRowMetrics { public float iconSize, iconX, countX, countW, containerWidth; }
+
+        public static MissionRowMetrics GetMissionRowMetrics(MissionData mission, float scale,
+            float baseIcon = 60f, float baseIconX = 13f, float baseCountX = 75f, float baseCountW = 112f, float baseWidth = 196f,
+            bool unifiedBigIcon = false)
+        {
+            // ★ unifiedBigIcon=true면 미션 타입 무관 모두 '큰 아이콘 2배 + 우측 카운트' 레이아웃으로 통일
+            //   (활성/대기 미션 — 블록 제거 미션을 몬스터 제거 미션과 동일 위치로 맞춤, 사용자 요청).
+            //   false면 기존 동작(몬스터만 2배) — NEXT 미리보기 컴팩트 레이아웃 보존용.
+            bool isMon = mission != null && mission.type == MissionType.RemoveEnemy;
+            bool bigIcon = unifiedBigIcon || isMon;
+            var m = new MissionRowMetrics();
+            float fullIcon = (bigIcon ? baseIcon * 2f : baseIcon) * scale;
+            // ★ 블록(비몬스터) 미션 아이콘은 10% 축소해 미션 UI 틀 안에 들어가게 (몬스터 얼굴은 살짝 넘침 허용 — 그대로)
+            m.iconSize = (bigIcon && !isMon) ? fullIcon * 0.9f : fullIcon;
+            m.iconX = baseIconX * scale + (fullIcon - m.iconSize) * 0.5f; // 축소분 좌우 중앙 정렬
+            float gap = 12f * scale;
+            m.countX = bigIcon ? (baseIconX * scale + fullIcon + gap) : (baseCountX * scale);  // 카운트는 풀사이즈 기준(몬스터와 정렬 유지)
+            m.countW = (bigIcon ? 64f : baseCountW) * scale;             // 큰 아이콘이면 수량 칸 폭 축소(겹침 방지)
+            m.containerWidth = bigIcon ? (m.countX + m.countW + 10f * scale) : (baseWidth * scale);
+            return m;
+        }
+
+        /// <summary>
+        /// 미션 패널 다크 글래스 배경색 (게임 우주 톤과 조화) — 스프라이트 로드 실패 시 폴백색.
+        /// </summary>
+        private static readonly Color MissionPanelDark = new Color(0.086f, 0.118f, 0.22f, 0.85f);
+
+        /// <summary>
+        /// 미션 패널 공통 배경 — 클로드 디자인 다크글래스 9-slice 스프라이트(UI/mission_panel) 적용.
+        /// MOVES 프레임과 동일한 다크블루 글래스+스틸블루 림 톤으로 인게임 HUD와 어울리게 통일.
+        /// 활성=불투명(α≈0.96), NEXT/대기=낮은 α로 위계 표현. 스프라이트 없으면 MissionPanelDark 폴백.
+        /// </summary>
+        /// <summary>
+        /// UI 그레이스케일 머티리얼(UI/Grayscale 셰이더) — 미션 대기 UI 등을 진짜 회색으로 처리할 때 사용.
+        /// Resources/Materials/MissionGrayscale 로드(1회 캐시). 로드 실패 시 null(호출처는 회색 틴트로 폴백).
+        /// </summary>
+        private static Material _grayscaleMat;
+        public static Material GetGrayscaleMaterial()
+        {
+            if (_grayscaleMat != null) return _grayscaleMat;
+            _grayscaleMat = Resources.Load<Material>("Materials/MissionGrayscale");
+            return _grayscaleMat;
+        }
+
+        /// <summary>root 하위 모든 Image(자식 포함)에 그레이스케일 머티리얼을 적용한다.
+        /// skip에 해당하는 GameObject 하위는 건너뜀(예: 컬러 배지). 머티리얼 없으면 회색 틴트 폴백.</summary>
+        public static void ApplyGrayscaleToImages(GameObject root, GameObject skip = null)
+        {
+            if (root == null) return;
+            var mat = GetGrayscaleMaterial();
+            var imgs = root.GetComponentsInChildren<Image>(true);
+            foreach (var img in imgs)
+            {
+                if (img == null) continue;
+                if (skip != null && img.transform.IsChildOf(skip.transform)) continue;
+                if (mat != null) img.material = mat;
+                else img.color = new Color(img.color.r * 0.45f + 0.3f, img.color.g * 0.45f + 0.31f, img.color.b * 0.45f + 0.33f, img.color.a); // 폴백: 탈채도 근사
+            }
+        }
+
+        public static void ApplyMissionPanelSprite(Image img, float alpha = 0.96f)
+        {
+            if (img == null) return;
+            var spr = Resources.Load<Sprite>("UI/mission_panel");
+            if (spr != null)
+            {
+                img.sprite = spr;
+                img.type = Image.Type.Sliced;
+                img.color = new Color(1f, 1f, 1f, alpha);
+            }
+            else
+            {
+                // 폴백: 기존 평면 다크글래스 (알파만 반영)
+                img.color = new Color(MissionPanelDark.r, MissionPanelDark.g, MissionPanelDark.b, MissionPanelDark.a * alpha);
+            }
+        }
+
+        /// <summary>미션 종류별 액센트 색 (좌측 보더 + 진행바 fill).</summary>
+        private static Color GetMissionAccentColor(MissionData mission)
+        {
+            if (mission == null) return new Color(1f, 1f, 1f, 0.8f);
+            if (mission.type == MissionType.RemoveEnemy) return new Color(1f, 0.62f, 0.24f); // 몬스터 = 주황
+            if (mission.targetGemType != GemType.None) return GemColors.GetColor(mission.targetGemType);
+            return new Color(1f, 1f, 1f, 0.8f);
+        }
+
+        /// <summary>
+        /// 미션 행 공통 비주얼 부착: 좌측 액센트 스트립 + 하단 진행바(track/fill).
+        /// fill의 anchorMax.x를 진행률로 갱신한다 (UpdateMissionRowProgress).
+        /// </summary>
+        private static RectTransform AttachMissionRowVisuals(GameObject rowObj, MissionData mission, float scale)
+        {
+            Color accent = GetMissionAccentColor(mission);
+
+            // 좌측 액센트 스트립 (4px, 세로 풀스트레치)
+            GameObject accentObj = new GameObject("AccentBar");
+            accentObj.transform.SetParent(rowObj.transform, false);
+            RectTransform aRt = accentObj.AddComponent<RectTransform>();
+            aRt.anchorMin = new Vector2(0, 0);
+            aRt.anchorMax = new Vector2(0, 1);
+            aRt.pivot = new Vector2(0, 0.5f);
+            // ★ 세로 라인(액센트)을 미션 패널 "바깥 왼쪽"으로 빼서 3px 간격으로 분리(사용자 요청).
+            //   pivot (0,0.5)라 anchoredPosition.x=액센트 왼쪽 끝. 폭 w이면 오른쪽 끝 = x+w. 패널 좌단(x=0)에서 3px 떨어지게 x = -(w+3).
+            //   공유 메서드라 모든 행/열(2번째 줄 포함)에 동일 적용.
+            float accentW = Mathf.Max(3f, 4f * scale);
+            aRt.anchoredPosition = new Vector2(-(accentW + 3f), 0f);
+            aRt.sizeDelta = new Vector2(accentW, 0);
+            Image aImg = accentObj.AddComponent<Image>();
+            aImg.color = accent;
+            aImg.raycastTarget = false;
+
+            // 하단 진행바 트랙 (가로 풀스트레치 - 좌우 마진)
+            GameObject trackObj = new GameObject("ProgressTrack");
+            trackObj.transform.SetParent(rowObj.transform, false);
+            RectTransform tRt = trackObj.AddComponent<RectTransform>();
+            tRt.anchorMin = new Vector2(0, 0);
+            tRt.anchorMax = new Vector2(1, 0);
+            tRt.pivot = new Vector2(0.5f, 0);
+            tRt.anchoredPosition = new Vector2(0, 6f * scale);
+            tRt.sizeDelta = new Vector2(-22f * scale, Mathf.Max(4f, 5f * scale));
+            Image tImg = trackObj.AddComponent<Image>();
+            tImg.color = new Color(1f, 1f, 1f, 0.15f);
+            tImg.raycastTarget = false;
+
+            // 진행바 fill — anchorMax.x = 진행률 (0 시작)
+            GameObject fillObj = new GameObject("ProgressFill");
+            fillObj.transform.SetParent(trackObj.transform, false);
+            RectTransform fRt = fillObj.AddComponent<RectTransform>();
+            fRt.anchorMin = Vector2.zero;
+            fRt.anchorMax = new Vector2(0f, 1f);
+            fRt.offsetMin = Vector2.zero;
+            fRt.offsetMax = Vector2.zero;
+            fRt.pivot = new Vector2(0, 0.5f);
+            Image fImg = fillObj.AddComponent<Image>();
+            fImg.color = accent;
+            fImg.raycastTarget = false;
+
+            return fRt;
+        }
+
+        /// <summary>
+        /// 미션 행 진행바 갱신 — remaining(남은 개수) 기준으로 fill 비율 계산.
+        /// 카운트다운 연출과 같은 틱에서 호출되어 부드럽게 차오른다.
+        /// </summary>
+        public static void UpdateMissionRowProgress(int idx, int remaining)
+        {
+            if (idx < 0 || idx >= gameMissionProgressFills.Count) return;
+            RectTransform fillRt = gameMissionProgressFills[idx];
+            if (fillRt == null) return;
+            int target = idx < gameMissionTargets.Count ? gameMissionTargets[idx] : 0;
+            if (target <= 0) return;
+            float ratio = Mathf.Clamp01(1f - (float)remaining / target);
+            fillRt.anchorMax = new Vector2(ratio, 1f);
+        }
+
+        /// <summary>
         /// 게임 중 왼쪽 상단에 미션 UI 생성
         /// </summary>
         public void CreateGameMissionUI(Canvas canvas, MissionData mission)
@@ -2056,6 +2240,10 @@ namespace JewelsHexaPuzzle.Managers
             if (mission == null) return;
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // ★ 공용 헬퍼로 몬스터 얼굴 2배 + 수량 우측 이동 메트릭 계산 (중복 제거)
+            var mm = GetMissionRowMetrics(mission, 1f, unifiedBigIcon: true);
+            float mIconSize = mm.iconSize, mIconX = mm.iconX, mCountX = mm.countX, mCountW = mm.countW, mWidth = mm.containerWidth;
 
             // 미션 컨테이너 (레벨 모드와 동일한 컴팩트 레이아웃)
             float rowHeight = 90f;
@@ -2066,22 +2254,27 @@ namespace JewelsHexaPuzzle.Managers
             missionRt.anchorMax = new Vector2(0, 1);
             missionRt.pivot = new Vector2(0, 1);
             missionRt.anchoredPosition = new Vector2(20, -20);
-            missionRt.sizeDelta = new Vector2(196, rowHeight + 20f); // 280→196 (30% 축소)
+            missionRt.sizeDelta = new Vector2(mWidth, rowHeight + 20f);
 
-            // 배경 패널 (밝은 라벤더 톤)
+            // 배경 패널 (클로드 디자인 다크글래스 9-slice — MOVES 프레임과 통일)
             Image bgImage = missionObj.AddComponent<Image>();
-            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
+            ApplyMissionPanelSprite(bgImage, 0.96f);
             bgImage.raycastTarget = false;
 
-            // 미션 아이콘 (70x70)
+            // ★ 좌측 액센트 + 하단 진행바
+            RectTransform progressFill = AttachMissionRowVisuals(missionObj, mission, 1f);
+            gameMissionProgressFills.Add(progressFill);
+            gameMissionTargets.Add(mission.targetCount);
+
+            // 미션 아이콘 (몬스터면 2배)
             GameObject iconObj = new GameObject("MissionIcon");
             iconObj.transform.SetParent(missionObj.transform, false);
             RectTransform iconRt = iconObj.AddComponent<RectTransform>();
             iconRt.anchorMin = new Vector2(0, 0.5f);
             iconRt.anchorMax = new Vector2(0, 0.5f);
             iconRt.pivot = new Vector2(0, 0.5f);
-            iconRt.anchoredPosition = new Vector2(10, 0);
-            iconRt.sizeDelta = new Vector2(60, 60);
+            iconRt.anchoredPosition = new Vector2(mIconX, 0);
+            iconRt.sizeDelta = new Vector2(mIconSize, mIconSize);
 
             Image iconImage = iconObj.AddComponent<Image>();
             SetMissionIconForType(iconImage, mission);
@@ -2089,18 +2282,18 @@ namespace JewelsHexaPuzzle.Managers
             iconImage.raycastTarget = false;
 
             Outline iconOutline = iconObj.AddComponent<Outline>();
-            iconOutline.effectColor = Color.white;
-            iconOutline.effectDistance = new Vector2(2, 2);
+            ApplyMissionIconOutline(iconOutline, mission);
 
-            // 미션 진행도 숫자 (아이콘 옆)
+            // 미션 진행도 숫자 (아이콘 옆 — 몬스터면 우측 이동)
             GameObject countObj = new GameObject("Count");
             countObj.transform.SetParent(missionObj.transform, false);
             RectTransform countRt = countObj.AddComponent<RectTransform>();
             countRt.anchorMin = new Vector2(0, 0.5f);
             countRt.anchorMax = new Vector2(0, 0.5f);
             countRt.pivot = new Vector2(0, 0.5f);
-            countRt.anchoredPosition = new Vector2(75, 0);
-            countRt.sizeDelta = new Vector2(112, 60);
+            // 통일 레이아웃: 수량이 우측(2배 아이콘 옆)이라 우하단 '이동 +N' 보상과 가까워짐 → 위로 6px 올려 간격 확보
+            countRt.anchoredPosition = new Vector2(mCountX, 6f);
+            countRt.sizeDelta = new Vector2(mCountW, 60);
 
             Text countText = countObj.AddComponent<Text>();
             countText.font = font;
@@ -2118,6 +2311,9 @@ namespace JewelsHexaPuzzle.Managers
             countShadow.effectColor = Color.black;
             countShadow.effectDistance = new Vector2(-2, -2);
 
+            // ★ 미션 완료 시 받는 이동 횟수 보상 표시 (우하단 배지)
+            AttachMoveRewardBadge(mission, missionObj.transform, 1f);
+
             // 미션 UI 컨테이너 저장 (나중에 애니메이션에서 사용)
             missionObj.name = "GameMissionUI_Level1";
 
@@ -2127,137 +2323,245 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         /// <summary>
-        /// 게임 중 왼쪽 상단에 복수 미션 UI 생성 (미션 배열 오버로드)
-        /// 각 미션별 색상 아이콘 + 카운트를 세로로 나열
+        /// 미션 행 우하단에 "이동 +N" 보상 배지 부착 — Stage 모드 전용.
+        /// 미션 1개 완료 시 받는 이동 횟수(MissionBalance.GetOrAssignMoveReward — 미션별 1~5 균일 랜덤)를 가시화한다.
+        /// (NEXT 미리보기의 "moves +n" 표기와 동일 스타일/위치 컨벤션)
         /// </summary>
-        public void CreateGameMissionUI(Canvas canvas, MissionData[] missions)
+        public void AttachMoveRewardBadge(MissionData mission, Transform rowParent, float scale)
         {
-            if (missions == null || missions.Length == 0) return;
-
-            // 미션이 1개면 기존 단일 미션 UI 사용
-            if (missions.Length == 1)
-            {
-                CreateGameMissionUI(canvas, missions[0]);
-                return;
-            }
-
-            // 복수 미션 리스트 초기화
-            gameMissionCountTexts.Clear();
+            if (GameManager.Instance == null || GameManager.Instance.CurrentGameMode != GameMode.Stage) return;
+            int reward = MissionBalance.GetOrAssignMoveReward(mission); // 미션별 1~5 균일 랜덤 (이 미션 인스턴스에 1회 롤·저장)
+            if (reward <= 0) return;
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-
-            // ★ 4개 이상: 2열 레이아웃 (1~3번 왼쪽열, 4번~ 오른쪽열)
-            bool useTwoColumns = missions.Length >= 4;
-            int leftColCount = useTwoColumns ? 3 : missions.Length;
-            int rightColCount = useTwoColumns ? missions.Length - leftColCount : 0;
-            int maxRows = Mathf.Max(leftColCount, rightColCount);
-
-            float rowHeight = 90f;
-            float rowSpacing = rowHeight + 5f; // 행 높이 + 5px 간격
-            float colWidth = 196f;
-            float containerHeight = maxRows * rowSpacing + 15f; // 행 수 기준 높이 + 패딩
-            float containerWidth = useTwoColumns ? colWidth * 2f + 5f : colWidth; // 2열이면 2배 + 5px 간격
-
-            GameObject containerObj = new GameObject("GameMissionUI_Multi");
-            containerObj.transform.SetParent(canvas.transform, false);
-            RectTransform containerRt = containerObj.AddComponent<RectTransform>();
-            containerRt.anchorMin = new Vector2(0, 1);
-            containerRt.anchorMax = new Vector2(0, 1);
-            containerRt.pivot = new Vector2(0, 1);
-            containerRt.anchoredPosition = new Vector2(20, -20);
-            containerRt.sizeDelta = new Vector2(containerWidth, containerHeight);
-
-            // 밝은 라벤더 톤 배경
-            Image containerBg = containerObj.AddComponent<Image>();
-            containerBg.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
-            containerBg.raycastTarget = false;
-
-            gameMissionContainerRect = containerRt;
-
-            // 각 미션 행 생성
-            for (int i = 0; i < missions.Length; i++)
-            {
-                MissionData mission = missions[i];
-
-                // ★ 2열 위치 계산
-                float xOffset;
-                float yOffset;
-                if (!useTwoColumns || i < leftColCount)
-                {
-                    xOffset = 0f;
-                    yOffset = -10f - (i * rowSpacing);
-                }
-                else
-                {
-                    int rightIdx = i - leftColCount;
-                    xOffset = colWidth + 5f; // 오른쪽 열 (5px 간격)
-                    yOffset = -10f - (rightIdx * rowSpacing);
-                }
-
-                // === 미션 행 컨테이너 ===
-                GameObject rowObj = new GameObject($"MissionRow_{i}");
-                rowObj.transform.SetParent(containerObj.transform, false);
-                RectTransform rowRt = rowObj.AddComponent<RectTransform>();
-                rowRt.anchorMin = new Vector2(0, 1);
-                rowRt.anchorMax = new Vector2(0, 1);
-                rowRt.pivot = new Vector2(0, 1);
-                rowRt.anchoredPosition = new Vector2(xOffset, yOffset);
-                rowRt.sizeDelta = new Vector2(colWidth, rowHeight);
-
-                // === 미션 아이콘 ===
-                GameObject iconObj = new GameObject($"MissionIcon_{i}");
-                iconObj.transform.SetParent(rowObj.transform, false);
-                RectTransform iconRt = iconObj.AddComponent<RectTransform>();
-                iconRt.anchorMin = new Vector2(0, 0.5f);
-                iconRt.anchorMax = new Vector2(0, 0.5f);
-                iconRt.pivot = new Vector2(0, 0.5f);
-                iconRt.anchoredPosition = new Vector2(10, 0);
-                iconRt.sizeDelta = new Vector2(60, 60);
-
-                Image iconImage = iconObj.AddComponent<Image>();
-                iconImage.raycastTarget = false;
-
-                SetMissionIconForType(iconImage, mission);
-
-                Outline iconOutline = iconObj.AddComponent<Outline>();
-                iconOutline.effectColor = Color.white;
-                iconOutline.effectDistance = new Vector2(2, 2);
-
-                // === 카운트 텍스트 ===
-                GameObject countObj = new GameObject($"MissionCount_{i}");
-                countObj.transform.SetParent(rowObj.transform, false);
-                RectTransform countRt = countObj.AddComponent<RectTransform>();
-                countRt.anchorMin = new Vector2(0, 0.5f);
-                countRt.anchorMax = new Vector2(0, 0.5f);
-                countRt.pivot = new Vector2(0, 0.5f);
-                countRt.anchoredPosition = new Vector2(75, 0);
-                countRt.sizeDelta = new Vector2(112, 60);
-
-                Text countText = countObj.AddComponent<Text>();
-                countText.font = font;
-                countText.fontSize = 48;
-                countText.fontStyle = FontStyle.Bold;
-                countText.alignment = TextAnchor.MiddleLeft;
-                countText.color = Color.white;
-                countText.raycastTarget = false;
-                countText.text = mission.targetCount.ToString();
-                // 검은색 아웃라인 (2겹으로 두꺼운 효과)
-                Outline countOutline = countObj.AddComponent<Outline>();
-                countOutline.effectColor = Color.black;
-                countOutline.effectDistance = new Vector2(2, 2);
-                Shadow countShadow = countObj.AddComponent<Shadow>();
-                countShadow.effectColor = Color.black;
-                countShadow.effectDistance = new Vector2(-2, -2);
-
-                // 리스트에 추가
-                gameMissionCountTexts.Add(countText);
-            }
-
-            // 하위호환: 첫 번째 미션 참조를 기존 static 필드에도 저장
-            if (gameMissionCountTexts.Count > 0)
-                gameMissionCountText = gameMissionCountTexts[0];
-            gameMissionIconRect = containerRt;
+            GameObject rewardObj = new GameObject("MoveRewardText");
+            rewardObj.transform.SetParent(rowParent, false);
+            RectTransform rt = rewardObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1, 0);
+            rt.anchorMax = new Vector2(1, 0);
+            rt.pivot = new Vector2(1, 0);
+            // ★ 진행바 위로 올리고 크게 — 보상은 미션의 핵심 동기라 가시성 강화.
+            //   우/하단 인셋에 고정 하한(9/10px)을 둬 라운드 코너(9-slice 고정 ~9px)를 확실히 벗어나게
+            //   해 텍스트가 패널 밖으로 삐지지 않도록 함(스케일이 작아도 코너 컷아웃 안으로 안 들어감).
+            rt.anchoredPosition = new Vector2(-Mathf.Max(9f, 8f * scale), Mathf.Max(10f, 12f * scale));
+            rt.sizeDelta = new Vector2(134f * scale, 30f * scale); // 폰트 확대분 여유 (클립 방지)
+            Text txt = rewardObj.AddComponent<Text>();
+            txt.font = font;
+            // ★ 활성 미션 보상 "또렷하게"(사용자 요청): 21→25로 키워 흰 획이 굵어지면 검은 아웃라인 위로 또렷.
+            //   (작은 흰 글자+두꺼운 아웃라인이 회색/비활성처럼 보이던 문제 개선)
+            txt.fontSize = Mathf.Max(15, Mathf.RoundToInt(25f * scale));
+            txt.fontStyle = FontStyle.Bold;
+            txt.alignment = TextAnchor.LowerRight;
+            txt.color = Color.white; // 이동 보상 텍스트 — 흰색 (사용자 요청)
+            txt.raycastTarget = false;
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.text = $"이동 +{reward}";
+            // 크리스프 아웃라인 + 그림자 — 어두운 패널 위에서 흰 글자가 또렷이 떠 보이게(활성 위계 강조).
+            Outline ol = rewardObj.AddComponent<Outline>();
+            ol.effectColor = new Color(0f, 0f, 0f, 0.92f);
+            ol.effectDistance = new Vector2(1.5f, 1.5f);
+            Shadow sh = rewardObj.AddComponent<Shadow>();
+            sh.effectColor = new Color(0f, 0f, 0f, 0.55f);
+            sh.effectDistance = new Vector2(-1.5f, -1.5f);
         }
+
+        // ============================================================
+        // 미션 완료 이동보상 — 초록 영혼 비행 연출 (VFX 구동: 부딪힐 때 보상 적용)
+        // ============================================================
+        private static Sprite _soulOrbSprite;
+        /// <summary>부드러운 방사형 원(흰색, 색은 Image.color 틴트). 영혼/트레일/임팩트 공용. 1회 생성 캐시.</summary>
+        private static Sprite SoulOrbSprite()
+        {
+            // ★ 버그 수정: 도메인 리로드 비활성 환경에서 static 스프라이트가 Play 세션 간 잔류 →
+            //   런타임 텍스처는 Play 종료 시 파괴 → stale(texture 죽음) → 렌더 0. 텍스처 유효성까지 검사.
+            if (_soulOrbSprite != null && _soulOrbSprite.texture != null) return _soulOrbSprite;
+            const int SZ = 64; float c = (SZ - 1) * 0.5f, r = SZ * 0.5f;
+            var tex = new Texture2D(SZ, SZ, TextureFormat.RGBA32, false);
+            var px = new Color[SZ * SZ];
+            for (int y = 0; y < SZ; y++)
+                for (int x = 0; x < SZ; x++)
+                {
+                    float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / r;
+                    float a = Mathf.Clamp01(1f - d); a *= a; // 중심 진하고 가장자리 페이드
+                    px[y * SZ + x] = new Color(1f, 1f, 1f, a);
+                }
+            tex.SetPixels(px); tex.Apply();
+            tex.filterMode = FilterMode.Bilinear; tex.wrapMode = TextureWrapMode.Clamp;
+            _soulOrbSprite = Sprite.Create(tex, new Rect(0, 0, SZ, SZ), new Vector2(0.5f, 0.5f), 100f);
+            return _soulOrbSprite;
+        }
+
+        private Vector2 CanvasLocalOf(Canvas canvas, RectTransform target)
+        {
+            RectTransform canvasRt = canvas.transform as RectTransform;
+            Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            Vector2 screen = RectTransformUtility.WorldToScreenPoint(cam, target.position);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRt, screen, cam, out var local);
+            return local;
+        }
+
+        /// <summary>
+        /// 미션 완료 이동보상 연출: 완료 미션 행의 초록 '이동 +N' 텍스트가 사라지고, 초록 영혼이
+        /// 이동횟수 HUD로 자연스럽게 날아가 부딪히며 임팩트와 함께 사라지고, 그 순간 onApply()로
+        /// 실제 이동 횟수가 증가한다(정확한 타이밍). 출발/목표를 못 찾으면 즉시 적용(데이터 안전).
+        /// </summary>
+        public void PlayMoveRewardSoul(int reward, int missionIndex, System.Action onApply)
+        {
+            if (reward <= 0) { onApply?.Invoke(); return; }
+            Canvas canvas = turnText != null ? turnText.canvas : null;
+            if (canvas == null || turnText == null) { onApply?.Invoke(); return; }
+
+            RectTransform sourceRt = null;
+            if (gameMissionCountTexts != null && missionIndex >= 0 && missionIndex < gameMissionCountTexts.Count
+                && gameMissionCountTexts[missionIndex] != null)
+            {
+                Transform row = gameMissionCountTexts[missionIndex].transform.parent;
+                if (row != null)
+                {
+                    Transform badge = row.Find("MoveRewardText");
+                    sourceRt = (badge != null ? badge : gameMissionCountTexts[missionIndex].transform) as RectTransform;
+                }
+            }
+            if (sourceRt == null) { onApply?.Invoke(); return; }
+
+            StartCoroutine(MoveRewardSoulCoroutine(canvas, sourceRt, onApply));
+        }
+
+        private IEnumerator MoveRewardSoulCoroutine(Canvas canvas, RectTransform sourceRt, System.Action onApply)
+        {
+            Color soulCol = Color.white; // 이동 보상 영혼 — 흰색 (사용자 요청)
+            Vector2 startPos = CanvasLocalOf(canvas, sourceRt);
+            Vector2 endPos = CanvasLocalOf(canvas, turnText.rectTransform);
+            Vector2 mid = (startPos + endPos) * 0.5f + new Vector2(0f, 120f); // 위로 솟는 아크
+
+            var badgeText = sourceRt.GetComponent<Text>();
+            var badgeOutline = sourceRt.GetComponent<Outline>();
+
+            GameObject soul = new GameObject("MoveRewardSoul");
+            soul.transform.SetParent(canvas.transform, false);
+            var soulRt = soul.AddComponent<RectTransform>();
+            soulRt.sizeDelta = new Vector2(46f, 46f);
+            soulRt.anchoredPosition = startPos;
+            var soulImg = soul.AddComponent<Image>();
+            soulImg.sprite = SoulOrbSprite(); soulImg.color = soulCol; soulImg.raycastTarget = false;
+            soul.transform.SetAsLastSibling();
+            GameObject glow = new GameObject("Glow"); glow.transform.SetParent(soul.transform, false);
+            var glowRt = glow.AddComponent<RectTransform>();
+            glowRt.anchorMin = Vector2.zero; glowRt.anchorMax = Vector2.one;
+            glowRt.offsetMin = new Vector2(-18f, -18f); glowRt.offsetMax = new Vector2(18f, 18f);
+            var glowImg = glow.AddComponent<Image>();
+            glowImg.sprite = SoulOrbSprite();
+            glowImg.color = new Color(soulCol.r, soulCol.g, soulCol.b, 0.4f); glowImg.raycastTarget = false;
+            glow.transform.SetAsFirstSibling();
+
+            float dur = 0.68f, t = 0f; int frame = 0;
+            while (t < 1f)
+            {
+                t += Time.deltaTime / dur;
+                float u = Mathf.Clamp01(t < 0.5f ? 2f * t * t : 1f - Mathf.Pow(-2f * t + 2f, 2f) / 2f); // easeInOut
+                Vector2 p = (1 - u) * (1 - u) * startPos + 2 * (1 - u) * u * mid + u * u * endPos;
+                p += new Vector2(Mathf.Sin(t * 22f) * 5f, Mathf.Cos(t * 18f) * 4f) * (1f - u); // 영혼 떨림
+                if (soulRt != null)
+                {
+                    soulRt.anchoredPosition = p;
+                    soulRt.localScale = Vector3.one * Mathf.Lerp(1.15f, 0.65f, u) * (1f + Mathf.Sin(u * Mathf.PI) * 0.3f);
+                }
+                float fade = 1f - Mathf.Clamp01(t * 2.4f);
+                if (badgeText != null) { var c = badgeText.color; c.a = fade; badgeText.color = c; }
+                if (badgeOutline != null) { var c = badgeOutline.effectColor; c.a = fade * 0.7f; badgeOutline.effectColor = c; }
+                if ((frame++ % 2) == 0) SpawnSoulTrail(canvas, p, soulCol);
+                yield return null;
+            }
+            if (badgeText != null) Destroy(badgeText.gameObject);
+            if (soul != null) Destroy(soul);
+
+            SpawnImpactBurst(canvas, endPos, soulCol);
+            onApply?.Invoke();                       // ★ 정확한 타이밍에 실제 데이터 적용 (숫자 증가)
+            yield return StartCoroutine(TurnTextPop());
+        }
+
+        private void SpawnSoulTrail(Canvas canvas, Vector2 pos, Color col)
+        {
+            GameObject g = new GameObject("SoulTrail"); g.transform.SetParent(canvas.transform, false);
+            var rt = g.AddComponent<RectTransform>(); rt.sizeDelta = new Vector2(30f, 30f); rt.anchoredPosition = pos;
+            var img = g.AddComponent<Image>(); img.sprite = SoulOrbSprite();
+            img.color = new Color(col.r, col.g, col.b, 0.5f); img.raycastTarget = false;
+            g.transform.SetAsLastSibling();
+            StartCoroutine(FadeShrinkDestroy(rt, img, 0.35f));
+        }
+        private IEnumerator FadeShrinkDestroy(RectTransform rt, Image img, float dur)
+        {
+            float t = 0f; Color c0 = img.color; Vector3 s0 = rt.localScale;
+            while (t < 1f && rt != null)
+            {
+                t += Time.deltaTime / dur;
+                if (img != null) { var c = c0; c.a = c0.a * (1f - t); img.color = c; }
+                if (rt != null) rt.localScale = s0 * (1f - 0.5f * t);
+                yield return null;
+            }
+            if (rt != null) Destroy(rt.gameObject);
+        }
+        private void SpawnImpactBurst(Canvas canvas, Vector2 pos, Color col)
+        {
+            GameObject flash = new GameObject("RewardImpactFlash"); flash.transform.SetParent(canvas.transform, false);
+            var frt = flash.AddComponent<RectTransform>(); frt.sizeDelta = new Vector2(44f, 44f); frt.anchoredPosition = pos;
+            var fimg = flash.AddComponent<Image>(); fimg.sprite = SoulOrbSprite();
+            fimg.color = new Color(col.r, col.g, col.b, 0.85f); fimg.raycastTarget = false;
+            flash.transform.SetAsLastSibling();
+            StartCoroutine(FlashExpand(frt, fimg, 0.3f));
+            for (int i = 0; i < 8; i++)
+            {
+                float ang = i * 45f * Mathf.Deg2Rad;
+                Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+                GameObject p = new GameObject("RewardSpark"); p.transform.SetParent(canvas.transform, false);
+                var prt = p.AddComponent<RectTransform>(); prt.sizeDelta = new Vector2(13f, 13f); prt.anchoredPosition = pos;
+                var pimg = p.AddComponent<Image>(); pimg.sprite = SoulOrbSprite(); pimg.color = col; pimg.raycastTarget = false;
+                p.transform.SetAsLastSibling();
+                StartCoroutine(SparkFly(prt, pimg, dir * Random.Range(42f, 72f), 0.42f));
+            }
+        }
+        private IEnumerator FlashExpand(RectTransform rt, Image img, float dur)
+        {
+            float t = 0f; Vector2 s0 = rt.sizeDelta; Color c0 = img.color;
+            while (t < 1f && rt != null)
+            {
+                t += Time.deltaTime / dur;
+                rt.sizeDelta = Vector2.Lerp(s0, s0 * 3.2f, t);
+                if (img != null) { var c = c0; c.a = c0.a * (1f - t); img.color = c; }
+                yield return null;
+            }
+            if (rt != null) Destroy(rt.gameObject);
+        }
+        private IEnumerator SparkFly(RectTransform rt, Image img, Vector2 disp, float dur)
+        {
+            float t = 0f; Vector2 p0 = rt.anchoredPosition; Color c0 = img.color;
+            while (t < 1f && rt != null)
+            {
+                t += Time.deltaTime / dur;
+                float e = 1f - Mathf.Pow(1f - t, 2f);
+                rt.anchoredPosition = p0 + disp * e;
+                if (img != null) { var c = c0; c.a = c0.a * (1f - t); img.color = c; }
+                rt.localScale = Vector3.one * (1f - 0.6f * t);
+                yield return null;
+            }
+            if (rt != null) Destroy(rt.gameObject);
+        }
+        private IEnumerator TurnTextPop()
+        {
+            if (turnText == null) yield break;
+            var rt = turnText.rectTransform; float t = 0f, dur = 0.32f;
+            while (t < 1f && rt != null)
+            {
+                t += Time.deltaTime / dur;
+                rt.localScale = Vector3.one * (1f + Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI) * 0.35f);
+                yield return null;
+            }
+            if (rt != null) rt.localScale = Vector3.one;
+        }
+
+        // (정리됨) CreateGameMissionUI(MissionData[] missions) 제거 — 호출처 없는 dead code였음.
+        //   복수 미션은 GameManager가 CreateIndividualMissionRow로 행 단위 생성하는 경로만 사용.
 
         /// <summary>
         /// 레벨 모드용 빈 다음 미션 플레이스홀더 생성 (위치만 확보, 내용 없음).
@@ -2279,10 +2583,8 @@ namespace JewelsHexaPuzzle.Managers
             rt.anchoredPosition = new Vector2(20, -20);
             rt.sizeDelta = new Vector2(137, 77);
 
-            // 배경 (반투명 라벤더 — 다음 미션 없음을 시각적으로 표시)
-            Image bgImage = placeholderObj.AddComponent<Image>();
-            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.25f);
-            bgImage.raycastTarget = false;
+            // 배경 없음 (위치 참조용 투명 컨테이너)
+            // Image 컴포넌트 없이 RectTransform만 사용
 
             // nextMissionPreviewRect 설정 (위치 계산에 사용)
             nextMissionPreviewRect = rt;
@@ -2301,12 +2603,11 @@ namespace JewelsHexaPuzzle.Managers
             // 미션 3개 이상이면 30% 축소
             float scale = totalMissions >= 3 ? 0.7f : 1.0f;
             float rowHeight = 90f * scale;
-            float containerWidth = 196f * scale;   // 기본 196 (이미 30% 축소된 값)
-            float iconSize = 60f * scale;
-            float iconX = 10f * scale;
-            float countX = 75f * scale;
-            float countW = 112f * scale;
             int fontSize = Mathf.RoundToInt(48f * scale);
+
+            // ★ 공용 헬퍼로 몬스터 얼굴 2배 + 수량 우측 이동 메트릭 계산 (중복 제거)
+            var rm = GetMissionRowMetrics(mission, scale, unifiedBigIcon: true);
+            float iconX = rm.iconX, iconSize = rm.iconSize, countX = rm.countX, countW = rm.countW, containerWidth = rm.containerWidth;
 
             GameObject rowObj = new GameObject($"GameMissionUI_Row_{index}");
             rowObj.transform.SetParent(canvas.transform, false);
@@ -2317,10 +2618,15 @@ namespace JewelsHexaPuzzle.Managers
             rowRt.anchoredPosition = new Vector2(40, -102); // 애니메이션에서 오버라이드됨
             rowRt.sizeDelta = new Vector2(containerWidth, rowHeight + 20f * scale);
 
-            // 배경 패널 (밝은 라벤더 톤)
+            // 배경 패널 (클로드 디자인 다크글래스 9-slice — MOVES 프레임과 통일)
             Image bgImage = rowObj.AddComponent<Image>();
-            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.92f);
+            ApplyMissionPanelSprite(bgImage, 0.96f);
             bgImage.raycastTarget = false;
+
+            // ★ 좌측 액센트 + 하단 진행바
+            RectTransform progressFill = AttachMissionRowVisuals(rowObj, mission, scale);
+            gameMissionProgressFills.Add(progressFill);
+            gameMissionTargets.Add(mission.targetCount);
 
             // 미션 아이콘
             GameObject iconObj = new GameObject("MissionIcon");
@@ -2338,8 +2644,7 @@ namespace JewelsHexaPuzzle.Managers
             iconImage.raycastTarget = false;
 
             Outline iconOutline = iconObj.AddComponent<Outline>();
-            iconOutline.effectColor = Color.white;
-            iconOutline.effectDistance = new Vector2(2, 2);
+            ApplyMissionIconOutline(iconOutline, mission);
 
             // 미션 진행도 숫자 (아이콘 옆)
             GameObject countObj = new GameObject("Count");
@@ -2348,7 +2653,8 @@ namespace JewelsHexaPuzzle.Managers
             countRt.anchorMin = new Vector2(0, 0.5f);
             countRt.anchorMax = new Vector2(0, 0.5f);
             countRt.pivot = new Vector2(0, 0.5f);
-            countRt.anchoredPosition = new Vector2(countX, 0);
+            // 통일 레이아웃: 수량을 위로 6px 올려 우하단 '이동 +N' 보상과 간격 확보 (전 미션 타입 동일)
+            countRt.anchoredPosition = new Vector2(countX, 6f);
             countRt.sizeDelta = new Vector2(countW, iconSize);
 
             Text countText = countObj.AddComponent<Text>();
@@ -2367,6 +2673,9 @@ namespace JewelsHexaPuzzle.Managers
             Shadow countShadow = countObj.AddComponent<Shadow>();
             countShadow.effectColor = Color.black;
             countShadow.effectDistance = new Vector2(-2, -2);
+
+            // ★ 미션 완료 시 받는 이동 횟수 보상 표시 (우하단 배지)
+            AttachMoveRewardBadge(mission, rowObj.transform, scale);
 
             // 카운트 텍스트 리스트에 추가
             gameMissionCountTexts.Add(countText);
@@ -2394,7 +2703,11 @@ namespace JewelsHexaPuzzle.Managers
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // 컨테이너 (현재 미션 196×110의 70% = 137×77)
+            // ★ 공용 헬퍼로 몬스터 얼굴 2배 + 수량 우측 이동 (NEXT 미리보기 base 49/67/110/137)
+            var pm = GetMissionRowMetrics(nextMission, 1f, baseIcon: 49f, baseIconX: 10f, baseCountX: 67f, baseCountW: 110f, baseWidth: 137f);
+            float pIconSize = pm.iconSize, pIconX = pm.iconX, pCountX = pm.countX, pCountW = pm.countW, previewW = pm.containerWidth;
+
+            // 컨테이너 (현재 미션 196×110의 70% = 137×77; 몬스터면 폭 확장)
             GameObject previewObj = new GameObject("NextMissionPreview");
             previewObj.transform.SetParent(canvas.transform, false);
             RectTransform previewRt = previewObj.AddComponent<RectTransform>();
@@ -2402,11 +2715,11 @@ namespace JewelsHexaPuzzle.Managers
             previewRt.anchorMax = new Vector2(0, 1);
             previewRt.pivot = new Vector2(0, 1);
             previewRt.anchoredPosition = new Vector2(20, -20);
-            previewRt.sizeDelta = new Vector2(137, 77);
+            previewRt.sizeDelta = new Vector2(previewW, 77);
 
-            // 배경 (반투명 라벤더)
+            // 배경 (클로드 디자인 다크글래스 9-slice — 활성 미션과 동일 스프라이트, 낮은 α로 NEXT 위계 표현)
             Image bgImage = previewObj.AddComponent<Image>();
-            bgImage.color = new Color(0.82f, 0.78f, 0.93f, 0.55f);
+            ApplyMissionPanelSprite(bgImage, 0.62f);
             bgImage.raycastTarget = false;
 
             // "NEXT" 라벨 (좌상단)
@@ -2437,8 +2750,8 @@ namespace JewelsHexaPuzzle.Managers
             iconRt.anchorMin = new Vector2(0, 0.5f);
             iconRt.anchorMax = new Vector2(0, 0.5f);
             iconRt.pivot = new Vector2(0, 0.5f);
-            iconRt.anchoredPosition = new Vector2(10, 0);
-            iconRt.sizeDelta = new Vector2(49, 49);
+            iconRt.anchoredPosition = new Vector2(pIconX, 0);
+            iconRt.sizeDelta = new Vector2(pIconSize, pIconSize);
 
             Image iconImage = iconObj.AddComponent<Image>();
             SetMissionIconForType(iconImage, nextMission);
@@ -2455,8 +2768,9 @@ namespace JewelsHexaPuzzle.Managers
             countRt.anchorMin = new Vector2(0, 0.5f);
             countRt.anchorMax = new Vector2(0, 0.5f);
             countRt.pivot = new Vector2(0, 0.5f);
-            countRt.anchoredPosition = new Vector2(67, 0);
-            countRt.sizeDelta = new Vector2(110, 49);
+            // 몬스터 미션: 수량을 위로 6px 올려 우하단 'moves +N' 보상과 간격 확보 (활성 미션과 동일)
+            countRt.anchoredPosition = new Vector2(pCountX, nextMission.type == MissionType.RemoveEnemy ? 6f : 0f);
+            countRt.sizeDelta = new Vector2(pCountW, 49);
             Text countText = countObj.AddComponent<Text>();
             countText.font = font;
             countText.fontSize = 34;
@@ -2476,7 +2790,8 @@ namespace JewelsHexaPuzzle.Managers
             rewardRt.anchorMin = new Vector2(1, 0);
             rewardRt.anchorMax = new Vector2(1, 0);
             rewardRt.pivot = new Vector2(1, 0);
-            rewardRt.anchoredPosition = new Vector2(-5f, 4f);
+            // 우/하단 인셋을 라운드 코너(~9px)보다 크게 둬 텍스트가 패널 밖으로 안 삐지게
+            rewardRt.anchoredPosition = new Vector2(-8f, 9f);
             rewardRt.sizeDelta = new Vector2(90, 16f);
             Text rewardText = rewardObj.AddComponent<Text>();
             rewardText.font = font;
@@ -2536,41 +2851,51 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public void CleanupGameMissionUI()
         {
-            // 단일 미션 UI 제거
-            GameObject singleMissionUI = GameObject.Find("GameMissionUI_Level1");
-            if (singleMissionUI != null)
-                Destroy(singleMissionUI);
-
-            // 복수 미션 UI 제거
-            GameObject multiMissionUI = GameObject.Find("GameMissionUI_Multi");
-            if (multiMissionUI != null)
-                Destroy(multiMissionUI);
-
-            // 개별 미션 행 제거 (순차 등장 모드)
-            for (int i = 0; i < 10; i++)
+            // ★ 모든 미션 UI 오브젝트를 캔버스 자식에서 이름으로 일괄 수거 후 제거.
+            //   (기존 코드는 행 루프에 else break가 있어 비연속/중복 행이 남아 얼굴이 중첩됐음 +
+            //    "GameMissionUI"(단일 패널)는 아예 정리 대상에 없었음 → 둘 다 해결)
+            Canvas cv = FindObjectOfType<Canvas>();
+            if (cv != null)
             {
-                GameObject row = GameObject.Find($"GameMissionUI_Row_{i}");
-                if (row != null) Destroy(row);
-                else break;
+                var toDestroy = new System.Collections.Generic.List<GameObject>();
+                foreach (Transform child in cv.transform)
+                {
+                    string n = child.name;
+                    if (n == "GameMissionUI" || n == "GameMissionUI_Level1" || n == "GameMissionUI_Multi"
+                        || n.StartsWith("GameMissionUI_Row_")
+                        || n == "GameMissionUI_LockChips" // ★ 동적 한도 잠금 슬롯 칩
+                        || n == "NextMissionPreview" || n == "NextMissionPlaceholder")
+                        toDestroy.Add(child.gameObject);
+                }
+                foreach (var go in toDestroy) Destroy(go);
             }
-
-            // 다음 미션 미리보기 UI 제거
-            GameObject nextPreview = GameObject.Find("NextMissionPreview");
-            if (nextPreview != null)
-                Destroy(nextPreview);
-
-            // 다음 미션 빈 플레이스홀더 제거
-            GameObject placeholder = GameObject.Find("NextMissionPlaceholder");
-            if (placeholder != null)
-                Destroy(placeholder);
+            else
+            {
+                // 폴백(캔버스 미발견): 이름 기반 Find — 행은 0~9 전부 검사(break 없음)
+                DestroyMissionObjByName("GameMissionUI");
+                DestroyMissionObjByName("GameMissionUI_Level1");
+                DestroyMissionObjByName("GameMissionUI_Multi");
+                DestroyMissionObjByName("NextMissionPreview");
+                DestroyMissionObjByName("NextMissionPlaceholder");
+                DestroyMissionObjByName("GameMissionUI_LockChips"); // ★ 동적 한도 잠금 슬롯 칩
+                for (int i = 0; i < 10; i++) DestroyMissionObjByName($"GameMissionUI_Row_{i}");
+            }
 
             // static 필드 초기화
             gameMissionCountText = null;
             gameMissionIconRect = null;
             gameMissionRewardText = null;
             gameMissionCountTexts.Clear();
+            gameMissionProgressFills.Clear();
+            gameMissionTargets.Clear();
             gameMissionContainerRect = null;
             nextMissionPreviewRect = null;
+        }
+
+        private void DestroyMissionObjByName(string n)
+        {
+            GameObject go = GameObject.Find(n);
+            if (go != null) Destroy(go);
         }
 
         /// <summary>
@@ -2579,12 +2904,76 @@ namespace JewelsHexaPuzzle.Managers
         // 미션 등장 애니메이션은 GameManager.AnimateMissionEntranceCoroutine에서 처리
 
         /// <summary>
+        /// 미션 아이콘 아웃라인 색상/두께 결정.
+        /// - 새 몬스터가 첫 등장하는 스테이지: <b>노란색 + 두꺼운 아웃라인</b>으로 강조
+        /// - 그 외: 기본 흰색 아웃라인
+        /// </summary>
+        public void ApplyMissionIconOutline(Outline outline, MissionData mission)
+        {
+            if (outline == null) return;
+
+            // ★ 몬스터 얼굴 PNG 미션은 Outline 전부 비활성화 — Outline이 얼굴 이미지를 복제해
+            //   여러 장 겹쳐 보이는 문제. 외곽선은 추후 이미지 자체에 구워서 적용 예정.
+            //   같은 GameObject에 붙은 모든 Outline 컴포넌트를 끈다.
+            if (mission != null && mission.type == MissionType.RemoveEnemy
+                && GoblinSystem.GetGoblinFaceSprite(mission.targetEnemyType) != null)
+            {
+                foreach (var ol in outline.gameObject.GetComponents<Outline>())
+                {
+                    ol.effectColor = new Color(0f, 0f, 0f, 0f);
+                    ol.effectDistance = Vector2.zero;
+                    ol.enabled = false;
+                }
+                return;
+            }
+
+            bool isNewMonsterStage = false;
+            if (mission != null && mission.type == MissionType.RemoveEnemy)
+            {
+                int curStage = GameManager.Instance != null ? GameManager.Instance.CurrentStage : 0;
+                if (curStage > 0)
+                    isNewMonsterStage = MonsterFirstAppearance.IsFirstAppearance(curStage, mission.targetEnemyType);
+            }
+
+            outline.enabled = true;  // 얼굴 미션에서 꺼졌을 수 있으므로 복원
+            if (isNewMonsterStage)
+            {
+                // 신규 몬스터 강조: 황금빛 노란색 + 두꺼운 아웃라인
+                outline.effectColor = new Color(1.0f, 0.85f, 0.10f, 1.0f);
+                outline.effectDistance = new Vector2(3, 3);
+            }
+            else
+            {
+                outline.effectColor = Color.white;
+                outline.effectDistance = new Vector2(2, 2);
+            }
+        }
+
+        /// <summary>
         /// 미션 타입에 따라 적절한 아이콘을 Image에 적용
         /// </summary>
-        private void SetMissionIconForType(Image iconImage, MissionData mission)
+        // ★ 미션 아이콘 캐시 (감사 M7) — 호출마다 256×256 프로시저럴 텍스처(262KB)를 새로 만들고
+        //   이전 스프라이트를 Destroy하지 않아 스테이지 로드당 ~0.5MB씩 누수되던 것을 키별 1회 생성으로 교체.
+        private static readonly System.Collections.Generic.Dictionary<string, Sprite> _missionIconCache
+            = new System.Collections.Generic.Dictionary<string, Sprite>();
+        private static Sprite CachedIcon(string key, System.Func<Sprite> creator)
+        {
+            if (_missionIconCache.TryGetValue(key, out var s) && s != null) return s;
+            s = creator();
+            _missionIconCache[key] = s;
+            return s;
+        }
+
+        public void SetMissionIconForType(Image iconImage, MissionData mission)
         {
             MissionType mType = mission.type;
             GemType gemType = mission.targetGemType;
+
+            // ★ 재호출 시 이전 오버레이 자식(ShieldOverlay/SpecialOverlay/HealCross 등) 잔존 → 얼굴/아이콘 중첩 방지
+            for (int ci = iconImage.transform.childCount - 1; ci >= 0; ci--)
+                Destroy(iconImage.transform.GetChild(ci).gameObject);
+            iconImage.color = Color.white;
+            iconImage.rectTransform.localScale = Vector3.one; // 마법사 등 scale 반전 잔재 초기화
 
             if (mType == MissionType.CollectGem || mType == MissionType.CollectMultiGem)
             {
@@ -2601,7 +2990,7 @@ namespace JewelsHexaPuzzle.Managers
                     }
                     else
                     {
-                        iconImage.sprite = CreateSingleColorHexIcon(GemColors.GetColor(gemType));
+                        iconImage.sprite = CachedIcon("SingleHex_" + gemType, () => CreateSingleColorHexIcon(GemColors.GetColor(gemType)));
                     }
                 }
                 else
@@ -2610,19 +2999,19 @@ namespace JewelsHexaPuzzle.Managers
                     if (missionIcon != null)
                         iconImage.sprite = missionIcon;
                     else
-                        iconImage.sprite = CreateProceduralMissionIcon();
+                        iconImage.sprite = CachedIcon("Mission", CreateProceduralMissionIcon);
                 }
             }
             else if (mType == MissionType.ProcessGem)
             {
                 if (gemType != GemType.None)
-                    iconImage.sprite = CreateProcessGemIcon(GemColors.GetColor(gemType));
+                    iconImage.sprite = CachedIcon("Process_" + gemType, () => CreateProcessGemIcon(GemColors.GetColor(gemType)));
                 else
-                    iconImage.sprite = CreateProcessGemIcon(new Color(0.9f, 0.85f, 0.3f));
+                    iconImage.sprite = CachedIcon("Process_default", () => CreateProcessGemIcon(new Color(0.9f, 0.85f, 0.3f)));
             }
             else if (mType == MissionType.CreateSpecialGem)
             {
-                iconImage.sprite = CreateSpecialGemIcon();
+                iconImage.sprite = CachedIcon("SpecialGem", CreateSpecialGemIcon);
                 iconImage.color = Color.white;
             }
             // === 특수 블록별 생성 미션 아이콘 (6색 육각형 배경 + 특수 블록 오버레이) ===
@@ -2636,7 +3025,7 @@ namespace JewelsHexaPuzzle.Managers
                      mType == MissionType.CreateDrone)
             {
                 // 배경: 6색 육각형 기본 블록
-                iconImage.sprite = MissionUIHelper.CreateMultiColorHexagonSprite();
+                iconImage.sprite = CachedIcon("MultiHex", MissionUIHelper.CreateMultiColorHexagonSprite);
                 iconImage.color = Color.white;
 
                 // 오버레이: 특수 블록 아이콘을 위에 겹침
@@ -2678,7 +3067,7 @@ namespace JewelsHexaPuzzle.Managers
             }
             else if (mType == MissionType.CreatePerfectGem)
             {
-                iconImage.sprite = CreatePerfectGemIcon();
+                iconImage.sprite = CachedIcon("PerfectGem", CreatePerfectGemIcon);
                 iconImage.color = Color.white;
             }
             else if (mType == MissionType.TriggerBigBang)
@@ -2691,25 +3080,41 @@ namespace JewelsHexaPuzzle.Managers
                 }
                 else
                 {
-                    iconImage.sprite = CreateExplosionIcon();
+                    iconImage.sprite = CachedIcon("Explosion", CreateExplosionIcon);
                 }
             }
             else if (mType == MissionType.RemoveVinyl || mType == MissionType.RemoveDoubleVinyl)
             {
-                iconImage.sprite = CreateVinylIcon(mType == MissionType.RemoveDoubleVinyl);
+                iconImage.sprite = CachedIcon("Vinyl_" + (mType == MissionType.RemoveDoubleVinyl), () => CreateVinylIcon(mType == MissionType.RemoveDoubleVinyl));
             }
             else if (mType == MissionType.ReachScore)
             {
-                iconImage.sprite = CreateScoreTargetIcon();
+                iconImage.sprite = CachedIcon("ScoreTarget", CreateScoreTargetIcon);
                 iconImage.color = Color.white;
             }
             else if (mType == MissionType.RemoveEnemy)
             {
+                // ★ 몬스터 미션 아이콘: 얼굴 클로즈업 이미지 우선 (Resources/Goblins/face_*.png)
+                //   얼굴 PNG가 있는 10종은 정면 얼굴로 표시(틴트/뒤집기/오버레이 불필요),
+                //   얼굴 없는 타입(Lv2 등)은 기존 전신 스프라이트 분기로 폴백.
+                Sprite faceSprite = GoblinSystem.GetGoblinFaceSprite(mission.targetEnemyType);
                 // 적군 타입별 아이콘 분기
-                if (mission.targetEnemyType == EnemyType.ArcherGoblin)
+                if (faceSprite != null)
+                {
+                    iconImage.sprite = faceSprite;
+                    iconImage.color = Color.white;
+                    iconImage.preserveAspect = true;
+                }
+                else if (mission.targetEnemyType == EnemyType.ArcherGoblin)
+                {
                     iconImage.sprite = GoblinSystem.GetArcherGoblinSprite();
+                    iconImage.color = Color.white;
+                }
                 else if (mission.targetEnemyType == EnemyType.ArmoredGoblin)
+                {
                     iconImage.sprite = GoblinSystem.GetArmoredGoblinSprite();
+                    iconImage.color = Color.white;
+                }
                 else if (mission.targetEnemyType == EnemyType.ShieldGoblin)
                 {
                     iconImage.sprite = GoblinSystem.GetShieldGoblinSprite();
@@ -2730,39 +3135,154 @@ namespace JewelsHexaPuzzle.Managers
                         shieldImg.color = Color.white;
                         shieldImg.raycastTarget = false;
                     }
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.BombGoblin)
+                {
+                    iconImage.sprite = GoblinSystem.GetBombGoblinSprite();
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.HealerGoblin)
+                {
+                    // 힐러: 일반 고블린 스프라이트 + 연두색 틴트 + 십자 마크
+                    iconImage.sprite = GoblinSystem.GetGoblinSprite();
+                    iconImage.color = new Color(0.3f, 0.9f, 0.4f, 1f);
+
+                    // 십자 마크 오버레이
+                    GameObject crossH = new GameObject("HealCrossH");
+                    crossH.transform.SetParent(iconImage.transform, false);
+                    RectTransform chRt = crossH.AddComponent<RectTransform>();
+                    chRt.anchoredPosition = new Vector2(0f, 4f);
+                    chRt.sizeDelta = new Vector2(20f, 6f);
+                    Image chImg = crossH.AddComponent<Image>();
+                    chImg.color = new Color(1f, 1f, 1f, 0.9f);
+                    chImg.raycastTarget = false;
+
+                    GameObject crossV = new GameObject("HealCrossV");
+                    crossV.transform.SetParent(iconImage.transform, false);
+                    RectTransform cvRt = crossV.AddComponent<RectTransform>();
+                    cvRt.anchoredPosition = new Vector2(0f, 4f);
+                    cvRt.sizeDelta = new Vector2(6f, 20f);
+                    Image cvImg = crossV.AddComponent<Image>();
+                    cvImg.color = new Color(1f, 1f, 1f, 0.9f);
+                    cvImg.raycastTarget = false;
+                }
+                else if (mission.targetEnemyType == EnemyType.HeavyGoblin)
+                {
+                    // 헤비급: 전용 스프라이트 (진한 갈색 + 뿔) 사용
+                    iconImage.sprite = GoblinSystem.GetHeavyGoblinSprite();
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.WizardGoblin)
+                {
+                    // 마법사: 전용 스프라이트 + 스케일 반전 (pivot 중앙 기준)
+                    iconImage.sprite = GoblinSystem.GetWizardGoblinSprite();
+                    iconImage.color = Color.white;
+                    // pivot을 중앙으로 변경하여 스케일 반전 시 위치 어긋남 방지
+                    iconImage.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                    iconImage.rectTransform.anchoredPosition = new Vector2(32f, 0f);
+                    iconImage.rectTransform.sizeDelta = new Vector2(54f, 54f);
+                    iconImage.rectTransform.localScale = new Vector3(-1f, -1f, 1f);
+                }
+                else if (mission.targetEnemyType == EnemyType.ThiefGoblin)
+                {
+                    // 도둑 고블린: 전용 스프라이트
+                    iconImage.sprite = GoblinSystem.GetThiefGoblinSprite();
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.WitchGoblin)
+                {
+                    // 마녀 고블린: 전용 스프라이트 + 스케일 반전
+                    iconImage.sprite = GoblinSystem.GetWitchGoblinSprite();
+                    iconImage.color = Color.white;
+                    iconImage.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                    iconImage.rectTransform.anchoredPosition = new Vector2(32f, 0f);
+                    iconImage.rectTransform.sizeDelta = new Vector2(54f, 54f);
+                    iconImage.rectTransform.localScale = new Vector3(-1f, -1f, 1f);
                 }
                 else if (mission.targetEnemyType == EnemyType.Goblin)
+                {
                     iconImage.sprite = GoblinSystem.GetGoblinSprite();
+                    iconImage.color = Color.white;
+                }
+                // === Lv2 몬스터 아이콘 (기존 스프라이트 + 색상 틴트로 구분) ===
+                // === Lv2 몬스터 아이콘 (Lv2 전용 스프라이트 — 피부색만 붉은색) ===
+                else if (mission.targetEnemyType == EnemyType.GoblinLv2)
+                {
+                    iconImage.sprite = GoblinSystem.GetGoblinLv2Sprite();
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.ArmoredGoblinLv2)
+                {
+                    iconImage.sprite = GoblinSystem.GetArmoredLv2Sprite();
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.ArcherGoblinLv2)
+                {
+                    iconImage.sprite = GoblinSystem.GetArcherLv2Sprite();
+                    iconImage.color = Color.white;
+                }
+                else if (mission.targetEnemyType == EnemyType.ShieldGoblinLv2)
+                {
+                    iconImage.sprite = GoblinSystem.GetShieldLv2Sprite();
+                    iconImage.color = Color.white;
+                    // 방패 오버레이
+                    Sprite shieldSprite = GoblinSystem.GetShieldSprite();
+                    if (shieldSprite != null)
+                    {
+                        GameObject shieldOverlay = new GameObject("ShieldOverlayLv2");
+                        shieldOverlay.transform.SetParent(iconImage.transform, false);
+                        RectTransform shieldRt = shieldOverlay.AddComponent<RectTransform>();
+                        shieldRt.anchorMin = new Vector2(0.5f, 0.5f);
+                        shieldRt.anchorMax = new Vector2(0.5f, 0.5f);
+                        shieldRt.pivot = new Vector2(0.5f, 0.5f);
+                        shieldRt.anchoredPosition = new Vector2(0f, -8f);
+                        shieldRt.sizeDelta = new Vector2(40f, 44f);
+                        Image shieldImg = shieldOverlay.AddComponent<Image>();
+                        shieldImg.sprite = shieldSprite;
+                        shieldImg.color = Color.white;
+                        shieldImg.raycastTarget = false;
+                    }
+                }
                 else
-                    iconImage.sprite = CreateEnemyIcon();
-                iconImage.color = Color.white;
+                {
+                    iconImage.sprite = CachedIcon("Enemy", CreateEnemyIcon);
+                    iconImage.color = Color.white;
+                }
             }
             else if (mType == MissionType.AchieveCombo)
             {
-                iconImage.sprite = CreateComboIcon();
+                iconImage.sprite = CachedIcon("Combo", CreateComboIcon);
+            }
+            else if (mType == MissionType.RemoveDirtMound)
+            {
+                // 흙더미 제거 미션 — HexBlock의 흙더미 스프라이트(2/3) 동일 시각 사용
+                iconImage.sprite = JewelsHexaPuzzle.Core.HexBlock.GetDirtMoundSprite(level: 2);
+                iconImage.color = Color.white;
+                iconImage.preserveAspect = true;
             }
             else if (mType == MissionType.MoveItem)
             {
-                iconImage.sprite = CreateMoveItemIcon();
+                iconImage.sprite = CachedIcon("MoveItem", CreateMoveItemIcon);
             }
             else if (mType == MissionType.SingleTurnRemoval)
             {
-                iconImage.sprite = CreateSingleTurnRemovalIcon();
+                iconImage.sprite = CachedIcon("SingleTurn", CreateSingleTurnRemovalIcon);
                 iconImage.color = Color.white;
             }
             else if (mType == MissionType.AchieveCascade)
             {
-                iconImage.sprite = CreateCascadeIcon();
+                iconImage.sprite = CachedIcon("Cascade", CreateCascadeIcon);
                 iconImage.color = Color.white;
             }
             else if (mType == MissionType.UseSpecial)
             {
-                iconImage.sprite = CreateUseSpecialIcon();
+                iconImage.sprite = CachedIcon("UseSpecial", CreateUseSpecialIcon);
                 iconImage.color = Color.white;
             }
             else
             {
-                iconImage.sprite = CreateProceduralMissionIcon();
+                iconImage.sprite = CachedIcon("Mission", CreateProceduralMissionIcon);
             }
         }
 
@@ -3659,6 +4179,190 @@ namespace JewelsHexaPuzzle.Managers
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, size, size), Vector2.one * 0.5f, 100f);
         }
+
+        // ============================================================
+        // 토스트 메시지 (풀링 + 인터럽트 방식)
+        // ============================================================
+
+        private GameObject toastPoolObj;       // 풀링된 토스트 GameObject
+        private RectTransform toastRt;         // 토스트 RectTransform
+        private Text toastLabel;               // 토스트 Text
+        private Outline toastOutline;          // 토스트 Outline
+        private Coroutine currentToastCoroutine; // 현재 실행 중인 토스트 코루틴 (항상 1개만)
+        private Vector2 toastStartPos = new Vector2(0f, -370f); // 상단 중앙 기준 시작 위치 (기존 -270 → -370, 100px 아래로 이동)
+
+        /// <summary>
+        /// 토스트 풀 오브젝트 초기 생성 (Start에서 호출)
+        /// </summary>
+        private void InitToastPool()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) canvas = FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            toastPoolObj = new GameObject("ToastMessage");
+            toastPoolObj.transform.SetParent(canvas.transform, false);
+
+            toastRt = toastPoolObj.AddComponent<RectTransform>();
+            toastRt.anchorMin = new Vector2(0.5f, 1f);   // 상단 중앙
+            toastRt.anchorMax = new Vector2(0.5f, 1f);
+            toastRt.pivot     = new Vector2(0.5f, 1f);
+            toastRt.anchoredPosition = toastStartPos;
+            toastRt.sizeDelta = new Vector2(500f, 60f);
+
+            toastLabel = toastPoolObj.AddComponent<Text>();
+            toastLabel.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            toastLabel.fontSize  = 34;  // 기존 26 → 34 (약 30% 증가)
+            toastLabel.fontStyle = FontStyle.Bold;
+            toastLabel.alignment = TextAnchor.MiddleCenter;
+            toastLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+            toastLabel.verticalOverflow   = VerticalWrapMode.Overflow;
+            toastLabel.color     = Color.white;
+            toastLabel.raycastTarget = false;
+            toastLabel.text = "";
+
+            toastOutline = toastPoolObj.AddComponent<Outline>();
+            toastOutline.effectColor    = new Color(0f, 0f, 0f, 1f);
+            toastOutline.effectDistance = new Vector2(2f, -2f);
+
+            toastPoolObj.SetActive(false);
+        }
+
+        /// <summary>
+        /// 화면 상단 중앙에 표시되는 토스트 메시지.
+        /// 배경 없음, 흰색 텍스트 + 검정 Outline.
+        /// 0.5초 대기 → 1초 위로 100px 이동 + 페이드아웃.
+        /// 항상 1개의 메인 코루틴만 실행. 이전 토스트는 즉시 위로 밀려 사라지는 전용 클론으로 분리.
+        /// </summary>
+        public void ShowToast(string message)
+        {
+            if (toastPoolObj == null) InitToastPool();
+            if (toastPoolObj == null) return;
+
+            // 이전 토스트가 아직 화면에 있으면: 진행 중 코루틴 중단 후
+            // 현재 상태를 클론으로 분리해 "즉시 위로 올라가며 사라지는" 전용 애니메이션으로 전환
+            if (currentToastCoroutine != null)
+            {
+                StopCoroutine(currentToastCoroutine);
+                currentToastCoroutine = null;
+            }
+
+            if (toastPoolObj.activeSelf && !string.IsNullOrEmpty(toastLabel.text))
+                SpawnDyingToastClone();
+
+            // 새 메시지 표시 (메인 풀 초기화)
+            toastLabel.color = new Color(1f, 1f, 1f, 0f);
+            toastOutline.effectColor = new Color(0f, 0f, 0f, 0f);
+            toastRt.anchoredPosition = toastStartPos;
+
+            toastLabel.text  = message;
+            toastLabel.color = Color.white;
+            toastOutline.effectColor = new Color(0f, 0f, 0f, 1f);
+            toastRt.anchoredPosition = toastStartPos;
+            toastPoolObj.SetActive(true);
+
+            currentToastCoroutine = StartCoroutine(ToastCoroutine());
+        }
+
+        /// <summary>
+        /// 현재 표시 중인 토스트의 시각 상태를 복제한 임시 오브젝트를 생성해
+        /// 대기 없이 빠르게 위로 올라가며 사라지는 애니메이션만 재생한 뒤 파괴한다.
+        /// </summary>
+        private void SpawnDyingToastClone()
+        {
+            Canvas canvas = UnityEngine.Object.FindObjectOfType<Canvas>();
+            if (canvas == null) return;
+
+            GameObject clone = new GameObject("ToastMessage_Dying");
+            clone.transform.SetParent(canvas.transform, false);
+
+            RectTransform cloneRt = clone.AddComponent<RectTransform>();
+            cloneRt.anchorMin = toastRt.anchorMin;
+            cloneRt.anchorMax = toastRt.anchorMax;
+            cloneRt.pivot     = toastRt.pivot;
+            cloneRt.sizeDelta = toastRt.sizeDelta;
+            cloneRt.anchoredPosition = toastRt.anchoredPosition;
+
+            Text cloneLabel = clone.AddComponent<Text>();
+            cloneLabel.font      = toastLabel.font;
+            cloneLabel.fontSize  = toastLabel.fontSize;
+            cloneLabel.fontStyle = toastLabel.fontStyle;
+            cloneLabel.alignment = toastLabel.alignment;
+            cloneLabel.horizontalOverflow = toastLabel.horizontalOverflow;
+            cloneLabel.verticalOverflow   = toastLabel.verticalOverflow;
+            cloneLabel.color     = toastLabel.color.a > 0f ? toastLabel.color : Color.white;
+            cloneLabel.raycastTarget = false;
+            cloneLabel.text = toastLabel.text;
+
+            Outline cloneOutline = clone.AddComponent<Outline>();
+            cloneOutline.effectColor    = new Color(0f, 0f, 0f, cloneLabel.color.a);
+            cloneOutline.effectDistance = toastOutline.effectDistance;
+
+            StartCoroutine(DyingToastCoroutine(clone, cloneRt, cloneLabel, cloneOutline));
+        }
+
+        /// <summary>
+        /// 클론 토스트: 대기 없이 0.5초 동안 위로 70px + 페이드아웃 후 파괴
+        /// (속도 절반, 이동 거리 30% 감소)
+        /// </summary>
+        private IEnumerator DyingToastCoroutine(GameObject go, RectTransform rt, Text label, Outline outline)
+        {
+            Vector2 startPos = rt.anchoredPosition;
+            Vector2 endPos   = startPos + Vector2.up * 70f;
+            float fadeDuration = 0.5f;
+            float startAlpha = label.color.a;
+            float elapsed = 0f;
+            while (elapsed < fadeDuration)
+            {
+                if (go == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDuration);
+
+                rt.anchoredPosition = Vector2.Lerp(startPos, endPos, t);
+                float alpha = Mathf.Lerp(startAlpha, 0f, t);
+                label.color = new Color(1f, 1f, 1f, alpha);
+                outline.effectColor = new Color(0f, 0f, 0f, alpha);
+                yield return null;
+            }
+
+            if (go != null) Destroy(go);
+        }
+
+        /// <summary>
+        /// 토스트 메인 코루틴: 0.5초 대기 → 1초 위로 100px + 페이드아웃
+        /// </summary>
+        private IEnumerator ToastCoroutine()
+        {
+            // 0.5초 대기
+            float waitElapsed = 0f;
+            while (waitElapsed < 0.5f)
+            {
+                if (toastPoolObj == null) yield break;
+                waitElapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            // 1초 동안 위로 100px 이동 + 알파 0
+            Vector2 startPos = toastRt.anchoredPosition;
+            Vector2 endPos   = startPos + Vector2.up * 100f;
+            float fadeDuration = 1f;
+            float elapsed = 0f;
+            while (elapsed < fadeDuration)
+            {
+                if (toastPoolObj == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeDuration);
+
+                toastRt.anchoredPosition = Vector2.Lerp(startPos, endPos, t);
+                float alpha = Mathf.Lerp(1f, 0f, t);
+                toastLabel.color = new Color(1f, 1f, 1f, alpha);
+                toastOutline.effectColor = new Color(0f, 0f, 0f, alpha);
+                yield return null;
+            }
+
+            toastPoolObj.SetActive(false);
+            currentToastCoroutine = null;
+        }
     }
 
     /// <summary>
@@ -4060,9 +4764,60 @@ namespace JewelsHexaPuzzle.Managers
 
         private ItemData itemData;
 
+        /// <summary>이 버튼에 연결된 아이템 타입</summary>
+        public ItemType CurrentItemType => itemData != null ? itemData.type : (ItemType)0;
+        /// <summary>내부 Button 컴포넌트 참조</summary>
+        public Button ButtonComponent => button;
+
+        // 게이지 바 UI (동적 생성)
+        private Image gaugeBarBg;
+        private Image gaugeBarFill;
+        private Text gaugeCountText;
+        private bool gaugeBarCreated = false;
+        private bool wasGaugeFull = false;
+
+        // ★ 헥사 게이지 비주얼 (Charge 패키지) — 가로 바 대체
+        private Image hexInnerGray;   // 회색 헥사 바탕
+        private Image hexColorFill;   // 헥사 fill (Filled Vertical Bottom)
+        private Image hexFrame;       // 골드 헥사 프레임
+        private Image hexGlyphImg;    // 아이템 글리프
+        private GameObject hexGlow;   // READY 글로우
+
+        /// <summary>ItemType → Charge 글리프 스프라이트 로드 (없으면 null)</summary>
+        private static Sprite LoadChargeGlyph(ItemType type)
+        {
+            string n = null;
+            switch (type)
+            {
+                case ItemType.Hammer:          n = "glyph_hammer"; break;
+                case ItemType.Bomb:            n = "glyph_swap"; break;   // Bomb = 스왑
+                case ItemType.SSD:             n = "glyph_line"; break;   // SSD = 라인
+                case ItemType.ReverseRotation: n = "glyph_reverse"; break;
+            }
+            return n != null ? Resources.Load<Sprite>($"Items/Charge/{n}") : null;
+        }
+
+        /// <summary>버튼 전체 크기에 헥사 레이어 Image 생성 (anchor stretch)</summary>
+        private Image CreateHexLayer(string objName, Sprite sp, Color color)
+        {
+            GameObject go = new GameObject(objName);
+            go.transform.SetParent(transform, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            Image img = go.AddComponent<Image>();
+            img.sprite = sp;
+            img.color = color;
+            img.raycastTarget = false;
+            return img;
+        }
+
         public void SetItem(ItemData data)
         {
             itemData = data;
+            Debug.Log($"[아이템진단3] SetItem 호출됨 item={data.type} button={button} iconImage={iconImage}");
 
             if (iconImage != null && data.icon != null)
             {
@@ -4081,36 +4836,196 @@ namespace JewelsHexaPuzzle.Managers
                 lockStageText.text = $"stage {data.unlockStage}";
             }
 
-            if (isUnlocked)
+            // 역회전: 게이지 없이 항상 활성화
+            bool isReverseRotation = (data.type == ItemType.ReverseRotation);
+
+            if (isReverseRotation)
             {
-                if (countText != null)
+                if (gaugeBarBg != null) gaugeBarBg.gameObject.SetActive(false);
+                if (gaugeBarFill != null) gaugeBarFill.gameObject.SetActive(false);
+                if (gaugeCountText != null) gaugeCountText.gameObject.SetActive(false);
+
+                if (isUnlocked && countText != null)
+                    countText.text = "∞";
+
+                if (button != null)
                 {
-                    // MP 소모량 표시 (수량 대신)
-                    int cost = MPManager.Instance != null ? MPManager.Instance.GetItemCost(data.type) : 0;
-                    countText.text = cost > 0 ? cost.ToString() : "+";
+                    button.interactable = isUnlocked;
+                    if (iconImage != null)
+                    {
+                        Color c = iconImage.color;
+                        c.a = isUnlocked ? 1f : 0.4f;
+                        iconImage.color = c;
+                    }
                 }
             }
-
-            if (button != null)
+            else
             {
-                // MP 기반 활성화 체크
-                bool hasEnoughMP = MPManager.Instance != null ? MPManager.Instance.CanUseItem(data.type) : true;
-                button.interactable = isUnlocked && hasEnoughMP;
+                // 게이지 바 생성 (한 번만)
+                if (!gaugeBarCreated)
+                    CreateGaugeBar(data.type);
+
+                // 카운트 기반 갱신
+                int gaugeCount = ItemManager.Instance != null ? ItemManager.Instance.GetGaugeCount(data.type) : 0;
+                float gauge = gaugeCount / 10f;
+                UpdateGaugeBar(gauge);
+
+                // 게이지 카운트 텍스트
+                if (gaugeCountText != null)
+                    gaugeCountText.text = $"{gaugeCount}/10";
+
+                if (isUnlocked && countText != null)
+                    countText.text = $"{gaugeCount}/10";
+
+                bool canUse = ItemManager.Instance != null ? ItemManager.Instance.CanUseItem(data.type) : false;
+
+                // HammerGauge가 Hammer 버튼의 interactable을 관리하므로 여기서 덮어쓰지 않음
+                bool hammerGaugeManaged = (data.type == ItemType.Hammer && JewelsHexaPuzzle.Items.HammerGauge.Instance != null);
+
+                if (button != null && !hammerGaugeManaged)
+                {
+                    button.interactable = isUnlocked && canUse;
+
+                    if (iconImage != null)
+                    {
+                        Color c = iconImage.color;
+                        c.a = (isUnlocked && canUse) ? 1f : 0.4f;
+                        iconImage.color = c;
+                    }
+                }
+
+                // 활성화 연출: 카운트가 10에 도달한 순간
+                if (canUse && !wasGaugeFull)
+                {
+                    wasGaugeFull = true;
+                    StartCoroutine(GaugeFullActivationEffect());
+                }
+                else if (!canUse)
+                {
+                    wasGaugeFull = false;
+                }
+            }
+        }
+
+        /// <summary>헥사 게이지 동적 생성 — 골드 프레임 + 헥사 fill + 글리프 + READY 글로우</summary>
+        private void CreateGaugeBar(ItemType type)
+        {
+            gaugeBarCreated = true;
+            RectTransform btnRt = GetComponent<RectTransform>();
+            if (btnRt == null) return;
+
+            // 아이템 색상 (기존 연결 젬 색 유지)
+            GemType linkedGem = ItemManager.GetLinkedGemType(type);
+            Color fillColor = (linkedGem != GemType.None) ? GemColors.GetColor(linkedGem) : Color.white;
+
+            // 레이어 순서: InnerGray(뒤) → ColorFill → Glyph → Frame → Glow(앞)
+            // 1. 회색 헥사 바탕
+            hexInnerGray = CreateHexLayer("HexInnerGray", Resources.Load<Sprite>("Items/Charge/charge_inner_gray"), Color.white);
+
+            // 2. 헥사 fill (Filled Vertical Bottom — 아래에서 위로 차오름)
+            hexColorFill = CreateHexLayer("HexColorFill", Resources.Load<Sprite>("Items/Charge/charge_inner_fill"), fillColor);
+            hexColorFill.type = Image.Type.Filled;
+            hexColorFill.fillMethod = Image.FillMethod.Vertical;
+            hexColorFill.fillOrigin = (int)Image.OriginVertical.Bottom;
+            hexColorFill.fillAmount = 0f;
+            gaugeBarFill = hexColorFill; // 호환용 참조
+
+            // 3. 글리프 (ItemType 매핑, 없으면 기존 iconImage 유지)
+            Sprite glyph = LoadChargeGlyph(type);
+            if (glyph != null)
+            {
+                hexGlyphImg = CreateHexLayer("HexGlyph", glyph, Color.white);
+                // 글리프는 헥사 내부에 약간 작게
+                RectTransform grt = hexGlyphImg.rectTransform;
+                grt.anchorMin = new Vector2(0.18f, 0.18f);
+                grt.anchorMax = new Vector2(0.82f, 0.82f);
+                grt.offsetMin = Vector2.zero;
+                grt.offsetMax = Vector2.zero;
+                // 기존 사각 아이콘 숨김 (헥사 글리프로 대체)
+                if (iconImage != null) iconImage.enabled = false;
+            }
+
+            // 4. 골드 헥사 프레임 (외곽선)
+            hexFrame = CreateHexLayer("HexFrame", Resources.Load<Sprite>("Items/Charge/charge_frame"), Color.white);
+
+            // 5. READY 글로우 (100% 시 활성)
+            hexGlow = CreateHexLayer("HexGlow", Resources.Load<Sprite>("Items/Charge/charge_glow"), new Color(1f, 0.92f, 0.55f, 1f)).gameObject;
+            hexGlow.SetActive(false);
+
+            // 카운트 텍스트 (헥사 하단)
+            GameObject textObj = new GameObject("GaugeCountText");
+            textObj.transform.SetParent(transform, false);
+            RectTransform textRt = textObj.AddComponent<RectTransform>();
+            textRt.anchorMin = new Vector2(0f, 0f);
+            textRt.anchorMax = new Vector2(1f, 0.25f);
+            textRt.offsetMin = Vector2.zero;
+            textRt.offsetMax = Vector2.zero;
+            gaugeCountText = textObj.AddComponent<Text>();
+            gaugeCountText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gaugeCountText.fontSize = 14;
+            gaugeCountText.fontStyle = FontStyle.Bold;
+            gaugeCountText.alignment = TextAnchor.MiddleCenter;
+            gaugeCountText.color = Color.white;
+            gaugeCountText.raycastTarget = false;
+            gaugeCountText.text = "0/10";
+            var countOutline = textObj.AddComponent<Outline>();
+            countOutline.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            countOutline.effectDistance = new Vector2(1f, -1f);
+            textObj.transform.SetAsLastSibling(); // 텍스트 최상위
+        }
+
+        /// <summary>게이지 100% 도달 시 활성화 연출 (3회 플래시 + 스케일 펄스)</summary>
+        private IEnumerator GaugeFullActivationEffect()
+        {
+            if (iconImage == null) yield break;
+
+            Color originalColor = iconImage.color;
+            RectTransform rt = GetComponent<RectTransform>();
+            Vector3 originalScale = rt != null ? rt.localScale : Vector3.one;
+
+            // 3회 플래시 + 펄스
+            for (int i = 0; i < 3; i++)
+            {
+                // 플래시 ON
+                iconImage.color = Color.white;
+                if (rt != null) rt.localScale = originalScale * 1.2f;
+                yield return new WaitForSeconds(0.1f);
+
+                // 플래시 OFF
+                iconImage.color = originalColor;
+                if (rt != null) rt.localScale = originalScale;
+                yield return new WaitForSeconds(0.05f);
+            }
+
+            // 최종 복원
+            iconImage.color = originalColor;
+            if (rt != null) rt.localScale = originalScale;
+        }
+
+        /// <summary>헥사 게이지 채움 갱신 (0~1) — Filled Vertical fillAmount</summary>
+        private void UpdateGaugeBar(float gauge)
+        {
+            float g = Mathf.Clamp01(gauge);
+            if (hexColorFill != null)
+                hexColorFill.fillAmount = g;
+
+            // 100% 도달 시 글로우 활성
+            if (hexGlow != null)
+            {
+                bool full = g >= 1f;
+                if (hexGlow.activeSelf != full) hexGlow.SetActive(full);
             }
         }
 
         public void OnItemClicked()
         {
-            if (itemData != null && itemData.count > 0)
+            if (itemData != null)
             {
-                // 아이템 사용
-                ItemManager itemManager = FindObjectOfType<ItemManager>();
-                itemManager?.UseItem(itemData.type);
-            }
-            else
-            {
-                // 구매 UI 표시
-                Debug.Log($"Open purchase for {itemData?.type}");
+                // 게이지 기반 아이템 사용
+                if (ItemManager.Instance != null && ItemManager.Instance.CanUseItem(itemData.type))
+                {
+                    ItemManager.Instance.UseItem(itemData.type);
+                }
             }
         }
     }

@@ -673,7 +673,7 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 카오스 군주 피격. 도넛=1회, 나머지=3회
+        /// 카오스 군주 피격. 타겟 레이저=1회, 나머지=3회
         /// true 반환: 아직 살아있음 (블록 보존)
         /// false 반환: 사망 (블록 제거 가능)
         /// </summary>
@@ -684,7 +684,7 @@ namespace JewelsHexaPuzzle.Core
 
             if (method == RemovalMethod.Donut)
             {
-                // 도넛은 1회 제거
+                // 타겟 레이저은 1회 제거
                 block.Data.enemyType = EnemyType.None;
                 block.Data.chaosEffectMask = ChaosEffect.None;
                 RegisterKill(new EnemyKillData

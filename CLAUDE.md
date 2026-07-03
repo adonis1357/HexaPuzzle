@@ -148,4 +148,53 @@ InputSystem → RotationSystem → MatchingSystem → BlockRemovalSystem → Gam
 
 - Unity 프로젝트 (솔루션: `Hexa puzzle project.sln`)
 - Unity 에디터에서 Play로 테스트
-- 컴파일 검증: VS Code 진단 또는 Unity 콘솔 에러 확인
+- **컴파일 검증**: `dotnet build "Assembly-CSharp.csproj"` (Hook이 .cs 수정 시 자동 실행)
+
+## 자동화 (Hooks)
+
+프로젝트에 다음 자동화가 설정되어 있다:
+
+### 컴파일 게이트
+- `.cs` 파일 수정(Write/Edit) 후 자동으로 `dotnet build`가 실행된다
+- 컴파일 에러 발생 시 `additionalContext`로 피드백 → 즉시 수정
+- Claude 응답 완료 전 최종 빌드 검증이 실행된다 (빌드 실패 시 블로킹)
+
+### 코드 수정 권한
+- `.cs` 파일 수정은 오직 `개발` 에이전트만 수행한다
+- 기획/아트/사운드 에이전트는 설계서/사양서만 작성
+
+### Hook 파일
+- `.claude/hooks/post-cs-edit.sh` — PostToolUse: 컴파일 검증
+- `.claude/hooks/stop-build-check.sh` — Stop: 최종 빌드 게이트
+- `.claude/hooks/dev-agent-done.sh` — SubagentStop: 개발 에이전트 검증
+
+## 슬래시 커맨드
+
+| 커맨드 | 용도 |
+|--------|------|
+| `/버그수정 [설명]` | 버그 수정 워크플로우 |
+| `/기능추가 [설명]` | 기능 추가 워크플로우 |
+| `/리팩토링 [대상]` | 리팩토링 워크플로우 |
+| `/특수블록 [사양]` | 특수 블록 추가 (확장 패턴) |
+| `/빌드` | 컴파일 검증 |
+| `/코드리뷰 [범위]` | 코드 리뷰 |
+| `/스킬트리 [스킬명] [효과]` | 스킬트리 추가 (4단계 체크리스트) |
+| `/아이템 [이름] [효과]` | 아이템 추가/수정 (Item+Gauge 패턴) |
+| `/몬스터 [이름] [행동]` | 몬스터(고블린) 추가/수정 (9단계 체크리스트) |
+| `/레벨디자인 [범위] [설명]` | 스테이지/레벨 추가/수정 (7단계 체크리스트) |
+| `/튜토리얼 [분석\|추가\|검증\|수정]` | 튜토리얼 시퀀스 설계/분석/추가/검증 |
+| `/유니티갱신` | Unity Ctrl+R 갱신 + Ctrl+P 재생 사이클 자동 실행 (코드/에셋 변경 후 자동 호출) |
+
+## Unity 자동화 사이클 자동 실행 정책
+
+**코드(.cs) 또는 Resources 에셋(PNG 등) 변경 시 사용자 명시 요청 없이도 응답 마무리 시점에 Unity 갱신+재생 사이클을 자동 실행한다.**
+
+- **실행 방법 (파일 트리거 — PowerShell/키 입력 불필요)**:
+  ```bash
+  touch ".claude/refresh_trigger"
+  ```
+  Unity 에디터의 `Assets/Scripts/Editor/UnityAutoRefresh.cs`(파일 감시)가 이 파일을 감지해
+  **Play 종료(재생 중이면) → AssetDatabase.Refresh(컴파일) → Play 재시작**을 스스로 수행한다.
+- 사이클당 1회만 실행 (같은 응답 내 다회 수정 시 마지막에만)
+- 단순 `dotnet build`만 한 경우 / 문서 수정만 한 경우는 스킵
+- (구 방식 `Send-UnityKey` PowerShell 키 입력은 권한 차단 + 포커스 불안정으로 폐기됨)

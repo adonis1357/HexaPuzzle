@@ -84,6 +84,80 @@ namespace JewelsHexaPuzzle.Data
         }
 
         /// <summary>
+        /// 모든 레벨을 해금 처리 + 영속 저장
+        /// </summary>
+        public static void UnlockAllLevels()
+        {
+            Initialize();
+            foreach (var level in levels.Values)
+            {
+                level.isLocked = false;
+                PlayerPrefs.SetInt($"Level_{level.levelId}_Unlocked", 1);
+            }
+            PlayerPrefs.Save();
+            Debug.Log($"[LevelRegistry] 모든 레벨 해금 완료 ({levels.Count}개)");
+        }
+
+        /// <summary>
+        /// 모든 레벨을 잠금 처리 (1레벨만 해금) + 영속 저장
+        /// </summary>
+        public static void LockAllLevels()
+        {
+            Initialize();
+            foreach (var level in levels.Values)
+            {
+                if (level.levelId == 1)
+                {
+                    level.isLocked = false;
+                    PlayerPrefs.SetInt($"Level_{level.levelId}_Unlocked", 1);
+                }
+                else
+                {
+                    level.isLocked = true;
+                    PlayerPrefs.DeleteKey($"Level_{level.levelId}_Unlocked");
+                }
+            }
+            PlayerPrefs.Save();
+            Debug.Log($"[LevelRegistry] 모든 레벨 잠금 완료 (1레벨만 해금)");
+        }
+
+        /// <summary>
+        /// 지정 레벨까지 해금, 이후 모두 잠금 + 영속 저장
+        /// </summary>
+        public static void UnlockLevelsUpTo(int maxLevel)
+        {
+            Initialize();
+            foreach (var level in levels.Values)
+            {
+                if (level.levelId <= maxLevel)
+                {
+                    level.isLocked = false;
+                    PlayerPrefs.SetInt($"Level_{level.levelId}_Unlocked", 1);
+                }
+                else
+                {
+                    level.isLocked = true;
+                    PlayerPrefs.DeleteKey($"Level_{level.levelId}_Unlocked");
+                }
+            }
+            PlayerPrefs.Save();
+            Debug.Log($"[LevelRegistry] 레벨 1~{maxLevel} 해금, {maxLevel + 1}~ 잠금 완료");
+        }
+
+        /// <summary>
+        /// 모든 레벨이 해금 상태인지 확인
+        /// </summary>
+        public static bool AreAllLevelsUnlocked()
+        {
+            Initialize();
+            foreach (var level in levels.Values)
+            {
+                if (level.isLocked) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// 총 레벨 수
         /// </summary>
         public static int LevelCount
@@ -115,10 +189,10 @@ namespace JewelsHexaPuzzle.Data
             Register(new LevelData
             {
                 levelId = 11,
-                levelName = "STAGE 11",
+                levelName = "LEVEL 11",
                 subtitle = "드릴 튜토리얼",
                 gameMode = GameMode.Stage,
-                difficulty = 1,
+                difficultyType = DifficultyType.Easy,
                 isLocked = true,
                 unlockRequirement = 10,
                 lobbyDisplay = new LobbyDisplayConfig
@@ -138,8 +212,59 @@ namespace JewelsHexaPuzzle.Data
             // --- 레벨 21~30: Stage 모드 (화산 심장 — 4종 전체 혼합) ---
             RegisterStages21To30();
 
+            // --- 레벨 31~50: Stage 모드 (폭염의 화약고 — 폭탄고블린 등장) ---
+            RegisterStages31To50();
+
+            // --- 레벨 51~60: Stage 모드 (치유의 늪 — 힐러고블린 등장) ---
+            RegisterStages51To60();
+
+            // --- 레벨 61~70: Stage 모드 (거인의 둥지 — 헤비급 고블린 등장) ---
+            RegisterStages61To70();
+
+            // --- 레벨 71~80: Stage 모드 (마법사의 탑 — 마법사 고블린 등장) ---
+            RegisterStages71To80();
+
+            // --- 레벨 81~90: Stage 모드 (도둑의 은신처 — 도둑 고블린 등장) ---
+            RegisterStages81To90();
+
+            // --- 레벨 91~100: Stage 모드 (최종 전장 — 전 몬스터 총출동) ---
+            RegisterStages91To100();
+
+            // --- 레벨 101~150: Stage 모드 (엘리트 전장 — Lv2 몬스터 등장) ---
+            RegisterStages101To150();
+
             // --- 마지막 레벨: Infinite 모드 (무한 도전) — 항상 스테이지 레벨 뒤에 배치 ---
             RegisterInfiniteLevel();
+
+            // --- 챕터 일괄 할당 (로비 여정 경로 섹션 헤더용) ---
+            AssignChapters();
+        }
+
+        /// <summary>
+        /// 레벨 ID 범위 기반으로 챕터 번호/이름을 일괄 할당.
+        /// 기존 RegisterStagesXXToYY 그룹 경계와 일치시킨다(로비 여정 경로 섹션 구분).
+        /// </summary>
+        private static void AssignChapters()
+        {
+            foreach (var lv in levels.Values)
+            {
+                if (lv.gameMode == GameMode.Infinite) { lv.chapterId = 99; lv.chapterName = "무한 도전"; continue; }
+                int n = lv.levelId;
+                if (n <= 10)       { lv.chapterId = 1;  lv.chapterName = "크리스탈 숲"; }
+                else if (n <= 20)  { lv.chapterId = 2;  lv.chapterName = "가시덤불 고개"; }
+                else if (n <= 30)  { lv.chapterId = 3;  lv.chapterName = "화산 심장"; }
+                else if (n <= 50)  { lv.chapterId = 4;  lv.chapterName = "폭염의 화약고"; }
+                else if (n <= 60)  { lv.chapterId = 5;  lv.chapterName = "치유의 늪"; }
+                else if (n <= 70)  { lv.chapterId = 6;  lv.chapterName = "거인의 둥지"; }
+                else if (n <= 80)  { lv.chapterId = 7;  lv.chapterName = "마법사의 탑"; }
+                else if (n <= 90)  { lv.chapterId = 8;  lv.chapterName = "도둑의 은신처"; }
+                else if (n <= 100) { lv.chapterId = 9;  lv.chapterName = "최종 전장"; }
+                else if (n <= 110) { lv.chapterId = 10; lv.chapterName = "엘리트 초원"; }
+                else if (n <= 120) { lv.chapterId = 11; lv.chapterName = "엘리트 협곡"; }
+                else if (n <= 130) { lv.chapterId = 12; lv.chapterName = "엘리트 화산"; }
+                else if (n <= 140) { lv.chapterId = 13; lv.chapterName = "엘리트 심연"; }
+                else               { lv.chapterId = 14; lv.chapterName = "최종 엘리트"; }
+            }
         }
 
         /// <summary>
@@ -163,7 +288,7 @@ namespace JewelsHexaPuzzle.Data
                 levelName = "무한 도전",
                 subtitle = "생존 미션",
                 gameMode = GameMode.Infinite,
-                difficulty = 0,
+                difficultyType = DifficultyType.Easy,
                 isLocked = true,
                 unlockRequirement = lastStageId,
                 infiniteConfig = new InfiniteConfig
@@ -232,10 +357,10 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
-                    difficulty = i >= 10 ? 3 : Mathf.Min(1 + i / 3, 3),
+                    difficultyType = DifficultyType.Easy,
                     isLocked = i > 1,
                     unlockRequirement = i > 1 ? i - 1 : 0,
                     lobbyDisplay = new LobbyDisplayConfig
@@ -282,10 +407,10 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
-                    difficulty = i >= 15 ? 3 : 2,
+                    difficultyType = DifficultyType.Normal,
                     isLocked = true,
                     unlockRequirement = i - 1,
                     lobbyDisplay = new LobbyDisplayConfig
@@ -334,10 +459,10 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
-                    difficulty = i >= 20 ? 3 : 2,
+                    difficultyType = DifficultyType.Normal,
                     isLocked = true,
                     unlockRequirement = i - 1,
                     lobbyDisplay = new LobbyDisplayConfig
@@ -396,10 +521,530 @@ namespace JewelsHexaPuzzle.Data
                 Register(new LevelData
                 {
                     levelId = i,
-                    levelName = $"STAGE {i}",
+                    levelName = $"LEVEL {i}",
                     subtitle = subtitles[idx],
                     gameMode = GameMode.Stage,
-                    difficulty = (i == 25 || i >= 29) ? 3 : 2,
+                    difficultyType = DifficultyType.Hard,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 31~50 등록 (폭염의 화약고 — 폭탄고블린 등장, 5종 혼합)
+        /// </summary>
+        private static void RegisterStages31To50()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.80f, 0.45f, 0.10f),  // 31: 화약고 주황
+                new Color(0.82f, 0.40f, 0.10f),  // 32
+                new Color(0.84f, 0.36f, 0.10f),  // 33
+                new Color(0.86f, 0.32f, 0.10f),  // 34
+                new Color(0.88f, 0.28f, 0.12f),  // 35: 입문 마무리
+                new Color(0.85f, 0.24f, 0.15f),  // 36
+                new Color(0.82f, 0.20f, 0.18f),  // 37
+                new Color(0.80f, 0.16f, 0.22f),  // 38
+                new Color(0.78f, 0.13f, 0.26f),  // 39
+                new Color(0.75f, 0.10f, 0.30f),  // 40: 5종 첫 등장
+                new Color(0.70f, 0.08f, 0.35f),  // 41
+                new Color(0.65f, 0.07f, 0.40f),  // 42
+                new Color(0.60f, 0.06f, 0.45f),  // 43
+                new Color(0.55f, 0.05f, 0.50f),  // 44
+                new Color(0.50f, 0.04f, 0.55f),  // 45: 고강도
+                new Color(0.45f, 0.04f, 0.58f),  // 46
+                new Color(0.40f, 0.03f, 0.62f),  // 47
+                new Color(0.35f, 0.03f, 0.66f),  // 48
+                new Color(0.30f, 0.02f, 0.70f),  // 49
+                new Color(0.25f, 0.02f, 0.75f)   // 50: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "기본4 + 폭탄1",                                    // 31: Easy
+                "기본3 + 폭탄3",                                    // 32: Normal
+                "궁수2 + 폭탄4",                                    // 33: Normal
+                "갑옷2 + 폭탄4",                                    // 34: Hard
+                "기본2 + 궁수2 + 방패2 + 폭탄2",                    // 35: Hard
+                "기본2 + 갑옷1 + 폭탄5",                            // 36: Easy
+                "갑옷1 + 궁수1 + 폭탄6",                            // 37: Normal
+                "방패4 + 폭탄4",                                    // 38: Normal
+                "갑옷2 + 방패2 + 폭탄4",                            // 39: Hard
+                "★ 기본1 + 갑옷2 + 방패3 + 폭탄3",                  // 40: Hard
+                "갑옷3 + 방패2 + 폭탄4",                            // 41: Easy
+                "기본1 + 궁수3 + 방패2 + 폭탄3",                    // 42: Normal
+                "기본1 + 갑옷2 + 폭탄6",                            // 43: Normal
+                "궁수1 + 방패4 + 폭탄4",                            // 44: Hard
+                "갑옷3 + 궁수2 + 방패2 + 폭탄4",                    // 45: Hard
+                "갑옷3 + 방패2 + 폭탄6",                            // 46: Easy
+                "갑옷3 + 방패4 + 폭탄4",                            // 47: Normal
+                "기본1 + 갑옷4 + 방패3 + 폭탄4",                    // 48: Normal
+                "갑옷3 + 방패2 + 폭탄7",                            // 49: Hard
+                "★ 갑옷4 + 궁수2 + 방패3 + 폭탄5"                   // 50: Hard
+            };
+
+            for (int i = 31; i <= 50; i++)
+            {
+                int idx = i - 31;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                // 난이도 패턴: 쉬움→보통→보통→어려움→어려움 (5레벨 반복)
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        private static void RegisterStages51To60()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.15f, 0.55f, 0.25f),  // 51: 치유의 늪 초록
+                new Color(0.18f, 0.58f, 0.28f),  // 52
+                new Color(0.20f, 0.62f, 0.30f),  // 53
+                new Color(0.22f, 0.66f, 0.32f),  // 54
+                new Color(0.25f, 0.70f, 0.35f),  // 55
+                new Color(0.20f, 0.60f, 0.30f),  // 56
+                new Color(0.18f, 0.55f, 0.28f),  // 57
+                new Color(0.15f, 0.50f, 0.25f),  // 58
+                new Color(0.12f, 0.45f, 0.22f),  // 59
+                new Color(0.10f, 0.40f, 0.20f)   // 60
+            };
+
+            string[] subtitles = new string[]
+            {
+                "힐러2 + 기본3 + 갑옷2 + 폭탄1",                  // 51: Easy
+                "힐러2 + 갑옷3 + 방패2 + 폭탄2",                  // 52: Normal
+                "힐러3 + 폭탄3 + 궁수2 + 기본1",                  // 53: Normal
+                "힐러2 + 폭탄4 + 방패2 + 갑옷2",                  // 54: Hard
+                "힐러3 + 폭탄4 + 방패2 + 궁수2 + 갑옷1",          // 55: Hard
+                "힐러2 + 기본3 + 갑옷2 + 궁수2 + 폭탄2",          // 56: Easy
+                "힐러2 + 폭탄4 + 갑옷3 + 방패2",                  // 57: Normal
+                "힐러3 + 폭탄4 + 궁수3 + 방패2",                  // 58: Normal
+                "힐러3 + 폭탄5 + 갑옷3 + 방패2",                  // 59: Hard
+                "★ 힐러4 + 폭탄5 + 갑옷3 + 방패3 + 궁수2"         // 60: Hard
+            };
+
+            for (int i = 51; i <= 60; i++)
+            {
+                int idx = i - 51;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 61~70 등록 (거인의 둥지 — 헤비급 고블린 등장)
+        /// </summary>
+        private static void RegisterStages61To70()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.40f, 0.28f, 0.15f),  // 61: 거인의 둥지 갈색
+                new Color(0.42f, 0.25f, 0.14f),  // 62
+                new Color(0.44f, 0.22f, 0.13f),  // 63
+                new Color(0.46f, 0.20f, 0.12f),  // 64
+                new Color(0.48f, 0.18f, 0.11f),  // 65
+                new Color(0.45f, 0.24f, 0.14f),  // 66
+                new Color(0.43f, 0.21f, 0.13f),  // 67
+                new Color(0.41f, 0.18f, 0.12f),  // 68
+                new Color(0.39f, 0.15f, 0.11f),  // 69
+                new Color(0.35f, 0.12f, 0.10f)   // 70: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "헤비1 + 기본3 + 갑옷2 + 힐러1",                      // 61: Easy
+                "헤비1 + 폭탄3 + 갑옷2 + 힐러1 + 궁수1",              // 62: Normal
+                "헤비1 + 폭탄3 + 방패2 + 힐러2 + 기본1",              // 63: Normal
+                "헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1",              // 64: Hard
+                "헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2",              // 65: Hard
+                "헤비1 + 기본3 + 갑옷2 + 궁수2 + 폭탄2 + 힐러1",      // 66: Easy
+                "헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1",              // 67: Normal
+                "헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1",              // 68: Normal
+                "헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러1",              // 69: Hard
+                "★ 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2"     // 70: Hard
+            };
+
+            for (int i = 61; i <= 70; i++)
+            {
+                int idx = i - 61;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 71~80 등록 (마법사의 탑 — 마법사 고블린 등장)
+        /// </summary>
+        private static void RegisterStages71To80()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.35f, 0.18f, 0.55f),  // 71: 마법사의 탑 보라
+                new Color(0.38f, 0.16f, 0.58f),  // 72
+                new Color(0.40f, 0.14f, 0.60f),  // 73
+                new Color(0.42f, 0.12f, 0.63f),  // 74
+                new Color(0.45f, 0.10f, 0.65f),  // 75
+                new Color(0.40f, 0.15f, 0.60f),  // 76
+                new Color(0.38f, 0.12f, 0.62f),  // 77
+                new Color(0.35f, 0.10f, 0.65f),  // 78
+                new Color(0.32f, 0.08f, 0.68f),  // 79
+                new Color(0.28f, 0.06f, 0.72f)   // 80: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "마법사1 + 헤비1 + 기본3 + 갑옷2 + 힐러1",                          // 71: Easy
+                "마법사1 + 헤비1 + 폭탄3 + 갑옷2 + 힐러1 + 방패1",                  // 72: Normal
+                "마법사1 + 헤비1 + 폭탄3 + 방패2 + 힐러2",                          // 73: Normal
+                "마법사2 + 헤비2 + 폭탄3 + 갑옷2 + 힐러1 + 방패1",                  // 74: Hard
+                "마법사2 + 헤비2 + 폭탄4 + 방패2 + 힐러2 + 궁수2",                  // 75: Hard
+                "마법사1 + 헤비1 + 기본3 + 갑옷2 + 궁수2 + 폭탄2 + 힐러1",          // 76: Easy
+                "마법사2 + 헤비2 + 폭탄4 + 갑옷2 + 방패2 + 힐러1",                  // 77: Normal
+                "마법사2 + 헤비2 + 폭탄4 + 궁수3 + 방패2 + 힐러1",                  // 78: Normal
+                "마법사2 + 헤비2 + 폭탄5 + 갑옷3 + 방패2 + 힐러2",                  // 79: Hard
+                "★ 마법사3 + 헤비3 + 폭탄5 + 갑옷3 + 방패3 + 힐러2 + 궁수2"         // 80: Hard
+            };
+
+            for (int i = 71; i <= 80; i++)
+            {
+                int idx = i - 71;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx % 5];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 81~90 등록 (도둑의 은신처 — 도둑 고블린 등장)
+        /// </summary>
+        private static void RegisterStages81To90()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.15f, 0.12f, 0.25f),  // 81: 도둑의 은신처 어두운 남색
+                new Color(0.17f, 0.13f, 0.28f),  // 82
+                new Color(0.19f, 0.11f, 0.30f),  // 83
+                new Color(0.21f, 0.10f, 0.33f),  // 84
+                new Color(0.23f, 0.09f, 0.35f),  // 85
+                new Color(0.20f, 0.11f, 0.32f),  // 86
+                new Color(0.18f, 0.09f, 0.34f),  // 87
+                new Color(0.16f, 0.08f, 0.36f),  // 88
+                new Color(0.14f, 0.06f, 0.38f),  // 89
+                new Color(0.12f, 0.05f, 0.42f)   // 90: 챕터 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "도둑2 + 기본5 + 갑옷3 + 궁수2",                                      // 81: Easy
+                "도둑3 + 방패2 + 기본4 + 폭탄2 + 갑옷3",                              // 82: Normal
+                "도둑4 + 기본3 + 궁수3 + 힐러1",                                      // 83: Normal
+                "도둑3 + 헤비1 + 폭탄3 + 방패2 + 기본4 + 갑옷2",                      // 84: Normal
+                "도둑5 + 마법사1 + 힐러2 + 궁수2 + 기본5",                            // 85: Hard
+                "도둑4 + 갑옷4 + 방패3 + 폭탄2 + 기본3",                              // 86: Normal
+                "도둑4 + 헤비2 + 마법사1 + 폭탄3 + 기본4 + 궁수2",                    // 87: Hard
+                "도둑5 + 헤비2 + 힐러2 + 방패3 + 폭탄3 + 기본5 + 갑옷3",              // 88: Hard
+                "도둑6 + 마법사2 + 헤비2 + 궁수3 + 폭탄3 + 기본4",                    // 89: Hard
+                "★ 도둑8 + 헤비3 + 마법사2 + 힐러2 + 방패3 + 폭탄4 + 기본6 + 갑옷4 + 궁수3" // 90: Hard
+            };
+
+            for (int i = 81; i <= 90; i++)
+            {
+                int idx = i - 81;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType[] diffPattern = {
+                    DifficultyType.Easy, DifficultyType.Normal, DifficultyType.Normal,
+                    DifficultyType.Normal, DifficultyType.Hard,
+                    DifficultyType.Normal, DifficultyType.Hard, DifficultyType.Hard,
+                    DifficultyType.Hard, DifficultyType.Hard
+                };
+                DifficultyType diffType = diffPattern[idx];
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 91~100 등록 (최종 전장 — 전 몬스터 총출동)
+        /// </summary>
+        private static void RegisterStages91To100()
+        {
+            Color[] bgColors = new Color[]
+            {
+                new Color(0.30f, 0.08f, 0.08f),  // 91: 최종 전장 진한 암적색
+                new Color(0.32f, 0.07f, 0.10f),  // 92
+                new Color(0.34f, 0.06f, 0.12f),  // 93
+                new Color(0.36f, 0.05f, 0.14f),  // 94
+                new Color(0.38f, 0.04f, 0.16f),  // 95
+                new Color(0.35f, 0.06f, 0.13f),  // 96
+                new Color(0.37f, 0.04f, 0.15f),  // 97
+                new Color(0.39f, 0.03f, 0.17f),  // 98
+                new Color(0.41f, 0.02f, 0.19f),  // 99
+                new Color(0.45f, 0.01f, 0.22f)   // 100: 최종 보스
+            };
+
+            string[] subtitles = new string[]
+            {
+                "마녀 등장! + 도둑 + 기본",                                              // 91: Hard
+                "마녀 + 헤비 + 도둑 + 폭탄",                                            // 92: Hard
+                "마녀 + 도둑 + 헤비 + 기본 + 궁수",                                      // 93: Hard
+                "마녀2 + 도둑2 + 헤비2 — 변칙",                                          // 94: Hard
+                "마녀 + 전 병종 총력전",                                                  // 95: Hard
+                "마녀 + 전 병종 총력전",                                                  // 96: Hard
+                "마녀 + 전 병종 총력전",                                                  // 97: Hard
+                "마녀3 + 도둑2 + 헤비2 — 변칙",                                          // 98: Hard
+                "마녀 + 전 병종 총력전",                                                  // 99: Hard
+                "★ 마녀 포함 전 몬스터 총출동 — 최종 결전"                                 // 100: Hard
+            };
+
+            for (int i = 91; i <= 100; i++)
+            {
+                int idx = i - 91;
+                Color bgColor = bgColors[idx];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType diffType = DifficultyType.Hard;
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = subtitles[idx],
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
+                    isLocked = true,
+                    unlockRequirement = i - 1,
+                    lobbyDisplay = new LobbyDisplayConfig
+                    {
+                        backgroundColor = bgColor,
+                        borderColor = borderColor,
+                        buttonSize = 200f
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Stage 모드 레벨 101~150 등록 (엘리트 전장 — Lv2 몬스터 등장)
+        /// </summary>
+        private static void RegisterStages101To150()
+        {
+            // 챕터별 색상 테마
+            // 챕터 11 (101-110): 엘리트 초원 — 진한 녹색~금색
+            // 챕터 12 (111-120): 엘리트 협곡 — 적갈색~주황
+            // 챕터 13 (121-130): 엘리트 화산 — 진한 적색~자주
+            // 챕터 14 (131-140): 엘리트 심연 — 진한 남색~보라
+            // 챕터 15 (141-150): 최종 엘리트 — 진한 보라~금색
+
+            string[] chapterNames = new string[]
+            {
+                "엘리트 초원", "엘리트 협곡", "엘리트 화산", "엘리트 심연", "최종 엘리트"
+            };
+
+            Color[][] chapterColors = new Color[][]
+            {
+                // 챕터 11: 녹색~금색
+                new Color[] {
+                    new Color(0.15f, 0.45f, 0.20f), new Color(0.18f, 0.48f, 0.22f),
+                    new Color(0.21f, 0.50f, 0.18f), new Color(0.25f, 0.50f, 0.15f),
+                    new Color(0.30f, 0.50f, 0.12f), new Color(0.35f, 0.48f, 0.10f),
+                    new Color(0.40f, 0.46f, 0.10f), new Color(0.45f, 0.44f, 0.10f),
+                    new Color(0.50f, 0.42f, 0.10f), new Color(0.55f, 0.40f, 0.10f)
+                },
+                // 챕터 12: 적갈색~주황
+                new Color[] {
+                    new Color(0.50f, 0.25f, 0.15f), new Color(0.53f, 0.27f, 0.14f),
+                    new Color(0.56f, 0.28f, 0.13f), new Color(0.59f, 0.30f, 0.12f),
+                    new Color(0.62f, 0.31f, 0.11f), new Color(0.65f, 0.33f, 0.10f),
+                    new Color(0.68f, 0.34f, 0.10f), new Color(0.70f, 0.36f, 0.10f),
+                    new Color(0.73f, 0.37f, 0.10f), new Color(0.75f, 0.38f, 0.10f)
+                },
+                // 챕터 13: 진한 적색~자주
+                new Color[] {
+                    new Color(0.50f, 0.10f, 0.10f), new Color(0.52f, 0.10f, 0.12f),
+                    new Color(0.54f, 0.09f, 0.14f), new Color(0.56f, 0.08f, 0.16f),
+                    new Color(0.58f, 0.07f, 0.18f), new Color(0.55f, 0.08f, 0.15f),
+                    new Color(0.57f, 0.07f, 0.17f), new Color(0.59f, 0.06f, 0.19f),
+                    new Color(0.61f, 0.05f, 0.21f), new Color(0.63f, 0.04f, 0.23f)
+                },
+                // 챕터 14: 진한 남색~보라
+                new Color[] {
+                    new Color(0.12f, 0.08f, 0.35f), new Color(0.14f, 0.08f, 0.38f),
+                    new Color(0.16f, 0.07f, 0.40f), new Color(0.18f, 0.07f, 0.42f),
+                    new Color(0.20f, 0.06f, 0.44f), new Color(0.22f, 0.06f, 0.46f),
+                    new Color(0.24f, 0.05f, 0.48f), new Color(0.26f, 0.05f, 0.50f),
+                    new Color(0.28f, 0.04f, 0.52f), new Color(0.30f, 0.04f, 0.54f)
+                },
+                // 챕터 15: 진한 보라~금색
+                new Color[] {
+                    new Color(0.35f, 0.05f, 0.45f), new Color(0.38f, 0.08f, 0.42f),
+                    new Color(0.42f, 0.12f, 0.38f), new Color(0.46f, 0.16f, 0.34f),
+                    new Color(0.50f, 0.20f, 0.30f), new Color(0.55f, 0.25f, 0.25f),
+                    new Color(0.60f, 0.30f, 0.20f), new Color(0.65f, 0.35f, 0.15f),
+                    new Color(0.70f, 0.40f, 0.10f), new Color(0.75f, 0.45f, 0.08f)
+                }
+            };
+
+            for (int i = 101; i <= 150; i++)
+            {
+                int chapterIdx = (i - 101) / 10; // 0~4
+                int inChapter = (i - 101) % 10;  // 0~9
+
+                Color bgColor = chapterColors[chapterIdx][inChapter];
+                Color borderColor = new Color(
+                    Mathf.Min(bgColor.r + 0.2f, 1f),
+                    Mathf.Min(bgColor.g + 0.2f, 1f),
+                    Mathf.Min(bgColor.b + 0.2f, 1f)
+                );
+
+                DifficultyType diffType = chapterIdx <= 1 ? DifficultyType.Normal
+                    : chapterIdx <= 3 ? DifficultyType.Hard
+                    : DifficultyType.Hard;
+
+                Register(new LevelData
+                {
+                    levelId = i,
+                    levelName = $"LEVEL {i}",
+                    subtitle = $"{chapterNames[chapterIdx]} - 엘리트 {inChapter + 1}",
+                    gameMode = GameMode.Stage,
+                    difficultyType = diffType,
                     isLocked = true,
                     unlockRequirement = i - 1,
                     lobbyDisplay = new LobbyDisplayConfig

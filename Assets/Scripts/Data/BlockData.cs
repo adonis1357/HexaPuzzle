@@ -29,6 +29,16 @@ namespace JewelsHexaPuzzle.Data
     }
 
     /// <summary>
+    /// 스테이지 난이도 - 쉬움/보통/어려움 3단계
+    /// </summary>
+    public enum DifficultyType
+    {
+        Easy = 0,    // 쉬움 (초록 별 1개)
+        Normal = 1,  // 보통 (노란 별 2개)
+        Hard = 2     // 어려움 (빨간 별 3개)
+    }
+
+    /// <summary>
     /// 보석(젬) 타입 - 블록의 색상 종류
     /// 퍼즐 게임에서 같은 색상 3개를 모아 매칭하는 기본 단위입니다.
     /// 기본 5색(빨~보라) + 확장 6색(주황~자수정) + 특수 1색(회색)으로 구성됩니다.
@@ -61,9 +71,9 @@ namespace JewelsHexaPuzzle.Data
         MoveBlock,  // 이동 블록 (회전 시 함께 이동하는 블록)
         FixedBlock, // 고정 블록 (회전할 수 없는 블록, 장애물 역할)
         TimeBomb,   // 시한폭탄 (일정 턴 내에 제거하지 않으면 게임 오버)
-        Drill,      // 드릴 (4개 매칭 시 생성, 한 방향 직선으로 블록을 뚫고 파괴)
+        Drill,      // 드릴 (4개 다이아몬드 매칭 시 생성 — 2 삼각형이 변을 공유하는 마름모, 한 방향 직선 파괴)
         Bomb,       // 폭탄 (5개 이상 매칭 시 생성, 주변 블록을 원형으로 폭파)
-        Rainbow,    // 무지개/도넛 (7개 이상 매칭 시 생성, 같은 색상 블록 전체 파괴)
+        Rainbow,    // 타겟 레이저 (링 매칭 시 생성, 같은 색상 블록 전체 파괴)
         XBlock,     // X블록 (링 모양 매칭 시 생성, 같은 색상 전체 파괴)
         Drone       // 드론 (5개 직선 매칭 시 생성, 우선순위 기반 단일 타격)
     }
@@ -100,7 +110,17 @@ namespace JewelsHexaPuzzle.Data
         Goblin = 10,            // 고블린: 빈 공간에서 소환, 블록을 공격해 금간 블록으로 만듦 | 별칭: 고블린
         ArmoredGoblin = 11,     // 갑옷 고블린: HP가 높고 갑옷으로 무장한 고블린 | 별칭: 갑옷
         ArcherGoblin = 12,      // 활 고블린: 상단 고정 배치, 매턴 화살로 블록에 크랙 | 별칭: 활
-        ShieldGoblin = 13       // 방패 고블린: 드릴 차단 방패 장착, 3회 차단 후 파괴 | 별칭: 방패고블린
+        ShieldGoblin = 13,      // 방패 고블린: 드릴 차단 방패 장착, 3회 차단 후 파괴 | 별칭: 방패고블린
+        BombGoblin = 14,        // 폭탄 고블린: 카운트다운 후 광역 폭발, 블록 대량 파괴 | 별칭: 폭탄고블린
+        HealerGoblin = 15,     // 힐러 고블린: 피해 입은 아군 회복, 소환 영역에서 활동 | 별칭: 힐러
+        HeavyGoblin = 16,      // 헤비급 고블린: 3블록 삼각형 점유, HP 36, 회전 불가 | 별칭: 헤비
+        WizardGoblin = 17,     // 마법사 고블린: 소환 영역 전용, HP 3 | 별칭: 마법사
+        ThiefGoblin = 18,      // 도둑 고블린: 2칸 이동+은신/수리검 교차, HP 12 | 별칭: 도둑
+        WitchGoblin = 19,      // 마녀 고블린: 소환 영역 전용, 언데드 소환, HP 6 | 별칭: 마녀
+        GoblinLv2 = 20,        // 몽둥이 Lv2: HP 2배, 진한 붉은색 | 별칭: 엘리트몽둥이
+        ArmoredGoblinLv2 = 21, // 갑옷 Lv2: HP 2배, 진한 금색 | 별칭: 엘리트갑옷
+        ArcherGoblinLv2 = 22,  // 궁수 Lv2: HP 2배, 진한 보라색 | 별칭: 엘리트궁수
+        ShieldGoblinLv2 = 23   // 방패 Lv2: HP 2배, 진한 청색 | 별칭: 엘리트방패
     }
 
     /// <summary>
@@ -154,7 +174,7 @@ namespace JewelsHexaPuzzle.Data
         Match,          // 일반 매칭으로 제거 (같은 색 3개 맞추기)
         SpecialBasic,   // 기본 특수 블록으로 제거 (드릴)
         SpecialAdvanced,// 고급 특수 블록으로 제거 (폭탄)
-        Donut,          // 도넛(무지개) 블록으로 제거 (같은 색 전체 삭제)
+        Donut,          // 타겟 레이저 블록으로 제거 (같은 색 전체 삭제)
         Cascade         // 캐스케이드 연쇄로 제거 (자동 연쇄 반응)
     }
 
@@ -220,6 +240,15 @@ namespace JewelsHexaPuzzle.Data
         public bool isCracked;                  // 깨진 블록 여부 (고블린 공격으로 금간 상태)
         public bool isShell;                    // 껍데기 블록 여부 (두 번째 공격으로 테두리만 남은 상태, 매칭 불가, 낙하 장애물)
 
+        // ── 흙더미 장애물 ──
+        // 0: 없음, 1: 1/3 쌓임 (덜 덮음), 2: 2/3 쌓임 (많이 덮음)
+        // 흙더미가 있는 블록은 회전·낙하 불가, 위 블록 통과 가능, 매칭 시 dirtMound -= 1
+        public int dirtMound;
+
+        // ── 고블린 폭탄 시스템 필드 ──
+        public bool hasGoblinBomb;              // 고블린 폭탄이 설치된 블록인지
+        public int goblinBombCountdown;         // 폭탄 카운트다운 (0이면 폭발)
+
         // ── 적군 시스템 필드 ──
         public EnemyType enemyType;             // 이 블록에 붙어있는 적군 종류
         public int enemyShieldCount;            // 반사방패 내구도 (남은 보호막 횟수)
@@ -247,6 +276,7 @@ namespace JewelsHexaPuzzle.Data
             enemySpreadTimer = 3;
             enemyTwinId = -1;
             chaosEffectMask = ChaosEffect.None;
+            dirtMound = 0;
             chaosHitCount = 0;
         }
 
@@ -310,6 +340,9 @@ namespace JewelsHexaPuzzle.Data
             cloned.chaosHitCount = this.chaosHitCount;
             cloned.isCracked = this.isCracked;
             cloned.isShell = this.isShell;
+            cloned.hasGoblinBomb = this.hasGoblinBomb;
+            cloned.goblinBombCountdown = this.goblinBombCountdown;
+            cloned.dirtMound = this.dirtMound;
             return cloned;
         }
 
@@ -323,12 +356,13 @@ namespace JewelsHexaPuzzle.Data
 
         /// <summary>
         /// 이 블록이 중력에 고정되어 낙하하지 않는지 확인합니다.
-        /// 중력왜곡자이거나, 카오스 군주가 중력왜곡 능력을 사용 중이면 true입니다.
+        /// 중력왜곡자, 카오스 군주의 중력왜곡, 또는 흙더미가 쌓인 경우 true입니다.
         /// </summary>
         public bool IsGravityAnchored()
         {
             return enemyType == EnemyType.GravityWarper ||
-                   (enemyType == EnemyType.ChaosOverlord && (chaosEffectMask & ChaosEffect.GravityWarper) != 0);
+                   (enemyType == EnemyType.ChaosOverlord && (chaosEffectMask & ChaosEffect.GravityWarper) != 0) ||
+                   dirtMound > 0;
         }
 
         /// <summary>
@@ -356,7 +390,7 @@ namespace JewelsHexaPuzzle.Data
             return specialType == SpecialBlockType.Drill;
         }
 
-        /// <summary>도넛(무지개) 블록인지 확인</summary>
+        /// <summary>타겟 레이저(Rainbow) 블록인지 확인</summary>
         public bool IsDonut()
         {
             return specialType == SpecialBlockType.Rainbow;
@@ -386,8 +420,33 @@ namespace JewelsHexaPuzzle.Data
         /// </summary>
         public bool CanMove()
         {
-            return specialType != SpecialBlockType.FixedBlock && !hasChain;
+            // 흙더미가 쌓인 블록도 회전·이동 불가 (장애물)
+            return specialType != SpecialBlockType.FixedBlock && !hasChain && dirtMound <= 0;
         }
+    }
+
+    /// <summary>
+    /// ★ 활성 미션 타겟 색상 레지스트리 (플레이테스트 개선 #2).
+    /// StageManager가 미션 초기화/교체 시 갱신하고, HexBlock이 외곽선을 그릴 때 참조해
+    /// 타겟 색 블록을 은은하게 강조한다 — "무엇을 노릴지"의 시각 동기 부여.
+    /// 정적 강조(펄스 없음)라 프레임 비용 0.
+    /// </summary>
+    public static class MissionTargetColors
+    {
+        private static readonly System.Collections.Generic.HashSet<GemType> targets
+            = new System.Collections.Generic.HashSet<GemType>();
+
+        public static void Set(System.Collections.Generic.IEnumerable<GemType> colors)
+        {
+            targets.Clear();
+            if (colors != null)
+                foreach (var c in colors)
+                    if (c != GemType.None && c != GemType.Gray) targets.Add(c);
+        }
+
+        public static void Clear() { targets.Clear(); }
+        public static bool Contains(GemType type) { return targets.Contains(type); }
+        public static int Count { get { return targets.Count; } }
     }
 
     /// <summary>
@@ -407,14 +466,33 @@ namespace JewelsHexaPuzzle.Data
         public static int ActiveGemTypeCount = 5;
 
         /// <summary>
+        /// ★ 스테이지별 색상 제약 — 설정 시 GetRandom이 이 배열 내에서만 반환.
+        /// null 또는 빈 배열이면 ActiveGemTypeCount 기반 기본 동작.
+        /// Stage 1처럼 R/G 2색만 등장시키고 싶을 때 사용.
+        /// </summary>
+        public static GemType[] AllowedColorsOverride = null;
+
+        /// <summary>
         /// 랜덤 보석 색상을 하나 반환합니다.
-        /// 활성 색상 범위 내에서만 선택하며, 회색(Gray)은 절대 반환하지 않습니다.
-        /// (회색은 적군 전용이므로 일반 블록에 사용하면 안 됩니다)
+        /// AllowedColorsOverride가 설정되어 있으면 그 안에서만 선택,
+        /// 아니면 활성 색상 범위(1..ActiveGemTypeCount) 내에서 선택. 회색(Gray)은 절대 반환하지 않음.
         /// </summary>
         public static GemType GetRandom()
         {
+            // ★ 제약 목록이 있으면 그 안에서만 랜덤
+            if (AllowedColorsOverride != null && AllowedColorsOverride.Length > 0)
+            {
+                int idx = UnityEngine.Random.Range(0, AllowedColorsOverride.Length);
+                GemType chosen = AllowedColorsOverride[idx];
+                if (chosen != GemType.Gray && chosen != GemType.None)
+                    return chosen;
+                // 안전장치: 제약 목록에 None/Gray 섞여 있을 시 안전한 색으로 폴백
+                foreach (var g in AllowedColorsOverride)
+                    if (g != GemType.Gray && g != GemType.None) return g;
+                return GemType.Red;
+            }
+
             GemType gem = (GemType)UnityEngine.Random.Range(1, ActiveGemTypeCount + 1);
-            // 회색 블록 생성 방지 (ActiveGemTypeCount 변경으로 인한 버그 대비)
             while (gem == GemType.Gray)
                 gem = (GemType)UnityEngine.Random.Range(1, ActiveGemTypeCount + 1);
             return gem;
@@ -452,7 +530,7 @@ namespace JewelsHexaPuzzle.Data
                 case GemType.Amethyst:
                     return new Color(0.62f, 0.2f, 0.88f);     // 선명한 보라
                 case GemType.Orange:
-                    return new Color(1.0f, 0.5f, 0.05f);      // 선명한 주황
+                    return new Color(0.92f, 0.55f, 0.13f);    // 진한 호박/펌프킨 톤 (텍스처와 일치)
                 case GemType.Gray:
                     return new Color(0.55f, 0.55f, 0.58f);     // 적군 회색
                 default:

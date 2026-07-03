@@ -154,6 +154,11 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private static Sprite laserGunIconSprite;
 
+        // ★ 매 재생 시작 시 캐시 클리어 → 새 PNG로 강제 재로드.
+        //   Reload Domain 옵션이 꺼져있어도 Resources/Icons/icon_target_base.png 변경 즉시 반영.
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetLaserGunIconCache() { laserGunIconSprite = null; }
+
         /// <summary>
         /// 타겟 십자선 스프라이트 캐시.
         /// </summary>
@@ -235,7 +240,22 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetXBlockIconSprite()
         {
             if (laserGunIconSprite == null)
-                laserGunIconSprite = CreateLaserGunSprite(256);
+            {
+                // ★ 외부 PNG(Resources/Icons/icon_target_base = PowerUp_Cannon 포탑 디자인) 우선 로드.
+                //   기존 프로시저럴 레이저 총 대신 포탑 이미지로 표시 — Rainbow(Donut) 타겟 레이저와 같은 비주얼.
+                Texture2D tex = Resources.Load<Texture2D>("Icons/icon_target_base");
+                if (tex != null)
+                {
+                    laserGunIconSprite = Sprite.Create(
+                        tex, new Rect(0, 0, tex.width, tex.height),
+                        new Vector2(0.5f, 0.5f), 100f);
+                }
+                else
+                {
+                    // 폴백: 프로시저럴 레이저 총
+                    laserGunIconSprite = CreateLaserGunSprite(256);
+                }
+            }
             return laserGunIconSprite;
         }
 
@@ -503,6 +523,9 @@ namespace JewelsHexaPuzzle.Core
             StartCoroutine(HitStop(VisualConstants.HitStopDurationMedium));
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
+            // ★ X블록 자신의 색상도 대응 게이지/리워드에 충전 (제거되는 색상이므로) — ClearData 전에 호출
+            if (xBlock.Data != null && xBlock.Data.gemType != GemType.None)
+                GameManager.Instance?.ChargeResourcesForGemWithSoul(xBlock.Data.gemType, xBlock.transform.position);
             // --- 3단계: 자신 데이터 삭제 ---
             xBlock.ClearData();
 
@@ -678,6 +701,16 @@ namespace JewelsHexaPuzzle.Core
 
                     Vector3 targetPos = target.transform.position;
 
+                    // ★ 흙더미 블록 보호 — XBlock(타겟 레이저) 효과 무효
+                    if (target.Data != null && target.Data.dirtMound > 0)
+                    {
+                        Debug.Log($"[XBlock] 흙더미 블록 보호: ({target.Coord}) — XBlock 무효");
+                        if (crosshairIdx < crosshairs.Count && crosshairs[crosshairIdx] != null)
+                            Destroy(crosshairs[crosshairIdx]);
+                        crosshairIdx++;
+                        continue;
+                    }
+
                     // 레이져 발사 (블록)
                     yield return StartCoroutine(FireLaserBeam(laserGun, xWorldPos, targetPos, parent, i, xColor));
 
@@ -686,7 +719,7 @@ namespace JewelsHexaPuzzle.Core
 
                     // 미션 카운팅
                     if (target.Data.gemType != GemType.None)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType, target.Data.isCracked || target.Data.isShell, target.transform.position, GameManager.IsSoulSuppressedBlock(target));
 
                     // 적군 점수 처리
                     var sm = GameManager.Instance?.GetComponent<ScoreManager>();
@@ -709,17 +742,23 @@ namespace JewelsHexaPuzzle.Core
                     // 고블린 데미지: 해당 좌표 + 인접 6칸 (좌표별 누적 일괄 적용)
                     if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
                     {
+                        // ★ 전역 타겟강화(TargetDamage) 보너스를 X 데미지에 가산 (중심+인접 모두 +N)
+                        int xTgt = JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetTargetDamageBonus() : 0;
                         var damageMap = new Dictionary<HexCoord, int>();
-                        damageMap[target.Coord] = 1;
+                        damageMap[target.Coord] = 1 + xTgt;
                         foreach (var neighbor in target.Coord.GetAllNeighbors())
                         {
                             if (damageMap.ContainsKey(neighbor))
                                 damageMap[neighbor] += 1;
                             else
-                                damageMap[neighbor] = 1;
+                                damageMap[neighbor] = 1 + xTgt;
                         }
                         GoblinSystem.Instance.ApplyBatchDamage(damageMap);
                     }
+
+                    // ★ 쉘 블록이면 파편 이펙트 발동
+                    if (removalSystem != null && target.Data != null && target.Data.isShell)
+                        removalSystem.TryPlayShellBurst(target);
 
                     // 블록 즉시 파괴 (ClearData)
                     target.ClearData();
@@ -742,8 +781,9 @@ namespace JewelsHexaPuzzle.Core
                     // 레이져 발사 (고블린)
                     yield return StartCoroutine(FireLaserBeam(laserGun, xWorldPos, targetPos, parent, i, xColor));
 
-                    // 고블린 데미지 1
-                    GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, 1);
+                    // 고블린 데미지 1 + 전역 타겟강화
+                    int xTgtG = JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetTargetDamageBonus() : 0;
+                    GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, 1 + xTgtG);
                 }
 
                 // 십자선 제거
@@ -801,6 +841,9 @@ namespace JewelsHexaPuzzle.Core
             OnXBlockComplete?.Invoke(totalScore);
             activeBlocks.Remove(xBlock);
             activeXBlockCount--;
+
+            // 튜토리얼 콜백: X블록 발동 완료
+            JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnXBlockActivated();
         }
 
         /// <summary>
@@ -971,56 +1014,37 @@ namespace JewelsHexaPuzzle.Core
         /// 현재 동시에 실행 중인 화면 흔들림의 수.
         /// 여러 흔들림이 동시에 실행될 때 원래 위치를 올바르게 복원하기 위한 카운터.
         /// </summary>
-        private int shakeCount = 0;
-
-        /// <summary>
-        /// 화면 흔들림 시작 전의 원래 위치. 흔들림이 끝나면 이 위치로 복원.
-        /// </summary>
-        private Vector3 shakeOriginalPos;
-
         /// <summary>
         /// 화면(게임판) 흔들림 효과 코루틴.
-        /// 게임판 전체를 랜덤하게 좌우상하로 떨리게 하여 충격감을 줌.
-        /// 시간이 지날수록 떨림이 약해지며 자연스럽게 멈춤.
-        /// 비유: 지진이 나서 테이블이 흔들리다가 점점 잠잠해지는 것.
         /// </summary>
-        /// <param name="intensity">흔들림의 세기 (픽셀 단위). 클수록 격하게 흔들림.</param>
-        /// <param name="duration">흔들림 지속 시간 (초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 첫 번째 흔들림일 때만 원래 위치를 저장 (중첩 흔들림 시 위치 안전 보장)
-            if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
-            shakeCount++;
+            Vector3 originalPos = target.localPosition;
 
             float elapsed = 0f;
 
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                // decay: 시간이 지남에 따라 흔들림 세기가 줄어드는 감쇠 계수
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                // 랜덤한 방향으로 흔들림 (세기 * 감쇠)
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = originalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            // 흔들림 종료: 카운터 감소 및 원래 위치 복원
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos; // 원래 위치로 정확히 복원
+                target.localPosition = originalPos;
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================
@@ -1093,8 +1117,8 @@ namespace JewelsHexaPuzzle.Core
             if (!VisualConstants.CanHitStop()) yield break;
             VisualConstants.RecordHitStop(); // 쿨다운 타이머 기록
 
-            // 1단계: 완전 정지
-            Time.timeScale = 0f;
+            // 1단계: 완전 정지 (외부 모달/퍼즈 개입 시 timeScale 쓰기 중단 — 감사 M13)
+            VisualConstants.HitStopSetTimeScale(0f);
             yield return new WaitForSecondsRealtime(stopDuration); // 실제 시간으로 대기
 
             // 2단계: 슬로모션에서 정상 속도로 서서히 복귀
@@ -1104,10 +1128,10 @@ namespace JewelsHexaPuzzle.Core
                 elapsed += Time.unscaledDeltaTime; // 시간 정지 중이므로 unscaled 시간 사용
                 float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
                 // 슬로모 스케일(약 0.3배속)에서 1.0(정상)으로 부드럽게 복귀
-                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                VisualConstants.HitStopSetTimeScale(Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t)));
                 yield return null;
             }
-            Time.timeScale = 1f; // 최종 안전 장치: 정상 속도 확인
+            VisualConstants.HitStopSetTimeScale(1f); // 최종 안전 장치: 정상 속도 확인
         }
 
         /// <summary>
@@ -1124,31 +1148,36 @@ namespace JewelsHexaPuzzle.Core
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            Vector3 origScale = target.localScale;
+            Vector3 origScale = Vector3.one;
             Vector3 punchScale = origScale * targetScale; // 목표 확대 크기
 
             // 확대 단계: 원래 크기 → 확대 크기
             float elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchInDuration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
-                target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
-            }
+                while (elapsed < VisualConstants.ZoomPunchInDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchInDuration);
+                    target.localScale = Vector3.Lerp(origScale, punchScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
 
-            // 복원 단계: 확대 크기 → 원래 크기
-            elapsed = 0f;
-            while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                // 복원 단계: 확대 크기 → 원래 크기
+                elapsed = 0f;
+                while (elapsed < VisualConstants.ZoomPunchOutDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
+                    target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
+                    yield return null;
+                }
+            }
+            finally
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / VisualConstants.ZoomPunchOutDuration);
-                target.localScale = Vector3.Lerp(punchScale, origScale, VisualConstants.EaseOutCubic(t));
-                yield return null;
+                target.localScale = Vector3.one; // 최종 안전 장치: 정확히 원래 크기로
+                VisualConstants.EndZoomPunch();
             }
-
-            target.localScale = origScale; // 최종 안전 장치: 정확히 원래 크기로
-            VisualConstants.EndZoomPunch();
         }
 
         /// <summary>

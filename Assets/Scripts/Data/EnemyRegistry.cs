@@ -289,6 +289,30 @@ namespace JewelsHexaPuzzle.Data
                 baseScore = 800,
                 defaultMaxOnBoard = 5
             });
+
+            // --- #13 방패 고블린 (ShieldGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.ShieldGoblin,
+                name = "방패 고블린",
+                alias = "방패",
+                description = "드릴을 차단하는 방패를 장착한 고블린. 방패 내구도 소진 후 일반 상태로 전환",
+                overlayColor = new Color(0.6f, 0.5f, 0.1f, 0.9f),
+                baseScore = 1000,
+                defaultMaxOnBoard = 4
+            });
+
+            // --- #14 폭탄 고블린 (BombGoblin) ---
+            Register(new EnemyMetadata
+            {
+                type = EnemyType.BombGoblin,
+                name = "폭탄 고블린",
+                alias = "폭탄",
+                description = "카운트다운 후 광역 폭발하여 주변 블록을 대량 파괴하는 위험한 고블린",
+                overlayColor = new Color(0.8f, 0.2f, 0.1f, 0.9f),
+                baseScore = 1200,
+                defaultMaxOnBoard = 3
+            });
         }
 
         private static void Register(EnemyMetadata meta)
