@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>미션 아이콘 - HexaPuzzle</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #f0f0f0 0%, #ffffff 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+            padding: 20px;
+        }
+
+        canvas {
+            display: block;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        .info {
+            margin-top: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            max-width: 600px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        .color-legend {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .color-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .color-box {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .color-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .hover-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+            color: #555;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 HexaPuzzle 미션 아이콘</h1>
+        <p>마우스를 호버하여 각 색상을 확인하세요</p>
+
+        <div class="canvas-wrapper">
+            <canvas id="missionCanvas" width="512" height="512"></canvas>
+        </div>
+
+        <div class="info">
+            <h3>📋 아이콘 정보</h3>
+            <p><strong>구조:</strong> Flat-top 육각형, 중심에서 6개 삼각형으로 분할</p>
+            <p><strong>기능:</strong> 각 기본 블록 색상을 원형으로 배치 (시계방향)</p>
+
+            <div class="color-legend">
+                <div class="color-item">
+                    <div class="color-box" style="background: rgb(255, 61, 61);"></div>
+                    <span class="color-name">Red (빨강)</span>
+                </div>
+                <div class="color-item">
+                    <div class="color-box" style="background: rgb(38, 179, 242);"></div>
+                    <span class="color-name">Blue (파랑)</span>
+                </div>
+                <div class="color-item">
+                    <div class="color-box" style="background: rgb(38, 242, 38);"></div>
+                    <span class="color-name">Green (초록)</span>
+                </div>
+                <div class="color-item">
+                    <div class="color-box" style="background: rgb(255, 242, 38);"></div>
+                    <span class="color-name">Yellow (노랑)</span>
+                </div>
+                <div class="color-item">
+                    <div class="color-box" style="background: rgb(204, 38, 242);"></div>
+                    <span class="color-name">Purple (보라)</span>
+                </div>
+                <div class="color-item">
+                    <div class="color-box" style="background: rgb(255, 140, 38);"></div>
+                    <span class="color-name">Orange (주황)</span>
+                </div>
+            </div>
+
+            <div class="hover-info">
+                💡 팁: 각 삼각형 영역에 마우스를 올리면 해당 색상 정보가 콘솔에 출력됩니다.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 미션 아이콘 렌더러
+        const canvas = document.getElementById('missionCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 색상 정의 (RGB 값 정확히 반영)
+        const colors = {
+            red: 'rgb(255, 61, 61)',       // RGB(1.0, 0.24, 0.24) ≈ (255, 61, 61)
+            blue: 'rgb(38, 179, 242)',     // RGB(0.15, 0.70, 0.95) ≈ (38, 179, 242)
+            green: 'rgb(38, 242, 38)',     // RGB(0.15, 0.95, 0.15) ≈ (38, 242, 38)
+            yellow: 'rgb(255, 242, 38)',   // RGB(1.0, 0.95, 0.15) ≈ (255, 242, 38)
+            purple: 'rgb(204, 38, 242)',   // RGB(0.80, 0.15, 0.95) ≈ (204, 38, 242)
+            orange: 'rgb(255, 140, 38)'    // RGB(1.0, 0.55, 0.15) ≈ (255, 140, 38)
+        };
+
+        const centerX = 256;
+        const centerY = 256;
+        const radius = 180;
+
+        // Flat-top 육각형의 6개 꼭지점 계산
+        function getHexagonPoints(centerX, centerY, radius) {
+            const points = [];
+            for (let i = 0; i < 6; i++) {
+                const angle = (i * 60 - 0) * Math.PI / 180;
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                points.push({ x, y });
+            }
+            return points;
+        }
+
+        const hexPoints = getHexagonPoints(centerX, centerY, radius);
+
+        // 삼각형 데이터 (색상, 꼭지점 인덱스)
+        const triangles = [
+            { color: colors.red, points: [0, 1], name: 'Red (빨강)', angle: 0 },
+            { color: colors.blue, points: [1, 2], name: 'Blue (파랑)', angle: 60 },
+            { color: colors.green, points: [2, 3], name: 'Green (초록)', angle: 120 },
+            { color: colors.yellow, points: [3, 4], name: 'Yellow (노랑)', angle: 180 },
+            { color: colors.purple, points: [4, 5], name: 'Purple (보라)', angle: 240 },
+            { color: colors.orange, points: [5, 0], name: 'Orange (주황)', angle: 300 }
+        ];
+
+        // 그라디언트 생성 함수
+        function createRadialGradient(baseColor, x, y) {
+            const gradient = ctx.createRadialGradient(x, y, 10, x, y, 120);
+            gradient.addColorStop(0, baseColor);
+            // 어두운 톤 추가 (음영 효과)
+            const rgb = baseColor.match(/\d+/g);
+            const darkColor = `rgb(${Math.floor(rgb[0] * 0.7)}, ${Math.floor(rgb[1] * 0.7)}, ${Math.floor(rgb[2] * 0.7)})`;
+            gradient.addColorStop(1, darkColor);
+            return gradient;
+        }
+
+        // 삼각형 그리기
+        function drawTriangle(p1, p2, color) {
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.closePath();
+
+            // 그라디언트 적용
+            const gradient = createRadialGradient(color, centerX, centerY);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // 테두리
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        // 모든 삼각형 렌더링
+        function render() {
+            // 배경 투명화
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 각 삼각형 그리기
+            triangles.forEach((tri, index) => {
+                const p1 = hexPoints[tri.points[0]];
+                const p2 = hexPoints[tri.points[1]];
+                drawTriangle(p1, p2, tri.color);
+            });
+
+            // 외곽 육각형 테두리
+            ctx.beginPath();
+            hexPoints.forEach((p, i) => {
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.closePath();
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 중앙 텍스트: "미션"
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.font = 'bold 28px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('미션', centerX, centerY);
+        }
+
+        // 호버 감지
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            // 픽셀 색상 읽기
+            const imageData = ctx.getImageData(x, y, 1, 1);
+            const data = imageData.data;
+
+            // 색상 매칭
+            triangles.forEach((tri) => {
+                const rgbMatch = tri.color.match(/\d+/g);
+                if (Math.abs(data[0] - rgbMatch[0]) < 30 &&
+                    Math.abs(data[1] - rgbMatch[1]) < 30 &&
+                    Math.abs(data[2] - rgbMatch[2]) < 30) {
+                    canvas.style.cursor = 'pointer';
+                }
+            });
+        });
+
+        // 초기 렌더링
+        render();
+
+        console.log('%c미션 아이콘 생성 완료', 'color: #00ff00; font-weight: bold; font-size: 16px;');
+        console.log('색상 배치 (시계방향):');
+        triangles.forEach((tri) => {
+            console.log(`  ${tri.angle}° - ${tri.name}`);
+        });
+    </script>
+</body>
+</html>

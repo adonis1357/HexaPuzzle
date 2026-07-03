@@ -540,14 +540,16 @@ namespace JewelsHexaPuzzle.Utils
                 float tNorm = (float)i / sampleCount;
                 float envelope = ADSR(tNorm, 0.02f, 0.1f, 0.6f, 0.3f);
                 float clickEnv = t < 0.02f ? (1f - t / 0.02f) : 0f;
-                float click = Mathf.Sin(2f * Mathf.PI * 2000f * t) * clickEnv * 0.3f;
+                // ★ 2026-07-02 재질 강화: 금속 클릭 0.3→0.5 + 200Hz 저역 기계 임팩트 추가 (드릴=금속 기계)
+                float click = Mathf.Sin(2f * Mathf.PI * 2000f * t) * clickEnv * 0.5f;
+                float lowImpact = Mathf.Sin(2f * Mathf.PI * 200f * t) * Mathf.Max(0f, 1f - t * 8f) * 0.35f;
                 float whirFreq = Mathf.Lerp(800f, 1000f, tNorm * 0.5f);
                 float tremolo = 1f + 0.2f * Mathf.Sin(2f * Mathf.PI * 15f * t);
                 float whirPhase = 2f * Mathf.PI * whirFreq * t;
                 float whir = Mathf.Sin(whirPhase) * 0.3f * tremolo;
                 float musicBox = Mathf.Sin(2f * Mathf.PI * 1568f * t) * 0.15f
                                * Mathf.Max(0f, 1f - t * 4f);
-                data[i] = (click + whir + musicBox) * envelope * 0.4f;
+                data[i] = (click + lowImpact + whir + musicBox) * envelope * 0.4f;
             }
             ApplyFades(data, 32, 128);
             ApplyLowPass(data, 0.2f);
@@ -576,7 +578,9 @@ namespace JewelsHexaPuzzle.Utils
                            * Mathf.Max(0f, 1f - tNorm * 3f) * 0.25f;
                 float sparkle = Mathf.Sin(2f * Mathf.PI * 2200f * t) * 0.12f
                               * Mathf.Max(0f, 1f - tNorm * 2f);
-                data[i] = (body + poof + sparkle) * envelope * 0.4f;
+                // ★ 2026-07-02 재질 강화: 초두 500Hz 임팩트 펀치 추가 (화약 폭발 강렬함)
+                float punch = Mathf.Sin(2f * Mathf.PI * 500f * t) * Mathf.Max(0f, 1f - t * 25f) * 0.4f;
+                data[i] = (body + poof + sparkle + punch) * envelope * 0.4f;
             }
             ApplyFades(data, 16, 96);
             ApplyLowPass(data, 0.25f);
@@ -587,7 +591,7 @@ namespace JewelsHexaPuzzle.Utils
         }
 
         /// <summary>
-        /// 도넛/레인보우 - 상승 차임 + 따뜻한 확장 쉬머 물결
+        /// 타겟 레이저 - 상승 차임 + 따뜻한 확장 쉬머 물결
         /// </summary>
         public static AudioClip CreateRainbowSound(float duration = 0.8f)
         {
@@ -700,7 +704,7 @@ namespace JewelsHexaPuzzle.Utils
                 float harmonic2 = Mathf.Sin(phase * 2.0f) * 0.18f;
 
                 // 3배음 (1800Hz대): 얇고 찌르는 듯한 느낌
-                float harmonic3 = Mathf.Sin(phase * 3.0f) * 0.08f;
+                float harmonic3 = Mathf.Sin(phase * 3.0f) * 0.15f; // ★ 2026-07-02 재질 강화: 8→15% (기계 위협감)
 
                 // 얕은 AM 모듈레이션: 날개짓 떨림 (500Hz, 깊이 15%)
                 // 모기는 파리보다 AM이 얕아서 더 지속적인 "윙~" 느낌
@@ -1248,6 +1252,463 @@ namespace JewelsHexaPuzzle.Utils
             return clip;
         }
 
+        // ============================================================
+        // ★ 2026-07-02 전수 효과음 보강 — 누락 이벤트 20종 (재질 매핑)
+        //   고블린=생물, 망치/드릴=금속, 폭탄=화약, 마법=차임/쉬머, UI=다크글래스 팝
+        // ============================================================
+
+        /// <summary>고블린 피격 — 짧은 '퍽'(노이즈 임팩트 + 180→90Hz 저중음 바디).</summary>
+        public static AudioClip CreateGoblinHit(float duration = 0.14f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(7);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0f, 0.015f, 0.11f);
+                float freq = 180f - 90f * tn;
+                ph += 2f * Mathf.PI * freq / SAMPLE_RATE;
+                float body = Mathf.Sin(ph) * 0.7f;
+                float nz = (float)(rng.NextDouble() * 2 - 1) * (t < 0.04f ? (1f - t / 0.04f) : 0f) * 0.5f;
+                d[i] = (body + nz) * env * 0.4f;
+            }
+            ApplyLowPass(d, 0.5f); ApplyFades(d, 4, 32);
+            var c = AudioClip.Create("GoblinHit", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>고블린 사망 — 하행 워블 '우엑'(350→110Hz 비브라토) + 퍽 테일.</summary>
+        public static AudioClip CreateGoblinDeath(float duration = 0.4f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(11);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0.005f, 0.05f, duration - 0.06f);
+                float freq = Mathf.Lerp(350f, 110f, tn) * (1f + 0.06f * Mathf.Sin(2f * Mathf.PI * 9f * t));
+                ph += 2f * Mathf.PI * freq / SAMPLE_RATE;
+                float voice = WaveWithHarmonics(Waveform.Sine, ph, 3, 0.5f) * 0.6f;
+                float nz = (float)(rng.NextDouble() * 2 - 1) * (tn > 0.7f ? (tn - 0.7f) / 0.3f * 0.25f : 0f);
+                d[i] = (voice + nz) * env * 0.38f;
+            }
+            ApplyLowPass(d, 0.45f); ApplyFades(d, 8, 64); ApplyReverb(d, 18f, 0.18f, 2);
+            var c = AudioClip.Create("GoblinDeath", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>고블린 이동 발걸음 — 아주 가벼운 저음 '톡' (볼륨 낮게 재생 권장).</summary>
+        public static AudioClip CreateGoblinStep(float duration = 0.07f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(13);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0f, 0.008f, 0.055f);
+                ph += 2f * Mathf.PI * (240f - 120f * tn) / SAMPLE_RATE;
+                float nz = (float)(rng.NextDouble() * 2 - 1) * (t < 0.015f ? 1f - t / 0.015f : 0f) * 0.4f;
+                d[i] = (Mathf.Sin(ph) * 0.6f + nz) * env * 0.3f;
+            }
+            ApplyLowPass(d, 0.4f); ApplyFades(d, 4, 24);
+            var c = AudioClip.Create("GoblinStep", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>파이어볼 발사 — 화염 우~쉬(노이즈 스웰 + 저역 화염 럼블).</summary>
+        public static AudioClip CreateFireballCast(float duration = 0.45f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(17);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = Mathf.Sin(Mathf.PI * Mathf.Clamp01(tn)) ;      // 스웰(부풀었다 잦아듦)
+                float nz = (float)(rng.NextDouble() * 2 - 1) * 0.55f;      // 화염 노이즈
+                ph += 2f * Mathf.PI * (90f + 60f * tn) / SAMPLE_RATE;      // 저역 럼블 상승
+                float rumble = Mathf.Sin(ph) * 0.45f;
+                float crackle = ((i % 977) < 25 && tn > 0.2f) ? 0.25f : 0f; // 간헐 크래클
+                d[i] = (nz + rumble + crackle) * env * 0.32f;
+            }
+            ApplyLowPass(d, 0.35f); ApplyFades(d, 32, 128); ApplyReverb(d, 22f, 0.2f, 2);
+            var c = AudioClip.Create("FireballCast", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>번개 낙뢰 — 화이트노이즈 크랙 스파이크 + 저음 럼블 테일.</summary>
+        public static AudioClip CreateLightningStrike(float duration = 0.5f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(19);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float crackEnv = t < 0.06f ? 1f - t / 0.06f : 0f;                 // 초두 크랙
+                float crack = (float)(rng.NextDouble() * 2 - 1) * crackEnv;
+                ph += 2f * Mathf.PI * (55f + 20f * Mathf.Sin(2f * Mathf.PI * 3f * t)) / SAMPLE_RATE;
+                float rumble = Mathf.Sin(ph) * Mathf.Exp(-2.6f * tn) * 0.6f;      // 감쇠 럼블
+                float sizzle = (float)(rng.NextDouble() * 2 - 1) * Mathf.Exp(-5f * tn) * 0.15f;
+                d[i] = (crack * 0.9f + rumble + sizzle) * 0.42f;
+            }
+            ApplyFades(d, 2, 160); ApplyReverb(d, 35f, 0.28f, 3);
+            var c = AudioClip.Create("LightningStrike", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>폭탄 설치/카운트 틱 — 태엽 '틱-틱' 금속 클릭 2회 + 낮은 톤.</summary>
+        public static AudioClip CreateBombPlant(float duration = 0.22f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float tick1 = t < 0.03f ? Mathf.Exp(-90f * t) : 0f;
+                float t2 = t - 0.10f;
+                float tick2 = (t2 > 0f && t2 < 0.03f) ? Mathf.Exp(-90f * t2) : 0f;
+                ph += 2f * Mathf.PI * 1500f / SAMPLE_RATE;
+                float click = Mathf.Sin(ph) * (tick1 + tick2 * 0.8f);
+                float low = Mathf.Sin(2f * Mathf.PI * 140f * t) * NoteEnvelope(t, 0f, 0.05f, 0.15f) * 0.3f;
+                d[i] = (click * 0.6f + low) * 0.4f;
+            }
+            ApplyFades(d, 2, 32);
+            var c = AudioClip.Create("BombPlant", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>도둑 훔침 — 재빠른 '슉' 상행 노이즈 스윕.</summary>
+        public static AudioClip CreateThiefSteal(float duration = 0.2f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(23);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = Mathf.Sin(Mathf.PI * tn);
+                ph += 2f * Mathf.PI * Mathf.Lerp(500f, 1900f, tn) / SAMPLE_RATE;
+                float body = Mathf.Sin(ph) * 0.3f;
+                float nz = (float)(rng.NextDouble() * 2 - 1) * 0.5f;
+                d[i] = (body + nz * env) * env * 0.3f;
+            }
+            ApplyLowPass(d, 0.75f); ApplyFades(d, 8, 48);
+            var c = AudioClip.Create("ThiefSteal", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>힐러 회복 — 부드러운 상승 차임(E6→G6→B6) + 글로우.</summary>
+        public static AudioClip CreateHealChime(float duration = 0.45f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float[] notes = { 1318.5f, 1568.0f, 1975.5f };
+            for (int k = 0; k < notes.Length; k++)
+            {
+                float start = k * 0.09f;
+                float ph = 0f;
+                for (int i = Mathf.CeilToInt(start * SAMPLE_RATE); i < n; i++)
+                {
+                    float nt = (float)i / SAMPLE_RATE - start;
+                    float env = NoteEnvelope(nt, 0.008f, 0.06f, 0.3f);
+                    ph += 2f * Mathf.PI * notes[k] / SAMPLE_RATE;
+                    d[i] += Mathf.Sin(ph) * env * 0.22f;
+                }
+            }
+            ApplyFades(d, 16, 96); ApplyReverb(d, 30f, 0.3f, 3);
+            var c = AudioClip.Create("HealChime", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>마녀 소환 — 어두운 하행 스윕(900→150Hz) + 와블 + 서브 임팩트.</summary>
+        public static AudioClip CreateWitchSummon(float duration = 0.6f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f, ph2 = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0.01f, 0.1f, duration - 0.12f);
+                float freq = Mathf.Lerp(900f, 150f, tn) * (1f + 0.09f * Mathf.Sin(2f * Mathf.PI * 6f * t));
+                ph += 2f * Mathf.PI * freq / SAMPLE_RATE;
+                ph2 += 2f * Mathf.PI * 55f / SAMPLE_RATE;
+                float sub = Mathf.Sin(ph2) * (tn > 0.6f ? (tn - 0.6f) / 0.4f : 0f) * 0.5f;
+                d[i] = (WaveWithHarmonics(Waveform.Sine, ph, 4, 0.45f) * 0.5f + sub) * env * 0.36f;
+            }
+            ApplyLowPass(d, 0.5f); ApplyFades(d, 16, 96); ApplyReverb(d, 40f, 0.32f, 3);
+            var c = AudioClip.Create("WitchSummon", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>망치 타격 — 금속 '쾅'(임팩트 노이즈 + 200→60Hz 바디 + 2400Hz 금속 링).</summary>
+        public static AudioClip CreateHammerImpact(float duration = 0.3f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(29);
+            float ph = 0f, phR = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float impact = (float)(rng.NextDouble() * 2 - 1) * (t < 0.025f ? 1f - t / 0.025f : 0f);
+                ph += 2f * Mathf.PI * (200f - 140f * tn) / SAMPLE_RATE;
+                float body = Mathf.Sin(ph) * NoteEnvelope(t, 0f, 0.02f, 0.2f) * 0.8f;
+                phR += 2f * Mathf.PI * 2400f / SAMPLE_RATE;
+                float ring = Mathf.Sin(phR) * Mathf.Exp(-14f * t) * 0.3f;
+                d[i] = (impact * 0.8f + body + ring) * 0.42f;
+            }
+            ApplyFades(d, 2, 64); ApplyReverb(d, 16f, 0.18f, 2);
+            var c = AudioClip.Create("HammerImpact", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>스왑 — '휙↔휙' 교차 노이즈 스윕 2연속(상행+하행).</summary>
+        public static AudioClip CreateSwapWhoosh(float duration = 0.32f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(31);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                bool first = tn < 0.5f;
+                float seg = first ? tn / 0.5f : (tn - 0.5f) / 0.5f;
+                float env = Mathf.Sin(Mathf.PI * seg) * (first ? 1f : 0.85f);
+                float freq = first ? Mathf.Lerp(400f, 1100f, seg) : Mathf.Lerp(1100f, 400f, seg);
+                ph += 2f * Mathf.PI * freq / SAMPLE_RATE;
+                float nz = (float)(rng.NextDouble() * 2 - 1) * 0.45f;
+                d[i] = (Mathf.Sin(ph) * 0.35f + nz * env) * env * 0.3f;
+            }
+            ApplyLowPass(d, 0.6f); ApplyFades(d, 8, 48);
+            var c = AudioClip.Create("SwapWhoosh", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>라인 발동 — 전기 '지잉' 버즈 상승 + 크리스탈 파열 마무리.</summary>
+        public static AudioClip CreateLineZap(float duration = 0.38f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f, phC = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float freq = Mathf.Lerp(300f, 900f, Mathf.Min(1f, tn / 0.7f));
+                ph += 2f * Mathf.PI * freq / SAMPLE_RATE;
+                float buzz = (Mathf.Sin(ph) * 0.5f + Mathf.Sign(Mathf.Sin(ph * 2f)) * 0.12f)
+                             * (tn < 0.7f ? NoteEnvelope(t, 0.01f, 0.18f, 0.1f) : 0f);
+                float ct = t - duration * 0.68f;
+                phC += 2f * Mathf.PI * 2093f / SAMPLE_RATE;
+                float chime = ct > 0f ? Mathf.Sin(phC) * Mathf.Exp(-9f * ct) * 0.5f : 0f;
+                d[i] = (buzz + chime) * 0.36f;
+            }
+            ApplyFades(d, 8, 64); ApplyReverb(d, 18f, 0.2f, 2);
+            var c = AudioClip.Create("LineZap", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>역회전 — 태엽 되감기(하행 워블 800→300Hz) + 틱틱.</summary>
+        public static AudioClip CreateReverseWind(float duration = 0.42f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0.01f, 0.1f, duration - 0.12f);
+                float freq = Mathf.Lerp(800f, 300f, tn) * (1f + 0.05f * Mathf.Sin(2f * Mathf.PI * 14f * t));
+                ph += 2f * Mathf.PI * freq / SAMPLE_RATE;
+                float tick = ((i % 3307) < 40) ? 0.25f * Mathf.Exp(-60f * ((i % 3307) / (float)SAMPLE_RATE)) : 0f;
+                d[i] = (WaveWithHarmonics(Waveform.Triangle, ph, 3, 0.5f) * 0.5f + tick) * env * 0.34f;
+            }
+            ApplyFades(d, 8, 64);
+            var c = AudioClip.Create("ReverseWind", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>게이지 만충 — 밝은 완성 벨(C7 + 옥타브 배음).</summary>
+        public static AudioClip CreateGaugeFull(float duration = 0.4f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph1 = 0f, ph2 = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float env = NoteEnvelope(t, 0.004f, 0.08f, 0.3f);
+                ph1 += 2f * Mathf.PI * 2093f / SAMPLE_RATE;   // C7
+                ph2 += 2f * Mathf.PI * 4186f / SAMPLE_RATE;   // C8 배음
+                d[i] = (Mathf.Sin(ph1) * 0.6f + Mathf.Sin(ph2) * 0.18f) * env * 0.32f;
+            }
+            ApplyFades(d, 8, 96); ApplyReverb(d, 26f, 0.26f, 3);
+            var c = AudioClip.Create("GaugeFull", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>잠금 해제 — 금속 클릭 + 상승 차임(G5→C6). 미션 슬롯 해금.</summary>
+        public static AudioClip CreateUnlockChime(float duration = 0.45f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float phC = 0f, ph1 = 0f, ph2 = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                phC += 2f * Mathf.PI * 1800f / SAMPLE_RATE;
+                float click = Mathf.Sin(phC) * (t < 0.02f ? Mathf.Exp(-70f * t) : 0f) * 0.7f;
+                float t1 = t - 0.06f, t2 = t - 0.18f;
+                ph1 += 2f * Mathf.PI * 784f / SAMPLE_RATE;    // G5
+                ph2 += 2f * Mathf.PI * 1046.5f / SAMPLE_RATE; // C6
+                float n1 = t1 > 0f ? Mathf.Sin(ph1) * NoteEnvelope(t1, 0.005f, 0.05f, 0.2f) * 0.4f : 0f;
+                float n2 = t2 > 0f ? Mathf.Sin(ph2) * NoteEnvelope(t2, 0.005f, 0.06f, 0.22f) * 0.45f : 0f;
+                d[i] = (click + n1 + n2) * 0.4f;
+            }
+            ApplyFades(d, 4, 96); ApplyReverb(d, 24f, 0.24f, 2);
+            var c = AudioClip.Create("UnlockChime", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>리워드 픽 확정 — 밝은 2음 '띠링'(E6→A6).</summary>
+        public static AudioClip CreateRewardPick(float duration = 0.3f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph1 = 0f, ph2 = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                ph1 += 2f * Mathf.PI * 1318.5f / SAMPLE_RATE;
+                ph2 += 2f * Mathf.PI * 1760f / SAMPLE_RATE;
+                float a = Mathf.Sin(ph1) * NoteEnvelope(t, 0.004f, 0.04f, 0.12f) * 0.5f;
+                float t2 = t - 0.09f;
+                float b = t2 > 0f ? Mathf.Sin(ph2) * NoteEnvelope(t2, 0.004f, 0.05f, 0.16f) * 0.55f : 0f;
+                d[i] = (a + b) * 0.38f;
+            }
+            ApplyFades(d, 4, 64); ApplyReverb(d, 20f, 0.2f, 2);
+            var c = AudioClip.Create("RewardPick", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>팝업 닫기 — 하행 팝(880→440Hz, 열기의 역방향).</summary>
+        public static AudioClip CreatePopupClose(float duration = 0.2f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0.004f, 0.05f, 0.13f);
+                ph += 2f * Mathf.PI * Mathf.Lerp(880f, 440f, tn) / SAMPLE_RATE;
+                d[i] = (Mathf.Sin(ph) * 0.75f + GenerateWaveform(Waveform.Triangle, ph) * 0.25f) * env * 0.3f;
+            }
+            ApplyFades(d, 4, 48);
+            var c = AudioClip.Create("PopupClose", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>데드락 재배치 — '샤라락' 셰이커 연타 + 정리 차임.</summary>
+        public static AudioClip CreateReshuffle(float duration = 0.55f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(37);
+            float phC = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                // 6회 셰이커 버스트
+                float shake = 0f;
+                for (int k = 0; k < 6; k++)
+                {
+                    float st = t - k * 0.055f;
+                    if (st > 0f && st < 0.03f) shake = (float)(rng.NextDouble() * 2 - 1) * (1f - st / 0.03f) * 0.5f;
+                }
+                float ct = t - 0.38f;
+                phC += 2f * Mathf.PI * 1568f / SAMPLE_RATE; // G6
+                float chime = ct > 0f ? Mathf.Sin(phC) * Mathf.Exp(-8f * ct) * 0.5f : 0f;
+                d[i] = (shake * (1f - tn * 0.4f) + chime) * 0.36f;
+            }
+            ApplyLowPass(d, 0.7f); ApplyFades(d, 8, 64);
+            var c = AudioClip.Create("Reshuffle", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>MP 부족 거부 — 저음 버즈 '붕붕' 2회.</summary>
+        public static AudioClip CreateDenyBuzz(float duration = 0.28f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE;
+                float g1 = (t < 0.09f) ? 1f : 0f;
+                float t2 = t - 0.13f;
+                float g2 = (t2 > 0f && t2 < 0.09f) ? 0.85f : 0f;
+                ph += 2f * Mathf.PI * 130f / SAMPLE_RATE;
+                float buzz = (Mathf.Sin(ph) * 0.6f + Mathf.Sign(Mathf.Sin(ph)) * 0.15f);
+                d[i] = buzz * (g1 + g2) * 0.34f;
+            }
+            ApplyLowPass(d, 0.35f); ApplyFades(d, 8, 48);
+            var c = AudioClip.Create("DenyBuzz", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>특수블록 합성 — 듀얼톤 융합 상승 + 마법 임팩트.</summary>
+        public static AudioClip CreateComboMerge(float duration = 0.45f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(41);
+            float ph1 = 0f, ph2 = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float rise = Mathf.Min(1f, tn / 0.65f);
+                ph1 += 2f * Mathf.PI * Mathf.Lerp(520f, 1040f, rise) / SAMPLE_RATE;
+                ph2 += 2f * Mathf.PI * Mathf.Lerp(780f, 1560f, rise) / SAMPLE_RATE;
+                float duo = (Mathf.Sin(ph1) * 0.4f + Mathf.Sin(ph2) * 0.3f) * (tn < 0.65f ? NoteEnvelope(t, 0.01f, 0.2f, 0.12f) : 0f);
+                float it = t - duration * 0.63f;
+                float impact = it > 0f ? ((float)(rng.NextDouble() * 2 - 1) * 0.4f + Mathf.Sin(2f * Mathf.PI * 220f * it) * 0.5f) * Mathf.Exp(-10f * it) : 0f;
+                d[i] = (duo + impact) * 0.38f;
+            }
+            ApplyFades(d, 8, 80); ApplyReverb(d, 24f, 0.24f, 3);
+            var c = AudioClip.Create("ComboMerge", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>쉘(돌) 파괴 — 돌 크런치(저역 노이즈 버스트 + 파편).</summary>
+        public static AudioClip CreateShellBreak(float duration = 0.22f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            var rng = new System.Random(43);
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float crunch = (float)(rng.NextDouble() * 2 - 1) * Mathf.Exp(-16f * tn);
+                ph += 2f * Mathf.PI * (150f - 70f * tn) / SAMPLE_RATE;
+                float body = Mathf.Sin(ph) * NoteEnvelope(t, 0f, 0.02f, 0.16f) * 0.5f;
+                float debris = ((i % 1531) < 30 && tn > 0.3f) ? 0.2f : 0f;
+                d[i] = (crunch * 0.7f + body + debris) * 0.4f;
+            }
+            ApplyLowPass(d, 0.45f); ApplyFades(d, 4, 48);
+            var c = AudioClip.Create("ShellBreak", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
+        /// <summary>영혼 오브 흡수 — 아주 작은 '톡' 상승 방울(700→1100Hz).</summary>
+        public static AudioClip CreateOrbAbsorb(float duration = 0.09f)
+        {
+            int n = Mathf.CeilToInt(SAMPLE_RATE * duration);
+            float[] d = new float[n];
+            float ph = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / SAMPLE_RATE; float tn = (float)i / n;
+                float env = NoteEnvelope(t, 0.003f, 0.02f, 0.06f);
+                ph += 2f * Mathf.PI * Mathf.Lerp(700f, 1100f, tn) / SAMPLE_RATE;
+                d[i] = Mathf.Sin(ph) * env * 0.28f;
+            }
+            ApplyFades(d, 4, 24);
+            var c = AudioClip.Create("OrbAbsorb", n, 1, SAMPLE_RATE, false); c.SetData(d, 0); return c;
+        }
+
         /// <summary>노이즈 테이블 생성 (하이햇/퍼커션용)</summary>
         private static float[] MakeNoiseTable(int seed = 42)
         {
@@ -1469,109 +1930,104 @@ namespace JewelsHexaPuzzle.Utils
         /// 게임플레이 긴장 BGM — 다크 드라이브 (A단조 펜타토닉, 120BPM)
         /// 포 온 더 플로어 킥 + 16분 하이햇 + 반복 리프 멜로디
         /// </summary>
+        /// <summary>
+        /// 게임플레이 Serene BGM — 잔잔한 아르페지오 (C장조, 72BPM)
+        /// 부드러운 사인파 아르페지오 + 따뜻한 패드 + 드럼 없음
+        /// </summary>
         public static AudioClip CreateGameplayTenseBGM(float duration = 90f)
         {
             int sc = Mathf.CeilToInt(SAMPLE_RATE * duration);
             float[] data = new float[sc];
-            float[] nz = MakeNoiseTable(55);
-            // A 단조 펜타토닉 2옥타브: A4, C5, D5, E5, G5, A5, C6, D6
-            float[] scale = { 440f, 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f, 1174.66f };
-            float bpm = 100f; float s16 = 15f / bpm;
-            // 드라이빙 리프 — A-A-C-D 반복 + 변주
+            // C장조 음계: C4, E4, G4, A4, C5, E5, G5, A5
+            float[] scale = { 261.63f, 329.63f, 392f, 440f, 523.25f, 659.25f, 783.99f, 880f };
+            float bpm = 72f; float s16 = 15f / bpm;
+            // 부드러운 아르페지오 패턴 (4마디)
             int[] mel = {
-                0,-1, 0,-1, 1,-1, 2,-1,  0,-1, 0,-1, 4,-1, 3,-1,
-                0,-1, 0,-1, 1,-1, 2,-1,  3,-1, 4,-1, -1, 3,-1, 2,
-                0,-1, 0,-1, 1,-1, 2,-1,  0,-1, 0,-1, 5,-1, 4,-1,
-                0,-1, 0,-1, 1,-1, 3,-1,  2,-1, 0,-1, -1,-1,-1,-1 };
-            int[] ki = {
-                1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0,
-                1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0,
-                1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0,
-                1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0 };
-            int[] hh = {
-                2,1,1,1, 2,1,1,1, 2,1,1,1, 2,1,1,1,
-                2,1,1,1, 2,1,1,1, 2,1,1,1, 2,1,1,1,
-                2,1,1,1, 2,1,1,1, 2,1,1,1, 2,1,1,1,
-                2,1,1,1, 2,1,1,1, 2,1,1,1, 2,1,2,1 };
+                0,-1,-1,-1, 1,-1,-1,-1, 2,-1,-1,-1, 3,-1,-1,-1,
+                4,-1,-1,-1, 3,-1,-1,-1, 2,-1,-1,-1, 1,-1,-1,-1,
+                0,-1,-1,-1, 2,-1,-1,-1, 4,-1,-1,-1, 5,-1,-1,-1,
+                4,-1,-1,-1, 2,-1,-1,-1, 1,-1,-1,-1, 0,-1,-1,-1 };
+            // 느린 베이스 (전음 롱 톤)
             int[] bas = {
-                0,-1,-1,-1, 0,-1,-1,-1, 0,-1, 0,-1, -1,-1,-1,-1,
-                0,-1,-1,-1, 0,-1,-1,-1, 2,-1,-1,-1, -1,-1,-1,-1,
-                0,-1,-1,-1, 0,-1,-1,-1, 0,-1, 0,-1, -1,-1,-1,-1,
-                0,-1,-1,-1, 0,-1,-1,-1, 0,-1,-1,-1, -1, 0,-1,-1 };
+                0,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                2,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                0,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1 };
             int pLen = mel.Length; float pDur = pLen * s16;
-            float mPh = 0f, bPh = 0f, mA = 99f, bA = 99f;
+            float mPh = 0f, bPh = 0f, padPh1 = 0f, padPh2 = 0f, padPh3 = 0f;
+            float mA = 99f, bA = 99f;
             float mF = scale[0], bF = scale[0] * 0.25f;
             float dt = 1f / SAMPLE_RATE; int pS = -1;
             for (int i = 0; i < sc; i++)
             {
                 float t = (float)i / SAMPLE_RATE;
                 int aS = (int)(t / s16); float pt = t % pDur;
-                int step = (int)(pt / s16) % pLen; float st = pt - step * s16;
+                int step = (int)(pt / s16) % pLen;
                 if (aS != pS) {
                     if (mel[step] >= 0) { mF = scale[mel[step]]; mA = 0f; }
                     if (bas[step] >= 0) { bF = scale[bas[step]] * 0.25f; bA = 0f; }
                     pS = aS;
                 }
                 float v = 0f;
+                // 멜로디: 부드러운 사인파 + 삼각파 블렌드 (긴 어택, 긴 디케이)
                 mPh += 2f * Mathf.PI * mF / SAMPLE_RATE;
-                float mEnv = NoteEnvelope(mA, 0.015f, s16 * 1f, s16 * 6f);
-                v += (Mathf.Sin(mPh) * 0.6f + GenerateWaveform(Waveform.Triangle, mPh) * 0.3f
-                     + GenerateWaveform(Waveform.Square, mPh) * 0.1f) * mEnv * 0.16f;
+                float mEnv = NoteEnvelope(mA, 0.08f, s16 * 2f, s16 * 12f);
+                v += (Mathf.Sin(mPh) * 0.8f + GenerateWaveform(Waveform.Triangle, mPh) * 0.2f) * mEnv * 0.12f;
                 mA += dt;
+                // 베이스: 따뜻한 사인파 롱 톤
                 bPh += 2f * Mathf.PI * bF / SAMPLE_RATE;
-                v += Mathf.Sin(bPh) * NoteEnvelope(bA, 0.02f, s16 * 3f, s16 * 10f) * 0.09f;
+                v += Mathf.Sin(bPh) * NoteEnvelope(bA, 0.1f, s16 * 8f, s16 * 20f) * 0.06f;
                 bA += dt;
-                if (ki[step] > 0) v += DrumKick(st, 0.1f);
-                if (hh[step] > 0) v += DrumHat(st, nz[i % nz.Length], hh[step] == 2 ? 0.03f : 0.015f);
-                // 긴장 펄스 (2.5Hz 트레몰로)
-                v += Mathf.Sin(2f * Mathf.PI * 110f * t) * 0.04f
-                     * (0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 2.5f * t));
+                // 패드: C-E-G 코드 지속음 (느린 스웰)
+                padPh1 += 2f * Mathf.PI * 261.63f / SAMPLE_RATE;
+                padPh2 += 2f * Mathf.PI * 329.63f / SAMPLE_RATE;
+                padPh3 += 2f * Mathf.PI * 392f / SAMPLE_RATE;
+                float padSwell = 0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 0.08f * t); // 12초 주기
+                v += (Mathf.Sin(padPh1) + Mathf.Sin(padPh2) + Mathf.Sin(padPh3)) * 0.018f * padSwell;
                 data[i] = v;
             }
-            ApplyLowPass(data, 0.14f);
-            ApplyReverb(data, 30f, 0.22f, 3);
-            Normalize(data, 0.5f);
-            AudioClip clip = AudioClip.Create("GameplayTenseBGM", sc, 1, SAMPLE_RATE, false);
+            ApplyLowPass(data, 0.08f);
+            ApplyReverb(data, 50f, 0.35f, 4);
+            Normalize(data, 0.45f);
+            AudioClip clip = AudioClip.Create("GameplaySereneBGM", sc, 1, SAMPLE_RATE, false);
             clip.SetData(data, 0);
             return clip;
         }
 
         /// <summary>
-        /// 게임플레이 에너제틱 BGM — 캔디 팝 (C장조 펜타토닉, 128BPM)
-        /// 중독성 훅 멜로디 + 그루비 킥 + 오프비트 하이햇
+        /// 게임플레이 Gentle Flow BGM — 부드러운 흐름 (G장조, 76BPM)
+        /// 유려한 사인파 멜로디 + 코드 패드 + 미세 퍼커션
         /// </summary>
         public static AudioClip CreateGameplayEnergeticBGM(float duration = 90f)
         {
             int sc = Mathf.CeilToInt(SAMPLE_RATE * duration);
             float[] data = new float[sc];
             float[] nz = MakeNoiseTable(33);
-            // C 장조 펜타토닉 고음: C5, D5, E5, G5, A5, C6, D6, E6
-            float[] scale = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f, 1174.66f, 1318.51f };
-            float bpm = 108f; float s16 = 15f / bpm;
-            // 캐치 훅: C-E-G..A G-E-C → 변주 → 해결
+            // G장조 음계: G3, B3, D4, E4, G4, B4, D5, E5
+            float[] scale = { 196f, 246.94f, 293.66f, 329.63f, 392f, 493.88f, 587.33f, 659.25f };
+            float bpm = 76f; float s16 = 15f / bpm;
+            // 유려한 선율 (느린 상승-하강)
             int[] mel = {
-                0,-1, 2,-1, 3,-1,-1, 4,  3,-1, 2,-1, 0,-1,-1,-1,
-                0,-1, 2,-1, 3,-1, 5,-1, -1, 4,-1, 3, -1, 2,-1,-1,
-                4,-1, 3,-1, 2,-1,-1, 0,  1,-1, 2,-1, -1,-1,-1,-1,
-                0,-1, 2,-1, 4,-1, 3,-1,  2,-1, 0,-1, -1,-1,-1,-1 };
-            int[] ki = {
-                1,0,0,0, 0,0,0,0, 1,0,0,1, 0,0,0,0,
-                1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0,
-                1,0,0,0, 0,0,0,0, 1,0,0,1, 0,0,0,0,
-                1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,1,0 };
-            int[] hh = {
-                2,0,1,0, 2,0,1,0, 2,0,1,0, 2,0,1,0,
-                2,0,1,0, 2,0,1,0, 2,0,1,0, 2,0,1,0,
-                2,0,1,0, 2,0,1,0, 2,0,1,0, 2,0,1,1,
-                2,0,1,0, 2,0,1,0, 2,0,1,0, 2,1,1,1 };
+                0,-1,-1,-1,-1,-1, 1,-1, -1,-1,-1,-1, 2,-1,-1,-1,
+                -1,-1, 3,-1,-1,-1,-1,-1,  4,-1,-1,-1,-1,-1,-1,-1,
+                5,-1,-1,-1,-1,-1, 4,-1, -1,-1,-1,-1, 3,-1,-1,-1,
+                -1,-1, 2,-1,-1,-1, 1,-1, -1,-1,-1,-1, 0,-1,-1,-1 };
+            // 롱 톤 베이스 (2마디 간격)
             int[] bas = {
-                0,-1, 0,-1, -1,-1, 3,-1, 0,-1, 0,-1, -1,-1, 4,-1,
-                3,-1,-1,-1, 2,-1,-1, 0, -1,-1,-1,-1, -1, 0,-1,-1,
-                0,-1, 0,-1, -1,-1, 3,-1, 4,-1,-1,-1, 3,-1,-1,-1,
-                3,-1,-1,-1, 2,-1, 0,-1, -1,-1, 0,-1, -1,-1,-1,-1 };
+                0,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                2,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1 };
+            // 미세 퍼커션 (소프트 하이햇만, 반박자)
+            int[] hh = {
+                0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0,
+                0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0,
+                0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0,
+                0,0,0,0, 1,0,0,0, 0,0,0,0, 0,0,0,0 };
             int pLen = mel.Length; float pDur = pLen * s16;
             float mPh = 0f, bPh = 0f, mA = 99f, bA = 99f;
             float mF = scale[0], bF = scale[0] * 0.25f;
+            float padPh1 = 0f, padPh2 = 0f, padPh3 = 0f;
             float dt = 1f / SAMPLE_RATE; int pS = -1;
             for (int i = 0; i < sc; i++)
             {
@@ -1584,96 +2040,96 @@ namespace JewelsHexaPuzzle.Utils
                     pS = aS;
                 }
                 float v = 0f;
+                // 멜로디: 순수 사인파 (긴 어택 0.12초, 매우 긴 디케이)
                 mPh += 2f * Mathf.PI * mF / SAMPLE_RATE;
-                v += (Mathf.Sin(mPh) * 0.65f + GenerateWaveform(Waveform.Triangle, mPh) * 0.35f)
-                     * NoteEnvelope(mA, 0.015f, s16 * 1.5f, s16 * 7f) * 0.16f;
+                float mEnv = NoteEnvelope(mA, 0.12f, s16 * 3f, s16 * 14f);
+                v += Mathf.Sin(mPh) * mEnv * 0.13f;
                 mA += dt;
+                // 베이스: 따뜻한 저음
                 bPh += 2f * Mathf.PI * bF / SAMPLE_RATE;
-                v += Mathf.Sin(bPh) * NoteEnvelope(bA, 0.02f, s16 * 3f, s16 * 10f) * 0.08f;
+                v += Mathf.Sin(bPh) * NoteEnvelope(bA, 0.15f, s16 * 12f, s16 * 24f) * 0.05f;
                 bA += dt;
-                if (ki[step] > 0) v += DrumKick(st, 0.09f);
-                if (hh[step] > 0) v += DrumHat(st, nz[i % nz.Length], hh[step] == 2 ? 0.03f : 0.015f);
-                // 밝은 쉬머 (옥타브 위 하모닉)
-                float mEnv = NoteEnvelope(mA - dt, 0.015f, s16 * 1.5f, s16 * 7f);
-                v += Mathf.Sin(mPh * 2f) * 0.03f * mEnv;
+                // 패드: G-B-D 코드 (느린 호흡)
+                padPh1 += 2f * Mathf.PI * 196f / SAMPLE_RATE;
+                padPh2 += 2f * Mathf.PI * 246.94f / SAMPLE_RATE;
+                padPh3 += 2f * Mathf.PI * 293.66f / SAMPLE_RATE;
+                float padBreath = 0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 0.06f * t); // 16초 주기
+                v += (Mathf.Sin(padPh1) + Mathf.Sin(padPh2) + Mathf.Sin(padPh3)) * 0.015f * padBreath;
+                // 미세 하이햇 (매우 작은 소리)
+                if (hh[step] > 0) v += DrumHat(st, nz[i % nz.Length], 0.008f);
                 data[i] = v;
             }
-            ApplyLowPass(data, 0.12f);
-            ApplyReverb(data, 25f, 0.2f, 3);
-            Normalize(data, 0.5f);
-            AudioClip clip = AudioClip.Create("GameplayEnergeticBGM", sc, 1, SAMPLE_RATE, false);
+            ApplyLowPass(data, 0.07f);
+            ApplyReverb(data, 55f, 0.38f, 4);
+            Normalize(data, 0.42f);
+            AudioClip clip = AudioClip.Create("GameplayGentleFlowBGM", sc, 1, SAMPLE_RATE, false);
             clip.SetData(data, 0);
             return clip;
         }
 
         /// <summary>
-        /// 게임플레이 에픽 BGM — 타이탄 그루브 (D단조 펜타토닉, 108BPM)
-        /// 넓은 도약 멜로디 + 헤비 킥 + 두꺼운 하모닉 + 5도 더블링
+        /// 게임플레이 Dreamy Waltz BGM — 몽환적 왈츠 (F장조, 68BPM)
+        /// 넓은 코드 패드 + 천천히 떠다니는 멜로디 + 하모닉 잔향
         /// </summary>
         public static AudioClip CreateGameplayEpicBGM(float duration = 120f)
         {
             int sc = Mathf.CeilToInt(SAMPLE_RATE * duration);
             float[] data = new float[sc];
-            float[] nz = MakeNoiseTable(66);
-            // D 단조 펜타토닉 2옥타브: D4, F4, G4, A4, C5, D5, F5, G5
-            float[] scale = { 293.66f, 349.23f, 392f, 440f, 523.25f, 587.33f, 698.46f, 783.99f };
-            float bpm = 92f; float s16 = 15f / bpm;
-            // 드라마틱 와이드 멜로디
+            // F장조 음계: F3, A3, C4, D4, F4, A4, C5, D5
+            float[] scale = { 174.61f, 220f, 261.63f, 293.66f, 349.23f, 440f, 523.25f, 587.33f };
+            float bpm = 68f; float s16 = 15f / bpm;
+            // 몽환적 느린 선율 (반박자 쉼이 많아 여유로움)
             int[] mel = {
-                0,-1,-1, 3, -1,-1, 5,-1, -1, 4,-1,-1,  3,-1,-1,-1,
-                0,-1,-1, 3, -1,-1, 6,-1, -1, 5,-1, 4, -1, 3,-1,-1,
-                0,-1,-1, 3, -1,-1, 5,-1, -1, 7,-1,-1,  5,-1,-1,-1,
-                3,-1,-1, 5, -1,-1, 4,-1,  3,-1,-1, 2, -1,-1, 0,-1 };
-            int[] ki = {
-                1,0,0,0, 0,0,0,0, 1,0,1,0, 0,0,0,0,
-                1,0,0,0, 0,0,0,0, 1,0,1,0, 0,0,0,0,
-                1,0,0,0, 0,0,0,0, 1,0,1,0, 0,1,0,0,
-                1,0,0,0, 0,0,0,0, 1,0,0,0, 1,0,1,0 };
-            int[] hh = {
-                2,0,1,0, 2,1,1,0, 2,0,1,0, 2,1,1,0,
-                2,0,1,0, 2,1,1,0, 2,0,1,0, 2,1,1,0,
-                2,0,1,0, 2,1,1,0, 2,0,1,0, 2,1,1,1,
-                2,0,1,0, 2,1,1,0, 2,0,1,0, 2,1,2,1 };
-            int[] bas = {
-                0,-1,-1,-1, -1,-1, 0,-1, 0,-1,-1,-1, -1,-1,-1,-1,
-                0,-1,-1,-1, -1,-1, 0,-1, 2,-1,-1,-1, -1,-1,-1,-1,
-                0,-1,-1,-1, -1,-1, 0,-1, 0,-1,-1,-1, -1,-1, 3,-1,
-                3,-1,-1,-1, -1,-1, 4,-1, 0,-1,-1,-1, -1, 0,-1,-1 };
+                2,-1,-1,-1,-1,-1,-1,-1,  4,-1,-1,-1,-1,-1,-1,-1,
+                5,-1,-1,-1,-1,-1, 4,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+                3,-1,-1,-1,-1,-1,-1,-1,  5,-1,-1,-1,-1,-1,-1,-1,
+                4,-1,-1,-1,-1,-1, 2,-1, -1,-1,-1,-1,-1,-1,-1,-1 };
+            // 코드 패드 체인지 (8마디마다)
+            // F maj (F-A-C), Dm (D-F-A), Bb maj approx (F-A-D), C (C-E-G≈C-F-A)
+            float[][] chords = {
+                new[] { 174.61f, 220f, 261.63f },     // F major
+                new[] { 146.83f, 174.61f, 220f },     // Dm
+                new[] { 174.61f, 220f, 293.66f },     // F/D
+                new[] { 130.81f, 174.61f, 220f }      // C-F-A
+            };
             int pLen = mel.Length; float pDur = pLen * s16;
-            float mPh = 0f, bPh = 0f, mA = 99f, bA = 99f;
-            float mF = scale[0], bF = scale[0] * 0.5f;
+            float mPh = 0f, mA = 99f, mF = scale[2];
+            float cPh1 = 0f, cPh2 = 0f, cPh3 = 0f;
             float dt = 1f / SAMPLE_RATE; int pS = -1;
             for (int i = 0; i < sc; i++)
             {
                 float t = (float)i / SAMPLE_RATE;
                 int aS = (int)(t / s16); float pt = t % pDur;
-                int step = (int)(pt / s16) % pLen; float st = pt - step * s16;
+                int step = (int)(pt / s16) % pLen;
                 if (aS != pS) {
                     if (mel[step] >= 0) { mF = scale[mel[step]]; mA = 0f; }
-                    if (bas[step] >= 0) { bF = scale[bas[step]] * 0.5f; bA = 0f; }
                     pS = aS;
                 }
                 float v = 0f;
+                // 멜로디: 순수 사인파 + 미세 삼각파 (매우 긴 어택/디케이)
                 mPh += 2f * Mathf.PI * mF / SAMPLE_RATE;
-                float mEnv = NoteEnvelope(mA, 0.025f, s16 * 1.5f, s16 * 8f);
-                // 두꺼운 톤: Sine + Triangle + Sawtooth
-                v += (Mathf.Sin(mPh) * 0.55f + GenerateWaveform(Waveform.Triangle, mPh) * 0.3f
-                     + GenerateWaveform(Waveform.Sawtooth, mPh) * 0.15f) * mEnv * 0.16f;
+                float mEnv = NoteEnvelope(mA, 0.15f, s16 * 4f, s16 * 18f);
+                v += (Mathf.Sin(mPh) * 0.85f + GenerateWaveform(Waveform.Triangle, mPh) * 0.15f)
+                     * mEnv * 0.11f;
+                // 옥타브 아래 더블링 (은은한 깊이)
+                v += Mathf.Sin(mPh * 0.5f) * mEnv * 0.04f;
                 mA += dt;
-                bPh += 2f * Mathf.PI * bF / SAMPLE_RATE;
-                v += Mathf.Sin(bPh) * NoteEnvelope(bA, 0.02f, s16 * 3f, s16 * 10f) * 0.09f;
-                bA += dt;
-                if (ki[step] > 0) v += DrumKick(st, 0.11f);
-                if (hh[step] > 0) v += DrumHat(st, nz[i % nz.Length], hh[step] == 2 ? 0.035f : 0.018f);
-                // 옥타브 더블링 + 5도 하모니
-                v += Mathf.Sin(mPh * 0.5f) * mEnv * 0.08f;
-                v += Mathf.Sin(2f * Mathf.PI * mF * 1.5f / SAMPLE_RATE * i) * mEnv * 0.05f;
+                // 코드 패드: 4마디(16step) 간격으로 코드 변경, 느린 호흡
+                int chordIdx = ((int)(pt / (16f * s16))) % chords.Length;
+                float[] chord = chords[chordIdx];
+                cPh1 += 2f * Mathf.PI * chord[0] / SAMPLE_RATE;
+                cPh2 += 2f * Mathf.PI * chord[1] / SAMPLE_RATE;
+                cPh3 += 2f * Mathf.PI * chord[2] / SAMPLE_RATE;
+                float padSwell = 0.5f + 0.5f * Mathf.Sin(2f * Mathf.PI * 0.05f * t); // 20초 주기
+                v += (Mathf.Sin(cPh1) + Mathf.Sin(cPh2) + Mathf.Sin(cPh3)) * 0.02f * padSwell;
+                // 은은한 옥타브 위 쉬머 (하모닉 잔향)
+                v += Mathf.Sin(cPh3 * 2f) * 0.006f * padSwell;
                 data[i] = v;
             }
-            ApplyLowPass(data, 0.14f);
-            ApplyReverb(data, 45f, 0.3f, 4);
-            Normalize(data, 0.5f);
-            AudioClip clip = AudioClip.Create("GameplayEpicBGM", sc, 1, SAMPLE_RATE, false);
+            ApplyLowPass(data, 0.06f);
+            ApplyReverb(data, 60f, 0.4f, 5);
+            Normalize(data, 0.4f);
+            AudioClip clip = AudioClip.Create("GameplayDreamyWaltzBGM", sc, 1, SAMPLE_RATE, false);
             clip.SetData(data, 0);
             return clip;
         }

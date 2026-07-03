@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using JewelsHexaPuzzle.Data;
+using JewelsHexaPuzzle.Managers;
 
 namespace JewelsHexaPuzzle.Core
 {
@@ -29,6 +30,9 @@ namespace JewelsHexaPuzzle.Core
         public bool IsClockwise => clockwiseRotation && !oneTimeCounterClockwise;
         public bool IsOneTimeCounterClockwiseActive => oneTimeCounterClockwise;
         public int LastRotationCost => lastRotationCost;
+
+        /// <summary>마지막 매칭이 발생한 블록들의 월드 좌표 중심점 (ReverseRotationItem 등에서 팝업 위치로 사용)</summary>
+        public Vector3 LastMatchedWorldCenter { get; private set; }
 
         private void Start()
         {
@@ -100,7 +104,29 @@ namespace JewelsHexaPuzzle.Core
                     $"{block1.Coord}↔{block3.Coord}={block1.Coord.DistanceTo(block3.Coord)})");
                 return;
             }
-            if (!CanRotate(block1, block2, block3)) return;
+            if (!CanRotate(block1, block2, block3))
+            {
+                // 흙더미·사슬·고정블록 등 회전 차단 사유 안내
+                bool hasDirt = (block1.Data?.dirtMound > 0) || (block2.Data?.dirtMound > 0) || (block3.Data?.dirtMound > 0);
+                bool hasChain = (block1.Data?.hasChain == true) || (block2.Data?.hasChain == true) || (block3.Data?.hasChain == true);
+                bool hasFixed = (block1.Data?.specialType == SpecialBlockType.FixedBlock)
+                             || (block2.Data?.specialType == SpecialBlockType.FixedBlock)
+                             || (block3.Data?.specialType == SpecialBlockType.FixedBlock);
+                if (UIManager.Instance != null)
+                {
+                    if (hasDirt) UIManager.Instance.ShowToast("<color=#A06030>흙더미</color>가 있어 회전할 수 없어요!");
+                    else if (hasChain) UIManager.Instance.ShowToast("사슬에 묶인 블록이 있어 회전 불가!");
+                    else if (hasFixed) UIManager.Instance.ShowToast("고정 블록이 있어 회전 불가!");
+                }
+                return;
+            }
+
+            // ★ 회전 시작 전, 클러스터의 모든 블록에서 MP 부족 흔들림 코루틴 중단
+            //   흔들림이 anchoredPosition을 덮어쓰는 중에 회전 트윈이 시작되면 위치 충돌로
+            //   블록이 셀 좌표에서 벗어난 위치에 고정되는 버그 방지.
+            block1.CancelInsufficientShake();
+            block2.CancelInsufficientShake();
+            block3.CancelInsufficientShake();
 
             // 블록을 시계방향 순서로 정렬
             HexBlock[] sorted = SortBlocksClockwise(block1, block2, block3);
@@ -251,6 +277,7 @@ namespace JewelsHexaPuzzle.Core
                 int totalBlocks = 0;
                 foreach (var m in matches) totalBlocks += m.blocks.Count;
                 OnMatchDetected?.Invoke(totalBlocks);
+                LastMatchedWorldCenter = ComputeMatchedCenter(matches);
                 oneTimeCounterClockwise = false; // 1회성 역회전 리셋
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
@@ -274,6 +301,7 @@ namespace JewelsHexaPuzzle.Core
                 int totalBlocks = 0;
                 foreach (var m in matches) totalBlocks += m.blocks.Count;
                 OnMatchDetected?.Invoke(totalBlocks);
+                LastMatchedWorldCenter = ComputeMatchedCenter(matches);
                 oneTimeCounterClockwise = false; // 1회성 역회전 리셋
                 isRotating = false;
                 OnRotationComplete?.Invoke(true);
@@ -294,6 +322,30 @@ namespace JewelsHexaPuzzle.Core
             oneTimeCounterClockwise = false; // 1회성 역회전 리셋
             isRotating = false;
             OnRotationComplete?.Invoke(false);
+        }
+
+        /// <summary>
+        /// 매칭된 모든 블록의 월드 좌표 평균을 계산.
+        /// 역회전 등 매칭 위치 기반 팝업 표시용.
+        /// </summary>
+        private Vector3 ComputeMatchedCenter(List<MatchingSystem.MatchGroup> matches)
+        {
+            if (matches == null || matches.Count == 0)
+                return Vector3.zero;
+
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+            foreach (var group in matches)
+            {
+                if (group?.blocks == null) continue;
+                foreach (var b in group.blocks)
+                {
+                    if (b == null) continue;
+                    sum += b.transform.position;
+                    count++;
+                }
+            }
+            return count > 0 ? sum / count : Vector3.zero;
         }
 
         /// <summary>

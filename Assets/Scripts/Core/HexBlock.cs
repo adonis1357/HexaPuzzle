@@ -15,6 +15,8 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private Image backgroundImage;
         [SerializeField] private Image gemImage;
         [SerializeField] private Image borderImage;
+        // ★ isCracked(몬스터 공격받음) 블록의 상단 3면 회색 표시용 — Image.Filled Vertical/Top/0.5
+        private Image grayTopBorderImage;
         [SerializeField] private Image overlayImage;
         [SerializeField] private Image drillIndicator;
         [SerializeField] private Text timerText;
@@ -36,12 +38,85 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite drillVerticalSprite;
         private static Sprite drillSlashSprite;
         private static Sprite drillBackSlashSprite;
+        // 외부 드릴 텍스처 캐시 (Resources/Icons/icon_drill_base)
+        private static Texture2D _drillBaseTexture;
+        private static Color[] _drillBasePixels;
+        private static int _drillBaseWidth;
+        private static int _drillBaseHeight;
+        private static bool _drillBaseLoadAttempted;
                 private static Sprite bombIconSprite;
         private static Sprite donutIconSprite;
         private static Sprite xBlockIconSprite;
         private static Sprite droneIconSprite;
         private static Sprite chainOverlaySprite;
         private static Sprite thornOverlaySprite;
+
+        // ★ DamagedBlocks 패키지 PNG 캐시
+        //   - clawedSprites[GemType] : 깨진 블록 본체 (Clawed = 몬스터에게 공격받음)
+        //   - stolenSprite           : 회색 쉘 블록 본체 (Stolen = 완전히 점령당함)
+        private static Sprite[] clawedSprites;
+        private static Sprite stolenSprite;
+        private static bool _damagedSpritesAttempted;
+
+        // ★ 매 재생 시작 시 PNG 캐시를 모두 클리어 → 새 PNG로 강제 재로드.
+        //   Unity "Enter Play Mode → Reload Domain" 옵션이 꺼져있어도 동작.
+        //   Resources/Icons/icon_*_base.png 변경 후 재생만으로 즉시 반영된다.
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetIconCaches_HexBlock()
+        {
+            drillVerticalSprite = null;
+            drillSlashSprite = null;
+            drillBackSlashSprite = null;
+            _drillBaseTexture = null;
+            _drillBasePixels = null;
+            _drillBaseLoadAttempted = false;
+            bombIconSprite = null;
+            donutIconSprite = null;
+            xBlockIconSprite = null;
+            droneIconSprite = null;
+            clawedSprites = null;
+            stolenSprite = null;
+            _damagedSpritesAttempted = false;
+        }
+
+        /// <summary>
+        /// DamagedBlocks 패키지 PNG 로드 (Clawed 6색 + Stolen 1장).
+        /// Resources/Gems/clawed_{red,orange,yellow,green,blue,purple}.png + stolen.png.
+        /// 첫 호출 시 1회만 로드 시도 (실패 시 null 유지 → 폴백 동작).
+        /// </summary>
+        private static void EnsureDamagedSpritesLoaded()
+        {
+            if (_damagedSpritesAttempted) return;
+            _damagedSpritesAttempted = true;
+
+            // GemType 최대값 + 1 (None=0, Red=1, Blue=2, Green=3, Yellow=4, Purple=5, Orange=6)
+            clawedSprites = new Sprite[7];
+            clawedSprites[(int)GemType.Red]    = LoadDamagedSprite("Gems/clawed_red");
+            clawedSprites[(int)GemType.Blue]   = LoadDamagedSprite("Gems/clawed_blue");
+            clawedSprites[(int)GemType.Green]  = LoadDamagedSprite("Gems/clawed_green");
+            clawedSprites[(int)GemType.Yellow] = LoadDamagedSprite("Gems/clawed_yellow");
+            clawedSprites[(int)GemType.Purple] = LoadDamagedSprite("Gems/clawed_purple");
+            clawedSprites[(int)GemType.Orange] = LoadDamagedSprite("Gems/clawed_orange");
+            stolenSprite = LoadDamagedSprite("Gems/stolen");
+        }
+
+        private static Sprite LoadDamagedSprite(string resourcePath)
+        {
+            var tex = Resources.Load<Texture2D>(resourcePath);
+            if (tex == null) return null;
+            return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height),
+                                  new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>현재 블록 색상에 맞는 Clawed 본체 스프라이트 반환. 없으면 null.</summary>
+        private Sprite GetClawedSpriteForCurrentColor()
+        {
+            if (blockData == null) return null;
+            EnsureDamagedSpritesLoaded();
+            int idx = (int)blockData.gemType;
+            if (clawedSprites == null || idx < 0 || idx >= clawedSprites.Length) return null;
+            return clawedSprites[idx];
+        }
 
         // 적군 오버레이 스프라이트
         private static Sprite dividerOverlaySprite;
@@ -53,6 +128,9 @@ namespace JewelsHexaPuzzle.Core
         private static Sprite chaosOverlordOverlaySprite;
         private static Sprite crackedOverlaySprite;
         private static Sprite goblinBombOverlaySprite;
+        // 폭탄 카운트다운 3프레임 시트 (00:03 / 00:02 / 00:01), null = PNG 미발견(프로시저럴 폴백)
+        private static Sprite[] goblinBombCountdownFrames;
+        private static bool goblinBombCountdownLoaded;
 
         // 고블린 폭탄 오버레이 UI
         private Image goblinBombImage;
@@ -79,6 +157,37 @@ namespace JewelsHexaPuzzle.Core
             return hexFillSprite;
         }
 
+        // ★ 인디케이터(특수블록 이동범위/아이템 지정·목표) 공통 원형 스프라이트 + 3색 통일.
+        //   사각형/육각형 → 원형, 모든 블록에서 잘 보이게: 검정 외곽링(틴트해도 검정 유지=밝은 블록 대비) +
+        //   흰 컬러링(틴트=상태색, 어두운 블록 대비) + 반투명 채움.
+        private static Sprite _circleIndicatorSprite;
+        public static readonly Color IndicatorInitial = new Color(1f, 1f, 1f, 1f);      // 처음 지정(선택) — 흰색
+        public static readonly Color IndicatorMovable = new Color(0.25f, 1f, 0.5f, 1f);  // 이동 가능 — 녹색
+        public static readonly Color IndicatorTarget  = new Color(1f, 0.62f, 0.1f, 1f);  // 드래그 목표 — 호박색
+        public static Sprite GetCircleIndicatorSprite()
+        {
+            if (_circleIndicatorSprite != null && _circleIndicatorSprite.texture != null) return _circleIndicatorSprite;
+            const int SZ = 128;
+            var tex = new Texture2D(SZ, SZ, TextureFormat.RGBA32, false);
+            var px = new Color[SZ * SZ];
+            float c = (SZ - 1) * 0.5f;
+            float rOut = SZ * 0.49f, rBlackIn = SZ * 0.45f, rRingIn = SZ * 0.37f;
+            for (int y = 0; y < SZ; y++)
+                for (int x = 0; x < SZ; x++)
+                {
+                    float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c));
+                    Color col;
+                    if (d > rOut) col = new Color(0f, 0f, 0f, 0f);
+                    else if (d > rBlackIn) col = new Color(0f, 0f, 0f, 1f - Mathf.Clamp01((d - (rOut - 1.5f)) / 1.5f)); // 검정 외곽(소프트 끝)
+                    else if (d > rRingIn) col = new Color(1f, 1f, 1f, 1f);   // 컬러 링(Image.color로 틴트)
+                    else col = new Color(1f, 1f, 1f, 0.28f);                 // 반투명 채움
+                    px[y * SZ + x] = col;
+                }
+            tex.SetPixels(px); tex.Apply(); tex.filterMode = FilterMode.Bilinear;
+            _circleIndicatorSprite = Sprite.Create(tex, new Rect(0, 0, SZ, SZ), new Vector2(0.5f, 0.5f), 100f);
+            return _circleIndicatorSprite;
+        }
+
         public static Sprite GetHexBorderSprite()
         {
             if (hexBorderSprite == null)
@@ -95,6 +204,86 @@ namespace JewelsHexaPuzzle.Core
         public bool IsSelected => isSelected;
         public bool CanInteract => blockData != null && blockData.gemType != GemType.None && blockData.CanMove();
         public EnemyType CurrentEnemyType => enemyType;
+
+        // ============================================================
+        // 부족 피드백 흔들림 (MP/자원 부족 시 능력 차단 시각 표현)
+        // ============================================================
+        private Coroutine insufficientShakeCoroutine;
+        private Vector2 insufficientShakeOriginalPos;
+        private bool insufficientShakeOriginalCaptured;
+
+        /// <summary>
+        /// MP 부족 등으로 능력이 차단됐을 때 블록을 좌우로 짧게 흔드는 피드백.
+        /// 연속 호출 시 진행 중 흔들림을 멈추고 원래 위치 복원 후 새로 시작 → 위치 드리프트 방지.
+        /// </summary>
+        public void PlayInsufficientShake(float duration = 0.35f, float magnitude = 6f)
+        {
+            var rt = GetComponent<RectTransform>();
+            if (rt == null) return;
+
+            // 진행 중 흔들림 중단 + 원래 위치 강제 복원
+            if (insufficientShakeCoroutine != null)
+            {
+                StopCoroutine(insufficientShakeCoroutine);
+                insufficientShakeCoroutine = null;
+                if (insufficientShakeOriginalCaptured)
+                    rt.anchoredPosition = insufficientShakeOriginalPos;
+            }
+
+            // 원래 위치 1회만 캡처 (흔들림 중 캡처 방지)
+            if (!insufficientShakeOriginalCaptured)
+            {
+                insufficientShakeOriginalPos = rt.anchoredPosition;
+                insufficientShakeOriginalCaptured = true;
+            }
+
+            insufficientShakeCoroutine = StartCoroutine(InsufficientShakeCoroutine(rt, duration, magnitude));
+        }
+
+        /// <summary>
+        /// 진행 중인 InsufficientShake 즉시 중단 + 원래 위치 복원.
+        /// 회전/이동/스왑 등 외부 시스템이 블록 위치를 변경하기 직전에 호출해
+        /// 흔들림이 새 위치를 덮어쓰지 않도록 함.
+        /// </summary>
+        public void CancelInsufficientShake()
+        {
+            if (insufficientShakeCoroutine == null) return;
+
+            StopCoroutine(insufficientShakeCoroutine);
+            insufficientShakeCoroutine = null;
+
+            // 흔들림 시작 전 캡처한 원위치로 즉시 복원 → 외부 시스템(회전 등)이
+            // 그 다음에 정확한 셀 위치로 다시 트윈/세팅하면 됨
+            if (insufficientShakeOriginalCaptured)
+            {
+                var rt = GetComponent<RectTransform>();
+                if (rt != null) rt.anchoredPosition = insufficientShakeOriginalPos;
+                insufficientShakeOriginalCaptured = false;
+            }
+        }
+
+        private IEnumerator InsufficientShakeCoroutine(RectTransform rt, float duration, float magnitude)
+        {
+            float elapsed = 0f;
+            int oscillations = 4; // 좌우 4번 진동
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime; // 일시정지 중에도 동작
+                float t = elapsed / duration;
+
+                // 좌우 흔들림 (감쇠 사인파)
+                float shake = Mathf.Sin(t * Mathf.PI * oscillations * 2f) * magnitude * (1f - t);
+                rt.anchoredPosition = insufficientShakeOriginalPos + new Vector2(shake, 0f);
+
+                yield return null;
+            }
+
+            // 원래 위치 복원
+            rt.anchoredPosition = insufficientShakeOriginalPos;
+            insufficientShakeCoroutine = null;
+            insufficientShakeOriginalCaptured = false; // 다음 호출에서 새로 캡처
+        }
 
         /// <summary>
         /// 블록에 적군 설정 (색상도둑 등)
@@ -315,10 +504,18 @@ namespace JewelsHexaPuzzle.Core
                 hexGemSprite = CreateAAInnerHexSprite(TEX_SIZE, INNER_BORDER_WIDTH * scale);
             if (drillVerticalSprite == null)
             {
-                drillVerticalSprite = CreateArrowSprite(256, 0);      // r축: 화면 세로 ↕
-                drillSlashSprite = CreateArrowSprite(256, -60);     // s축: 화면 / 방향 (세로에서 시계 60°)
-                drillBackSlashSprite = CreateArrowSprite(256, 60);  // q축: 화면 \\ 방향 (세로에서 시계 120°)
+                // ★ PowerUps PNG는 가로 화살표 디자인이라 모든 드릴에 +90° 시계방향 보정.
+                //   Vertical: 0+90=90 (세로 ↕)
+                //   Slash:   -60+90=30 (사선 /)
+                //   BackSlash: 60+90=150 (사선 \\)
+                drillVerticalSprite = CreateArrowSprite(256, 90);
+                drillSlashSprite = CreateArrowSprite(256, 30);
+                drillBackSlashSprite = CreateArrowSprite(256, 150);
             }
+            // ★ 특수 블록 외부 PNG 로드 트리거 (startup 진단용) — 콘솔에 로드 성공/실패 로그가 1회씩 출력됨
+            if (bombIconSprite == null) bombIconSprite = BombBlockSystem.GetBombIconSprite();
+            if (donutIconSprite == null) donutIconSprite = DonutBlockSystem.GetDonutIconSprite();
+            if (droneIconSprite == null) droneIconSprite = DroneBlockSystem.GetDroneIconSprite();
         }
 
         /// <summary>
@@ -486,9 +683,121 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 세련된 드릴 아이콘 - 양방향 화살표 + 메탈릭 그라데이션 + 글로우
+        /// 드릴 아이콘 - 외부 PNG(Resources/Icons/icon_drill_base)를 회전하여 생성
+        /// 이미지 로드 실패 시 기존 프로시저럴 폴백
         /// </summary>
         private static Sprite CreateDrillSprite_Refined(int size, float rotation)
+        {
+            if (EnsureDrillBasePixelsLoaded())
+                return CreateRotatedDrillFromImage(size, rotation);
+            return CreateDrillSprite_Procedural(size, rotation);
+        }
+
+        /// <summary>
+        /// 외부 드릴 이미지 텍스처를 Resources에서 로드하고 픽셀 배열을 캐시
+        /// </summary>
+        private static bool EnsureDrillBasePixelsLoaded()
+        {
+            if (_drillBasePixels != null) return true;
+            if (_drillBaseLoadAttempted) return false;
+            _drillBaseLoadAttempted = true;
+            _drillBaseTexture = Resources.Load<Texture2D>("Icons/icon_drill_base");
+            if (_drillBaseTexture == null)
+            {
+                Debug.LogWarning("[HexBlock] Resources/Icons/icon_drill_base 텍스처를 찾을 수 없습니다. 프로시저럴 폴백 사용.");
+                return false;
+            }
+            try
+            {
+                _drillBasePixels = _drillBaseTexture.GetPixels();
+                _drillBaseWidth = _drillBaseTexture.width;
+                _drillBaseHeight = _drillBaseTexture.height;
+                return true;
+            }
+            catch (UnityException e)
+            {
+                Debug.LogWarning($"[HexBlock] icon_drill_base GetPixels 실패 (isReadable 확인 필요): {e.Message}");
+                _drillBasePixels = null;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 캐시된 드릴 픽셀을 지정 각도로 회전하여 출력 크기 스프라이트 생성
+        /// 회전 방향은 기존 프로시저럴(CreateDrillSprite_Procedural)과 동일하게 매칭:
+        /// - rotation > 0: 시계 방향, rotation < 0: 반시계 방향
+        /// </summary>
+        private static Sprite CreateRotatedDrillFromImage(int outputSize, float degrees)
+        {
+            int sw = _drillBaseWidth;
+            int sh = _drillBaseHeight;
+            Color[] srcPixels = _drillBasePixels;
+
+            Texture2D dst = new Texture2D(outputSize, outputSize, TextureFormat.RGBA32, false);
+            dst.filterMode = FilterMode.Bilinear;
+            Color[] dstPixels = new Color[outputSize * outputSize];
+
+            float rad = degrees * Mathf.Deg2Rad;
+            // 출력→원본 역회전 매트릭스 (프로시저럴 코드와 동일 방향: Cos(-rad), Sin(-rad))
+            float cos = Mathf.Cos(-rad);
+            float sin = Mathf.Sin(-rad);
+
+            float outCenter = outputSize / 2f;
+            float srcCenterX = sw / 2f;
+            float srcCenterY = sh / 2f;
+            float scale = (float)sw / outputSize;
+
+            for (int y = 0; y < outputSize; y++)
+            {
+                for (int x = 0; x < outputSize; x++)
+                {
+                    float ox = (x - outCenter) * scale;
+                    float oy = (y - outCenter) * scale;
+                    float sx = ox * cos - oy * sin + srcCenterX;
+                    float sy = ox * sin + oy * cos + srcCenterY;
+
+                    if (sx < 0f || sx >= sw - 1f || sy < 0f || sy >= sh - 1f)
+                    {
+                        dstPixels[y * outputSize + x] = Color.clear;
+                        continue;
+                    }
+
+                    int x0 = (int)sx;
+                    int y0 = (int)sy;
+                    int x1 = x0 + 1;
+                    int y1 = y0 + 1;
+                    float fx = sx - x0;
+                    float fy = sy - y0;
+
+                    Color c00 = srcPixels[y0 * sw + x0];
+                    Color c10 = srcPixels[y0 * sw + x1];
+                    Color c01 = srcPixels[y1 * sw + x0];
+                    Color c11 = srcPixels[y1 * sw + x1];
+
+                    float w00 = (1f - fx) * (1f - fy);
+                    float w10 = fx * (1f - fy);
+                    float w01 = (1f - fx) * fy;
+                    float w11 = fx * fy;
+
+                    dstPixels[y * outputSize + x] = new Color(
+                        c00.r * w00 + c10.r * w10 + c01.r * w01 + c11.r * w11,
+                        c00.g * w00 + c10.g * w10 + c01.g * w01 + c11.g * w11,
+                        c00.b * w00 + c10.b * w10 + c01.b * w01 + c11.b * w11,
+                        c00.a * w00 + c10.a * w10 + c01.a * w01 + c11.a * w11
+                    );
+                }
+            }
+
+            dst.SetPixels(dstPixels);
+            dst.Apply();
+            return Sprite.Create(dst, new Rect(0, 0, outputSize, outputSize), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        /// <summary>
+        /// 프로시저럴 드릴 아이콘 - 양방향 화살표 + 메탈릭 그라데이션 + 글로우
+        /// 외부 이미지 로드 실패 시 폴백으로 사용
+        /// </summary>
+        private static Sprite CreateDrillSprite_Procedural(int size, float rotation)
         {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
@@ -1019,9 +1328,39 @@ namespace JewelsHexaPuzzle.Core
             }
 
             borderImage.sprite = GemSpriteProvider.GetBorderSprite() ?? hexBorderSprite;
-            borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 테두리 색상 및 불투명도
+            borderImage.color = GetDefaultBorderColor();  // 강화된 테두리 색상 및 불투명도
             borderImage.raycastTarget = false;
             borderImage.type = Image.Type.Simple;
+
+            // ★ 상단 3면 회색 오버레이 (isCracked 블록 전용)
+            //   borderImage와 동일한 sprite + RectTransform, type=Filled Vertical Top 0.5로
+            //   상단 절반(=flat-top 헥사의 위 3면)만 회색으로 덮어 표시.
+            //   isCracked가 아닐 때는 enabled=false로 숨김.
+            if (grayTopBorderImage == null)
+            {
+                GameObject grayTopObj = new GameObject("BorderTopGray");
+                grayTopObj.transform.SetParent(transform, false);
+                grayTopObj.transform.SetAsLastSibling();  // borderImage 위에 그리기
+
+                grayTopBorderImage = grayTopObj.AddComponent<Image>();
+                RectTransform gtRt = grayTopObj.GetComponent<RectTransform>();
+                gtRt.anchorMin = Vector2.zero;
+                gtRt.anchorMax = Vector2.one;
+                gtRt.offsetMin = Vector2.zero;
+                gtRt.offsetMax = Vector2.zero;
+            }
+            else
+            {
+                grayTopBorderImage.transform.SetAsLastSibling();
+            }
+            grayTopBorderImage.sprite = borderImage.sprite;
+            grayTopBorderImage.color = Color.gray;
+            grayTopBorderImage.raycastTarget = false;
+            grayTopBorderImage.type = Image.Type.Filled;
+            grayTopBorderImage.fillMethod = Image.FillMethod.Vertical;
+            grayTopBorderImage.fillOrigin = (int)Image.OriginVertical.Top;
+            grayTopBorderImage.fillAmount = 0.5f;
+            grayTopBorderImage.enabled = false;
 
             // ★ 초기 숨김: SetBlockData → UpdateVisuals 전까지 보이지 않도록
             gemImage.color = Color.clear;
@@ -1057,10 +1396,12 @@ namespace JewelsHexaPuzzle.Core
             this.parentGrid = grid;
             this.blockData = new BlockData();
 
-            // 특수 블록 아이콘 크기: 블록 높이(√3 × hexSize)의 80%
+            // 특수 블록 아이콘 크기: 블록 높이(√3 × hexSize)의 105%
+            //   PowerUps 패키지 PNG는 콘텐츠가 가운데에 약 70% 비율로 그려져 있어
+            //   기존 0.8 계수로는 폭탄/드론이 작아 보였다 → 1.05로 키워 헥사 내부에 가득.
             if (drillIndicator != null && grid != null)
             {
-                float iconSize = grid.HexSize * Mathf.Sqrt(3f) * 0.8f;
+                float iconSize = grid.HexSize * Mathf.Sqrt(3f) * 1.05f;
                 drillIndicator.rectTransform.sizeDelta = new Vector2(iconSize, iconSize);
             }
 
@@ -1107,11 +1448,25 @@ public void SetBlockData(BlockData data)
 
             blockData = data != null ? data.Clone() : new BlockData();
 
-            // 최종 안전장치: 적군이 아닌데 회색인 경우만 변환
+            // 최종 안전장치 1: 적군이 아닌데 회색인 경우만 변환
             // (적군 블록은 Gray가 정상이므로 변환하면 안 됨)
             if (blockData.gemType == GemType.Gray && blockData.enemyType == EnemyType.None)
             {
                 Debug.LogError($"[HexBlock] 🚨 적군 아닌 회색 블록이 {Coord}에 설정됨! GemTypeHelper.GetRandom()으로 변환");
+                blockData.gemType = GemTypeHelper.GetRandom();
+            }
+
+            // 최종 안전장치 2: ActiveGemTypeCount 범위 밖의 비활성 기본 색상 차단
+            // Orange(6) 등 비활성 색은 외부 Gems 텍스처가 없으면 grayscale fallback으로 회색처럼 렌더링됨.
+            // 일반 블록에만 적용 — 상위 티어 보석(Ruby/Emerald/Sapphire/Amber/Amethyst)은 허용.
+            int activeMax = GemTypeHelper.ActiveGemTypeCount;
+            int gemInt = (int)blockData.gemType;
+            if (gemInt > activeMax && gemInt <= (int)GemType.Orange
+                && blockData.enemyType == EnemyType.None
+                && blockData.specialType == SpecialBlockType.None
+                && blockData.tier == BlockTier.Normal)
+            {
+                Debug.LogWarning($"[HexBlock] ⚠ 비활성 색상({blockData.gemType}, Active={activeMax}) 감지 @ {Coord} → 활성 색상으로 교정");
                 blockData.gemType = GemTypeHelper.GetRandom();
             }
 
@@ -1177,6 +1532,56 @@ public void SetBlockData(BlockData data)
             HideGoblinBombOverlay();
         }
 
+        /// <summary>
+        /// 기본(비매칭/비강조) 상태의 테두리 색상.
+        /// 사용자 요청: "기본 블록의 특징이 되는 색상" — 블록의 GemType 색을
+        /// 외곽선에 강하게 표시해 색상 식별성을 높인다.
+        /// blockData가 없거나 GemType.None이면 기존 톤(베이지)로 폴백.
+        /// </summary>
+        private Color GetDefaultBorderColor()
+        {
+            if (blockData == null || blockData.gemType == GemType.None)
+                return new Color(0.94f, 0.91f, 0.88f, 0.45f);
+
+            // ★ 손상 상태: 점령당함(isShell) → 전체 테두리 검정.
+            //   공격받음(isCracked)는 grayTopBorderImage로 상단 3면만 회색 처리 →
+            //   borderImage 본체는 원래 색상 유지 (이 헬퍼에서 회색으로 덮지 않음).
+            if (blockData.isShell) return Color.black;
+
+            Color c = GemColors.GetColor(blockData.gemType);
+            // 풀컬러 + 강한 알파(0.95)로 외곽선 색상을 또렷하게 표현.
+            // 너무 어두운 색(블루/퍼플)은 살짝 밝혀 어두운 배경에서 잘 보이게 한다.
+            float luma = c.r * 0.299f + c.g * 0.587f + c.b * 0.114f;
+            if (luma < 0.45f)
+            {
+                float lift = (0.45f - luma) * 0.8f;
+                c.r = Mathf.Clamp01(c.r + lift);
+                c.g = Mathf.Clamp01(c.g + lift);
+                c.b = Mathf.Clamp01(c.b + lift);
+            }
+
+            // ★ 미션 타겟 색 강조 (플레이테스트 개선 #2) — 활성 수집 미션의 타겟 색이면
+            //   외곽선을 흰색 쪽으로 45% 끌어올려 은은하게 빛나는 느낌 (정적 — 프레임 비용 0).
+            //   "무엇을 노릴지" 시각 동기: 선택지가 40~60개라 매칭 자체는 쉽고,
+            //   어느 색을 매칭할지가 실제 게임이기 때문.
+            if (MissionTargetColors.Contains(blockData.gemType))
+            {
+                c = Color.Lerp(c, Color.white, 0.45f);
+                return new Color(c.r, c.g, c.b, 1f);
+            }
+
+            return new Color(c.r, c.g, c.b, 0.95f);
+        }
+
+        /// <summary>
+        /// 외곽선 색만 재적용 (미션 타겟 변경 시 일괄 갱신용 — StageManager에서 호출).
+        /// </summary>
+        public void RefreshBorderColor()
+        {
+            if (borderImage != null && !isMatched)
+                borderImage.color = GetDefaultBorderColor();
+        }
+
 public void UpdateVisuals()
         {
             EnsureSpritesCreated();
@@ -1187,37 +1592,56 @@ public void UpdateVisuals()
                 return;
             }
 
-            // ── 껍데기(쉘) 블록: 고유 색 상실, 동일한 회색 + 심한 크랙 ──
+            // ── 껍데기(쉘) 블록: "완전히 점령당함" — MonsterStolen.png 사용 ──
             if (blockData.isShell)
             {
-                // 배경/젬/테두리 모두 동일한 회색 톤으로 통일
+                EnsureDamagedSpritesLoaded();
                 Color shellGray = new Color(0.52f, 0.50f, 0.48f, 1f);
 
                 if (backgroundImage != null)
                     backgroundImage.color = shellGray;
 
-                // 젬: 스프라이트를 완전 불투명 육각형으로 교체 (외부 스프라이트의 투명 픽셀 제거)
                 if (gemImage != null)
                 {
-                    gemImage.sprite = hexFillSprite;  // 투명 영역 없는 꽉 찬 육각형
-                    gemImage.color = shellGray;
+                    if (stolenSprite != null)
+                    {
+                        // ★ PNG 사용: MonsterStolen 디자인 (점령당한 표시) 그대로 표시.
+                        //   PNG 자체에 색상/디자인 포함 → 흰색 tint로 원본 색 유지.
+                        gemImage.sprite = stolenSprite;
+                        gemImage.color = Color.white;
+                    }
+                    else
+                    {
+                        // 폴백: 기존 회색 헥사 (PNG 미발견 시)
+                        gemImage.sprite = hexFillSprite;
+                        gemImage.color = shellGray;
+                    }
                     gemImage.enabled = true;
+
+                    // ★ 점령(쉘) 시 특수 블록 반짝임(UI/HexSpecialGem shimmer) 머티리얼 제거 → 일반 젬 머티리얼로 복귀.
+                    //   특수 블록이 크랙 단계 없이 직접 쉘로 변환되는 경로(ConvertToShellBlock 직접 호출 등)에서는
+                    //   specialMat이 남아 점령된 자리가 계속 반짝이던 버그가 있었다. 일반 쉘과 동일 외형으로 통일.
+                    Material shellGemMat = GemMaterialManager.GetGemMaterial();
+                    if (shellGemMat != null) gemImage.material = shellGemMat;
                 }
 
-                // 테두리: 약간 어두운 회색 (윤곽만 살짝)
+                // 테두리: 점령당한 블록 = 검정색 고정
                 if (borderImage != null)
                 {
                     borderImage.enabled = true;
-                    borderImage.color = new Color(0.42f, 0.40f, 0.38f, 1f);
+                    borderImage.color = Color.black;
                 }
+                // 점령당함은 전체 검정 → 상단 회색 오버레이 끔
+                if (grayTopBorderImage != null) grayTopBorderImage.enabled = false;
 
                 // 특수 블록 아이콘 숨김
                 if (drillIndicator != null) drillIndicator.enabled = false;
 
                 // 심한 크랙 오버레이
                 UpdateOverlay();
-                // 쉘 블록에는 폭탄 표시 제거
-                HideGoblinBombOverlay();
+                // ★ 쉘 블록이라도 폭탄 고블린 시한폭탄(hasGoblinBomb)은 유지하여 표시
+                //   카운트다운 로직과 폭발은 그대로 동작, 시각만 회색 쉘 위에 오버레이됨
+                UpdateGoblinBombOverlay();
                 return;
             }
 
@@ -1229,6 +1653,19 @@ public void UpdateVisuals()
             Color gemColor = GemColors.GetColor(blockData.gemType);
             SetGemColor(gemColor);
 
+            // ★ 깨진 블록(Clawed = 몬스터에게 공격받음): 본체 sprite를 색상별 _Clawed PNG로 교체.
+            //   PNG에 발톱 자국 + 손상 효과가 색상별로 통합되어 있어 별도 오버레이 불필요
+            //   (UpdateOverlay에서 isCracked 분기의 crackedOverlaySprite는 PNG 사용 시 스킵).
+            if (blockData.isCracked && gemImage != null)
+            {
+                Sprite clawedSp = GetClawedSpriteForCurrentColor();
+                if (clawedSp != null)
+                {
+                    gemImage.sprite = clawedSp;
+                    gemImage.color = Color.white;  // PNG 본체에 색상 포함
+                }
+            }
+
             // 테두리 색상 결정 (강화된 값으로 업데이트)
             if (borderImage != null)
             {
@@ -1236,7 +1673,21 @@ public void UpdateVisuals()
                 if (blockData.pendingActivation)
                     borderImage.color = new Color(0.95f, 0.72f, 0.68f, 0.8f);
                 else
-                    borderImage.color = isMatched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
+                    borderImage.color = isMatched ? Color.white : GetDefaultBorderColor();  // 강화된 기본 테두리
+            }
+
+            // ★ 상단 3면 회색(isCracked 전용) — 본체 borderImage는 원래 색 유지, 위 절반만 회색 오버레이.
+            if (grayTopBorderImage != null)
+            {
+                bool showTopGray = blockData.isCracked && !blockData.isShell;
+                grayTopBorderImage.enabled = showTopGray;
+                if (showTopGray)
+                {
+                    grayTopBorderImage.sprite = borderImage != null ? borderImage.sprite : null;
+                    grayTopBorderImage.color = Color.gray;
+                    grayTopBorderImage.fillAmount = 0.5f;
+                    grayTopBorderImage.transform.SetAsLastSibling();
+                }
             }
 
             // 특수 블록 아이콘/추가 시각 처리 (통합)
@@ -1245,6 +1696,9 @@ public void UpdateVisuals()
 
             // 고블린 폭탄 오버레이
             UpdateGoblinBombOverlay();
+
+            // 흙더미 오버레이 (1/3 또는 2/3 블록을 덮음)
+            UpdateDirtMoundOverlay();
         }
 
 /// <summary>
@@ -1275,8 +1729,15 @@ private void UpdateSpecialIndicator()
                     UpdateBombSkillText();
                     break;
 
-                // ★ Rainbow(도넛) 생성 제거됨 — 기존 도넛이 필드에 있으면 아이콘 미표시
+                // 타겟 레이저 (Rainbow) — 블록에 크로스헤어 아이콘 표시
                 case SpecialBlockType.Rainbow:
+                    if (donutIconSprite == null)
+                        donutIconSprite = DonutBlockSystem.GetDonutIconSprite();
+                    ShowSpecialIcon(donutIconSprite);
+                    // 레이저 타겟 전용: 원형 보석 중앙(상단 약 40% 지점)을 회전축으로 설정
+                    // sprite는 세로 길쭉 → preserveAspect로 비율 유지
+                    drillIndicator.rectTransform.pivot = new Vector2(0.5f, 0.6f);
+                    drillIndicator.preserveAspect = true;
                     break;
 
                 case SpecialBlockType.XBlock:
@@ -1340,9 +1801,25 @@ private void UpdateSpecialIndicator()
         private void ShowSpecialIcon(Sprite iconSprite)
         {
             if (drillIndicator == null) return;
+            // ★ 흰색 사각형 버그 방지:
+            //   sprite가 null인 Image는 enabled 상태에서 흰 쿼드(흰 박스)를 그린다.
+            //   외부 PNG 로드 실패 등으로 아이콘이 null이면 박스를 그리지 말고 숨긴다.
+            if (iconSprite == null)
+            {
+                drillIndicator.sprite = null;
+                drillIndicator.enabled = false;
+                return;
+            }
             drillIndicator.enabled = true;
             drillIndicator.sprite = iconSprite;
             drillIndicator.color = GetSpecialIconTint();
+            // 기본 pivot 리셋 (정사각형 sprite 중앙). Rainbow 케이스는 호출 후 재설정.
+            drillIndicator.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            drillIndicator.preserveAspect = false;
+            // ★ 특수 블록 아이콘을 테두리(borderImage/grayTopBorderImage)보다 위로 올린다.
+            //   SetupBorder/UpdateOverlay가 테두리를 SetAsLastSibling으로 올리므로,
+            //   아이콘 표시 시점에 drillIndicator를 최상단으로 재배치해야 가려지지 않음.
+            drillIndicator.transform.SetAsLastSibling();
         }
 
         /// <summary>
@@ -1365,9 +1842,10 @@ private void UpdateSpecialIndicator()
                 }
                 case SpecialBlockType.Bomb:
                 {
-                    int level = (stm != null) ? stm.GetBombDamageBonus() : 0;
-                    return JewelsHexaPuzzle.Utils.BlockSkillColors.GetByLevel(
-                        JewelsHexaPuzzle.Utils.BlockSkillColors.Bomb, level);
+                    // 외부 폭탄 PNG(빨간 폭탄 + 흰 테두리)는 자체 색상을 그대로 살린다.
+                    // BombBase(0.15 검정) 곱셈 시 어둡게 표시되므로 인게임 아이콘은 흰색 유지.
+                    // 스킬 레벨 구분은 UpdateBombSkillText()의 v1/v2/v3 텍스트로 표시됨.
+                    return Color.white;
                 }
                 case SpecialBlockType.Drone:
                 {
@@ -1400,11 +1878,12 @@ private void UpdateSpecialIndicator()
         public static Sprite GetDrillIconSprite(DrillDirection direction)
         {
             // 스프라이트가 아직 생성되지 않았으면 생성
+            //   모든 드릴에 +90° 시계방향 보정 (PowerUps PNG가 가로 화살표 디자인)
             if (drillVerticalSprite == null)
             {
-                drillVerticalSprite = CreateArrowSprite_Static(256, 0);
-                drillSlashSprite = CreateArrowSprite_Static(256, -60);
-                drillBackSlashSprite = CreateArrowSprite_Static(256, 60);
+                drillVerticalSprite = CreateArrowSprite_Static(256, 90);
+                drillSlashSprite = CreateArrowSprite_Static(256, 30);
+                drillBackSlashSprite = CreateArrowSprite_Static(256, 150);
             }
             switch (direction)
             {
@@ -1494,6 +1973,9 @@ private void UpdateSpecialIndicator()
             if (donutIconSprite == null)
                 donutIconSprite = DonutBlockSystem.GetDonutIconSprite();
             ShowSpecialIcon(donutIconSprite);
+            // 레이저 타겟 전용: 원형 보석 중앙을 회전축으로 (UpdateVisuals 케이스와 동일)
+            drillIndicator.rectTransform.pivot = new Vector2(0.5f, 0.6f);
+            drillIndicator.preserveAspect = true;
         }
 public void ShowXBlockIndicator()
         {
@@ -1574,6 +2056,8 @@ public void ShowDroneIndicator()
             {
                 borderImage.enabled = false;
             }
+            // ★ 상단 회색 오버레이도 함께 해제
+            if (grayTopBorderImage != null) grayTopBorderImage.enabled = false;
 
             if (overlayImage != null) overlayImage.enabled = false;
             if (timerText != null) timerText.enabled = false;
@@ -1623,21 +2107,41 @@ public void ShowDroneIndicator()
             }
             else if (blockData.isShell)
             {
-                // 껍데기 블록: 심한 크랙 (더 어둡고 불투명하게)
-                if (crackedOverlaySprite == null)
-                    crackedOverlaySprite = CreateCrackedOverlaySprite(256);
-                overlayImage.sprite = crackedOverlaySprite;
-                overlayImage.color = new Color(0.12f, 0.10f, 0.08f, 0.9f);
-                overlayImage.enabled = true;
+                // 껍데기 블록(Stolen): MonsterStolen PNG 사용 시 본체에 디자인 통합 → 오버레이 끔.
+                EnsureDamagedSpritesLoaded();
+                if (stolenSprite != null)
+                {
+                    overlayImage.sprite = null;
+                    overlayImage.enabled = false;
+                }
+                else
+                {
+                    // 폴백: 기존 프로시저럴 크랙 오버레이
+                    if (crackedOverlaySprite == null)
+                        crackedOverlaySprite = CreateCrackedOverlaySprite(256);
+                    overlayImage.sprite = crackedOverlaySprite;
+                    overlayImage.color = new Color(0.12f, 0.10f, 0.08f, 0.9f);
+                    overlayImage.enabled = true;
+                }
             }
             else if (blockData.isCracked)
             {
-                // 깨진 블록: 금간 오버레이 표시 (색상 유지, 금 패턴 위에 표시)
-                if (crackedOverlaySprite == null)
-                    crackedOverlaySprite = CreateCrackedOverlaySprite(256);
-                overlayImage.sprite = crackedOverlaySprite;
-                overlayImage.color = new Color(0.15f, 0.1f, 0.05f, 0.55f);  // 어두운 갈색 금
-                overlayImage.enabled = true;
+                // 깨진 블록(Clawed): _Clawed PNG가 본체에 통합 → 오버레이 끔.
+                Sprite clawedSp = GetClawedSpriteForCurrentColor();
+                if (clawedSp != null)
+                {
+                    overlayImage.sprite = null;
+                    overlayImage.enabled = false;
+                }
+                else
+                {
+                    // 폴백: 기존 프로시저럴 크랙 오버레이
+                    if (crackedOverlaySprite == null)
+                        crackedOverlaySprite = CreateCrackedOverlaySprite(256);
+                    overlayImage.sprite = crackedOverlaySprite;
+                    overlayImage.color = new Color(0.15f, 0.1f, 0.05f, 0.55f);
+                    overlayImage.enabled = true;
+                }
             }
             else
             {
@@ -1933,7 +2437,7 @@ public void ShowDroneIndicator()
             {
                 // 하이라이트 시작 시 흰색 강조 (매칭)
                 if (highlighted) borderImage.color = new Color(1f, 1f, 1f, 1f);
-                else if (!isMatched) borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
+                else if (!isMatched) borderImage.color = GetDefaultBorderColor();  // 강화된 기본 테두리
             }
         }
 
@@ -1941,7 +2445,7 @@ public void ShowDroneIndicator()
         {
             isMatched = matched;
             if (borderImage != null)
-                borderImage.color = matched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
+                borderImage.color = matched ? Color.white : GetDefaultBorderColor();  // 강화된 기본 테두리
         }
 
         // ============================================================
@@ -1966,6 +2470,66 @@ public void ShowDroneIndicator()
         /// <summary>
         /// 블록에 글로우 펄스 효과 (튜토리얼에서 활성 블록 강조)
         /// </summary>
+        /// <summary>
+        /// Stage 1 힌트용 외곽선 점멸 — TutorialGlow와 독립적.
+        /// alpha 값으로 은은한 노란 밝기 조절. false 호출 시 기본 테두리로 복구.
+        /// </summary>
+        public void SetStage1Hint(bool active, float alpha = 1f)
+        {
+            if (borderImage == null) return;
+            if (active)
+            {
+                borderImage.enabled = true;
+                // 부드러운 노란 강조색, 알파로 밝기 조절
+                borderImage.color = new Color(1f, 0.95f, 0.45f, Mathf.Clamp01(alpha));
+            }
+            else if (!isMatched && !isHighlighted && !isTutorialGlowing)
+            {
+                borderImage.color = GetDefaultBorderColor();
+            }
+        }
+
+        // Stage 1 힌트 바운스 원본 컬러 저장 (플래시 복원용)
+        private Color stage1OriginalGemColor;
+        private bool stage1GemColorCached = false;
+
+        /// <summary>
+        /// Stage 1 힌트 바운스 — 블록 크기 스케일 + 면 플래시.
+        /// scalePulse: 1.0 기준 상대 스케일 (예: 0.15면 1.15배 → 1.0으로 복귀).
+        /// flashIntensity: 0~1 범위. 1이면 완전 밝은 흰색 플래시.
+        /// </summary>
+        public void ApplyStage1HintBounce(float scalePulse, float flashIntensity)
+        {
+            // 스케일 펄스 적용
+            float scale = 1f + Mathf.Clamp(scalePulse, 0f, 0.5f);
+            transform.localScale = Vector3.one * scale;
+
+            // 면 플래시 — gemImage를 원본 색상에서 흰색으로 블렌딩
+            if (gemImage != null && gemImage.enabled)
+            {
+                if (!stage1GemColorCached)
+                {
+                    stage1OriginalGemColor = gemImage.color;
+                    stage1GemColorCached = true;
+                }
+                float t = Mathf.Clamp01(flashIntensity);
+                gemImage.color = Color.Lerp(stage1OriginalGemColor, Color.white, t);
+            }
+        }
+
+        /// <summary>
+        /// Stage 1 힌트 바운스 종료 — 스케일/색상 복원.
+        /// </summary>
+        public void ClearStage1HintBounce()
+        {
+            transform.localScale = Vector3.one;
+            if (gemImage != null && stage1GemColorCached)
+            {
+                gemImage.color = stage1OriginalGemColor;
+                stage1GemColorCached = false;
+            }
+        }
+
         public void SetTutorialGlow(bool glow)
         {
             isTutorialGlowing = glow;
@@ -1987,7 +2551,7 @@ public void ShowDroneIndicator()
                     tutorialGlowCoroutine = null;
                 }
                 if (borderImage != null && !isMatched && !isHighlighted)
-                    borderImage.color = new Color(0.94f, 0.91f, 0.88f, 0.45f);
+                    borderImage.color = GetDefaultBorderColor();
                 transform.localScale = Vector3.one;
             }
         }
@@ -2064,7 +2628,7 @@ public void StopWarningBlink()
             isPendingActivation = false;
             if (borderImage != null)
             {
-                borderImage.color = isMatched ? Color.white : new Color(0.94f, 0.91f, 0.88f, 0.45f);  // 강화된 기본 테두리
+                borderImage.color = isMatched ? Color.white : GetDefaultBorderColor();  // 강화된 기본 테두리
             }
         }
 
@@ -2334,7 +2898,19 @@ public void SetPendingActivation()
 
             goblinBombImage.enabled = true;
 
-            // 카운트다운에 따른 색상 변경 (긴급도 표시)
+            // ★ 폭탄 PNG 시트(00:03/00:02/00:01)가 있으면 카운트다운별 프레임 교체
+            Sprite[] frames = GetGoblinBombCountdownFrames();
+            if (frames != null)
+            {
+                // 이미지 자체에 카운트다운 숫자가 새겨져 있음 → 프레임만 교체하고 별도 텍스트는 숨김
+                int idx = Mathf.Clamp(3 - blockData.goblinBombCountdown, 0, 2);
+                goblinBombImage.sprite = frames[idx];
+                goblinBombImage.color = Color.white;
+                if (goblinBombCountdownText != null) goblinBombCountdownText.enabled = false;
+                return;
+            }
+
+            // 폴백: 프로시저럴 폭탄 + 카운트다운 텍스트
             if (blockData.goblinBombCountdown <= 1)
                 goblinBombImage.color = new Color(1f, 0.3f, 0.15f, 0.95f); // 빨간색 경고
             else
@@ -2359,6 +2935,234 @@ public void SetPendingActivation()
             if (goblinBombCountdownText != null) goblinBombCountdownText.enabled = false;
         }
 
+        // ── 흙더미 오버레이 ──
+        private Image dirtMoundImage;
+        private static Sprite dirtMoundSprite1; // 1/3 쌓임
+        private static Sprite dirtMoundSprite2; // 2/3 쌓임
+
+        /// <summary>
+        /// 외부 시스템(미션 UI 등)에서 흙더미 아이콘 스프라이트를 얻기 위한 공개 접근.
+        /// level=1: 1/3 쌓임, level=2: 2/3 쌓임. 캐시된 스프라이트 재사용.
+        /// </summary>
+        public static Sprite GetDirtMoundSprite(int level)
+        {
+            if (level >= 2)
+            {
+                if (dirtMoundSprite2 == null) dirtMoundSprite2 = CreateDirtMoundSprite(level: 2);
+                return dirtMoundSprite2;
+            }
+            if (dirtMoundSprite1 == null) dirtMoundSprite1 = CreateDirtMoundSprite(level: 1);
+            return dirtMoundSprite1;
+        }
+
+        /// <summary>
+        /// 흙더미 오버레이 갱신 — dirtMound = 0 숨김, 1 = 1/3, 2 = 2/3.
+        /// </summary>
+        private void UpdateDirtMoundOverlay()
+        {
+            if (blockData == null || blockData.dirtMound <= 0)
+            {
+                if (dirtMoundImage != null) dirtMoundImage.enabled = false;
+                return;
+            }
+
+            if (dirtMoundImage == null)
+                CreateDirtMoundOverlay();
+
+            if (dirtMoundImage == null) return;
+
+            // 레벨별 스프라이트 + 크기 (blockHeight의 1/3, 2/3 비율)
+            int level = Mathf.Clamp(blockData.dirtMound, 1, 2);
+            if (dirtMoundSprite1 == null) dirtMoundSprite1 = CreateDirtMoundSprite(level: 1);
+            if (dirtMoundSprite2 == null) dirtMoundSprite2 = CreateDirtMoundSprite(level: 2);
+
+            dirtMoundImage.sprite = (level == 2) ? dirtMoundSprite2 : dirtMoundSprite1;
+            dirtMoundImage.enabled = true;
+            dirtMoundImage.color = Color.white;
+        }
+
+        /// <summary>
+        /// 흙더미 오버레이 GameObject 생성 (블록 자식). 블록 하단에 부착.
+        /// </summary>
+        private void CreateDirtMoundOverlay()
+        {
+            GameObject obj = new GameObject("DirtMoundOverlay");
+            obj.transform.SetParent(transform, false);
+
+            RectTransform rt = obj.AddComponent<RectTransform>();
+            // 하단 정렬 — 블록 너비 100%, 높이 100% (스프라이트 자체가 1/3 또는 2/3 크기)
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = Vector2.zero;
+            rt.localScale = Vector3.one;
+
+            dirtMoundImage = obj.AddComponent<Image>();
+            dirtMoundImage.raycastTarget = false;
+            dirtMoundImage.preserveAspect = false;
+            // 항상 다른 오버레이보다 위에 표시
+            obj.transform.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// 프로시저럴 흙더미 스프라이트 생성 — 헥스 블록 외곽선 안쪽에 자연스럽게 쌓인 형태.
+        /// level=1: 헥스 하단 1/3 영역, level=2: 하단 2/3 영역.
+        /// Flat-top 헥스 마스크 적용 + 부드러운 굴곡 표면 + 갈색 그라데이션 + 작은 돌 디테일.
+        /// </summary>
+        private static Sprite CreateDirtMoundSprite(int level)
+        {
+            int texW = 128;
+            int texH = 128;
+            Texture2D tex = new Texture2D(texW, texH, TextureFormat.ARGB32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+
+            Color32 clear = new Color32(0, 0, 0, 0);
+            // 갈색 톤 (자연 흙)
+            Color32 dirtBase  = new Color32(118, 78, 42, 255);   // 메인 갈색
+            Color32 dirtDark  = new Color32(72, 46, 22, 255);    // 깊은 그림자
+            Color32 dirtLight = new Color32(165, 120, 75, 255);  // 햇빛 하이라이트
+            Color32 dirtRim   = new Color32(40, 24, 10, 255);    // 표면 윤곽선
+            Color32 dirtMid   = new Color32(140, 95, 55, 255);   // 중간 톤
+
+            Color32[] pixels = new Color32[texW * texH];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = clear;
+
+            // ── Flat-top 헥스 기하 ──
+            // 가로 = 2s, 세로 = sqrt(3)*s. 텍스처에 맞춰 fit.
+            //   s = texW / 2 = 64 → 헥스 너비 128, 높이 sqrt(3)*64 ≈ 110.85
+            //   세로 여유 (texH - hexH) / 2 ≈ 8.5px씩 위·아래 여백
+            float s = texW * 0.5f;
+            float hexHalfW = s;                        // 64
+            float hexHalfH = s * Mathf.Sqrt(3f) * 0.5f; // ≈ 55.43
+            float cx = texW * 0.5f;
+            float cy = texH * 0.5f;
+
+            // 흙 표면 기준 Y (hex 내부에서 수평 비율 fillRatio)
+            //   level 1: 0.34 (1/3), level 2: 0.68 (2/3)
+            float fillRatio = (level == 2) ? 0.68f : 0.34f;
+            float surfaceCenterY = -hexHalfH + 2f * hexHalfH * fillRatio; // hex 중심 기준 Y (하단=-h, 상단=+h)
+
+            // ── 픽셀별 흙 영역 판정 + 색칠 ──
+            for (int py = 0; py < texH; py++)
+            {
+                float ly = py - cy; // hex 중심 기준 Y (음수=하단)
+                if (ly < -hexHalfH || ly > hexHalfH) continue; // hex 세로 범위 밖
+
+                // hex 내부의 x 최대값: maxX = s * (1 - |ly| / hexH_total) where hexH_total = sqrt(3)*s
+                //   상단 가까울수록 좁아짐
+                float relAbsY = Mathf.Abs(ly);
+                float hexMaxX = s * (1f - relAbsY / (s * Mathf.Sqrt(3f)));
+
+                // 표면 곡선: 가운데가 살짝 솟고 가장자리가 낮은 자연 굴곡
+                //   bump = surfaceCenterY + height * (1 - 4*(x/halfW)^2)  [x중심에서 양쪽 가장자리 0]
+                //   level 2는 굴곡 더 큼
+
+                for (int px = 0; px < texW; px++)
+                {
+                    float lx = px - cx;
+                    if (Mathf.Abs(lx) > hexMaxX) continue; // hex 외곽 밖
+
+                    // 흙 표면 Y 계산 — 가운데가 살짝 솟음 + 미세 노이즈
+                    float xnorm = lx / hexHalfW; // -1 ~ +1
+                    float bump = (1f - xnorm * xnorm); // 가운데 1, 가장자리 0
+                    float bumpAmp = (level == 2) ? 6f : 4f;
+                    float noise = (Mathf.PerlinNoise(px * 0.08f, level * 17f) - 0.5f) * 3f;
+                    float surfaceY = surfaceCenterY + bumpAmp * bump + noise;
+
+                    if (ly > surfaceY) continue; // 표면 위쪽은 비어있음
+
+                    // 흙으로 채움
+                    // 깊이별 톤: 표면 가까울수록 어두운 그림자, 깊을수록 메인/밝은 톤
+                    float depthFromSurface = surfaceY - ly; // 양수 = 표면 아래
+                    float depthFromBottom = ly + hexHalfH;  // 양수 = 하단부터 위
+                    Color32 c;
+
+                    if (depthFromSurface < 1.5f)
+                    {
+                        // 표면 윤곽선
+                        c = dirtRim;
+                    }
+                    else if (depthFromSurface < 5f)
+                    {
+                        // 표면 바로 아래 그림자
+                        c = dirtDark;
+                    }
+                    else if (depthFromBottom < 4f)
+                    {
+                        // 헥스 바닥 가까이 — 살짝 어두운 톤
+                        c = dirtDark;
+                    }
+                    else
+                    {
+                        // 메인 갈색 ↔ 밝은 갈색 노이즈로 자연스러운 질감
+                        float n = (Mathf.PerlinNoise(px * 0.10f + level, py * 0.10f) - 0.5f);
+                        Color32 baseMix = LerpC(dirtBase, dirtMid, 0.5f + n * 0.6f);
+                        // 가운데 융기부 살짝 밝게
+                        if (bump > 0.65f && depthFromSurface < 12f)
+                            baseMix = LerpC(baseMix, dirtLight, 0.4f);
+                        c = baseMix;
+                    }
+
+                    // 헥스 외곽 가까운 픽셀은 더 짙게 (가장자리 윤곽 강화)
+                    float edgeDist = hexMaxX - Mathf.Abs(lx);
+                    if (edgeDist < 1.5f) c = dirtRim;
+                    else if (edgeDist < 3f) c = dirtDark;
+
+                    pixels[py * texW + px] = c;
+                }
+            }
+
+            // ── 작은 돌 디테일 (흙 영역 안에만) ──
+            var rng = new System.Random(level * 47 + 11);
+            int stoneCount = (level == 2) ? 18 : 9;
+            for (int i = 0; i < stoneCount; i++)
+            {
+                int sx = rng.Next(8, texW - 8);
+                int sy = rng.Next(6, Mathf.Max(8, (int)(cy + surfaceCenterY) - 4));
+                int sz = rng.Next(2, 4);
+                Color32 stoneCol = (rng.Next(2) == 0) ? dirtDark : dirtRim;
+                for (int dy = -sz; dy <= sz; dy++)
+                    for (int dx = -sz; dx <= sz; dx++)
+                    {
+                        int x2 = sx + dx, y2 = sy + dy;
+                        if (x2 < 0 || x2 >= texW || y2 < 0 || y2 >= texH) continue;
+                        if (dx * dx + dy * dy > sz * sz) continue;
+                        if (pixels[y2 * texW + x2].a == 0) continue; // 흙 영역 밖이면 무시
+                        pixels[y2 * texW + x2] = stoneCol;
+                    }
+            }
+
+            // ── 표면 위쪽에 작은 흙 알갱이 (자연스러운 흩뿌림) ──
+            int sprinkleCount = (level == 2) ? 8 : 5;
+            for (int i = 0; i < sprinkleCount; i++)
+            {
+                int sx = rng.Next(10, texW - 10);
+                // 표면 위 약간 위쪽에 작은 점들
+                int surfacePixelY = (int)(cy + surfaceCenterY + (rng.NextDouble() < 0.3 ? 4 : -2));
+                int sy = surfacePixelY + rng.Next(-2, 4);
+                if (sy < 0 || sy >= texH) continue;
+                int x2 = sx, y2 = sy;
+                if (x2 < 0 || x2 >= texW) continue;
+                pixels[y2 * texW + x2] = dirtDark;
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, texW, texH), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        private static Color32 LerpC(Color32 a, Color32 b, float t)
+        {
+            t = Mathf.Clamp01(t);
+            return new Color32(
+                (byte)(a.r + (b.r - a.r) * t),
+                (byte)(a.g + (b.g - a.g) * t),
+                (byte)(a.b + (b.b - a.b) * t),
+                (byte)(a.a + (b.a - a.a) * t));
+        }
+
         /// <summary>
         /// 고블린 폭탄 오버레이 UI 요소 생성 (블록의 자식으로)
         /// </summary>
@@ -2369,17 +3173,31 @@ public void SetPendingActivation()
             bombObj.transform.SetParent(transform, false);
             RectTransform brt = bombObj.AddComponent<RectTransform>();
             brt.anchoredPosition = Vector2.zero;
-            float size = 30f; // 블록 위에 겹치는 작은 아이콘
+
+            goblinBombImage = bombObj.AddComponent<Image>();
+            goblinBombImage.raycastTarget = false;
+
+            float size;
+            Sprite[] frames = GetGoblinBombCountdownFrames();
+            if (frames != null)
+            {
+                // PNG 폭탄(타이머 디스플레이 포함): 2배 확대(44→88) + 원본 비율 유지
+                size = 88f;
+                goblinBombImage.sprite = frames[0];
+                goblinBombImage.preserveAspect = true;
+            }
+            else
+            {
+                // 프로시저럴 폭탄: 작은 둥근 아이콘
+                size = 30f;
+                if (goblinBombOverlaySprite == null)
+                    goblinBombOverlaySprite = CreateGoblinBombSprite();
+                goblinBombImage.sprite = goblinBombOverlaySprite;
+            }
             brt.sizeDelta = new Vector2(size, size);
             brt.localScale = Vector3.one;
 
-            goblinBombImage = bombObj.AddComponent<Image>();
-            if (goblinBombOverlaySprite == null)
-                goblinBombOverlaySprite = CreateGoblinBombSprite();
-            goblinBombImage.sprite = goblinBombOverlaySprite;
-            goblinBombImage.raycastTarget = false;
-
-            // 카운트다운 텍스트
+            // 카운트다운 텍스트 (프로시저럴 폴백 전용 — PNG 사용 시 UpdateGoblinBombOverlay가 숨김)
             GameObject textObj = new GameObject("GoblinBombCountdown");
             textObj.transform.SetParent(bombObj.transform, false);
             RectTransform trt = textObj.AddComponent<RectTransform>();
@@ -2399,6 +3217,44 @@ public void SetPendingActivation()
             Outline outline = textObj.AddComponent<Outline>();
             outline.effectColor = new Color(0.05f, 0f, 0f, 1f);
             outline.effectDistance = new Vector2(1f, -1f);
+        }
+
+        /// <summary>
+        /// 폭탄 카운트다운 시트(Resources/Goblins/goblin_bomb_countdown) 로드 → 가로 3등분 슬라이스.
+        /// 프레임 0 = 00:03, 1 = 00:02, 2 = 00:01. 로드 실패 시 frames = null (프로시저럴 폴백).
+        /// </summary>
+        private static Sprite[] GetGoblinBombCountdownFrames()
+        {
+            // ★ 자기치유 캐시(2026-07-02): Play 유지 중 AssetDatabase.Refresh(에셋만 변경)가 텍스처를
+            //   재임포트하면 기존 Texture2D 인스턴스가 파괴되는데 도메인은 유지돼 정적 캐시가 죽은
+            //   텍스처를 참조 → 폭탄이 "흰색"으로 렌더되던 반복 버그. 텍스처 유효성까지 검사해 재생성.
+            if (goblinBombCountdownLoaded &&
+                (goblinBombCountdownFrames == null || goblinBombCountdownFrames.Length == 0 ||
+                 goblinBombCountdownFrames[0] == null || goblinBombCountdownFrames[0].texture == null))
+            {
+                goblinBombCountdownLoaded = false;
+                goblinBombCountdownFrames = null;
+                Debug.LogWarning("[HexBlock] 폭탄 카운트다운 스프라이트 캐시 무효(텍스처 재임포트) → 재생성");
+            }
+            if (goblinBombCountdownLoaded) return goblinBombCountdownFrames;
+
+            Texture2D tex = Resources.Load<Texture2D>("Goblins/goblin_bomb_countdown");
+            // ★ 로드 실패 시 null을 영구 캐싱하지 않는다(loaded 플래그 보류) → 다음 호출에서 재시도.
+            //   (초기 프레임에 Resources가 준비되기 전 호출되면 한 번 null이 캐싱되어 이후 모든 폭탄이
+            //    프로시저럴 폴백으로 떨어지는 잠재 버그 방지. 성공해야만 캐시 확정.)
+            if (tex == null) return null;
+
+            int fw = tex.width / 3;
+            int fh = tex.height;
+            var frames = new Sprite[3];
+            for (int i = 0; i < 3; i++)
+            {
+                Rect rect = new Rect(i * fw, 0, fw, fh);
+                frames[i] = Sprite.Create(tex, rect, new Vector2(0.5f, 0.5f), 100f);
+            }
+            goblinBombCountdownFrames = frames;
+            goblinBombCountdownLoaded = true;
+            return goblinBombCountdownFrames;
         }
 
         /// <summary>

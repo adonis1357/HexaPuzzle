@@ -19,11 +19,13 @@ namespace JewelsHexaPuzzle.Items
         private static readonly Color COLOR_OUTLINE_ACTIVE = new Color(1f, 0.9f, 0f, 1f);
         private static readonly Color COLOR_OUTLINE_OFF = new Color(0f, 0f, 0f, 0f);
 
-        private const int LAYER_SIZE = 50;
+        // ★ 레이어(단계)별 요구 게이지 — 1~4단계 모두 10 (각 단계 동일). 인덱스 0=1단계.
+        private static readonly int[] LAYER_THRESHOLDS = { 10, 10, 10, 10 };
+        private int LayerThreshold(int layer) => LAYER_THRESHOLDS[Mathf.Clamp(layer, 0, LAYER_THRESHOLDS.Length - 1)];
 
         // 레이어 시스템 (HammerGauge와 동일)
         private int gaugeLayer = 0;       // 0~4 (완성된 레이어 수)
-        private int gaugeInLayer = 0;     // 0~49 (현재 레이어 내 진행률)
+        private int gaugeInLayer = 0;     // 현재 레이어 내 진행 (그 단계 임계값 미만)
 
         private GaugeState currentState = GaugeState.Inactive;
 
@@ -37,8 +39,7 @@ namespace JewelsHexaPuzzle.Items
         /// <summary>현재 해금된 스킬에 따른 최대 레이어 수</summary>
         public int GetCurrentMaxLayer()
         {
-            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetSwapLevel() : 0;
-            return 1 + level;
+            return 4; // ★ 기본 능력치로 4단계까지 충전 (리워드 없이)
         }
 
         private void Awake()
@@ -219,7 +220,18 @@ namespace JewelsHexaPuzzle.Items
         {
             currentState = newState;
             RefreshUI();
+            // ★ 보류 충전 반영 (감사 M12) — UseReady 중 도착한 영혼 충전을 상태 복귀 시 합산
+            if (pendingGauge > 0 &&
+                (newState == GaugeState.Inactive || newState == GaugeState.Ready))
+            {
+                int p = pendingGauge;
+                pendingGauge = 0;
+                AddGauge(p);
+            }
         }
+
+        // UseReady 등 충전 불가 상태에 도착한 충전 보류분 (상태 복귀 시 합산 — 감사 M12)
+        private int pendingGauge = 0;
 
         private void OnButtonClicked()
         {
@@ -240,11 +252,17 @@ namespace JewelsHexaPuzzle.Items
 
         public void ActivateUseReady()
         {
-            if (currentState == GaugeState.Ready || currentState == GaugeState.UseReady)
+            // ★ 토글 — 차지바 버튼 탭으로 활성/취소 모두 가능(기존 활성화 전용이라 버튼으로 취소가 안 되던 버그 수정).
+            if (currentState == GaugeState.Ready)
             {
                 SetState(GaugeState.UseReady);
                 if (swapItem == null) swapItem = FindObjectOfType<SwapItem>();
                 if (swapItem != null) swapItem.Activate();
+            }
+            else if (currentState == GaugeState.UseReady)
+            {
+                if (swapItem != null) swapItem.Deactivate();
+                SetState(gaugeLayer >= 1 ? GaugeState.Ready : GaugeState.Inactive);
             }
         }
 
@@ -284,7 +302,12 @@ namespace JewelsHexaPuzzle.Items
 
         public void AddGauge(int amount)
         {
-            if (currentState != GaugeState.Inactive && currentState != GaugeState.Ready) return;
+            // ★ 사용 중(UseReady 등) 도착한 충전은 버리지 않고 보류 → 상태 복귀 시 합산 (감사 M12)
+            if (currentState != GaugeState.Inactive && currentState != GaugeState.Ready)
+            {
+                pendingGauge += amount;
+                return;
+            }
 
             int maxLayer = GetCurrentMaxLayer();
 
@@ -294,10 +317,11 @@ namespace JewelsHexaPuzzle.Items
             gaugeInLayer += amount;
 
             // 레이어 승격 처리
-            while (gaugeInLayer >= LAYER_SIZE && gaugeLayer < maxLayer)
+            while (gaugeLayer < maxLayer && gaugeInLayer >= LayerThreshold(gaugeLayer))
             {
-                gaugeInLayer -= LAYER_SIZE;
+                gaugeInLayer -= LayerThreshold(gaugeLayer);
                 gaugeLayer++;
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayGaugeFullSound(); // ★ 효과음: 게이지 레이어 완성
             }
 
             // 최대 레이어 도달 시 잔여 게이지 초기화
@@ -317,7 +341,7 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
-        public void OnTurnEnd() { AddGauge(5); }
+        public void OnTurnEnd() { AddGauge(1); } // 단계 임계값 10/8/6/4에 맞춰 턴당 패시브 충전 +5→+1 (매칭 위주로)
 
         private IEnumerator FlashEffect()
         {
@@ -342,7 +366,7 @@ namespace JewelsHexaPuzzle.Items
             switch (currentState)
             {
                 case GaugeState.Inactive:
-                    buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
+                    buttonImage.fillAmount = gaugeInLayer / (float)LayerThreshold(gaugeLayer);
                     buttonImage.color = COLOR_READY;
                     if (itemButton != null) itemButton.interactable = JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode();
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
@@ -352,7 +376,7 @@ namespace JewelsHexaPuzzle.Items
                     if (gaugeLayer >= maxLayer)
                         buttonImage.fillAmount = 1f;
                     else
-                        buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
+                        buttonImage.fillAmount = gaugeInLayer / (float)LayerThreshold(gaugeLayer);
                     buttonImage.color = COLOR_READY;
                     if (itemButton != null) itemButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
@@ -385,16 +409,17 @@ namespace JewelsHexaPuzzle.Items
         /// <summary>UseReady 상태에서의 사용 레벨 (gaugeLayer - 1, 0~3). 스킬 해금 기준 제한 적용.</summary>
         public int GetUseReadyLevel()
         {
+            // ★ 게이지는 4단계까지 차지만, 사용 레벨(능력)은 리워드(SwapLevel)만큼만 — 리워드 있어야 상위 레벨 사용.
             int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetSwapLevel() : 0;
-            // gaugeLayer 1→Level0, 2→Level1(해금필요), 3→Level2, 4→Level3
-            int maxLevel = level; // 해금된 최대 레벨
             int rawLevel = Mathf.Max(0, gaugeLayer - 1);
-            return Mathf.Min(rawLevel, maxLevel);
+            return Mathf.Min(rawLevel, level);
         }
 
         public int GaugeLayer => gaugeLayer;
         public int GaugeInLayer => gaugeInLayer;
-        public int TotalGauge => gaugeLayer * LAYER_SIZE + gaugeInLayer;
+        /// <summary>현재 채우는 단계의 진행 비율 (gaugeInLayer / 그 단계 임계값) — 차지바 fill용.</summary>
+        public float CurrentLayerFillRatio => Mathf.Clamp01(gaugeInLayer / (float)LayerThreshold(gaugeLayer));
+        public int TotalGauge { get { int t = gaugeInLayer; for (int i = 0; i < gaugeLayer; i++) t += LayerThreshold(i); return t; } }
         public int CurrentGauge => TotalGauge;
         public GaugeState CurrentState => currentState;
 

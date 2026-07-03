@@ -18,7 +18,6 @@ namespace JewelsHexaPuzzle.UI
         private const int TEX_SIZE = 256;           // 스프라이트 텍스처 크기
         private const float GAUGE_SIZE = 70f;       // UI 크기 (픽셀)
         private const float FILL_ANIM_DURATION = 0.3f; // 채움 애니메이션 시간
-        private const float MIN_FILL_CHANGE = 0.005f;  // 텍스처 재생성 최소 변화량
 
         // 색상 상수
         private static readonly Color BG_COLOR = new Color(0.12f, 0.14f, 0.22f, 0.85f);     // 빈 통 배경
@@ -33,8 +32,10 @@ namespace JewelsHexaPuzzle.UI
         private Image backgroundImage;
         private Image fillImage;
         private Image borderImage;
-        private Text mpText;
+        private Text mpText;        // 중앙 값
+        private Text mpLabelText;   // 하단 "MP  max N"
         private RectTransform gaugeRect;
+        private LiquidGaugeSlosh liquidSlosh;   // 입체 액체 채움 + 출렁임 구동
 
         // ============================================================
         // 상태
@@ -42,6 +43,11 @@ namespace JewelsHexaPuzzle.UI
         private float displayedFillRatio = 1f;  // 현재 표시 중인 비율
         private float targetFillRatio = 1f;     // 목표 비율
         private Coroutine fillAnimCoroutine;
+        private Coroutine insufficientFeedbackCoroutine; // 부족 피드백 중복 방지
+        private Coroutine decreaseFlashCoroutine;        // MP 감소 시 외곽선 빨간 플래시
+        private int previousMP = -1;                     // 감소 감지용 (-1 = 미초기화)
+        private Vector2 gaugeOriginalPos;       // 부족 피드백 복원용 원래 위치 (첫 호출 시 캡처)
+        private bool gaugeOriginalPosCaptured = false;
         private Sprite lastFillSprite;          // 재사용 방지용
 
         // 캐시된 스프라이트
@@ -69,87 +75,26 @@ namespace JewelsHexaPuzzle.UI
             gaugeRect.anchoredPosition = new Vector2(260f, -132f); // 이동횟수 프레임 오른쪽
             gaugeRect.sizeDelta = new Vector2(GAUGE_SIZE * 2f, GAUGE_SIZE * 2f);
 
-            // 1. 배경 (어두운 빈 통)
-            bgSprite = CreateHexBackgroundSprite(TEX_SIZE);
-            GameObject bgObj = new GameObject("MPGauge_BG");
-            bgObj.transform.SetParent(gaugeRect, false);
-            backgroundImage = bgObj.AddComponent<Image>();
-            backgroundImage.sprite = bgSprite;
-            backgroundImage.color = Color.white;
-            backgroundImage.raycastTarget = false;
-            RectTransform bgRt = bgObj.GetComponent<RectTransform>();
-            bgRt.anchorMin = Vector2.zero;
-            bgRt.anchorMax = Vector2.one;
-            bgRt.offsetMin = Vector2.zero;
-            bgRt.offsetMax = Vector2.zero;
+            // ★ 입체 액체 게이지 — 클로드 디자인 PNG 레이어(유리BG→액체→표면→유리Front) + 출렁임.
+            //   (기존 프로시저럴 SDF 3레이어를 대체. 채움·출렁임은 LiquidGaugeSlosh가 구동)
+            var liquidTint = new Color(0.30f, 0.62f, 0.95f, 1f);   // MP 파란 액체
+            var surfaceTint = new Color(0.82f, 0.92f, 1f, 0.95f);  // 표면 메니스커스(밝은 파랑)
+            var refs = LiquidHexGaugeBuilder.Build(gaugeRect, liquidTint, surfaceTint);
+            backgroundImage = refs.bg;
+            fillImage = refs.fill;
+            borderImage = refs.front;   // 감소/부족 플래시 틴트 대상(유리 림)
+            liquidSlosh = refs.slosh;
 
-            // 2. 채움 (파란색 액체)
-            GameObject fillObj = new GameObject("MPGauge_Fill");
-            fillObj.transform.SetParent(gaugeRect, false);
-            fillImage = fillObj.AddComponent<Image>();
-            fillImage.raycastTarget = false;
-            RectTransform fillRt = fillObj.GetComponent<RectTransform>();
-            fillRt.anchorMin = Vector2.zero;
-            fillRt.anchorMax = Vector2.one;
-            fillRt.offsetMin = Vector2.zero;
-            fillRt.offsetMax = Vector2.zero;
-
-            // 3. 테두리 (밝은 베벨)
-            borderSprite = CreateHexBorderSprite(TEX_SIZE);
-            GameObject borderObj = new GameObject("MPGauge_Border");
-            borderObj.transform.SetParent(gaugeRect, false);
-            borderImage = borderObj.AddComponent<Image>();
-            borderImage.sprite = borderSprite;
-            borderImage.color = Color.white;
-            borderImage.raycastTarget = false;
-            RectTransform borderRt = borderObj.GetComponent<RectTransform>();
-            borderRt.anchorMin = Vector2.zero;
-            borderRt.anchorMax = Vector2.one;
-            borderRt.offsetMin = Vector2.zero;
-            borderRt.offsetMax = Vector2.zero;
-
-            // 4. MP 숫자 텍스트
+            // 4. 공용 3-존 텍스트 (RW 게이지와 동일 구조·폰트) — 상단(단계, MP는 비움)/중앙(값)/하단(MP max N)
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            GameObject textObj = new GameObject("MPGauge_Text");
-            textObj.transform.SetParent(gaugeRect, false);
-            mpText = textObj.AddComponent<Text>();
-            mpText.font = font;
-            mpText.fontSize = 16;
-            mpText.fontStyle = FontStyle.Bold;
-            mpText.alignment = TextAnchor.MiddleCenter;
-            mpText.color = Color.white;
-            mpText.raycastTarget = false;
-            mpText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            mpText.verticalOverflow = VerticalWrapMode.Overflow;
-            RectTransform textRt = textObj.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
+            var txt = LiquidHexGaugeBuilder.BuildText(gaugeRect, font, Color.white, new Color(0.78f, 0.86f, 1f, 0.9f));
+            mpText = txt.center;        // 중앙 값
+            mpLabelText = txt.bottom;   // 하단 "MP  max N"
+            mpLabelText.text = "MP";    // max는 UpdateText에서 동적 반영
+            // txt.top: MP는 단계 개념이 없어 비워둠
 
-            // 텍스트 아웃라인 (가독성)
-            Outline textOutline = textObj.AddComponent<Outline>();
-            textOutline.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            textOutline.effectDistance = new Vector2(1.5f, -1.5f);
-
-            // MP 라벨 (하단)
-            GameObject labelObj = new GameObject("MPGauge_Label");
-            labelObj.transform.SetParent(gaugeRect, false);
-            Text labelText = labelObj.AddComponent<Text>();
-            labelText.font = font;
-            labelText.fontSize = 10;
-            labelText.alignment = TextAnchor.MiddleCenter;
-            labelText.color = new Color(0.75f, 0.85f, 1f, 0.8f);
-            labelText.raycastTarget = false;
-            labelText.text = "MP";
-            RectTransform labelRt = labelObj.GetComponent<RectTransform>();
-            labelRt.anchorMin = new Vector2(0f, 0f);
-            labelRt.anchorMax = new Vector2(1f, 0.25f);
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
-
-            // 초기 채움
-            UpdateFillSprite(1f);
+            // 초기 채움 (슬로시 컴포넌트가 채움·출렁임 구동)
+            if (liquidSlosh != null) liquidSlosh.SetTarget(1f, true);
             UpdateText(100, 100);
 
             // MPManager 이벤트 구독
@@ -183,62 +128,90 @@ namespace JewelsHexaPuzzle.UI
         /// </summary>
         private void OnMPChanged(int current, int max)
         {
+            // ★ MP 감소 감지 → 외곽선 빨간 플래시 1초 페이드아웃
+            //   (초기 호출은 previousMP=-1이라 감지 안 됨 — 정상 동작)
+            if (previousMP >= 0 && current < previousMP)
+            {
+                TriggerDecreaseFlash();
+            }
+            previousMP = current;
+
             UpdateGauge(current, max);
         }
 
         /// <summary>
-        /// 게이지 갱신 (애니메이션 포함)
+        /// MP 감소 시 외곽선 빨간 플래시 — 즉시 빨간색, 1초 동안 흰색으로 페이드.
+        /// 부족 피드백(insufficientFeedback)이 진행 중이면 그 쪽이 우선 — 중첩 방지.
+        /// </summary>
+        private void TriggerDecreaseFlash()
+        {
+            if (borderImage == null) return;
+
+            // 진행 중 부족 피드백이 있으면 그 쪽이 우선 (red flash + shake → 0.35초 후 자체 종료)
+            if (insufficientFeedbackCoroutine != null) return;
+
+            // 진행 중인 감소 플래시 중단 후 새로 시작 (연속 소모 시 매번 리셋)
+            if (decreaseFlashCoroutine != null)
+                StopCoroutine(decreaseFlashCoroutine);
+            decreaseFlashCoroutine = StartCoroutine(DecreaseFlashCoroutine());
+        }
+
+        private IEnumerator DecreaseFlashCoroutine()
+        {
+            // 즉시 빨간색으로 점등
+            borderImage.color = LOW_MP_COLOR;
+
+            float duration = 1.0f;
+            float elapsed = 0f;
+            Color startColor = LOW_MP_COLOR;
+            Color endColor = Color.white;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                // EaseOutCubic — 처음엔 빨간색 강하게, 후반부에 빠르게 흰색 복귀
+                float eased = 1f - Mathf.Pow(1f - t, 3f);
+
+                // 부족 피드백이 시작되면 즉시 양보
+                if (insufficientFeedbackCoroutine != null) yield break;
+
+                borderImage.color = Color.Lerp(startColor, endColor, eased);
+                yield return null;
+            }
+
+            borderImage.color = endColor;
+            decreaseFlashCoroutine = null;
+        }
+
+        /// <summary>
+        /// 게이지 갱신 — 목표 비율만 설정, 실제 채움은 Update()의 연속 보간이 따라간다.
+        /// ★ 부드러운 증감 (기존: 0.3초 코루틴 재시작 방식 → 연속 변동 시 ease 곡선이 매번 리셋되어
+        ///   체감상 뚝뚝 끊김. SmoothDamp 연속 보간으로 증가/감소 모두 흐르듯 표현)
         /// </summary>
         public void UpdateGauge(int current, int max)
         {
             targetFillRatio = max > 0 ? (float)current / max : 0f;
             UpdateText(current, max);
-
-            // 비활성 상태에서는 코루틴 사용 불가 → 즉시 값 적용
-            if (!gameObject.activeInHierarchy)
-            {
-                displayedFillRatio = targetFillRatio;
-                return;
-            }
-
-            // 채움 애니메이션
-            if (fillAnimCoroutine != null)
-                StopCoroutine(fillAnimCoroutine);
-            fillAnimCoroutine = StartCoroutine(AnimateFill(displayedFillRatio, targetFillRatio));
+            // 채움·출렁임은 LiquidGaugeSlosh가 구동 (비활성 시 즉시 반영)
+            if (liquidSlosh != null) liquidSlosh.SetTarget(targetFillRatio, !gameObject.activeInHierarchy);
         }
 
         private void UpdateText(int current, int max)
         {
             if (mpText != null)
             {
-                mpText.text = current.ToString();
+                JewelsHexaPuzzle.Utils.NumberRoller.Roll(mpText, current, v => v.ToString());
 
                 // MP 20% 이하 시 빨간색 경고
                 float ratio = max > 0 ? (float)current / max : 0f;
                 mpText.color = ratio <= 0.2f ? LOW_MP_COLOR : Color.white;
             }
+            // 하단: 라벨 + 최대치 ('MP  max N') — 맥스 값 변동 자동 반영
+            if (mpLabelText != null) mpLabelText.text = $"MP  max {max}";
         }
 
-        // ============================================================
-        // 채움 애니메이션
-        // ============================================================
-
-        private IEnumerator AnimateFill(float from, float to)
-        {
-            float elapsed = 0f;
-            while (elapsed < FILL_ANIM_DURATION)
-            {
-                elapsed += Time.deltaTime;
-                float t = VisualConstants.EaseOutCubic(Mathf.Clamp01(elapsed / FILL_ANIM_DURATION));
-                float currentRatio = Mathf.Lerp(from, to, t);
-                UpdateFillSprite(currentRatio);
-                yield return null;
-            }
-
-            UpdateFillSprite(to);
-            displayedFillRatio = to;
-            fillAnimCoroutine = null;
-        }
+        // (구 AnimateFill 코루틴 제거 — Update()의 SmoothDamp 연속 보간으로 대체)
 
         // ============================================================
         // MP 부족 피드백
@@ -246,17 +219,44 @@ namespace JewelsHexaPuzzle.UI
 
         /// <summary>
         /// MP 부족 시 게이지 빨간 깜빡임 + 흔들림
+        /// 연속 호출 시 진행 중 피드백을 즉시 중단하고 원래 위치 복원 후 새로 시작 → 위치 드리프트 방지
         /// </summary>
         public void PlayInsufficientFeedback()
         {
-            StartCoroutine(InsufficientFeedbackCoroutine());
+            if (gaugeRect == null) return;
+
+            // 진행 중 피드백 중단 + 흔들리기 전 원래 위치로 강제 복원
+            if (insufficientFeedbackCoroutine != null)
+            {
+                StopCoroutine(insufficientFeedbackCoroutine);
+                insufficientFeedbackCoroutine = null;
+                if (gaugeOriginalPosCaptured)
+                    gaugeRect.anchoredPosition = gaugeOriginalPos;
+                if (borderImage != null)
+                    borderImage.color = Color.white;
+            }
+
+            // ★ 진행 중인 MP 감소 플래시도 중단 (부족 피드백이 우선)
+            if (decreaseFlashCoroutine != null)
+            {
+                StopCoroutine(decreaseFlashCoroutine);
+                decreaseFlashCoroutine = null;
+                if (borderImage != null)
+                    borderImage.color = Color.white;
+            }
+
+            // 원래 위치 1회만 캡처 (흔들림 중 캡처 방지)
+            if (!gaugeOriginalPosCaptured)
+            {
+                gaugeOriginalPos = gaugeRect.anchoredPosition;
+                gaugeOriginalPosCaptured = true;
+            }
+
+            insufficientFeedbackCoroutine = StartCoroutine(InsufficientFeedbackCoroutine());
         }
 
         private IEnumerator InsufficientFeedbackCoroutine()
         {
-            if (gaugeRect == null) yield break;
-
-            Vector2 originalPos = gaugeRect.anchoredPosition;
             float duration = 0.35f;
             float elapsed = 0f;
             int flashCount = 3;
@@ -274,7 +274,7 @@ namespace JewelsHexaPuzzle.UI
 
                 // 좌우 흔들림
                 float shake = Mathf.Sin(t * Mathf.PI * flashCount * 2) * 4f * (1f - t);
-                gaugeRect.anchoredPosition = originalPos + new Vector2(shake, 0);
+                gaugeRect.anchoredPosition = gaugeOriginalPos + new Vector2(shake, 0);
 
                 yield return null;
             }
@@ -283,7 +283,9 @@ namespace JewelsHexaPuzzle.UI
             if (borderImage != null)
                 borderImage.color = Color.white;
             if (gaugeRect != null)
-                gaugeRect.anchoredPosition = originalPos;
+                gaugeRect.anchoredPosition = gaugeOriginalPos;
+
+            insufficientFeedbackCoroutine = null;
         }
 
         // ============================================================
@@ -353,28 +355,30 @@ namespace JewelsHexaPuzzle.UI
         }
 
         /// <summary>
-        /// 채움 스프라이트 — 아래→위 방향으로 fillRatio만큼 파란색 액체
+        /// 채움 표시 갱신 — 아래→위 방향으로 fillRatio만큼 파란색 액체.
+        /// ★ 텍스처 재생성 없이 Image.fillAmount만 조절 (감사 H1 성능 수정).
+        ///   풀 채움 스프라이트에서 육각형이 차지하는 세로 구간(bottom~top apothem)으로 비율을 매핑한다.
         /// </summary>
         private void UpdateFillSprite(float fillRatio)
         {
             fillRatio = Mathf.Clamp01(fillRatio);
+            if (fillImage == null) return;
 
-            // 변화량이 너무 작으면 스킵 (성능 최적화)
-            if (lastFillSprite != null && Mathf.Abs(fillRatio - displayedFillRatio) < MIN_FILL_CHANGE)
-                return;
-
-            Sprite newSprite = CreateHexFillSprite(TEX_SIZE, fillRatio);
-
-            if (fillImage != null)
-                fillImage.sprite = newSprite;
-
-            // 이전 스프라이트 정리
-            if (lastFillSprite != null)
+            // ★ 가득 찬 상태(≈1.0)는 크롭 없이 전체 표시 — 육각형 상단 모서리에서 잘리지 않아
+            //   "꽉 차 보이는" 상태 보장 (30/30인데 덜 차 보이던 문제 수정)
+            if (fillRatio >= 0.999f)
             {
-                Destroy(lastFillSprite.texture);
-                Destroy(lastFillSprite);
+                fillImage.fillAmount = 1f;
+                displayedFillRatio = fillRatio;
+                return;
             }
-            lastFillSprite = newSprite;
+
+            // 육각형 세로 구간 매핑 (CreateHexFillSprite와 동일 산식: radius=size/2-6, apothem=radius·√3/2)
+            float radius = TEX_SIZE / 2f - 6f;
+            float apothem = radius * 0.8660254f;
+            float bottomNorm = (TEX_SIZE / 2f - apothem) / TEX_SIZE;
+            float topNorm = (TEX_SIZE / 2f + apothem) / TEX_SIZE;
+            fillImage.fillAmount = Mathf.Lerp(bottomNorm, topNorm, fillRatio);
             displayedFillRatio = fillRatio;
         }
 

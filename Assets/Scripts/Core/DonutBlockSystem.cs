@@ -1,5 +1,5 @@
 // ========================================================================
-// DonutBlockSystem.cs - 도넛(무지개) 특수 블록 시스템
+// DonutBlockSystem.cs - 타겟 레이저 특수 블록 시스템
 // ========================================================================
 //
 // [한 줄 요약]
@@ -7,8 +7,8 @@
 //
 // [비유로 이해하기]
 // 일반 블록이 "한 명씩 잡는 사냥꾼"이라면,
-// 도넛 블록은 "같은 옷을 입은 사람을 전부 찾아내는 레이더"와 같습니다.
-// 예를 들어 빨간색 도넛 블록이 발동하면, 게임판 위의 모든 빨간 블록이
+// 타겟 레이저 블록은 "같은 옷을 입은 사람을 전부 찾아내는 레이더"와 같습니다.
+// 예를 들어 빨간색 타겟 레이저 블록이 발동하면, 게임판 위의 모든 빨간 블록이
 // 중심에서부터 파도처럼 순서대로 사라집니다.
 //
 // [생성 조건]
@@ -18,21 +18,21 @@
 // [발동 흐름]
 // 1. 발동 전 "움찔" 압축 애니메이션 (Pre-Fire Compression)
 // 2. 히트스탑 (잠깐 멈춤) + 줌 펀치 (화면 확대/축소) 연출
-// 3. 도넛 블록 자체를 제거
+// 3. 타겟 레이저 블록 자체를 제거
 // 4. 같은 색 블록을 모두 찾아 거리순으로 정렬
-// 5. 중심에서부터 무지개 링 확산 이펙트 + 화면 흔들림
+// 5. 중심에서부터 타겟 레이저 링 확산 이펙트 + 화면 흔들림
 // 6. 가까운 블록부터 순서대로 파괴 (파도 효과)
 // 7. 점수 계산 및 미션 시스템에 결과 전달
 //
 // [주요 이펙트]
-// - 무지개색 회전 링, 무지개 플래시, 무지개 스파크(불꽃)
+// - 타겟 레이저색 회전 링, 타겟 레이저 플래시, 타겟 레이저 스파크(불꽃)
 // - 블록 간 연결선 (레인보우 커넥션 라인)
 // - 블록 파괴 시 흰색 플래시 + 회전하며 축소되는 애니메이션
 //
 // [관련 파일]
 // - BlockData.cs: SpecialBlockType.Rainbow 열거형 정의
-// - MatchingSystem.cs: 도넛 생성 조건 감지
-// - BlockRemovalSystem.cs: 캐스케이드 루프에서 도넛 발동 호출
+// - MatchingSystem.cs: 타겟 레이저 생성 조건 감지
+// - BlockRemovalSystem.cs: 캐스케이드 루프에서 타겟 레이저 발동 호출
 // - VisualConstants.cs: 이펙트 수치 상수 (크기, 속도, 지속시간 등)
 // - HexBlock.cs: 블록 비주얼 및 데이터 관리
 // ========================================================================
@@ -46,14 +46,14 @@ using JewelsHexaPuzzle.Managers;
 namespace JewelsHexaPuzzle.Core
 {
     /// <summary>
-    /// 도넛(무지개/Rainbow) 특수 블록 시스템.
+    /// 타겟 레이저(타겟 레이저/Rainbow) 특수 블록 시스템.
     ///
-    /// 이 클래스는 게임에서 가장 강력한 특수 블록 중 하나인 "도넛 블록"을 담당합니다.
-    /// 도넛 블록이 발동하면, 게임판 전체에서 같은 색상의 블록을 모두 찾아내어
+    /// 이 클래스는 게임에서 가장 강력한 특수 블록 중 하나인 "타겟 레이저 블록"을 담당합니다.
+    /// 타겟 레이저 블록이 발동하면, 게임판 전체에서 같은 색상의 블록을 모두 찾아내어
     /// 중심에서부터 파도처럼 순차적으로 파괴합니다.
     ///
-    /// 비유: 도넛 블록은 마치 "색상 감지 폭탄"과 같습니다.
-    /// 빨간색 도넛이 터지면, 게임판 위의 모든 빨간 블록이 연쇄적으로 사라집니다.
+    /// 비유: 타겟 레이저 블록은 마치 "색상 감지 폭탄"과 같습니다.
+    /// 빨간색 타겟 레이저이 터지면, 게임판 위의 모든 빨간 블록이 연쇄적으로 사라집니다.
     ///
     /// 생성 조건: 7개 이상 매칭 또는 링(고리) 모양 매칭 패턴 감지 시 생성됩니다.
     /// </summary>
@@ -91,13 +91,13 @@ namespace JewelsHexaPuzzle.Core
 
         /// <summary>
         /// 이펙트 링(고리)의 회전 속도 (도/초).
-        /// 도넛 발동 시 중심에서 회전하는 무지개 링의 속도입니다.
+        /// 타겟 레이저 발동 시 중심에서 회전하는 타겟 레이저 링의 속도입니다.
         /// </summary>
         [SerializeField] private float ringRotationSpeed = 360f;
 
         [Header("Effect Settings")]
         /// <summary>
-        /// 중심 폭발 시 생성되는 무지개 스파크(불꽃) 개수.
+        /// 중심 폭발 시 생성되는 타겟 레이저 스파크(불꽃) 개수.
         /// 많을수록 화려한 이펙트가 연출됩니다.
         /// </summary>
         [SerializeField] private int sparkCount = 24;
@@ -107,7 +107,7 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 도넛 블록의 발동이 완전히 끝났을 때 호출되는 이벤트.
+        /// 타겟 레이저 블록의 발동이 완전히 끝났을 때 호출되는 이벤트.
         /// int 파라미터는 획득한 총 점수입니다.
         /// 외부 시스템(점수 매니저 등)이 이 이벤트를 구독하여 점수를 반영합니다.
         /// </summary>
@@ -118,15 +118,15 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 현재 발동 중인 도넛 블록의 수.
-        /// 여러 도넛이 동시에 발동할 수 있으므로 카운터로 추적합니다.
-        /// 0보다 크면 "아직 도넛이 작업 중"이라는 뜻입니다.
+        /// 현재 발동 중인 타겟 레이저 블록의 수.
+        /// 여러 타겟 레이저이 동시에 발동할 수 있으므로 카운터로 추적합니다.
+        /// 0보다 크면 "아직 타겟 레이저이 작업 중"이라는 뜻입니다.
         /// </summary>
         private int activeDonutCount = 0;
 
         /// <summary>
-        /// 도넛에 의해 발견된 "대기 중인 특수 블록" 목록.
-        /// 도넛이 같은 색 블록을 파괴하다가 다른 특수 블록(폭탄, 드릴 등)을 만나면,
+        /// 타겟 레이저에 의해 발견된 "대기 중인 특수 블록" 목록.
+        /// 타겟 레이저이 같은 색 블록을 파괴하다가 다른 특수 블록(폭탄, 드릴 등)을 만나면,
         /// 즉시 파괴하지 않고 이 목록에 넣어둡니다.
         /// 나중에 BlockRemovalSystem이 이 목록을 확인하여 연쇄 발동시킵니다.
         /// 비유: "나중에 터뜨릴 폭탄 목록"과 같습니다.
@@ -134,7 +134,7 @@ namespace JewelsHexaPuzzle.Core
         private List<HexBlock> pendingSpecialBlocks = new List<HexBlock>();
 
         /// <summary>
-        /// 현재 도넛 효과가 진행 중인 블록들의 집합.
+        /// 현재 타겟 레이저 효과가 진행 중인 블록들의 집합.
         /// 같은 블록이 중복으로 처리되는 것을 방지합니다.
         /// </summary>
         private HashSet<HexBlock> activeBlocks = new HashSet<HexBlock>();
@@ -144,26 +144,26 @@ namespace JewelsHexaPuzzle.Core
         // ============================================================
 
         /// <summary>
-        /// 도넛 블록이 현재 발동 중인지 여부.
-        /// true면 "아직 도넛 효과가 진행 중"이라는 뜻입니다.
+        /// 타겟 레이저 블록이 현재 발동 중인지 여부.
+        /// true면 "아직 타겟 레이저 효과가 진행 중"이라는 뜻입니다.
         /// GameManager 등이 이 값을 확인하여 다음 턴으로 넘어가지 않도록 합니다.
         /// </summary>
         public bool IsActivating => activeDonutCount > 0;
 
         /// <summary>
-        /// 도넛이 발견한 "대기 중인 특수 블록" 목록에 대한 외부 접근자.
+        /// 타겟 레이저이 발견한 "대기 중인 특수 블록" 목록에 대한 외부 접근자.
         /// BlockRemovalSystem이 이 목록을 읽어 연쇄 발동을 처리합니다.
         /// </summary>
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
 
         /// <summary>
-        /// 특정 블록이 현재 도넛 효과의 대상인지 확인합니다.
+        /// 특정 블록이 현재 타겟 레이저 효과의 대상인지 확인합니다.
         /// 다른 시스템이 동일 블록을 중복 처리하지 않도록 방지하는 용도입니다.
         /// </summary>
         public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
 
         /// <summary>
-        /// 도넛 시스템을 강제로 초기화합니다.
+        /// 타겟 레이저 시스템을 강제로 초기화합니다.
         ///
         /// 게임이 비정상적으로 멈추거나, 스테이지가 강제 종료될 때 호출됩니다.
         /// 모든 진행 중인 코루틴(애니메이션)을 중단하고,
@@ -207,11 +207,15 @@ namespace JewelsHexaPuzzle.Core
         private Transform effectParent;
 
         /// <summary>
-        /// 도넛 아이콘 스프라이트의 정적 캐시.
+        /// 타겟 레이저 아이콘 스프라이트의 정적 캐시.
         /// 한 번 생성하면 게임이 끝날 때까지 재사용합니다.
         /// static이므로 모든 DonutBlockSystem 인스턴스가 같은 스프라이트를 공유합니다.
         /// </summary>
         private static Sprite donutIconSprite;
+
+        // ★ 매 재생 시작 시 캐시 클리어 → 새 PNG(Resources/Icons/icon_target_base) 강제 재로드.
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetDonutIconCache() { donutIconSprite = null; }
 
         // ============================================================
         // 초기화 (Unity 생명주기)
@@ -245,7 +249,7 @@ namespace JewelsHexaPuzzle.Core
         /// 이펙트 전용 레이어(부모 오브젝트)를 생성합니다.
         ///
         /// Canvas(UI 캔버스) 위에 "DonutEffectLayer"라는 전용 레이어를 만들어서,
-        /// 모든 도넛 이펙트가 이 레이어 위에 표시되도록 합니다.
+        /// 모든 타겟 레이저 이펙트가 이 레이어 위에 표시되도록 합니다.
         /// 이렇게 하면 이펙트가 항상 블록 위에 그려지고,
         /// 정리할 때도 이 레이어만 비우면 됩니다.
         ///
@@ -280,94 +284,95 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // 도넛 아이콘 스프라이트 생성
-        // - 코드로 직접 도넛 모양 이미지를 만듭니다 (외부 이미지 파일 불필요)
+        // 타겟 레이저 아이콘 스프라이트 생성
+        // - 코드로 직접 타겟 레이저 모양 이미지를 만듭니다 (외부 이미지 파일 불필요)
         // ============================================================
 
         /// <summary>
-        /// 도넛 아이콘 스프라이트를 반환합니다.
+        /// 타겟 레이저 아이콘 스프라이트를 반환합니다.
         /// 이미 만들어진 것이 있으면 재사용하고, 없으면 새로 생성합니다.
-        /// UI에서 도넛 블록 아이콘을 표시할 때 사용됩니다.
+        /// UI에서 타겟 레이저 블록 아이콘을 표시할 때 사용됩니다.
         /// </summary>
         public static Sprite GetDonutIconSprite()
         {
             if (donutIconSprite == null)
-                donutIconSprite = CreateDonutSprite(256);
+            {
+                // 외부 PNG(Resources/Icons/icon_target_base) 우선 로드
+                // ★ pivot = (0.5, 0.6): 원형 보석 중앙이 회전축이 되도록 설정
+                Texture2D tex = Resources.Load<Texture2D>("Icons/icon_target_base");
+                if (tex != null)
+                {
+                    Debug.Log($"[DonutBlockSystem] icon_target_base 로드 성공 ({tex.width}x{tex.height}) → 외부 PNG 사용");
+                    donutIconSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.6f), 100f);
+                }
+                else
+                {
+                    Debug.LogWarning("[DonutBlockSystem] Resources/Icons/icon_target_base 미발견 → 프로시저럴 폴백 사용. Assets/Resources/Icons/icon_target_base.png 임포트 상태 확인 필요.");
+                    donutIconSprite = CreateDonutSprite(256);
+                }
+            }
             return donutIconSprite;
         }
 
         /// <summary>
-        /// 도넛 모양의 스프라이트를 코드로 직접 그려서 생성합니다 (프로시저럴 생성).
+        /// 타겟 조준경(크로스헤어) 스프라이트 프로시저럴 생성.
+        /// XBlockSystem.CreateCrosshairSprite와 동일한 원본 디자인을 블록 아이콘 크기(256)로 확대 재현.
         ///
-        /// 외부 이미지 파일 없이 픽셀 단위로 도넛 모양을 그립니다:
-        /// - 바깥 원과 안쪽 원 사이의 링(고리) 영역에 무지개 그라디언트를 칠합니다.
-        /// - 각도에 따라 색상이 변하므로 무지개색 도넛이 됩니다.
-        /// - 3D 입체감을 위해 링 중심부에 하이라이트(밝은 부분)를 추가합니다.
-        /// - 테두리가 부드럽게 보이도록 안티앨리어싱(가장자리 흐림) 처리를 합니다.
-        /// - 도넛 중앙에 작은 빛나는 점을 추가합니다.
-        ///
-        /// 비유: 컴퓨터가 붓 대신 수학 공식으로 도넛 그림을 그리는 것과 같습니다.
+        /// 디자인:
+        /// - 빨간 원형 링 (바깥쪽 얇은 고리)
+        /// - 4방향 빨간 십자선 (중앙에 작은 간격 있음)
+        /// - 빨간색 `(1, 0.15, 0.1, 0.9)`, 안티앨리어싱 적용
         /// </summary>
-        /// <param name="size">스프라이트의 가로/세로 크기 (픽셀 단위, 정사각형)</param>
-        /// <returns>생성된 도넛 모양 스프라이트</returns>
         private static Sprite CreateDonutSprite(int size)
         {
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
             Color[] pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
 
-            // 모든 픽셀을 투명으로 초기화
-            for (int i = 0; i < pixels.Length; i++)
-                pixels[i] = Color.clear;
+            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
+            float ringR    = size * 0.42f;
+            float ringW    = size * 0.06f;
+            float crossW   = size * 0.04f;
+            float crossGap = size * 0.12f;
+            Color red = new Color(1f, 0.15f, 0.1f, 0.9f);
 
-            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);  // 이미지 중심점
-            float outerRadius = size * 0.42f;  // 바깥쪽 원의 반지름
-            float innerRadius = size * 0.22f;  // 안쪽 원의 반지름 (이 사이가 도넛 링)
-
-            // 모든 픽셀을 순회하며 도넛 모양을 그림
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
-                    Vector2 p = new Vector2(x, y);
-                    float dist = Vector2.Distance(p, center);  // 현재 픽셀과 중심 사이 거리
+                    Vector2 p = new Vector2(x, y) - center;
+                    float dist = p.magnitude;
 
-                    // 도넛 링 영역 (안쪽 원~바깥 원 사이에만 색을 칠함)
-                    if (dist >= innerRadius && dist <= outerRadius)
+                    // 원형 링
+                    float ringDist = Mathf.Abs(dist - ringR);
+                    if (ringDist < ringW)
                     {
-                        // 무지개 그라디언트: 각도에 따라 HSV 색상환에서 색 결정
-                        // 12시 방향은 빨강, 시계 방향으로 주황→노랑→초록→파랑→보라 순
-                        float angle = Mathf.Atan2(p.y - center.y, p.x - center.x);
-                        float hue = (angle / (2f * Mathf.PI) + 1f) % 1f;
-                        Color c = Color.HSVToRGB(hue, 0.30f, 0.95f); // 파스텔톤 무지개 (채도 낮게)
-
-                        // 3D 입체감 효과: 링의 정중앙 부분을 약간 밝게 (볼록해 보이는 효과)
-                        float ringCenter = (outerRadius + innerRadius) * 0.5f;
-                        float ringT = 1f - Mathf.Abs(dist - ringCenter) / ((outerRadius - innerRadius) * 0.5f);
-                        float highlight = Mathf.Pow(ringT, 2f) * 0.20f;
-                        c = new Color(
-                            Mathf.Min(1f, c.r + highlight),
-                            Mathf.Min(1f, c.g + highlight),
-                            Mathf.Min(1f, c.b + highlight),
-                            1f
-                        );
-
-                        // 엣지 안티앨리어싱: 도넛 테두리를 부드럽게 처리
-                        // 바깥쪽/안쪽 경계에서 투명도를 점진적으로 변화시킴
-                        float outerAA = Mathf.Clamp01((outerRadius - dist) * 2f);
-                        float innerAA = Mathf.Clamp01((dist - innerRadius) * 2f);
-                        c.a = outerAA * innerAA;
-
+                        float aa = Mathf.Clamp01((ringW - ringDist) * 3f);
+                        Color c = red;
+                        c.a *= aa;
                         pixels[y * size + x] = c;
                     }
 
-                    // 중앙 빛나는 점: 도넛 구멍 한가운데에 작은 빛 포인트
-                    float centerDist = Vector2.Distance(p, center);
-                    if (centerDist < size * 0.08f)
+                    // 십자선 (중앙 간격 있음)
+                    if (dist > crossGap && dist < ringR + ringW)
                     {
-                        float sa = Mathf.Clamp01((size * 0.08f - centerDist) / (size * 0.08f));
-                        Color sparkColor = new Color(1f, 1f, 0.9f, sa * 0.6f);  // 따뜻한 흰색 빛
-                        pixels[y * size + x] = Color.Lerp(pixels[y * size + x], sparkColor, sa);
+                        bool isHLine = Mathf.Abs(p.y) < crossW;
+                        bool isVLine = Mathf.Abs(p.x) < crossW;
+                        if (isHLine || isVLine)
+                        {
+                            float lineEdge = isHLine ? Mathf.Abs(p.y) / crossW : Mathf.Abs(p.x) / crossW;
+                            float laa = Mathf.Clamp01((1f - lineEdge) * 2f) * 0.85f;
+                            Color lc = red;
+                            lc.a = laa;
+                            Color ex = pixels[y * size + x];
+                            pixels[y * size + x] = new Color(
+                                Mathf.Max(ex.r, lc.r * laa),
+                                Mathf.Max(ex.g, lc.g * laa),
+                                Mathf.Max(ex.b, lc.b * laa),
+                                Mathf.Max(ex.a, laa)
+                            );
+                        }
                     }
                 }
             }
@@ -378,42 +383,42 @@ namespace JewelsHexaPuzzle.Core
         }
 
         // ============================================================
-        // 도넛 블록 생성
+        // 타겟 레이저 블록 생성
         // - 매칭 조건을 만족하면 MatchingSystem이 이 메서드를 호출합니다
         // ============================================================
 
         /// <summary>
-        /// 지정된 블록을 도넛(무지개) 특수 블록으로 변환합니다.
+        /// 지정된 블록을 타겟 레이저 특수 블록으로 변환합니다.
         ///
-        /// 기존 블록의 데이터를 도넛 블록 데이터로 교체합니다.
+        /// 기존 블록의 데이터를 타겟 레이저 블록 데이터로 교체합니다.
         /// gemType은 나중에 발동할 때 "어떤 색을 제거할지" 결정하는 데 사용됩니다.
         ///
-        /// 비유: 일반 병사에게 "무지개 폭탄"을 장착시키는 것과 같습니다.
+        /// 비유: 일반 병사에게 "타겟 레이저 폭탄"을 장착시키는 것과 같습니다.
         /// </summary>
-        /// <param name="block">도넛으로 변환할 블록</param>
-        /// <param name="gemType">이 도넛이 제거할 대상 색상 (예: Red이면 모든 빨간 블록 제거)</param>
+        /// <param name="block">타겟 레이저으로 변환할 블록</param>
+        /// <param name="gemType">이 타겟 레이저이 제거할 대상 색상 (예: Red이면 모든 빨간 블록 제거)</param>
         public void CreateDonutBlock(HexBlock block, GemType gemType)
         {
             if (block == null) return;
             BlockData donutData = new BlockData(gemType);
-            donutData.specialType = SpecialBlockType.Rainbow;  // "무지개" 특수 블록으로 지정
+            donutData.specialType = SpecialBlockType.Rainbow;  // "타겟 레이저" 특수 블록으로 지정
             block.SetBlockData(donutData);
             Debug.Log($"[DonutBlockSystem] Created donut(rainbow) at {block.Coord}, gemType={gemType}");
         }
 
         // ============================================================
-        // 도넛 발동 (핵심 로직)
-        // - 플레이어가 도넛 블록을 매칭하면 호출됩니다
+        // 타겟 레이저 발동 (핵심 로직)
+        // - 플레이어가 타겟 레이저 블록을 매칭하면 호출됩니다
         // ============================================================
 
         /// <summary>
-        /// 도넛 블록을 발동시킵니다.
+        /// 타겟 레이저 블록을 발동시킵니다.
         ///
         /// 유효성 검사 후 비동기 코루틴(DonutCoroutine)을 시작합니다.
         /// 코루틴을 사용하는 이유는, 파괴 이펙트가 시간에 걸쳐 순차적으로
         /// 진행되어야 하기 때문입니다 (한 프레임에 다 끝나면 이펙트가 안 보임).
         /// </summary>
-        /// <param name="donutBlock">발동시킬 도넛 블록</param>
+        /// <param name="donutBlock">발동시킬 타겟 레이저 블록</param>
         public void ActivateDonut(HexBlock donutBlock)
         {
             if (donutBlock == null) return;
@@ -424,17 +429,17 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 도넛 발동의 전체 흐름을 담당하는 핵심 코루틴.
+        /// 타겟 레이저 발동의 전체 흐름을 담당하는 핵심 코루틴.
         ///
         /// [실행 순서 상세]
         /// 1단계: Pre-Fire 압축 애니메이션 (블록이 움찔하며 힘을 모으는 연출)
         /// 2단계: 히트스탑(순간 정지) + 줌 펀치(화면 확대/축소)로 임팩트 연출
-        /// 3단계: 도넛 블록 자체의 데이터를 제거 (빈 칸으로 변환)
+        /// 3단계: 타겟 레이저 블록 자체의 데이터를 제거 (빈 칸으로 변환)
         /// 4단계: 게임판 전체에서 같은 색 블록을 모두 수집
-        /// 5단계: 중심 이펙트(무지개 플래시 + 회전 링) + 링 확산 이펙트 + 화면 흔들림
+        /// 5단계: 중심 이펙트(타겟 레이저 플래시 + 회전 링) + 링 확산 이펙트 + 화면 흔들림
         /// 6단계: 수집한 블록을 거리순으로 정렬 (가까운 것부터 파괴)
         /// 7단계: 각 블록을 순차적으로 파괴 (waveDelay 간격으로 파도 효과)
-        ///        - 일반 블록: 무지개 이펙트와 함께 파괴
+        ///        - 일반 블록: 타겟 레이저 이펙트와 함께 파괴
         ///        - 특수 블록: pendingSpecialBlocks에 추가 (나중에 연쇄 발동)
         /// 8단계: 모든 파괴 애니메이션 완료 대기
         /// 9단계: 점수 계산 (기본 500점 + 파괴된 블록 티어별 점수 합산)
@@ -450,8 +455,8 @@ namespace JewelsHexaPuzzle.Core
             activeBlocks.Add(donutBlock);
 
             // 발동 위치, 색상 등 기본 정보 저장
-            HexCoord donutCoord = donutBlock.Coord;           // 도넛의 그리드 좌표
-            Vector3 donutWorldPos = donutBlock.transform.position;  // 도넛의 화면상 위치
+            HexCoord donutCoord = donutBlock.Coord;           // 타겟 레이저의 그리드 좌표
+            Vector3 donutWorldPos = donutBlock.transform.position;  // 타겟 레이저의 화면상 위치
             GemType targetGemType = donutBlock.Data.gemType;  // 제거할 대상 색상
             Color donutColor = GemColors.GetColor(targetGemType);   // 대상 색상의 실제 Color 값
 
@@ -467,7 +472,10 @@ namespace JewelsHexaPuzzle.Core
             // 줌 펀치: 게임판 전체가 살짝 확대됐다 돌아오는 연출
             StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
-            // [3단계] 도넛 블록 자체를 제거 (빈 칸으로 만듦)
+            // ★ 도넛(레인보우) 자신의 색상도 대응 게이지/리워드에 충전 (제거되는 색상이므로) — ClearData 전에 호출
+            if (donutBlock.Data != null && donutBlock.Data.gemType != GemType.None)
+                GameManager.Instance?.ChargeResourcesForGemWithSoul(donutBlock.Data.gemType, donutBlock.transform.position);
+            // [3단계] 타겟 레이저 블록 자체를 제거 (빈 칸으로 만듦)
             donutBlock.ClearData();
 
             // [4단계] 같은 색 블록 전부 수집
@@ -492,9 +500,9 @@ namespace JewelsHexaPuzzle.Core
             Debug.Log($"[DonutBlockSystem] Targets: {targets.Count} same-color blocks ({targetGemType})");
 
             // [5단계] 화려한 이펙트 동시 발생
-            // 중심에서 무지개 플래시 + 회전 링 이펙트
+            // 중심에서 타겟 레이저 플래시 + 회전 링 이펙트
             StartCoroutine(DonutCenterEffect(donutWorldPos, donutColor));
-            // 중심에서 바깥으로 퍼지는 무지개 링 확산 이펙트
+            // 중심에서 바깥으로 퍼지는 타겟 레이저 링 확산 이펙트
             StartCoroutine(RainbowRingExpand(donutWorldPos));
             // 화면 흔들림 (임팩트감 강화)
             StartCoroutine(ScreenShake(VisualConstants.ShakeMediumIntensity, VisualConstants.ShakeMediumDuration));
@@ -502,7 +510,7 @@ namespace JewelsHexaPuzzle.Core
             // 이펙트가 살짝 퍼진 후 파괴 시작 (0.15초 대기)
             yield return new WaitForSeconds(0.15f);
 
-            // [6단계] 거리순 정렬: 도넛 중심에서 가까운 블록부터 파괴
+            // [6단계] 거리순 정렬: 타겟 레이저 중심에서 가까운 블록부터 파괴
             // 이렇게 하면 "중심에서 바깥으로 퍼지는 파도" 효과가 자연스럽게 연출됨
             targets.Sort((a, b) =>
             {
@@ -522,7 +530,7 @@ namespace JewelsHexaPuzzle.Core
                 if (target.Data == null || target.Data.gemType == GemType.None) continue;
 
                 // FixedBlock(고정 블록)은 파괴 불가 - 건너뛰기
-                // 비유: 철벽처럼 단단한 블록은 도넛으로도 깰 수 없음
+                // 비유: 철벽처럼 단단한 블록은 타겟 레이저으로도 깰 수 없음
                 if (target.Data.specialType == SpecialBlockType.FixedBlock)
                     continue;
 
@@ -540,7 +548,7 @@ namespace JewelsHexaPuzzle.Core
                 }
                 else
                 {
-                    // 일반 블록: 점수 계산 후 무지개 이펙트와 함께 파괴
+                    // 일반 블록: 점수 계산 후 타겟 레이저 이펙트와 함께 파괴
                     blockScoreSum += ScoreCalculator.GetBlockBaseScore(target.Data.tier);
 
                     // 기본 블록 카운트 (GemType 1~5: Red, Blue, Green, Yellow, Purple)
@@ -551,7 +559,7 @@ namespace JewelsHexaPuzzle.Core
 
                     // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
                     if (target.Data.gemType != GemType.None)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(target.Data.gemType, target.Data.isCracked || target.Data.isShell, target.transform.position, GameManager.IsSoulSuppressedBlock(target));
 
                     // 적군 블록에 대한 추가 점수 처리
                     // (가시 기생충, 사슬 앵커, 색 포식자 등 특수 상태의 블록)
@@ -569,7 +577,7 @@ namespace JewelsHexaPuzzle.Core
                                 RemovalCondition.Normal, target.transform.position);
                     }
 
-                    // 무지개 파괴 이펙트 시작 (비동기 - 동시에 여러 블록이 파괴 진행)
+                    // 타겟 레이저 파괴 이펙트 시작 (비동기 - 동시에 여러 블록이 파괴 진행)
                     Color blockColor = GemColors.GetColor(target.Data.gemType);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithRainbow(target, blockColor, donutWorldPos)));
                 }
@@ -584,7 +592,7 @@ namespace JewelsHexaPuzzle.Core
                 yield return co;
 
             // [9단계] 최종 점수 계산
-            // 도넛 기본 보너스 800점 + 파괴된 블록들의 티어별 점수 합산
+            // 타겟 레이저 기본 보너스 800점 + 파괴된 블록들의 티어별 점수 합산
             int totalScore = 800 + blockScoreSum;
             Debug.Log($"[DonutBlockSystem] === DONUT COMPLETE === Score={totalScore} (base:800 + blockTierSum:{blockScoreSum}), Destroyed={targets.Count}");
 
@@ -597,6 +605,9 @@ namespace JewelsHexaPuzzle.Core
             // --- 상태 해제: "작업 끝났습니다" ---
             activeBlocks.Remove(donutBlock);
             activeDonutCount--;
+
+            // 튜토리얼 콜백: 레인보우타겟 레이저 발동 완료
+            JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnRainbowActivated();
         }
 
         /// <summary>
@@ -615,24 +626,24 @@ namespace JewelsHexaPuzzle.Core
 
         // ============================================================
         // 이펙트 메서드들
-        // - 도넛 발동 시 화면에 표시되는 시각 효과를 담당합니다
+        // - 타겟 레이저 발동 시 화면에 표시되는 시각 효과를 담당합니다
         // - 모든 이펙트는 UI.Image 기반이며 코루틴으로 애니메이션합니다
         // ============================================================
 
         /// <summary>
-        /// 도넛 중심에서 발생하는 메인 이펙트입니다.
+        /// 타겟 레이저 중심에서 발생하는 메인 이펙트입니다.
         ///
         /// 세 가지 시각 요소로 구성됩니다:
-        /// 1. 무지개 플래시: 중심에서 커지며 퍼지는 밝은 원, 색이 무지개처럼 변합니다
+        /// 1. 타겟 레이저 플래시: 중심에서 커지며 퍼지는 밝은 원, 색이 타겟 레이저처럼 변합니다
         /// 2. 회전 링 (4겹): 서로 다른 색상의 링이 반대 방향으로 회전하며 확대됩니다
-        /// 3. 무지개 스파크 버스트: 무지개색 불꽃이 사방으로 튀어나갑니다
+        /// 3. 타겟 레이저 스파크 버스트: 타겟 레이저색 불꽃이 사방으로 튀어나갑니다
         ///
         /// 추가로 블룸(Bloom) 레이어가 플래시 뒤에 깔려 은은한 광채를 만듭니다.
         ///
         /// 비유: 불꽃놀이의 중심부 - 밝은 빛이 퍼지고, 고리가 회전하고, 불꽃이 튑니다.
         /// </summary>
-        /// <param name="pos">이펙트가 표시될 월드 좌표 (도넛 블록의 위치)</param>
-        /// <param name="color">도넛 블록의 대상 색상</param>
+        /// <param name="pos">이펙트가 표시될 월드 좌표 (타겟 레이저 블록의 위치)</param>
+        /// <param name="color">타겟 레이저 블록의 대상 색상</param>
         private IEnumerator DonutCenterEffect(Vector3 pos, Color color)
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
@@ -640,7 +651,7 @@ namespace JewelsHexaPuzzle.Core
             // 블룸 레이어: 플래시 뒤에 깔리는 은은한 글로우 (먼저 시작해서 뒤에 표시)
             StartCoroutine(BloomLayer(pos, new Color(1f, 1f, 0.8f), VisualConstants.FlashInitialSize, VisualConstants.FlashDuration));
 
-            // 1) 무지개 플래시: 중심에서 확장되며 색이 무지개처럼 변하는 밝은 원
+            // 1) 타겟 레이저 플래시: 중심에서 확장되며 색이 타겟 레이저처럼 변하는 밝은 원
             GameObject flash = new GameObject("DonutFlash");
             flash.transform.SetParent(parent, false);
             flash.transform.position = pos;
@@ -662,13 +673,13 @@ namespace JewelsHexaPuzzle.Core
                 rings[r] = CreateDonutRing(pos, parent, r);
             }
 
-            // 3) 스파크 버스트: 무지개색 불꽃이 사방으로 퍼짐
+            // 3) 스파크 버스트: 타겟 레이저색 불꽃이 사방으로 퍼짐
             // 캐스케이드(연쇄) 깊이에 따라 불꽃 수가 증가 (연쇄가 깊을수록 더 화려해짐)
             float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
             int totalSparks = Mathf.RoundToInt(sparkCount * cascadeMult);
             for (int i = 0; i < totalSparks; i++)
             {
-                // 각 스파크에 고른 무지개색 할당 (0번=빨강, 중간=초록, 마지막=보라)
+                // 각 스파크에 고른 타겟 레이저색 할당 (0번=빨강, 중간=초록, 마지막=보라)
                 float hue = (float)i / totalSparks;
                 Color sparkColor = Color.HSVToRGB(hue, 0.9f, 1f);
                 StartCoroutine(RainbowSpark(pos, sparkColor));
@@ -684,7 +695,7 @@ namespace JewelsHexaPuzzle.Core
                 float t = Mathf.Clamp01(elapsed / duration);  // 0~1 진행률
                 float eased = VisualConstants.EaseOutCubic(t);  // 부드러운 감속 커브
 
-                // 플래시 애니메이션: 커지면서 + 페이드아웃 + 무지개색 변화
+                // 플래시 애니메이션: 커지면서 + 페이드아웃 + 타겟 레이저색 변화
                 float flashScale = 1f + eased * (VisualConstants.FlashExpand - 1f);
                 flashRt.sizeDelta = new Vector2(initSize * flashScale, initSize * flashScale);
                 float hue = (t * 2f) % 1f;  // 시간에 따라 색상환을 2바퀴 회전
@@ -722,9 +733,9 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 도넛 회전 링 하나를 생성합니다.
+        /// 타겟 레이저 회전 링 하나를 생성합니다.
         ///
-        /// DonutCenterEffect에서 호출되며, 각 링은 서로 다른 무지개색을 가집니다.
+        /// DonutCenterEffect에서 호출되며, 각 링은 서로 다른 타겟 레이저색을 가집니다.
         /// index에 따라 빨강, 초록, 파랑 등의 색상이 할당됩니다.
         ///
         /// 비유: 올림픽 오륜기처럼 겹쳐진 색색의 링을 하나씩 만드는 것입니다.
@@ -745,7 +756,7 @@ namespace JewelsHexaPuzzle.Core
 
             // index에 따라 색상환에서 균등하게 분배된 색상 할당
             float hue = (float)index / 3f;
-            Color c = Color.HSVToRGB(hue, 0.8f, 1f);  // 선명한 무지개색
+            Color c = Color.HSVToRGB(hue, 0.8f, 1f);  // 선명한 타겟 레이저색
             c.a = 0.7f;  // 약간 투명하게
             img.color = c;
 
@@ -756,17 +767,17 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 도넛 중심에서 게임판 전체로 퍼지는 무지개 링 확산 이펙트.
+        /// 타겟 레이저 중심에서 게임판 전체로 퍼지는 타겟 레이저 링 확산 이펙트.
         ///
         /// 큰 원이 중심에서부터 빠르게 커지면서 회전합니다.
-        /// 색상은 시간에 따라 무지개처럼 변하고, 점점 투명해집니다.
+        /// 색상은 시간에 따라 타겟 레이저처럼 변하고, 점점 투명해집니다.
         ///
         /// 이 이펙트는 "충격파"의 시각적 표현입니다.
-        /// 도넛이 발동했다는 것을 플레이어에게 확실히 알려주는 역할을 합니다.
+        /// 타겟 레이저이 발동했다는 것을 플레이어에게 확실히 알려주는 역할을 합니다.
         ///
         /// 비유: 물에 돌을 던졌을 때 퍼지는 파문(물결)과 같습니다.
         /// </summary>
-        /// <param name="center">확산의 중심점 (도넛 블록의 위치)</param>
+        /// <param name="center">확산의 중심점 (타겟 레이저 블록의 위치)</param>
         private IEnumerator RainbowRingExpand(Vector3 center)
         {
             Transform parent = effectParent != null ? effectParent : hexGrid.transform;
@@ -798,7 +809,7 @@ namespace JewelsHexaPuzzle.Core
                 float scale = 1f + eased * 30f;
                 rt.sizeDelta = new Vector2(initSize * scale, initSize * scale);
 
-                // 무지개색 변화: 시간에 따라 색상환을 3바퀴 회전
+                // 타겟 레이저색 변화: 시간에 따라 색상환을 3바퀴 회전
                 float hue = (t * 3f) % 1f;
                 Color c = Color.HSVToRGB(hue, 0.7f, 1f);
                 c.a = (1f - t) * 0.4f;  // 커지면서 점점 투명해짐
@@ -814,38 +825,45 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 개별 블록을 무지개 이펙트와 함께 파괴하는 애니메이션.
+        /// 개별 블록을 타겟 레이저 이펙트와 함께 파괴하는 애니메이션.
         ///
         /// 각 블록이 파괴될 때 다음 연출이 동시에 진행됩니다:
         /// 1. 흰색 플래시 오버레이 (순간적으로 하얗게 빛남)
-        /// 2. 무지개 연결선 (도넛 중심 → 이 블록까지 빛줄기)
-        /// 3. 무지개 스파크 (블록 위치에서 불꽃이 튐)
+        /// 2. 타겟 레이저 연결선 (타겟 레이저 중심 → 이 블록까지 빛줄기)
+        /// 3. 타겟 레이저 스파크 (블록 위치에서 불꽃이 튐)
         /// 4. 이중 이징 파괴 애니메이션:
         ///    - 전반부 (20%): 살짝 커짐 (부풀어 오르는 느낌)
         ///    - 후반부 (80%): 좌우로 찌그러지며 작아져서 사라짐
-        /// 5. 미세 회전: 30도까지 살짝 회전 (무지개 특유의 개성)
+        /// 5. 미세 회전: 30도까지 살짝 회전 (타겟 레이저 특유의 개성)
         ///
         /// 비유: 비눗방울이 터질 때 잠깐 빛나다가 찌그러지며 사라지는 것과 같습니다.
         /// </summary>
         /// <param name="block">파괴할 블록</param>
         /// <param name="blockColor">블록의 색상 (이펙트 색상에 사용)</param>
-        /// <param name="center">도넛 중심 위치 (연결선의 시작점)</param>
+        /// <param name="center">타겟 레이저 중심 위치 (연결선의 시작점)</param>
         private IEnumerator DestroyBlockWithRainbow(HexBlock block, Color blockColor, Vector3 center)
         {
             if (block == null) yield break;
+
+            // ★ 흙더미 블록 보호 — 타겟 레이저 효과 무효
+            if (block.Data != null && block.Data.dirtMound > 0)
+            {
+                Debug.Log($"[Donut] 흙더미 블록 보호: ({block.Coord}) — 타겟 레이저 무효");
+                yield break;
+            }
 
             Vector3 blockPos = block.transform.position;
 
             // 동시에 여러 이펙트 시작
             StartCoroutine(DestroyFlashOverlay(block));           // 1. 흰색 플래시
-            StartCoroutine(RainbowConnectionLine(center, blockPos));  // 2. 무지개 연결선
+            StartCoroutine(RainbowConnectionLine(center, blockPos));  // 2. 타겟 레이저 연결선
 
-            // 3. 무지개 스파크 (캐스케이드 깊이에 따라 개수 증가)
+            // 3. 타겟 레이저 스파크 (캐스케이드 깊이에 따라 개수 증가)
             float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
             int sparkCount = Mathf.RoundToInt(VisualConstants.SparkSmallCount * cascadeMult);
             for (int i = 0; i < sparkCount; i++)
             {
-                float hue = Random.Range(0f, 1f);  // 랜덤 무지개색
+                float hue = Random.Range(0f, 1f);  // 랜덤 타겟 레이저색
                 Color sparkColor = Color.HSVToRGB(hue, 0.9f, 1f);
                 StartCoroutine(RainbowSpark(blockPos, sparkColor));
             }
@@ -879,7 +897,7 @@ namespace JewelsHexaPuzzle.Core
                     block.transform.localScale = new Vector3(origScale.x * sx, origScale.y * sy, 1f);
                 }
 
-                // 미세 회전: 30도까지 살짝 돌아감 (무지개/도넛 고유 개성)
+                // 미세 회전: 30도까지 살짝 돌아감 (타겟 레이저 고유 개성)
                 float rot = t * 30f;
                 block.transform.localRotation = Quaternion.Euler(0, 0, rot);
 
@@ -889,14 +907,19 @@ namespace JewelsHexaPuzzle.Core
             // 파괴 완료: 원래 크기/회전으로 복원 후 데이터 제거
             block.transform.localScale = Vector3.one;
             block.transform.localRotation = Quaternion.identity;
+
+            // ★ 쉘 블록이면 파편 이펙트 발동
+            if (removalSystem != null && block.Data != null && block.Data.isShell)
+                removalSystem.TryPlayShellBurst(block);
+
             block.ClearData();  // 블록 데이터 초기화 (빈 칸으로 만듦)
         }
 
         /// <summary>
-        /// 무지개색 스파크(불꽃) 하나의 애니메이션.
+        /// 타겟 레이저색 스파크(불꽃) 하나의 애니메이션.
         ///
         /// 중심점에서 랜덤 방향으로 튀어나가며,
-        /// 시간이 지남에 따라 색이 무지개처럼 변하고, 점점 느려지다 사라집니다.
+        /// 시간이 지남에 따라 색이 타겟 레이저처럼 변하고, 점점 느려지다 사라집니다.
         ///
         /// DonutCenterEffect와 DestroyBlockWithRainbow에서 여러 개가 동시에 생성되어
         /// "불꽃 터짐" 효과를 연출합니다.
@@ -938,7 +961,7 @@ namespace JewelsHexaPuzzle.Core
                 spark.transform.position += new Vector3(vel.x, vel.y, 0) * Time.deltaTime;
                 vel *= VisualConstants.SparkDeceleration;  // 매 프레임 속도 감소
 
-                // 무지개 색상 회전: HSV 색상값(Hue)을 시간에 따라 변경
+                // 타겟 레이저 색상 회전: HSV 색상값(Hue)을 시간에 따라 변경
                 // 빨강 → 주황 → 노랑 → 초록 → 파랑 → 보라 → 빨강... 순환
                 float h, s, v;
                 Color.RGBToHSV(color, out h, out s, out v);
@@ -959,16 +982,16 @@ namespace JewelsHexaPuzzle.Core
         }
 
         /// <summary>
-        /// 도넛 중심에서 파괴 대상 블록까지 연결되는 무지개색 빛줄기 이펙트.
+        /// 타겟 레이저 중심에서 파괴 대상 블록까지 연결되는 타겟 레이저색 빛줄기 이펙트.
         ///
         /// 두 점 사이에 가느다란 선을 그리고,
-        /// 색이 무지개처럼 변하면서 점점 가늘어지고 투명해져 사라집니다.
+        /// 색이 타겟 레이저처럼 변하면서 점점 가늘어지고 투명해져 사라집니다.
         ///
-        /// 이 이펙트로 "도넛이 저 블록을 노리고 있다"는 것을 시각적으로 표현합니다.
+        /// 이 이펙트로 "타겟 레이저이 저 블록을 노리고 있다"는 것을 시각적으로 표현합니다.
         ///
         /// 비유: 레이저 포인터로 대상을 가리키는 것과 같습니다.
         /// </summary>
-        /// <param name="from">선의 시작점 (도넛 중심)</param>
+        /// <param name="from">선의 시작점 (타겟 레이저 중심)</param>
         /// <param name="to">선의 끝점 (파괴 대상 블록 위치)</param>
         private IEnumerator RainbowConnectionLine(Vector3 from, Vector3 to)
         {
@@ -1000,7 +1023,7 @@ namespace JewelsHexaPuzzle.Core
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
 
-                // 무지개색 변화
+                // 타겟 레이저색 변화
                 float hue = (t * 2f) % 1f;
                 Color c = Color.HSVToRGB(hue, 0.8f, 1f);
                 c.a = (1f - t) * 0.6f;  // 페이드아웃
@@ -1018,7 +1041,7 @@ namespace JewelsHexaPuzzle.Core
 
         // ============================================================
         // 화면 흔들림 (Screen Shake)
-        // - 도넛 발동 시 화면 전체가 흔들려서 임팩트감을 줍니다
+        // - 타겟 레이저 발동 시 화면 전체가 흔들려서 임팩트감을 줍니다
         // ============================================================
 
         /// <summary>
@@ -1052,40 +1075,17 @@ namespace JewelsHexaPuzzle.Core
         /// 여러 흔들림이 동시에 발생할 수 있으므로 카운터로 추적합니다.
         /// 모든 흔들림이 끝나야(shakeCount==0) 원래 위치로 복원됩니다.
         /// </summary>
-        private int shakeCount = 0;
-
-        /// <summary>
-        /// 화면 흔들림이 시작되기 전의 원래 위치.
-        /// 흔들림이 끝나면 이 위치로 정확히 복원합니다.
-        /// </summary>
-        private Vector3 shakeOriginalPos;
-
         /// <summary>
         /// 화면 흔들림 효과.
-        ///
         /// 게임판(hexGrid)의 위치를 랜덤하게 흔들어 임팩트감을 줍니다.
-        /// 시간이 지남에 따라 흔들림 강도가 점점 줄어들다 멈춥니다 (감쇠 진동).
-        ///
-        /// 여러 흔들림이 동시에 발생해도 안전합니다:
-        /// - shakeCount로 중첩 관리
-        /// - 첫 번째 흔들림 시작 시 원래 위치를 저장
-        /// - 마지막 흔들림이 끝나면 원래 위치로 정확히 복원
-        ///
-        /// 비유: 지진이 발생한 것처럼 화면이 진동하다 잦아드는 것입니다.
         /// </summary>
-        /// <param name="intensity">흔들림 강도 (픽셀 단위, 클수록 크게 흔들림)</param>
-        /// <param name="duration">흔들림 지속 시간 (초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            // 항상 Vector3.zero를 기준으로 (중첩 시 원래 위치 보존)
-            if (shakeCount == 0)
-                shakeOriginalPos = Vector3.zero;
-            shakeCount++;
+            Vector3 originalPos = target.localPosition;
 
             float elapsed = 0f;
 
@@ -1095,30 +1095,23 @@ namespace JewelsHexaPuzzle.Core
                 {
                     elapsed += Time.deltaTime;
                     float t = Mathf.Clamp01(elapsed / duration);
-                    float decay = 1f - VisualConstants.EaseInQuad(t);  // 시간에 따라 감쇠 (1→0)
-                    // 랜덤 방향으로 흔들되, 시간이 지나면서 흔들림 폭이 줄어듦
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = originalPos + new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                shakeCount--;
-                // 모든 흔들림이 끝나면 정확히 원래 위치로 복원
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = originalPos;
                 VisualConstants.EndScreenShake();
             }
         }
 
         // ============================================================
         // Phase 1 VFX: 공통 유틸리티 메서드
-        // - 도넛뿐 아니라 모든 특수 블록이 공통으로 사용하는 연출 기법들입니다
+        // - 타겟 레이저뿐 아니라 모든 특수 블록이 공통으로 사용하는 연출 기법들입니다
         // - 각 특수 블록 시스템마다 동일한 패턴이 구현되어 있습니다
         // ============================================================
 
@@ -1187,8 +1180,8 @@ namespace JewelsHexaPuzzle.Core
             if (!VisualConstants.CanHitStop()) yield break;
             VisualConstants.RecordHitStop();
 
-            // 1단계: 완전 정지
-            Time.timeScale = 0f;
+            // 1단계: 완전 정지 (외부 모달/퍼즈 개입 시 timeScale 쓰기 중단 — 감사 M13)
+            VisualConstants.HitStopSetTimeScale(0f);
             yield return new WaitForSecondsRealtime(stopDuration);  // 실제 시간으로 대기 (게임 시간은 멈춰있으므로)
 
             // 2단계: 슬로모션에서 서서히 정상 속도로 복귀
@@ -1198,10 +1191,10 @@ namespace JewelsHexaPuzzle.Core
                 elapsed += Time.unscaledDeltaTime;  // 실제 시간 기준으로 진행
                 float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
                 // 느린 속도(SlowMoScale) → 정상 속도(1.0)로 부드럽게 전환
-                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                VisualConstants.HitStopSetTimeScale(Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t)));
                 yield return null;
             }
-            Time.timeScale = 1f;  // 정상 속도 확실히 복원
+            VisualConstants.HitStopSetTimeScale(1f);  // 정상 속도 확실히 복원
         }
 
         /// <summary>

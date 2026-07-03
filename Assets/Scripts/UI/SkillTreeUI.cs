@@ -50,6 +50,13 @@ namespace JewelsHexaPuzzle.UI
         private Font font;
         private Canvas parentCanvas;
 
+        // 실제 스킬 초기화 버튼 (좌측 하단) — 쿨다운 적용
+        private Button realResetButton;
+        private Text realResetButtonText;
+        private Text realResetStatusText;
+        private Image realResetButtonBg;
+        private Coroutine resetStatusRefreshCo;
+
         // 레이아웃 상수
         private const float NODE_SIZE = 165f;       // 110 × 1.5
         private const float NODE_SPACING_X = 190f;  // 노드 간격 25px (165 + 25)
@@ -82,7 +89,18 @@ namespace JewelsHexaPuzzle.UI
                 rootContainer.transform.SetAsLastSibling();
                 RefreshAllNodes();
                 RefreshResourceDisplay();
+
+                // 실제 스킬 초기화 버튼/잔여시간 표시 갱신 (1초 주기)
+                RefreshRealResetButton();
+                if (resetStatusRefreshCo != null) StopCoroutine(resetStatusRefreshCo);
+                resetStatusRefreshCo = StartCoroutine(ResetStatusRefreshLoop());
             }
+
+            // ★ 그리드 입력 완전 차단 — InputSystem.Update 최상단 isEnabled 게이트로
+            //   스킬 노드 탭이 뒤의 블록 회전으로 전달되는 것을 원천 차단.
+            //   (GameManager.IsSkillTreeVisible 폴링만으로는 막히지 않는 케이스 대응)
+            var input = Object.FindObjectOfType<JewelsHexaPuzzle.Core.InputSystem>();
+            if (input != null) input.SetEnabled(false);
         }
 
         public void Hide()
@@ -91,6 +109,29 @@ namespace JewelsHexaPuzzle.UI
                 rootContainer.SetActive(false);
             if (detailPopup != null)
                 detailPopup.SetActive(false);
+
+            // ★ 스킬트리 닫힘 → 그리드 입력 복원 (게임 중일 때만)
+            var input = Object.FindObjectOfType<JewelsHexaPuzzle.Core.InputSystem>();
+            if (input != null
+                && JewelsHexaPuzzle.Managers.GameManager.Instance != null
+                && JewelsHexaPuzzle.Managers.GameManager.Instance.CurrentState == JewelsHexaPuzzle.Managers.GameState.Playing)
+                input.SetEnabled(true);
+
+            if (resetStatusRefreshCo != null)
+            {
+                StopCoroutine(resetStatusRefreshCo);
+                resetStatusRefreshCo = null;
+            }
+
+            // ★ 닫은 시각 기록 (3시간 쿨다운용) — 로비 스킬트리 버튼 빨간 점 인디케이터에서 사용
+            //   ISO 8601 round-trip 형식으로 UTC 저장 → 어떤 로케일에서도 안전하게 파싱
+            PlayerPrefs.SetString("SkillTree_LastClosedUtc",
+                System.DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+            PlayerPrefs.Save();
+
+            // 로비 인디케이터 즉시 갱신 (닫자마자 점 사라지도록)
+            if (JewelsHexaPuzzle.Managers.GameManager.Instance != null)
+                JewelsHexaPuzzle.Managers.GameManager.Instance.UpdateSkillTreeRedDot();
         }
 
         public bool IsVisible => rootContainer != null && rootContainer.activeSelf;
@@ -127,7 +168,10 @@ namespace JewelsHexaPuzzle.UI
             // === 나가기 버튼 (우측 하단) ===
             CreateExitButton();
 
-            // === 에디터 전용 디버그 버튼 ===
+            // === 실제 스킬 초기화 버튼 (좌측 하단, 쿨다운 적용) ===
+            CreateRealResetButton();
+
+            // === 에디터 전용 디버그 버튼 (하단 중앙 정렬) ===
 #if UNITY_EDITOR
             CreateDebugButtons();
 #endif
@@ -316,15 +360,17 @@ namespace JewelsHexaPuzzle.UI
             float chainGap = 180f;   // 120 × 1.5
 
             // ── 드릴 그룹 ──
-            float drillY = 1500f;  // ★ 추가 300px 위로 (1200+300)
-            float drillDmgY = drillY - chainGap;         // 480
-            float drillCushionY = drillDmgY - chainGap;  // 360
+            float drillY = 1680f;  // ★ 관통 체인 추가로 상단 확장
+            float drillDmgY = drillY - chainGap;
+            float drillCushionY = drillDmgY - chainGap;
+            float drillPenetrateY = drillCushionY - chainGap; // 관통 체인
 
             // ── 폭탄 그룹 ── (드릴 그룹 아래 180px 간격)
-            float bombMoveY = drillCushionY - groupGap;    // 180
-            float bombKnockY = bombMoveY - chainGap;       // 60
-            float bombDmgY = bombKnockY - chainGap;        // -60
-            float chainBombY = bombDmgY - chainGap;        // -180
+            //   ★ 폭탄 강화(Damage)와 넉백(Knockback) 행 순서 교체 — Damage가 Knockback 위로
+            float bombMoveY = drillPenetrateY - groupGap;    // 180
+            float bombDmgY = bombMoveY - chainGap;           // 60  (구 bombKnockY 위치)
+            float bombKnockY = bombDmgY - chainGap;          // -60 (구 bombDmgY 위치)
+            float chainBombY = bombKnockY - chainGap;        // -180
 
             // ── 드론 그룹 ──
             float droneDmgY = chainBombY - groupGap;       // -360
@@ -353,13 +399,15 @@ namespace JewelsHexaPuzzle.UI
             float groupLabelX = startX - NODE_SIZE * 0.5f - 120f;
 
             // ── 드릴 그룹 ──
-            float[] drillYs = { drillY, drillDmgY, drillCushionY };
+            float[] drillYs = { drillY, drillDmgY, drillCushionY, drillPenetrateY };
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillSkills(),
                 startX, drillY, "", Color.clear);
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillDamageSkills(),
                 startX, drillDmgY, "", Color.clear);
             CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillCushionSkills(),
                 startX, drillCushionY, "", Color.clear);
+            CreateSkillChain(nodesContainer.transform, SkillTreeDefinition.GetDrillPenetrateSkills(),
+                startX, drillPenetrateY, "", Color.clear);
             CreateGroupLabel(nodesContainer.transform, "드릴", new Color(0.5f, 0.8f, 1f),
                 groupLabelX, drillYs, startX);
 
@@ -576,6 +624,8 @@ namespace JewelsHexaPuzzle.UI
 
             if (isMove)
                 CreateMoveIcon(iconContainer.transform);
+            else if (typeVal >= 1200 && typeVal <= 1299)
+                CreatePenetrateIcon(iconContainer.transform, skillData); // 드릴 관통
             else if (typeVal >= 1000 && typeVal <= 1099)
                 CreateChainBombIcon(iconContainer.transform, skillData); // 연쇄폭탄
             else if (typeVal >= 550 && typeVal <= 599)
@@ -1237,6 +1287,67 @@ namespace JewelsHexaPuzzle.UI
             }
         }
 
+        /// <summary>
+        /// 드릴 관통 아이콘: 투사체(화살표)가 몬스터(원)를 관통하는 모습.
+        /// 레벨에 따라 관통하는 몬스터 수가 증가.
+        /// </summary>
+        private void CreatePenetrateIcon(Transform parent, SkillNodeData skillData)
+        {
+            int level = Mathf.Clamp((int)skillData.skillType - 1199, 1, 3);
+            Color arrowColor = new Color(1f, 0.85f, 0.6f, 0.95f);   // 따뜻한 금색 화살표
+            Color monsterColor = new Color(0.55f, 0.2f, 0.2f, 0.75f); // 어두운 적색 몬스터
+            Color crackColor = new Color(1f, 0.7f, 0.3f, 0.85f);      // 관통 균열 색
+
+            // ── 몬스터(원형) 배치: 레벨에 따라 1~3개 ──
+            // 등간격으로 위에서 아래로 배치
+            float topY = (level == 1) ? 0f : (level == 2) ? 10f : 16f;
+            float gap = (level == 1) ? 0f : (level == 2) ? 20f : 16f;
+            float monsterSize = (level <= 2) ? 18f : 15f;
+
+            for (int m = 0; m < level; m++)
+            {
+                float my = topY - gap * m;
+
+                // 몬스터 본체 (원)
+                GameObject monster = new GameObject($"Monster{m}");
+                monster.transform.SetParent(parent, false);
+                Image monImg = monster.AddComponent<Image>();
+                monImg.color = monsterColor;
+                monImg.raycastTarget = false;
+                RectTransform monRt = monster.GetComponent<RectTransform>();
+                monRt.anchoredPosition = new Vector2(0f, my);
+                monRt.sizeDelta = new Vector2(monsterSize, monsterSize);
+
+                // 관통 균열 (X자 크랙 — 투사체가 뚫고 간 자국)
+                CreateIconLine(parent, -monsterSize * 0.35f, my + monsterSize * 0.35f,
+                    monsterSize * 0.35f, my - monsterSize * 0.35f, crackColor);
+                CreateIconLine(parent, monsterSize * 0.35f, my + monsterSize * 0.35f,
+                    -monsterSize * 0.35f, my - monsterSize * 0.35f, crackColor);
+            }
+
+            // ── 투사체 경로 (수직 관통선) ──
+            float lineTop = topY + monsterSize * 0.5f + 10f;
+            float lineBot = topY - gap * Mathf.Max(0, level - 1) - monsterSize * 0.5f - 10f;
+            CreateIconLine(parent, 0f, lineTop, 0f, lineBot, arrowColor);
+
+            // ── 화살촉 (아래쪽, ▼) ──
+            GameObject arrowHead = new GameObject("ArrowHead");
+            arrowHead.transform.SetParent(parent, false);
+            Text arrowText = arrowHead.AddComponent<Text>();
+            arrowText.font = font;
+            arrowText.fontSize = 18;
+            arrowText.alignment = TextAnchor.MiddleCenter;
+            arrowText.color = arrowColor;
+            arrowText.raycastTarget = false;
+            arrowText.text = "\u25BC"; // ▼
+            RectTransform arrowRt = arrowHead.GetComponent<RectTransform>();
+            arrowRt.anchoredPosition = new Vector2(0f, lineBot - 6f);
+            arrowRt.sizeDelta = new Vector2(20f, 20f);
+
+            // ── 화살표 꼬리 (위쪽, 작은 수평선) ──
+            CreateIconLine(parent, -5f, lineTop, 5f, lineTop, arrowColor);
+        }
+
         /// <summary>아이콘 내부용 작은 선분</summary>
         private void CreateIconLine(Transform parent, float x1, float y1, float x2, float y2, Color color)
         {
@@ -1517,20 +1628,167 @@ namespace JewelsHexaPuzzle.UI
         }
 
         // ============================================================
+        // 실제 스킬 초기화 버튼 (좌측 하단) — 쿨다운 적용
+        //   - 미구독 사용 시 7일 쿨다운, 구독 사용 시 24시간 쿨다운
+        //   - 구독 중에는 쿨다운 무시 (즉시 사용 가능)
+        //   - 잔여 시간을 "활성화까지 6d 23h" 형식으로 표시 (구독과 동일 톤)
+        // ============================================================
+
+        private void CreateRealResetButton()
+        {
+            // 버튼
+            GameObject btnObj = new GameObject("RealResetButton");
+            btnObj.transform.SetParent(rootContainer.transform, false);
+            RectTransform btnRt = btnObj.AddComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0f, 0f);
+            btnRt.anchorMax = new Vector2(0f, 0f);
+            btnRt.pivot = new Vector2(0f, 0f);
+            btnRt.anchoredPosition = new Vector2(20f, 70f); // 좌하단
+            btnRt.sizeDelta = new Vector2(180f, 44f);
+
+            realResetButtonBg = btnObj.AddComponent<Image>();
+            realResetButtonBg.color = new Color(0.55f, 0.18f, 0.18f, 0.92f);
+
+            realResetButton = btnObj.AddComponent<Button>();
+            var btnColors = realResetButton.colors;
+            btnColors.highlightedColor = new Color(0.7f, 0.25f, 0.25f);
+            btnColors.pressedColor = new Color(0.4f, 0.12f, 0.12f);
+            btnColors.disabledColor = new Color(0.35f, 0.30f, 0.32f, 0.85f);
+            realResetButton.colors = btnColors;
+
+            // 라벨
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(btnObj.transform, false);
+            RectTransform labelRt = labelObj.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            realResetButtonText = labelObj.AddComponent<Text>();
+            realResetButtonText.font = font;
+            realResetButtonText.fontSize = 17;
+            realResetButtonText.fontStyle = FontStyle.Bold;
+            realResetButtonText.alignment = TextAnchor.MiddleCenter;
+            realResetButtonText.color = Color.white;
+            realResetButtonText.raycastTarget = false;
+            realResetButtonText.text = "스킬 초기화";
+
+            Outline labelOutline = labelObj.AddComponent<Outline>();
+            labelOutline.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            labelOutline.effectDistance = new Vector2(1f, -1f);
+
+            // 잔여 시간 표시 — 버튼 아래
+            GameObject statusObj = new GameObject("RealResetStatus");
+            statusObj.transform.SetParent(rootContainer.transform, false);
+            RectTransform statusRt = statusObj.AddComponent<RectTransform>();
+            statusRt.anchorMin = new Vector2(0f, 0f);
+            statusRt.anchorMax = new Vector2(0f, 0f);
+            statusRt.pivot = new Vector2(0f, 0f);
+            statusRt.anchoredPosition = new Vector2(20f, 46f); // 버튼 바로 아래
+            statusRt.sizeDelta = new Vector2(220f, 22f);
+            realResetStatusText = statusObj.AddComponent<Text>();
+            realResetStatusText.font = font;
+            realResetStatusText.fontSize = 14;
+            realResetStatusText.fontStyle = FontStyle.Bold;
+            realResetStatusText.alignment = TextAnchor.UpperLeft;
+            realResetStatusText.color = new Color(1f, 0.85f, 0.55f, 1f);
+            realResetStatusText.raycastTarget = false;
+            realResetStatusText.text = "";
+
+            Outline statusOutline = statusObj.AddComponent<Outline>();
+            statusOutline.effectColor = new Color(0.2f, 0.1f, 0f, 0.85f);
+            statusOutline.effectDistance = new Vector2(1f, -1f);
+
+            realResetButton.onClick.AddListener(OnRealResetClicked);
+        }
+
+        private void OnRealResetClicked()
+        {
+            if (SkillTreeManager.Instance == null) return;
+            if (!SkillTreeManager.Instance.IsResetAvailable) return; // 쿨다운 중
+
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
+
+            bool ok = SkillTreeManager.Instance.TryResetWithCooldown();
+            if (ok)
+            {
+                RefreshResourceDisplay();
+                RefreshAllNodes();
+                RefreshRealResetButton();
+            }
+        }
+
+        /// <summary>
+        /// 실제 스킬 초기화 버튼 상태 / 잔여 시간 라벨 갱신.
+        ///   - 해금 스킬 0개: 비활성 (이미 초기화 상태이므로 누를 필요 없음)
+        ///   - 쿨다운 중: 비활성, "활성화까지 Xd Yh" 표시
+        ///   - 구독 중: 쿨다운 무시 (해금 스킬이 있다면 활성)
+        ///   - 사용 가능: 활성, 잔여시간 텍스트 비움
+        /// </summary>
+        private void RefreshRealResetButton()
+        {
+            if (SkillTreeManager.Instance == null || realResetButton == null) return;
+
+            bool cooldownClear = SkillTreeManager.Instance.IsResetAvailable;
+            bool hasAnyUnlocked = SkillTreeManager.Instance.HasAnyUnlockedSkill;
+            bool clickable = cooldownClear && hasAnyUnlocked;
+
+            realResetButton.interactable = clickable;
+
+            if (realResetButtonBg != null)
+            {
+                realResetButtonBg.color = clickable
+                    ? new Color(0.55f, 0.18f, 0.18f, 0.92f)   // 활성: 빨강
+                    : new Color(0.32f, 0.28f, 0.30f, 0.85f);  // 비활성: 회색
+            }
+
+            if (realResetStatusText != null)
+            {
+                if (!cooldownClear)
+                {
+                    // 쿨다운 중 — 잔여시간 표시
+                    var remaining = SkillTreeManager.Instance.ResetRemainingCooldown;
+                    realResetStatusText.text = $"활성화까지 {SkillTreeManager.FormatResetCooldown(remaining)}";
+                }
+                else if (!hasAnyUnlocked)
+                {
+                    // 쿨다운은 풀렸지만 초기화할 대상 없음
+                    realResetStatusText.text = "* 초기화할 스킬 없음";
+                }
+                else
+                {
+                    realResetStatusText.text = "";
+                }
+            }
+        }
+
+        /// <summary>1초 주기 잔여시간 갱신 루프 (Show 동안만 실행).</summary>
+        private System.Collections.IEnumerator ResetStatusRefreshLoop()
+        {
+            while (rootContainer != null && rootContainer.activeInHierarchy)
+            {
+                RefreshRealResetButton();
+                yield return new WaitForSecondsRealtime(1f);
+            }
+        }
+
+        // ============================================================
         // 에디터 전용 디버그 버튼
         // ============================================================
 
 #if UNITY_EDITOR
         private void CreateDebugButtons()
         {
-            // SP 추가 버튼 (좌측 하단)
+            // 두 디버그 버튼을 화면 하단 중앙에 가로 정렬 (좌: SP +10, 우: 스킬 초기화)
+            // 각 160px, 가운데 20px gap → ±90 offset
+            // SP 추가 버튼 (하단 중앙 — 왼쪽)
             GameObject addSPObj = new GameObject("DebugAddSP");
             addSPObj.transform.SetParent(rootContainer.transform, false);
             RectTransform addSPRt = addSPObj.AddComponent<RectTransform>();
-            addSPRt.anchorMin = new Vector2(0f, 0f);
-            addSPRt.anchorMax = new Vector2(0f, 0f);
-            addSPRt.pivot = new Vector2(0f, 0f);
-            addSPRt.anchoredPosition = new Vector2(20f, 80f);
+            addSPRt.anchorMin = new Vector2(0.5f, 0f);
+            addSPRt.anchorMax = new Vector2(0.5f, 0f);
+            addSPRt.pivot = new Vector2(0.5f, 0f);
+            addSPRt.anchoredPosition = new Vector2(-90f, 30f);
             addSPRt.sizeDelta = new Vector2(160f, 40f);
 
             Image addSPBg = addSPObj.AddComponent<Image>();
@@ -1567,14 +1825,14 @@ namespace JewelsHexaPuzzle.UI
                 }
             });
 
-            // 스킬 초기화 버튼
+            // 스킬 초기화 버튼 (하단 중앙 — 오른쪽)
             GameObject resetObj = new GameObject("DebugResetSkills");
             resetObj.transform.SetParent(rootContainer.transform, false);
             RectTransform resetRt = resetObj.AddComponent<RectTransform>();
-            resetRt.anchorMin = new Vector2(0f, 0f);
-            resetRt.anchorMax = new Vector2(0f, 0f);
-            resetRt.pivot = new Vector2(0f, 0f);
-            resetRt.anchoredPosition = new Vector2(20f, 20f);
+            resetRt.anchorMin = new Vector2(0.5f, 0f);
+            resetRt.anchorMax = new Vector2(0.5f, 0f);
+            resetRt.pivot = new Vector2(0.5f, 0f);
+            resetRt.anchoredPosition = new Vector2(90f, 30f);
             resetRt.sizeDelta = new Vector2(160f, 40f);
 
             Image resetBg = resetObj.AddComponent<Image>();
@@ -1608,6 +1866,7 @@ namespace JewelsHexaPuzzle.UI
                     SkillTreeManager.Instance.ResetAllSkills();
                     RefreshResourceDisplay();
                     RefreshAllNodes();
+                    RefreshRealResetButton(); // 해금 스킬 0이 됐으니 실제 초기화 버튼 비활성화
                 }
             });
         }
@@ -1839,30 +2098,46 @@ namespace JewelsHexaPuzzle.UI
                 ? SkillTreeManager.Instance.GetSkillState(skillType)
                 : SkillState.Locked;
 
+            // ★ 레벨 게이팅 확인
+            bool isLevelGated = SkillTreeManager.Instance != null
+                && !SkillTreeManager.Instance.IsCategoryAvailable(skillType);
+            int reqLevel = SkillTreeManager.Instance != null
+                ? SkillTreeManager.Instance.GetCategoryRequiredLevel(skillType) : 0;
+
             if (unlockBtn != null && unlockBg != null && unlockText != null)
             {
-                switch (state)
+                if (isLevelGated && reqLevel > 0)
                 {
-                    case SkillState.Unlocked:
-                        unlockText.text = "해금 완료 ✓";
-                        unlockBg.color = new Color(0.3f, 0.3f, 0.35f, 0.8f);
-                        unlockBtn.interactable = false;
-                        break;
-                    case SkillState.Available:
-                        bool canAfford = CanAffordSkill(nodeData);
-                        unlockText.text = canAfford ? "해금" : "자원 부족";
-                        unlockBg.color = canAfford
-                            ? new Color(0.2f, 0.6f, 0.3f, 1f)
-                            : new Color(0.5f, 0.3f, 0.2f, 0.9f);
-                        unlockBtn.interactable = canAfford;
-                        break;
-                    case SkillState.Locked:
-                        var prereqData = SkillTreeDefinition.GetSkill(nodeData.prerequisite);
-                        string prereqName = prereqData != null ? prereqData.skillName : "???";
-                        unlockText.text = $"선행: {prereqName}";
-                        unlockBg.color = new Color(0.3f, 0.3f, 0.35f, 0.8f);
-                        unlockBtn.interactable = false;
-                        break;
+                    // ★ 레벨 게이트 잠김: 요구 레벨 표시
+                    unlockText.text = $"Lv.{reqLevel} 필요";
+                    unlockBg.color = new Color(0.4f, 0.25f, 0.15f, 0.9f);
+                    unlockBtn.interactable = false;
+                }
+                else
+                {
+                    switch (state)
+                    {
+                        case SkillState.Unlocked:
+                            unlockText.text = "해금 완료 ✓";
+                            unlockBg.color = new Color(0.3f, 0.3f, 0.35f, 0.8f);
+                            unlockBtn.interactable = false;
+                            break;
+                        case SkillState.Available:
+                            bool canAfford = CanAffordSkill(nodeData);
+                            unlockText.text = canAfford ? "해금" : "자원 부족";
+                            unlockBg.color = canAfford
+                                ? new Color(0.2f, 0.6f, 0.3f, 1f)
+                                : new Color(0.5f, 0.3f, 0.2f, 0.9f);
+                            unlockBtn.interactable = canAfford;
+                            break;
+                        case SkillState.Locked:
+                            var prereqData = SkillTreeDefinition.GetSkill(nodeData.prerequisite);
+                            string prereqName = prereqData != null ? prereqData.skillName : "???";
+                            unlockText.text = $"선행: {prereqName}";
+                            unlockBg.color = new Color(0.3f, 0.3f, 0.35f, 0.8f);
+                            unlockBtn.interactable = false;
+                            break;
+                    }
                 }
             }
 
@@ -1897,6 +2172,7 @@ namespace JewelsHexaPuzzle.UI
                 // 노드 갱신
                 RefreshAllNodes();
                 RefreshResourceDisplay();
+                RefreshRealResetButton(); // 0 → 1개 해금 시 초기화 버튼 활성화
 
                 // 성공 애니메이션
                 if (skillNodes.ContainsKey(selectedSkill))
@@ -1926,32 +2202,41 @@ namespace JewelsHexaPuzzle.UI
                 var state = SkillTreeManager.Instance.GetSkillState(type);
                 var nodeData = SkillTreeDefinition.GetSkill(type);
 
+                // ★ 레벨 게이팅 체크: 카테고리 미해금이면 특별 표시
+                bool isLevelGated = !SkillTreeManager.Instance.IsCategoryAvailable(type);
+                int requiredLevel = SkillTreeManager.Instance.GetCategoryRequiredLevel(type);
+
                 // 데미지 스킬은 필드 블록 아이콘과 동일한 색상 적용
                 Color baseNodeColor = GetDamageSkillColor(type, nodeData);
 
-                switch (state)
+                if (isLevelGated)
                 {
-                    case SkillState.Unlocked:
-                        // 밝고 채도 높은 원색 + 금색 테두리
-                        bg.color = baseNodeColor;
-                        if (border != null) border.color = new Color(1f, 0.85f, 0.3f, 1f);
-                        break;
+                    // ★ 레벨 게이트 잠김: 매우 어둡고 회색 톤
+                    bg.color = new Color(0.2f, 0.18f, 0.22f, 0.4f);
+                    if (border != null) border.color = new Color(0.3f, 0.25f, 0.35f, 0.4f);
+                }
+                else
+                {
+                    switch (state)
+                    {
+                        case SkillState.Unlocked:
+                            bg.color = baseNodeColor;
+                            if (border != null) border.color = new Color(1f, 0.85f, 0.3f, 1f);
+                            break;
 
-                    case SkillState.Available:
-                        // 보통 밝기 + 흰색 테두리
-                        bg.color = new Color(baseNodeColor.r * 0.7f, baseNodeColor.g * 0.7f, baseNodeColor.b * 0.7f, 0.9f);
-                        if (border != null) border.color = new Color(0.8f, 0.8f, 0.9f, 0.9f);
-                        break;
+                        case SkillState.Available:
+                            bg.color = new Color(baseNodeColor.r * 0.7f, baseNodeColor.g * 0.7f, baseNodeColor.b * 0.7f, 0.9f);
+                            if (border != null) border.color = new Color(0.8f, 0.8f, 0.9f, 0.9f);
+                            break;
 
-                    case SkillState.Locked:
-                        // 어두운 버전 + 어두운 테두리
-                        bg.color = new Color(baseNodeColor.r * 0.4f, baseNodeColor.g * 0.4f, baseNodeColor.b * 0.4f, 0.5f);
-                        if (border != null) border.color = new Color(0.4f, 0.35f, 0.45f, 0.5f);
-                        break;
+                        case SkillState.Locked:
+                            bg.color = new Color(baseNodeColor.r * 0.4f, baseNodeColor.g * 0.4f, baseNodeColor.b * 0.4f, 0.5f);
+                            if (border != null) border.color = new Color(0.4f, 0.35f, 0.45f, 0.5f);
+                            break;
+                    }
                 }
 
                 // 자물쇠 아이콘 표시/숨기기
-                // Locked → 잠긴 자물쇠, Available → 열린 자물쇠, Unlocked → 없음
                 bool showLocked = (state == SkillState.Locked);
                 bool showOpen = (state == SkillState.Available);
 
@@ -1959,6 +2244,9 @@ namespace JewelsHexaPuzzle.UI
                     lockedLockIcons[type].SetActive(showLocked);
                 if (openLockIcons.ContainsKey(type) && openLockIcons[type] != null)
                     openLockIcons[type].SetActive(showOpen);
+
+                // ★ 레벨 게이트 오버레이 텍스트 (Lv.XX 필요)
+                UpdateLevelGateOverlay(type, isLevelGated, requiredLevel);
 
                 // 폭탄 데미지 노드: 검정 배경 위에 v1/v2/v3 텍스트 표시
                 if (type == SkillType.BombDamage1 || type == SkillType.BombDamage2 || type == SkillType.BombDamage3)
@@ -1972,6 +2260,87 @@ namespace JewelsHexaPuzzle.UI
                     UpdateBombNodeText(skillNodes[type], vText, state);
                 }
             }
+        }
+
+        /// <summary>
+        /// 레벨 게이트 오버레이: 잠긴 스킬 노드(Lv1/Lv2/Lv3 모두)에 "Lv.XX" 텍스트 표시.
+        /// 카테고리 게이트(Lv1) + 개별 스킬 게이트(Lv2/Lv3 자체 requiredLevel) 모두 적용.
+        /// </summary>
+        private void UpdateLevelGateOverlay(SkillType type, bool isGated, int requiredLevel)
+        {
+            if (!skillNodes.ContainsKey(type)) return;
+            GameObject nodeObj = skillNodes[type];
+
+            Transform existing = nodeObj.transform.Find("LevelGateText");
+
+            // ★ 표시 조건 결정:
+            //   1) Lv1: 카테고리 게이트(IsCategoryAvailable=false) → 카테고리 requiredLevel 표시
+            //   2) Lv2/Lv3: 개별 스킬 requiredLevel > 도달 레벨 → 해당 requiredLevel 표시
+            //   3) 그 외: 숨김
+            int displayLevel = 0;
+            var nodeData = SkillTreeDefinition.GetSkill(type);
+            SkillType firstSkill = SkillUnlockSchedule.GetCategoryFirstSkill(type);
+
+            if (type == firstSkill)
+            {
+                // Lv1: 카테고리 게이트 적용
+                if (isGated && requiredLevel > 0) displayLevel = requiredLevel;
+            }
+            else if (nodeData != null && nodeData.requiredLevel > 0)
+            {
+                // Lv2/Lv3: 자체 requiredLevel과 도달 레벨 비교
+                int reached = SkillTreeManager.Instance != null
+                    ? SkillTreeManager.Instance.GetHighestReachedLevel() : 0;
+                if (reached < nodeData.requiredLevel) displayLevel = nodeData.requiredLevel;
+            }
+
+            if (displayLevel <= 0)
+            {
+                if (existing != null) existing.gameObject.SetActive(false);
+                return;
+            }
+
+            Text gateText;
+            RectTransform gateRt;
+            if (existing != null)
+            {
+                existing.gameObject.SetActive(true);
+                gateText = existing.GetComponent<Text>();
+                gateRt = existing.GetComponent<RectTransform>();
+            }
+            else
+            {
+                GameObject textObj = new GameObject("LevelGateText");
+                textObj.transform.SetParent(nodeObj.transform, false);
+
+                gateText = textObj.AddComponent<Text>();
+                gateText.font = font;
+                gateText.fontSize = 20;
+                gateText.fontStyle = FontStyle.Bold;
+                gateText.raycastTarget = false;
+
+                Outline outline = textObj.AddComponent<Outline>();
+                outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+                outline.effectDistance = new Vector2(1.5f, -1.5f);
+
+                gateRt = textObj.GetComponent<RectTransform>();
+            }
+
+            // ★ 헥스 안쪽 하단에 배치 (하단 평행 라인에서 3px 위)
+            //   flat-top 헥스: 중심~하단 변 거리 = (NODE_SIZE/2) × √3/2 ≈ 71.45 (NODE_SIZE=165)
+            //   sprite 외곽 안전여유 2px 반영 → 실제 가시 하단 라인 ≈ -71
+            //   text bottom = hex bottom + 3 = -68
+            const float HEX_BOTTOM_Y = -71f;   // 헥스 하단 평행 변 위치 (음수)
+            const float GAP_FROM_BOTTOM = 3f;  // 하단 라인에서 간격
+            gateRt.anchorMin = new Vector2(0.5f, 0.5f);
+            gateRt.anchorMax = new Vector2(0.5f, 0.5f);
+            gateRt.pivot = new Vector2(0.5f, 0f); // 하단 기준
+            gateRt.anchoredPosition = new Vector2(0f, HEX_BOTTOM_Y + GAP_FROM_BOTTOM);
+            gateRt.sizeDelta = new Vector2(NODE_SIZE, 24f);
+            gateText.alignment = TextAnchor.LowerCenter; // 글리프를 박스 하단에 정렬
+
+            gateText.text = $"Lv.{displayLevel}";
+            gateText.color = new Color(1f, 0.6f, 0.2f, 0.9f); // 주황색 (잠긴 느낌)
         }
 
         /// <summary>
@@ -2148,12 +2517,12 @@ namespace JewelsHexaPuzzle.UI
 
         private void OnSPChanged(int sp)
         {
-            if (spText != null) spText.text = sp.ToString();
+            if (spText != null) JewelsHexaPuzzle.Utils.NumberRoller.Roll(spText, sp, v => v.ToString());
         }
 
         private void OnGoldChanged(int gold)
         {
-            if (goldText != null) goldText.text = gold.ToString();
+            if (goldText != null) JewelsHexaPuzzle.Utils.NumberRoller.Roll(goldText, gold, v => v.ToString(), 0.7f, 0.35f);
         }
 
         private void OnSkillUnlockedHandler(SkillType type)

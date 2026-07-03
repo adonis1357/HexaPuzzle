@@ -91,6 +91,29 @@ namespace JewelsHexaPuzzle.Managers
         private AudioClip proceduralMissionComplete;
         private AudioClip proceduralHeavyJump;
         private AudioClip proceduralHeavyLand;
+        // ★ 2026-07-02 전수 효과음 보강 (누락 이벤트 20종)
+        private AudioClip proceduralGoblinHit;
+        private AudioClip proceduralGoblinDeath;
+        private AudioClip proceduralGoblinStep;
+        private AudioClip proceduralFireballCast;
+        private AudioClip proceduralLightningStrike;
+        private AudioClip proceduralBombPlant;
+        private AudioClip proceduralThiefSteal;
+        private AudioClip proceduralHealChime;
+        private AudioClip proceduralWitchSummon;
+        private AudioClip proceduralHammerImpact;
+        private AudioClip proceduralSwapWhoosh;
+        private AudioClip proceduralLineZap;
+        private AudioClip proceduralReverseWind;
+        private AudioClip proceduralGaugeFull;
+        private AudioClip proceduralUnlockChime;
+        private AudioClip proceduralRewardPick;
+        private AudioClip proceduralPopupClose;
+        private AudioClip proceduralReshuffle;
+        private AudioClip proceduralDenyBuzz;
+        private AudioClip proceduralComboMerge;
+        private AudioClip proceduralShellBreak;
+        private AudioClip proceduralOrbAbsorb;
 
         // 배경음악 캐시
         private AudioClip proceduralLobbySereneBGM;
@@ -248,6 +271,29 @@ namespace JewelsHexaPuzzle.Managers
             proceduralMissionComplete = SafeCreateClip("MissionComplete", () => ProceduralAudio.CreateMissionCompleteSound(0.4f), ref successCount, ref failCount);
             proceduralHeavyJump = SafeCreateClip("HeavyJump", () => ProceduralAudio.CreateHeavyJumpSound(0.28f), ref successCount, ref failCount);
             proceduralHeavyLand = SafeCreateClip("HeavyLand", () => ProceduralAudio.CreateHeavyLandSound(0.38f), ref successCount, ref failCount);
+            // ★ 2026-07-02 전수 효과음 보강 (누락 이벤트 20종 — 재질 매핑)
+            proceduralGoblinHit = SafeCreateClip("GoblinHit", () => ProceduralAudio.CreateGoblinHit(0.14f), ref successCount, ref failCount);
+            proceduralGoblinDeath = SafeCreateClip("GoblinDeath", () => ProceduralAudio.CreateGoblinDeath(0.4f), ref successCount, ref failCount);
+            proceduralGoblinStep = SafeCreateClip("GoblinStep", () => ProceduralAudio.CreateGoblinStep(0.07f), ref successCount, ref failCount);
+            proceduralFireballCast = SafeCreateClip("FireballCast", () => ProceduralAudio.CreateFireballCast(0.45f), ref successCount, ref failCount);
+            proceduralLightningStrike = SafeCreateClip("LightningStrike", () => ProceduralAudio.CreateLightningStrike(0.5f), ref successCount, ref failCount);
+            proceduralBombPlant = SafeCreateClip("BombPlant", () => ProceduralAudio.CreateBombPlant(0.22f), ref successCount, ref failCount);
+            proceduralThiefSteal = SafeCreateClip("ThiefSteal", () => ProceduralAudio.CreateThiefSteal(0.2f), ref successCount, ref failCount);
+            proceduralHealChime = SafeCreateClip("HealChime", () => ProceduralAudio.CreateHealChime(0.45f), ref successCount, ref failCount);
+            proceduralWitchSummon = SafeCreateClip("WitchSummon", () => ProceduralAudio.CreateWitchSummon(0.6f), ref successCount, ref failCount);
+            proceduralHammerImpact = SafeCreateClip("HammerImpact", () => ProceduralAudio.CreateHammerImpact(0.3f), ref successCount, ref failCount);
+            proceduralSwapWhoosh = SafeCreateClip("SwapWhoosh", () => ProceduralAudio.CreateSwapWhoosh(0.32f), ref successCount, ref failCount);
+            proceduralLineZap = SafeCreateClip("LineZap", () => ProceduralAudio.CreateLineZap(0.38f), ref successCount, ref failCount);
+            proceduralReverseWind = SafeCreateClip("ReverseWind", () => ProceduralAudio.CreateReverseWind(0.42f), ref successCount, ref failCount);
+            proceduralGaugeFull = SafeCreateClip("GaugeFull", () => ProceduralAudio.CreateGaugeFull(0.4f), ref successCount, ref failCount);
+            proceduralUnlockChime = SafeCreateClip("UnlockChime", () => ProceduralAudio.CreateUnlockChime(0.45f), ref successCount, ref failCount);
+            proceduralRewardPick = SafeCreateClip("RewardPick", () => ProceduralAudio.CreateRewardPick(0.3f), ref successCount, ref failCount);
+            proceduralPopupClose = SafeCreateClip("PopupClose", () => ProceduralAudio.CreatePopupClose(0.2f), ref successCount, ref failCount);
+            proceduralReshuffle = SafeCreateClip("Reshuffle", () => ProceduralAudio.CreateReshuffle(0.55f), ref successCount, ref failCount);
+            proceduralDenyBuzz = SafeCreateClip("DenyBuzz", () => ProceduralAudio.CreateDenyBuzz(0.28f), ref successCount, ref failCount);
+            proceduralComboMerge = SafeCreateClip("ComboMerge", () => ProceduralAudio.CreateComboMerge(0.45f), ref successCount, ref failCount);
+            proceduralShellBreak = SafeCreateClip("ShellBreak", () => ProceduralAudio.CreateShellBreak(0.22f), ref successCount, ref failCount);
+            proceduralOrbAbsorb = SafeCreateClip("OrbAbsorb", () => ProceduralAudio.CreateOrbAbsorb(0.09f), ref successCount, ref failCount);
 
             // 캐스케이드 펜타토닉 개별 음 (C5, D5, E5, G5, A5, C6)
             float[] cascadeFreqs = { 523.25f, 587.33f, 659.25f, 783.99f, 880f, 1046.5f };
@@ -255,13 +301,14 @@ namespace JewelsHexaPuzzle.Managers
             for (int i = 0; i < cascadeFreqs.Length; i++)
                 proceduralCascadeNotes[i] = SafeCreateClip($"Cascade_{i}", () => ProceduralAudio.CreateCascadeNote(cascadeFreqs[i], 0.15f), ref successCount, ref failCount);
 
-            // BGM 클립 생성 (30초 루프)
-            proceduralLobbySereneBGM = SafeCreateClip("LobbySerene", () => ProceduralAudio.CreateLobbySereneBGM(30f), ref successCount, ref failCount);
-            proceduralLobbyBrightBGM = SafeCreateClip("LobbyBright", () => ProceduralAudio.CreateLobbyBrightBGM(30f), ref successCount, ref failCount);
-            proceduralLobbyDreamyBGM = SafeCreateClip("LobbyDreamy", () => ProceduralAudio.CreateLobbyDreamyBGM(30f), ref successCount, ref failCount);
-            proceduralGameplayTenseBGM = SafeCreateClip("GameTense", () => ProceduralAudio.CreateGameplayTenseBGM(30f), ref successCount, ref failCount);
-            proceduralGameplayEnergeticBGM = SafeCreateClip("GameEnergetic", () => ProceduralAudio.CreateGameplayEnergeticBGM(30f), ref successCount, ref failCount);
-            proceduralGameplayEpicBGM = SafeCreateClip("GameEpic", () => ProceduralAudio.CreateGameplayEpicBGM(30f), ref successCount, ref failCount);
+            // ★ BGM 프로시저럴 생성 비활성화 — 외부 AudioClip(Suno AI 등)을 Inspector에서 할당
+            // mainBGM, gameBGM 필드에 AudioClip을 드래그&드롭하면 자동 재생됩니다.
+            // proceduralLobbySereneBGM = SafeCreateClip("LobbySerene", () => ProceduralAudio.CreateLobbySereneBGM(30f), ref successCount, ref failCount);
+            // proceduralLobbyBrightBGM = SafeCreateClip("LobbyBright", () => ProceduralAudio.CreateLobbyBrightBGM(30f), ref successCount, ref failCount);
+            // proceduralLobbyDreamyBGM = SafeCreateClip("LobbyDreamy", () => ProceduralAudio.CreateLobbyDreamyBGM(30f), ref successCount, ref failCount);
+            // proceduralGameplayTenseBGM = SafeCreateClip("GameTense", () => ProceduralAudio.CreateGameplayTenseBGM(30f), ref successCount, ref failCount);
+            // proceduralGameplayEnergeticBGM = SafeCreateClip("GameEnergetic", () => ProceduralAudio.CreateGameplayEnergeticBGM(30f), ref successCount, ref failCount);
+            // proceduralGameplayEpicBGM = SafeCreateClip("GameEpic", () => ProceduralAudio.CreateGameplayEpicBGM(30f), ref successCount, ref failCount);
 
             Debug.Log($"[AudioManager] 프로시저럴 클립 생성 완료: 성공={successCount}, 실패={failCount}");
         }
@@ -305,11 +352,11 @@ namespace JewelsHexaPuzzle.Managers
             bgmSource.Play();
         }
 
-        /// <summary>메인 BGM (Inspector 할당 → 프로시저럴 로비 폴백)</summary>
-        public void PlayMainBGM() => PlayBGM(mainBGM != null ? mainBGM : proceduralLobbySereneBGM);
+        /// <summary>메인 BGM (Inspector에서 AudioClip 할당 필요, 미할당 시 무음)</summary>
+        public void PlayMainBGM() { if (mainBGM != null) PlayBGM(mainBGM); }
 
-        /// <summary>게임 BGM (Inspector 할당 → 프로시저럴 게임플레이 폴백)</summary>
-        public void PlayGameBGM() => PlayBGM(gameBGM != null ? gameBGM : proceduralGameplayEnergeticBGM);
+        /// <summary>게임 BGM (Inspector에서 AudioClip 할당 필요, 미할당 시 무음)</summary>
+        public void PlayGameBGM() { if (gameBGM != null) PlayBGM(gameBGM); }
 
         public void StopBGM() { if (bgmSource != null) bgmSource.Stop(); }
 
@@ -587,16 +634,21 @@ namespace JewelsHexaPuzzle.Managers
         // 경고 비프
         public void PlayWarningBeep() => PlaySFX(proceduralWarningBeep, 0.8f);
 
+        // ★ 카운트업 틱 기준 클립 1회 생성 캐시 (감사 M9)
+        //   — 기존: 틱마다 AudioClip.Create(네이티브 오디오 버퍼, GC 대상 아님) 신규 생성 후 미해제
+        //     → 스테이지 사이클당 30~90개(0.2~0.6MB) 영구 누수
+        private AudioClip proceduralCountUpTick;
+
         /// <summary>
         /// 카운트업 틱 사운드 — progress(0~1)에 따라 피치가 올라감
         /// </summary>
         public void PlayCountUpTick(float progress)
         {
-            // 피치: 800Hz → 1200Hz로 점진적 상승
-            float freq = Mathf.Lerp(800f, 1200f, progress);
-            AudioClip tick = ProceduralAudio.CreateTone(freq, 0.04f, 0.02f);
-            if (tick != null)
-                PlaySFX(tick, 0.5f);
+            // 800Hz 기준 톤 1개를 캐시하고 피치 변조(1.0→1.5)로 800→1200Hz 상승을 표현
+            if (proceduralCountUpTick == null)
+                proceduralCountUpTick = ProceduralAudio.CreateTone(800f, 0.04f, 0.02f);
+            if (proceduralCountUpTick != null)
+                PlaySFXWithPitch(proceduralCountUpTick, Mathf.Lerp(1f, 1.5f, progress), 0.5f);
         }
 
         // 특수 블록 임팩트
@@ -633,6 +685,56 @@ namespace JewelsHexaPuzzle.Managers
         public void PlayHeavyJumpSound() => PlaySFX(proceduralHeavyJump, 0.85f);
         /// <summary>Heavy 고블린 착지 충격 — 지진 느낌의 강한 저음 충격음</summary>
         public void PlayHeavyLandSound() => PlaySFX(proceduralHeavyLand, 1.0f);
+
+        // ============================================================
+        // ★ 2026-07-02 전수 효과음 보강 API (누락 이벤트 20종)
+        // ============================================================
+        /// <summary>고블린 피격 '퍽' (피치 변형 + 동시 3 제한 — 다중 타격 소음 방지)</summary>
+        public void PlayGoblinHitSound() => PlaySFXWithVariationAndLimit(proceduralGoblinHit, 0.08f, 3, 0.8f);
+        /// <summary>고블린 사망 하행 워블</summary>
+        public void PlayGoblinDeathSound() => PlaySFXWithVariation(proceduralGoblinDeath, 0.06f, 0.85f);
+        /// <summary>고블린 이동 발걸음 (조용히, 동시 3 제한)</summary>
+        public void PlayGoblinStepSound() => PlaySFXWithVariationAndLimit(proceduralGoblinStep, 0.1f, 3, 0.35f);
+        /// <summary>마법사 파이어볼 발사 화염 whoosh</summary>
+        public void PlayFireballCastSound() => PlaySFX(proceduralFireballCast, 0.8f);
+        /// <summary>번개 낙뢰 크랙+럼블 (하늘 번개/타격 공용)</summary>
+        public void PlayLightningStrikeSound() => PlaySFX(proceduralLightningStrike, 0.9f);
+        /// <summary>폭탄고블린 폭탄 설치/카운트 태엽 틱</summary>
+        public void PlayBombPlantSound() => PlaySFX(proceduralBombPlant, 0.75f);
+        /// <summary>도둑 훔침 '슉'</summary>
+        public void PlayThiefStealSound() => PlaySFX(proceduralThiefSteal, 0.85f);
+        /// <summary>힐러 회복 차임</summary>
+        public void PlayHealSound() => PlaySFX(proceduralHealChime, 0.75f);
+        /// <summary>마녀 언데드 소환 다크 스윕</summary>
+        public void PlayWitchSummonSound() => PlaySFX(proceduralWitchSummon, 0.85f);
+        /// <summary>망치 금속 타격 '쾅'</summary>
+        public void PlayHammerSound() => PlaySFX(proceduralHammerImpact, 0.95f);
+        /// <summary>스왑 '휙↔휙' 교차</summary>
+        public void PlaySwapSound() => PlaySFX(proceduralSwapWhoosh, 0.85f);
+        /// <summary>라인 발동 '지잉+파열'</summary>
+        public void PlayLineSound() => PlaySFX(proceduralLineZap, 0.85f);
+        /// <summary>역회전 태엽 되감기</summary>
+        public void PlayReverseSound() => PlaySFX(proceduralReverseWind, 0.85f);
+        /// <summary>게이지 만충 완성 벨</summary>
+        public void PlayGaugeFullSound() => PlaySFX(proceduralGaugeFull, 0.8f);
+        /// <summary>미션 슬롯 잠금 해제 (자물쇠 클릭+차임)</summary>
+        public void PlayUnlockSound() => PlaySFX(proceduralUnlockChime, 0.9f);
+        /// <summary>리워드 픽 확정 '띠링'</summary>
+        public void PlayRewardPickSound() => PlaySFX(proceduralRewardPick, 0.85f);
+        /// <summary>팝업 닫기 하행 팝</summary>
+        public void PlayPopupClose() => PlaySFX(proceduralPopupClose, 0.7f);
+        /// <summary>데드락 재배치 '샤라락'</summary>
+        public void PlayReshuffleSound() => PlaySFX(proceduralReshuffle, 0.85f);
+        /// <summary>MP 부족 거부 버즈</summary>
+        public void PlayMPInsufficientSound() => PlaySFXWithVariationAndLimit(proceduralDenyBuzz, 0.03f, 2, 0.75f);
+        /// <summary>특수블록 합성 융합</summary>
+        public void PlayComboMergeSound() => PlaySFX(proceduralComboMerge, 0.9f);
+        /// <summary>쉘(돌) 파괴 크런치 (동시 3 제한)</summary>
+        public void PlayShellBreakSound() => PlaySFXWithVariationAndLimit(proceduralShellBreak, 0.08f, 3, 0.8f);
+        /// <summary>영혼 오브 게이지 흡수 '톡' (조용히, 동시 3 제한)</summary>
+        public void PlayOrbAbsorbSound() => PlaySFXWithVariationAndLimit(proceduralOrbAbsorb, 0.12f, 3, 0.4f);
+        /// <summary>드릴 투사체 관통 개별 타격 (TransformTick 클립 재사용, 동시 4 제한)</summary>
+        public void PlayDrillHitSound() => PlaySFXWithVariationAndLimit(proceduralTransformTick, 0.1f, 4, 0.5f);
 
         // 특수 블록 변환 틱 사운드 (XBlock 합성 시 순차 변환용)
         // index: 변환 순번, total: 전체 블록 수 → 피치를 점진적으로 올림

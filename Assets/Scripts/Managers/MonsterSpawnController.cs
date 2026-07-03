@@ -13,6 +13,7 @@
 using UnityEngine;
 using System.Collections;
 using JewelsHexaPuzzle.Core;
+using JewelsHexaPuzzle.Data;
 
 namespace JewelsHexaPuzzle.Managers
 {
@@ -67,16 +68,14 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         /// <param name="totalMissionMonsters">전체 미션 몬스터 수 (GetTotalMissionTarget 결과)</param>
         /// <param name="moves">전체 이동 횟수 (initialTurns)</param>
-        public IEnumerator Initialize(int totalMissionMonsters, int moves)
+        /// <param name="spawnNow">true면 즉시 전체 소환(기존), false면 초기화만(미션별 순차 소환은 SpawnMissionBatch로).</param>
+        public IEnumerator Initialize(int totalMissionMonsters, int moves, bool spawnNow = true)
         {
             totalMonsterCount = totalMissionMonsters;
             totalMoves = moves;
             spawnedCount = 0;
             allSpawned = false;
             initialized = true;
-
-            // 규칙1: 활성 미션 몬스터 전체 즉시 소환 (100%)
-            int firstWaveCount = totalMonsterCount;
 
             // maxOnBoard를 활성 미션 총수에 맞춰 동적 확장
             if (GoblinSystem.Instance != null)
@@ -89,8 +88,30 @@ namespace JewelsHexaPuzzle.Managers
                 }
             }
 
-            Debug.Log($"[MonsterSpawnController] 초기화: 전체={totalMonsterCount}, 이동={totalMoves}, 즉시소환={firstWaveCount} (활성 미션 전체)");
-            yield return SpawnBatch(firstWaveCount);
+            if (spawnNow)
+            {
+                // 규칙1: 활성 미션 몬스터 전체 즉시 소환 (100%)
+                Debug.Log($"[MonsterSpawnController] 초기화: 전체={totalMonsterCount}, 이동={totalMoves}, 즉시소환={totalMonsterCount} (활성 미션 전체)");
+                yield return SpawnBatch(totalMonsterCount);
+            }
+            else
+            {
+                Debug.Log($"[MonsterSpawnController] 초기화(소환 보류): 전체={totalMonsterCount}, 이동={totalMoves} — 미션별 순차 소환(SpawnMissionBatch)");
+                yield break;
+            }
+        }
+
+        /// <summary>
+        /// 미션별 순차 소환 — 특정 EnemyType의 몬스터를 count마리 소환한다 (미션 UI 등장 직후 호출).
+        /// GoblinSystem.SpawnRestrictType으로 타입을 제한해 그 미션의 몬스터만 소환.
+        /// SpawnBatch 경유라 spawnedCount/전역 카운터가 정합 유지된다.
+        /// </summary>
+        public IEnumerator SpawnMissionBatch(EnemyType type, int count)
+        {
+            if (GoblinSystem.Instance == null || count <= 0) yield break;
+            GoblinSystem.Instance.SpawnRestrictType = type;
+            yield return SpawnBatch(count);
+            GoblinSystem.Instance.SpawnRestrictType = null;
         }
 
         // ============================================================
@@ -118,6 +139,20 @@ namespace JewelsHexaPuzzle.Managers
             yield return GoblinSystem.Instance.StartCoroutine(
                 GoblinSystem.Instance.SpawnWaveBatchPublic(actual)
             );
+
+            // ★ 소환 실패분 환원 (감사 C4) — 소환 영역 포화/전용 칸 소진 등으로 실제 소환이
+            //   요청보다 적으면 그만큼 spawnedCount에서 되돌려 다음 웨이브(규칙2/3)에서 재시도.
+            //   환원하지 않으면 실패분이 영구 소실되어 몬스터 처치 미션이 진행불가가 된다.
+            if (GoblinSystem.Instance != null)
+            {
+                int actuallySpawned = GoblinSystem.Instance.LastWaveSpawnCount;
+                int shortfall = actual - actuallySpawned;
+                if (shortfall > 0)
+                {
+                    spawnedCount -= shortfall;
+                    Debug.Log($"[MonsterSpawnController] 소환 실패 {shortfall}마리 환원 (요청 {actual}, 실제 {actuallySpawned}) → 누적={spawnedCount}/{totalMonsterCount}, 다음 웨이브 재시도");
+                }
+            }
 
             // 전부 소환 완료 체크
             if (RemainingCount <= 0)

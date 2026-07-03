@@ -1,3 +1,5 @@
+// ★ 보안(2026-07): 디버그 치트(C/X키 X블록 강제 배치)는 릴리스 빌드에서 제외 — 재패키징 표면 축소
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
 using UnityEngine;
 using JewelsHexaPuzzle.Data;
 
@@ -70,3 +72,5 @@ namespace JewelsHexaPuzzle.Core
         }
     }
 }
+
+#endif

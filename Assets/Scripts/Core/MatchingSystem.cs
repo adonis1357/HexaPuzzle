@@ -56,7 +56,7 @@ public List<MatchGroup> FindMatches()
                 return allMatches;
             }
 
-            // 1) 링(도넛) 매칭 최우선 감지 — X블록 패턴이 다른 매칭보다 우선
+            // 1) 링타겟 레이저 매칭 최우선 감지 — X블록 패턴이 다른 매칭보다 우선
             var ringMatches = FindRingMatches();
             HashSet<HexBlock> ringUsedBlocks = new HashSet<HexBlock>();
             foreach (var ring in ringMatches)
@@ -138,7 +138,7 @@ public List<MatchGroup> FindMatches()
         }
 
 /// <summary>
-        /// 링(도넛) 매칭 찾기 - 어떤 좌표의 6방향 이웃이 모두 같은 색일 때
+        /// 링타겟 레이저 매칭 찾기 - 어떤 좌표의 6방향 이웃이 모두 같은 색일 때
         /// 삼각형 매칭으로는 감지 불가능한 패턴 (중앙이 다른 색일 경우)
         /// </summary>
 private List<MatchGroup> FindRingMatches()
@@ -193,13 +193,17 @@ private List<MatchGroup> FindRingMatches()
                 if (foundRings.Contains(key)) continue;
                 foundRings.Add(key);
 
-                // 링 6개만 삭제, 중앙에 X블록 생성, 중앙 색상 사용
+                // ★ 링 매칭 특수블록: 항상 XBlock으로 설정 — BRS가 해금 상태에 맞게 fallback
+                //   (XBlock 미해금이면 Drone → Rainbow → Bomb → Drill 순으로 자동 내려감)
+                SpecialBlockType ringSpecial = SpecialBlockType.XBlock;
+
+                // 링 6개만 삭제, 중앙에 특수블록 생성, 중앙 색상 사용
                 MatchGroup group = new MatchGroup
                 {
                     blocks = ringBlocks,
                     gemType = centerColor,
                     score = CalculateScore(ringBlocks.Count),
-                    createdSpecialType = SpecialBlockType.XBlock,
+                    createdSpecialType = ringSpecial,
                     specialSpawnBlock = block
                 };
 
@@ -316,7 +320,9 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 merged.score = CalculateScore(merged.blocks.Count);
 
                 // 특수 블록 우선순위: 드론(5+나비) > 폭탄(5+뭉침) > 드릴(4)
-                // ★ 도넛(Rainbow) 생성 제거됨 — 7+매칭도 드론/폭탄으로 처리
+                // ★ 해금 체크 제거 — 항상 패턴을 감지해 createdSpecialType을 설정하고,
+                //   BRS(BlockRemovalSystem.ApplyUnlockFallback)가 해금 상태에 맞는 하위 등급으로 자동 변환.
+                //   (예: 폭탄 미해금 + 5뭉침 매칭 → Bomb로 설정 → BRS에서 Drill로 fallback)
                 if (merged.blocks.Count >= 7)
                 {
                     if (!CheckForDronePattern(merged))
@@ -404,7 +410,7 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
 
 
-        // ★ CheckForDonutPattern 제거됨 — 도넛(Rainbow) 특수 블록 생성 폐기
+        // ★ CheckForDonutPattern 제거됨 — 타겟 레이저(Rainbow) 특수 블록 생성 폐기
 
         /// <summary>
         /// 폭탄 패턴 체크:
@@ -793,6 +799,9 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
             foreach (var cluster in clusters)
             {
+                // ★ 헤비 점유 클러스터는 회전 불가 → 어시스트 후보 제외
+                if (!IsClusterRotatable(cluster)) continue;
+
                 BlockData d0 = cluster[0].Data;
                 BlockData d1 = cluster[1].Data;
                 BlockData d2 = cluster[2].Data;
@@ -823,6 +832,212 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
             return null;
         }
 
+        /// <summary>
+        /// 클러스터가 실제로 회전 가능한지 — 헤비 고블린이 밟고 있는 좌표가 하나라도 포함되면
+        /// InputSystem이 회전을 차단하므로(눌림 연출만 재생) 힌트/교착 판정에서도 제외해야 한다.
+        /// </summary>
+        private static bool IsClusterRotatable(HexBlock[] cluster)
+        {
+            var gs = GoblinSystem.Instance;
+            if (gs == null || !gs.IsActive) return true;
+            foreach (var b in cluster)
+            {
+                if (b != null && gs.IsHeavyOccupied(b.Coord))
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// ★ 힌트용: 정상 회전(CW/CCW 1회)으로 가장 많은 블록을 정화할 수 있는 클러스터 탐색.
+        /// 반환: 최적 클러스터(없으면 null). bestClearCount = 즉시 매칭으로 정화되는 블록 수(캐스케이드 제외).
+        /// 보드에 기존 매칭이 있으면(처리 중) null — 힌트 부적절 시점.
+        /// </summary>
+        public HexBlock[] FindBestMatchableCluster(out int bestClearCount)
+        {
+            bool dummy;
+            return FindBestMatchableCluster(out bestClearCount, out dummy);
+        }
+
+        /// <summary>방향 정보 포함 오버로드 — bestClockwise: 최적 회전이 시계방향인지 (자동 테스트/봇용).</summary>
+        public HexBlock[] FindBestMatchableCluster(out int bestClearCount, out bool bestClockwise)
+        {
+            bestClearCount = 0;
+            bestClockwise = true;
+            if (hexGrid == null) return null;
+            if (HasAnyTriangleMatch()) return null;
+
+            HexBlock[] best = null;
+            var clusters = GetAllClusters();
+            foreach (var cluster in clusters)
+            {
+                // ★ 헤비 점유 클러스터는 회전 불가 → 힌트 후보 제외
+                if (!IsClusterRotatable(cluster)) continue;
+                BlockData d0 = cluster[0].Data;
+                BlockData d1 = cluster[1].Data;
+                BlockData d2 = cluster[2].Data;
+
+                // CW 회전 시뮬레이션
+                cluster[0].SetBlockDataSilent(d2);
+                cluster[1].SetBlockDataSilent(d0);
+                cluster[2].SetBlockDataSilent(d1);
+                int cw = CountMatchedCellsAround(cluster);
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+                if (cw > bestClearCount) { bestClearCount = cw; best = cluster; bestClockwise = true; }
+
+                // CCW 회전 시뮬레이션
+                cluster[0].SetBlockDataSilent(d1);
+                cluster[1].SetBlockDataSilent(d2);
+                cluster[2].SetBlockDataSilent(d0);
+                int ccw = CountMatchedCellsAround(cluster);
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+                if (ccw > bestClearCount) { bestClearCount = ccw; best = cluster; bestClockwise = false; }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// 회전된 3셀 주변에서 매칭되는 셀 수 집계 (union).
+        /// 회전 전 보드에 매칭이 없다는 전제에서, 새 매칭 삼각형은 반드시 회전 셀을 포함하므로
+        /// 회전 셀 3개가 포함된 삼각형만 검사하면 충분하다 (빠른 경로).
+        /// </summary>
+        private int CountMatchedCellsAround(HexBlock[] rotated)
+        {
+            var matched = new HashSet<HexBlock>();
+            foreach (var b in rotated)
+            {
+                if (b.Data == null || b.Data.gemType == GemType.None || b.Data.gemType == GemType.Gray) continue;
+                if (b.Data.specialType == SpecialBlockType.FixedBlock || b.Data.isShell) continue;
+                var tris = FindTrianglesContaining(b);
+                foreach (var t in tris)
+                    foreach (var tb in t)
+                        matched.Add(tb);
+            }
+            return matched.Count;
+        }
+
+        // ── 미션 지향 평가 (자동 테스트 봇용 — 미션 클리어를 직접 노리는 회전 선택) ──
+        private JewelsHexaPuzzle.Managers.StageManager cachedStageManager;
+
+        // ============================================================
+        // 이동 평가 가중치 (학습형 자동플레이가 튜닝하는 파라미터).
+        //   기본값 = 기존 하드코딩 값(1/8/12/4)이라 학습 미적용 시 동작 불변.
+        //   LearningAutoPlay(Editor)가 static으로 덮어써 (1+1)-ES로 자가튜닝한다.
+        //   ⚠️ int 아닌 float — ES 가우시안 변이 해상도 보존. 점수는 마지막에 반올림.
+        // ============================================================
+        public static float W_Cell = 1f;          // 매칭 셀당 기본
+        public static float W_MissionColor = 8f;   // 미수행 미션 타겟/보조 색
+        public static float W_Goblin = 12f;        // 고블린 점유 셀 직접 매칭
+        public static float W_FallDamage = 4f;     // 같은 열 아래 고블린(낙하 통과 데미지)
+
+        /// <summary>
+        /// 미션 지향 최적 클러스터 — 매칭 셀을 미션 가치로 점수화해 최고 점수 회전을 찾는다.
+        /// 점수: 셀 기본 W_Cell + 미수행 미션 타겟 색 W_MissionColor + 고블린 점유 셀 W_Goblin + 같은 열 아래 고블린 W_FallDamage.
+        /// 매칭 가능 회전이 하나라도 있으면 score >= 1.
+        /// </summary>
+        public HexBlock[] FindBestMissionCluster(out int bestScore, out bool bestClockwise)
+        {
+            bestScore = 0;
+            bestClockwise = true;
+            if (hexGrid == null) return null;
+            if (HasAnyTriangleMatch()) return null;
+
+            HexBlock[] best = null;
+            var clusters = GetAllClusters();
+            foreach (var cluster in clusters)
+            {
+                if (!IsClusterRotatable(cluster)) continue;
+
+                BlockData d0 = cluster[0].Data;
+                BlockData d1 = cluster[1].Data;
+                BlockData d2 = cluster[2].Data;
+                if (d0 == null || d1 == null || d2 == null) continue;
+
+                // CW 시뮬
+                cluster[0].SetBlockDataSilent(d2);
+                cluster[1].SetBlockDataSilent(d0);
+                cluster[2].SetBlockDataSilent(d1);
+                int cw = ScoreMatchedCellsAround(cluster);
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+                if (cw > bestScore) { bestScore = cw; best = cluster; bestClockwise = true; }
+
+                // CCW 시뮬
+                cluster[0].SetBlockDataSilent(d1);
+                cluster[1].SetBlockDataSilent(d2);
+                cluster[2].SetBlockDataSilent(d0);
+                int ccw = ScoreMatchedCellsAround(cluster);
+                cluster[0].SetBlockDataSilent(d0);
+                cluster[1].SetBlockDataSilent(d1);
+                cluster[2].SetBlockDataSilent(d2);
+                if (ccw > bestScore) { bestScore = ccw; best = cluster; bestClockwise = false; }
+            }
+            return best;
+        }
+
+        /// <summary>회전 결과 매칭 셀들을 미션 가치로 점수화 (CountMatchedCellsAround의 평가 확장판).</summary>
+        private int ScoreMatchedCellsAround(HexBlock[] rotated)
+        {
+            var matched = new HashSet<HexBlock>();
+            foreach (var b in rotated)
+            {
+                if (b.Data == null || b.Data.gemType == GemType.None || b.Data.gemType == GemType.Gray) continue;
+                if (b.Data.specialType == SpecialBlockType.FixedBlock || b.Data.isShell) continue;
+                var tris = FindTrianglesContaining(b);
+                foreach (var t in tris)
+                    foreach (var tb in t)
+                        matched.Add(tb);
+            }
+            if (matched.Count == 0) return 0;
+
+            if (cachedStageManager == null)
+                cachedStageManager = FindObjectOfType<JewelsHexaPuzzle.Managers.StageManager>();
+            var missions = cachedStageManager != null ? cachedStageManager.GetIncompleteMissions() : null;
+            var goblins = GoblinSystem.Instance;
+
+            float score = 0f;
+            foreach (var mb in matched)
+            {
+                score += W_Cell;
+                if (mb.Data == null) continue;
+
+                // 미수행 미션 타겟 색 가중 (수집/가공 계열)
+                if (missions != null)
+                {
+                    foreach (var m in missions)
+                    {
+                        if (m == null) continue;
+                        if (m.targetGemType != GemType.None && mb.Data.gemType == m.targetGemType) { score += W_MissionColor; break; }
+                        if (m.secondaryGemType != GemType.None && mb.Data.gemType == m.secondaryGemType) { score += W_MissionColor; break; }
+                    }
+                }
+
+                // 몬스터 데미지 가중: 점유 셀 직접 매칭 > 같은 열 위쪽 매칭(낙하 통과 데미지)
+                if (goblins != null)
+                {
+                    if (goblins.GetGoblinAt(mb.Coord) != null)
+                    {
+                        score += W_Goblin;
+                    }
+                    else
+                    {
+                        var colGoblins = goblins.GetGoblinsInColumn(mb.Coord.q);
+                        if (colGoblins != null)
+                        {
+                            foreach (var g in colGoblins)
+                                if (g != null && g.position.r > mb.Coord.r) { score += W_FallDamage; break; }
+                        }
+                    }
+                }
+            }
+            return Mathf.RoundToInt(score);
+        }
+
         public bool HasPossibleMoves()
         {
             if (hexGrid == null) return false;
@@ -835,6 +1050,10 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
 
             foreach (var cluster in clusters)
             {
+                // ★ 헤비 점유 클러스터는 회전 불가 → 가능한 수에서 제외
+                //   (제외하지 않으면 교착 판정이 "회전 가능"으로 오판해 게임오버를 놓침)
+                if (!IsClusterRotatable(cluster)) continue;
+
                 // 원본 데이터 참조 저장
                 BlockData d0 = cluster[0].Data;
                 BlockData d1 = cluster[1].Data;
@@ -872,6 +1091,9 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
             return false;
         }
 
+        /// <summary>즉시 매칭 존재 여부 (이벤트 미발생 — 재배치 검증용 공개 래퍼).</summary>
+        public bool HasAnyMatchQuick() { return HasAnyTriangleMatch(); }
+
         /// <summary>
         /// 삼각형 매칭이 하나라도 있는지 빠르게 확인 (이벤트 미발생, 병합/링 체크 생략)
         /// </summary>
@@ -888,6 +1110,14 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                 if (triangles.Count > 0) return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// 모든 유효한 삼각형 클러스터(3블록) 수집 — 공개 래퍼 (외부 시스템 사용)
+        /// </summary>
+        public List<HexBlock[]> GetAllRotatableClusters()
+        {
+            return GetAllClusters();
         }
 
         /// <summary>
@@ -920,10 +1150,20 @@ private List<MatchGroup> MergeAdjacentMatches(List<MatchGroup> matches)
                         if (seen.Contains(key)) continue;
                         seen.Add(key);
 
-                        // 회전 불가 블록(FixedBlock) 포함 클러스터 제외
-                        if (block.Data.specialType == SpecialBlockType.FixedBlock) continue;
-                        if (neighbors[i].Data != null && neighbors[i].Data.specialType == SpecialBlockType.FixedBlock) continue;
-                        if (neighbors[j].Data != null && neighbors[j].Data.specialType == SpecialBlockType.FixedBlock) continue;
+                        // ★ 회전 불가 블록 포함 클러스터 제외
+                        //   CanMove()는 FixedBlock + hasChain + dirtMound 모두 체크
+                        //   → 흙더미·사슬·고정블록 중 하나라도 있으면 회전 불가 → 매칭 검사에서 제외
+                        if (!block.Data.CanMove()) continue;
+                        if (neighbors[i].Data == null || !neighbors[i].Data.CanMove()) continue;
+                        if (neighbors[j].Data == null || !neighbors[j].Data.CanMove()) continue;
+
+                        // ChaosOverlord ChainAnchor 효과로 회전 차단된 블록도 제외
+                        if (EnemySystem.Instance != null)
+                        {
+                            if (EnemySystem.Instance.IsRotationBlocked(block) ||
+                                EnemySystem.Instance.IsRotationBlocked(neighbors[i]) ||
+                                EnemySystem.Instance.IsRotationBlocked(neighbors[j])) continue;
+                        }
 
                         clusters.Add(new HexBlock[] { block, neighbors[i], neighbors[j] });
                     }

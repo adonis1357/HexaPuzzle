@@ -22,18 +22,20 @@ namespace JewelsHexaPuzzle.Items
         private static readonly Color COLOR_LAYER_2 = new Color(1f, 0.3f, 0f, 1f);         // 주황빨간
         private static readonly Color COLOR_LAYER_3 = new Color(1f, 0.5f, 0f, 1f);         // 밝은 주황
 
-        // UseReady 오버레이 색상
-        private static readonly Color COLOR_USE_READY0 = new Color(1f, 0.2f, 0.2f, 1f);    // 빨간 오버레이
+        // UseReady 오버레이 색상 — Ready(빨강)와 구분되도록 밝은 금색으로 활성 표시
+        private static readonly Color COLOR_USE_READY0 = new Color(1f, 0.78f, 0.15f, 1f);  // 밝은 금색 (활성 중)
 
         private static readonly Color COLOR_FLASH       = Color.white;
         private static readonly Color COLOR_OUTLINE_ACTIVE  = new Color(1f, 0.9f, 0f, 1f);
         private static readonly Color COLOR_OUTLINE_OFF     = new Color(0f, 0f, 0f, 0f);
 
-        private const int LAYER_SIZE = 50;
+        // ★ 레이어(단계)별 요구 게이지 — 1~4단계 모두 10 (각 단계 동일). 인덱스 0=1단계.
+        private static readonly int[] LAYER_THRESHOLDS = { 10, 10, 10, 10 };
+        private int LayerThreshold(int layer) => LAYER_THRESHOLDS[Mathf.Clamp(layer, 0, LAYER_THRESHOLDS.Length - 1)];
 
         // 레이어 시스템
         private int gaugeLayer = 0;       // 0~4 (완성된 레이어 수)
-        private int gaugeInLayer = 0;     // 0~49 (현재 레이어 내 진행률)
+        private int gaugeInLayer = 0;     // 현재 레이어 내 진행 (그 단계 임계값 미만)
 
         private HammerState currentState = HammerState.Inactive;
 
@@ -48,9 +50,8 @@ namespace JewelsHexaPuzzle.Items
         public int GetCurrentMaxLayer() => GetMaxLayer();
         private int GetMaxLayer()
         {
-            int level = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
-            // HammerLevel1 미해금=1, Level1=2, Level2=3, Level3=4
-            return 1 + level;
+            // ★ 기본 능력치로 4단계까지 충전 (리워드 없이). 스킬은 더 이상 최대 레이어를 게이팅하지 않음.
+            return 4;
         }
 
         private void Awake()
@@ -206,7 +207,19 @@ namespace JewelsHexaPuzzle.Items
         {
             currentState = newState;
             RefreshUI();
+            // ★ 보류 충전 반영 (감사 M12) — UseReady 중 도착한 영혼 충전을 상태 복귀 시 합산.
+            //   (이전: UseReady 중 AddGauge가 무조건 return → 비행 중이던 영혼들의 충전 전량 소실)
+            if (pendingGauge > 0 &&
+                (newState == HammerState.Inactive || newState == HammerState.Ready))
+            {
+                int p = pendingGauge;
+                pendingGauge = 0;
+                AddGauge(p);
+            }
         }
+
+        // UseReady 등 충전 불가 상태에 도착한 충전 보류분 (상태 복귀 시 합산 — 감사 M12)
+        private int pendingGauge = 0;
 
         // ============================================================
         // 버튼 클릭: Ready → UseReady → Inactive
@@ -222,9 +235,20 @@ namespace JewelsHexaPuzzle.Items
                 SetState(HammerState.UseReady);
                 if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
                 if (hammerItem != null) hammerItem.Activate();
+
+                // 튜토리얼 이벤트 알림 (Stage 6 HammerActivated 대기 해제)
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnHammerActivated();
             }
             else if (currentState == HammerState.UseReady)
             {
+                // 튜토리얼 타겟 제한 중에는 재클릭으로 취소되지 않도록 차단 + 토스트
+                // (블록 클릭 전까지 망치 활성 상태 유지)
+                var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                if (tm != null && tm.HasHammerTargetRestriction)
+                {
+                    tm.ShowHammerWrongClickHint();
+                    return;
+                }
                 // UseReady → 취소하고 복귀
                 CancelAndReturn();
             }
@@ -234,6 +258,29 @@ namespace JewelsHexaPuzzle.Items
         {
             if (hammerItem != null) hammerItem.Deactivate();
             SetState(gaugeLayer >= 1 ? HammerState.Ready : HammerState.Inactive);
+        }
+
+        /// <summary>
+        /// ChargeBar(외부 비주얼 버튼) 탭에서 호출 — OnHammerButtonClicked의 Ready→UseReady 분기와 동일.
+        /// 버튼 onClick 바인딩에 의존하지 않고 게이지 상태로 직접 발동(타이밍 안전).
+        /// </summary>
+        public void ActivateUseReady()
+        {
+            // ★ 토글 — 차지바 버튼 탭으로 활성/취소 모두 가능(기존 활성화 전용이라 버튼으로 취소가 안 되던 버그 수정).
+            if (currentState == HammerState.Ready)
+            {
+                SetState(HammerState.UseReady);
+                if (hammerItem == null) hammerItem = FindObjectOfType<HammerItem>();
+                if (hammerItem != null) hammerItem.Activate();
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnHammerActivated();
+            }
+            else if (currentState == HammerState.UseReady)
+            {
+                // 튜토리얼 타겟 제한 중에는 재탭으로 취소되지 않도록 차단 (OnHammerButtonClicked와 동일)
+                var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+                if (tm != null && tm.HasHammerTargetRestriction) { tm.ShowHammerWrongClickHint(); return; }
+                CancelAndReturn();
+            }
         }
 
         // ============================================================
@@ -292,7 +339,12 @@ namespace JewelsHexaPuzzle.Items
 
         public void AddGauge(int amount)
         {
-            if (currentState != HammerState.Inactive && currentState != HammerState.Ready) return;
+            // ★ 사용 중(UseReady 등) 도착한 충전은 버리지 않고 보류 → 상태 복귀 시 합산 (감사 M12)
+            if (currentState != HammerState.Inactive && currentState != HammerState.Ready)
+            {
+                pendingGauge += amount;
+                return;
+            }
 
             int maxLayer = GetMaxLayer();
 
@@ -301,11 +353,12 @@ namespace JewelsHexaPuzzle.Items
 
             gaugeInLayer += amount;
 
-            // 레이어 승격 처리
-            while (gaugeInLayer >= LAYER_SIZE && gaugeLayer < maxLayer)
+            // 레이어 승격 처리 (단계별 임계값 1~4단계=10/8/6/4)
+            while (gaugeLayer < maxLayer && gaugeInLayer >= LayerThreshold(gaugeLayer))
             {
-                gaugeInLayer -= LAYER_SIZE;
+                gaugeInLayer -= LayerThreshold(gaugeLayer);
                 gaugeLayer++;
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayGaugeFullSound(); // ★ 효과음: 게이지 레이어 완성
             }
 
             // 최대 레이어 도달 시 잔여 게이지 초기화
@@ -325,7 +378,7 @@ namespace JewelsHexaPuzzle.Items
             }
         }
 
-        public void OnTurnEnd() { AddGauge(5); }
+        public void OnTurnEnd() { AddGauge(1); } // 단계 임계값 10/8/6/4에 맞춰 턴당 패시브 충전 +5→+1 (매칭 위주로)
 
         private IEnumerator FlashEffect()
         {
@@ -364,7 +417,7 @@ namespace JewelsHexaPuzzle.Items
             {
                 case HammerState.Inactive:
                     // fillAmount = 현재 레이어 내 진행률
-                    buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
+                    buttonImage.fillAmount = gaugeInLayer / (float)LayerThreshold(gaugeLayer);
                     buttonImage.color = GetLayerColor(gaugeLayer);
                     if (hammerButton != null) hammerButton.interactable = JewelsHexaPuzzle.Core.EditorTestSystem.IsGaugeAddMode();
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_OFF;
@@ -377,7 +430,7 @@ namespace JewelsHexaPuzzle.Items
                     if (gaugeLayer >= maxLayer)
                         buttonImage.fillAmount = 1f;
                     else
-                        buttonImage.fillAmount = gaugeInLayer / (float)LAYER_SIZE;
+                        buttonImage.fillAmount = gaugeInLayer / (float)LayerThreshold(gaugeLayer);
                     buttonImage.color = GetLayerColor(Mathf.Max(0, gaugeLayer - 1));
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
@@ -385,11 +438,12 @@ namespace JewelsHexaPuzzle.Items
                     break;
 
                 case HammerState.UseReady:
+                    // 활성화 상태를 명확히 구분: 금색 + 살짝 큰 스케일 + 두꺼운 외곽선
                     buttonImage.fillAmount = 1f;
                     buttonImage.color = COLOR_USE_READY0;
                     if (hammerButton != null) hammerButton.interactable = true;
                     if (buttonOutline != null) buttonOutline.effectColor = COLOR_OUTLINE_ACTIVE;
-                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one;
+                    if (hammerButton != null) hammerButton.transform.localScale = Vector3.one * 1.1f;
                     break;
             }
 
@@ -425,7 +479,9 @@ namespace JewelsHexaPuzzle.Items
 
         public int GaugeLayer => gaugeLayer;
         public int GaugeInLayer => gaugeInLayer;
-        public int TotalGauge => gaugeLayer * LAYER_SIZE + gaugeInLayer;
+        /// <summary>현재 채우는 단계의 진행 비율 (gaugeInLayer / 그 단계 임계값) — 차지바 fill용.</summary>
+        public float CurrentLayerFillRatio => Mathf.Clamp01(gaugeInLayer / (float)LayerThreshold(gaugeLayer));
+        public int TotalGauge { get { int t = gaugeInLayer; for (int i = 0; i < gaugeLayer; i++) t += LayerThreshold(i); return t; } }
         public HammerState CurrentState => currentState;
 
         // 하위 호환용 (기존 코드에서 CurrentGauge 참조하는 곳)

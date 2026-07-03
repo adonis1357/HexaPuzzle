@@ -59,11 +59,15 @@ namespace JewelsHexaPuzzle.Managers
         }
 
         private const string HIGH_SCORE_KEY = "HighScore";
-        private const string TOTAL_GOLD_KEY = "TotalGold";
+        // ★ 키 충돌 수정: 기존 "TotalGold"는 GameManager의 골드 지갑(currentGold) 저장 키와 겹쳐
+        //   하이스코어 갱신 시 누적 점수 통계가 지갑을 덮어쓰는 치명 버그가 있었음.
+        //   통계 전용 키로 분리 (지갑은 기존 키 유지 → 기존 유저 잔액 보존, 이 통계값은 표시처 없어 0 재시작 무방).
+        private const string TOTAL_GOLD_KEY = "TotalGoldEarned";
         private const string RANKING_KEY = "InfiniteRanking";
         private const string MAX_MOVES_KEY = "MaxMoves";
         private const string LEVEL_HIGH_SCORE_KEY = "LevelHighScore_"; // + stageNumber (모든 유저 최고)
         private const string PERSONAL_LEVEL_BEST_KEY = "PersonalLevelBest_"; // + stageNumber (개인 레벨별 최고)
+        private const string LEVEL_STARS_KEY = "LevelStars_"; // + stageNumber (레벨별 획득 별 0~3)
         private const int MAX_RANKING_COUNT = 10;
 
         private int maxMoves = 0;
@@ -138,8 +142,8 @@ namespace JewelsHexaPuzzle.Managers
             IncrementCombo();
 
             OnScoreChanged?.Invoke(currentScore);
-            // 점수 팝업 비활성화
-            // OnScorePopup?.Invoke(finalScore, position);
+            // 매칭 위치에 점수 팝업 표시 (+점수, 흰색 폰트, 자연스러운 상승+페이드)
+            OnScorePopup?.Invoke(finalScore, position);
 
             Debug.Log($"Score +{finalScore} (base: {baseScore}, cascade: x{cascadeMultiplier:F1}, combo: x{ComboMultiplier:F1}, groups: {matchGroupCount}) Total: {currentScore}");
         }
@@ -164,8 +168,8 @@ namespace JewelsHexaPuzzle.Managers
             IncrementCombo();
 
             OnScoreChanged?.Invoke(currentScore);
-            // 점수 팝업 비활성화
-            // OnScorePopup?.Invoke(finalScore, position);
+            // 특수블록 파괴 위치에 점수 팝업 표시
+            OnScorePopup?.Invoke(finalScore, position);
 
             Debug.Log($"Special Score +{finalScore} (raw: {rawScore}, cascade: x{cascadeMultiplier:F1}, combo: x{ComboMultiplier:F1}) Total: {currentScore}");
         }
@@ -230,7 +234,9 @@ namespace JewelsHexaPuzzle.Managers
         /// </summary>
         public StageSummaryData CalculateStageClearBonus(int remainingTurns, int turnLimit)
         {
-            int turnsUsed = turnLimit - remainingTurns;
+            // 마지막 미션 이동보상 등으로 remainingTurns > turnLimit가 되면 turnsUsed가 음수가 되어
+            //   효율 보너스가 비정상화될 수 있음 → 0 이상으로 클램프(방어).
+            int turnsUsed = Mathf.Max(0, turnLimit - remainingTurns);
             int remainingTurnsBonus = ScoreCalculator.CalculateRemainingTurnsBonus(remainingTurns);
             int efficiencyBonus = ScoreCalculator.CalculateEfficiencyBonus(turnsUsed, turnLimit);
 
@@ -536,6 +542,32 @@ namespace JewelsHexaPuzzle.Managers
         public int GetPersonalLevelBest(int stageNumber)
         {
             return PlayerPrefs.GetInt(PERSONAL_LEVEL_BEST_KEY + stageNumber, 0);
+        }
+
+        /// <summary>
+        /// 특정 레벨의 획득 별 개수(0~3) 가져오기. (로비 노드 표시용)
+        /// 저장값이 없고 개인 최고 점수가 있으면 최소 1성(클리어)으로 간주.
+        /// </summary>
+        public int GetLevelStars(int stageNumber)
+        {
+            int stored = PlayerPrefs.GetInt(LEVEL_STARS_KEY + stageNumber, -1);
+            if (stored >= 0) return Mathf.Clamp(stored, 0, 3);
+            // 별 미저장(구버전 클리어)이지만 점수 기록이 있으면 클리어로 간주(1성)
+            return GetPersonalLevelBest(stageNumber) > 0 ? 1 : 0;
+        }
+
+        /// <summary>
+        /// 레벨별 획득 별 갱신(최댓값 유지) + 영속 저장. 스테이지 클리어 시 호출.
+        /// </summary>
+        public void SaveLevelStars(int stageNumber, int stars)
+        {
+            stars = Mathf.Clamp(stars, 0, 3);
+            int prev = PlayerPrefs.GetInt(LEVEL_STARS_KEY + stageNumber, 0);
+            if (stars > prev)
+            {
+                PlayerPrefs.SetInt(LEVEL_STARS_KEY + stageNumber, stars);
+                PlayerPrefs.Save();
+            }
         }
 
         /// <summary>

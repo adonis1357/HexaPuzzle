@@ -27,6 +27,10 @@ namespace JewelsHexaPuzzle.Core
         private Transform effectParent;
         private static Sprite droneIconSprite;
 
+        // ★ 매 재생 시작 시 캐시 클리어 → 새 PNG로 강제 재로드.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetDroneIconCache() { droneIconSprite = null; }
+
         public bool IsActivating => activeDroneCount > 0;
         public List<HexBlock> PendingSpecialBlocks => pendingSpecialBlocks;
         public bool IsBlockActive(HexBlock block) => activeBlocks.Contains(block);
@@ -99,7 +103,18 @@ namespace JewelsHexaPuzzle.Core
         {
             if (droneBlock == null) return;
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
+            {
+                // ★ 발동 직전 드론 블록이 무효화됨(제거/레이스 등) — 조용히 사라지지 않도록 로그로 가시화
+                Debug.LogWarning($"[DroneBlockSystem] 드론 발동 취소 — 블록 데이터 무효 (coord={droneBlock.Coord})");
                 return;
+            }
+
+            // ★ 드론 분신 리워드: primary 외에 추가 드론을 서로 다른 우선순위 타겟으로 발사.
+            //   블록 파괴 전에 시작 위치/색을 캐시. primary를 먼저 발사해 isFirst 연출(압축/흔들림)을 보존한 뒤 분신 발사.
+            int cloneBonus = JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
+                ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneCloneBonus() : 0;
+            Vector3 cloneStartPos = droneBlock.transform.position;
+            Color cloneColor = GemColors.GetColor(droneBlock.Data.gemType);
 
             // ★ DroneScoreSystem 통합 타겟팅 (1단계 직접 타격 포함)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
@@ -109,12 +124,78 @@ namespace JewelsHexaPuzzle.Core
                 {
                     Debug.Log($"[DroneBlockSystem] 1단계 직접 타격: {priorityCoord.Value}");
                     ActivateDroneToGoblin(droneBlock, priorityCoord.Value);
+                    if (cloneBonus > 0) StartCloneDrones(cloneStartPos, cloneColor, priorityCoord, cloneBonus);
                     return;
                 }
             }
 
             Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 점수 기반 타겟");
             StartCoroutine(DroneCoroutine(droneBlock, null));
+            if (cloneBonus > 0) StartCloneDrones(cloneStartPos, cloneColor, null, cloneBonus);
+        }
+
+        /// <summary>
+        /// 드론 분신: primary 외 cloneCount기의 추가 드론을 서로 다른 우선순위 고블린 타겟으로 발사.
+        /// 우선순위 = DroneTargetScore 내림차순(동률 시 HP↓·왼쪽). primary 타겟·중복 제외, 고블린이 부족하면 가능한 만큼만.
+        /// </summary>
+        private void StartCloneDrones(Vector3 startPos, Color color, HexCoord? excludeGoblin, int cloneCount)
+        {
+            if (cloneCount <= 0) return;
+            if (GoblinSystem.Instance == null || !GoblinSystem.Instance.IsActive) return;
+
+            var used = new HashSet<HexCoord>();
+            if (excludeGoblin.HasValue) used.Add(excludeGoblin.Value);
+
+            var ranked = GoblinSystem.Instance.GetAliveGoblins()
+                .Where(g => g != null && g.isAlive && g.visualObject != null && !used.Contains(g.position))
+                .OrderByDescending(g => g.DroneTargetScore).ThenBy(g => g.hp).ThenBy(g => g.position.q)
+                .Select(g => g.position)
+                .Distinct()
+                .Take(cloneCount)
+                .ToList();
+
+            for (int i = 0; i < ranked.Count; i++)
+                StartCoroutine(CloneDroneStrikeCoroutine(startPos, ranked[i], color, (i + 1) * 0.08f));
+        }
+
+        /// <summary>
+        /// 분신 드론 1기: 블록 소비 없이 시작 위치에서 고블린으로 비행 → 타격 데미지(드론/타겟/직접 보너스 포함).
+        /// activeDroneCount에 반영해 캐스케이드가 분신 완료까지 대기하도록 한다.
+        /// </summary>
+        private IEnumerator CloneDroneStrikeCoroutine(Vector3 startPos, HexCoord goblinPos, Color color, float startDelay)
+        {
+            activeDroneCount++;
+            try
+            {
+                if (startDelay > 0f) yield return new WaitForSeconds(startDelay);
+
+                Vector3 goblinWorldPos = Vector3.zero; bool found = false;
+                if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                {
+                    foreach (var g in GoblinSystem.Instance.GetAliveGoblins())
+                        if (g != null && g.isAlive && g.position == goblinPos && g.visualObject != null)
+                        { goblinWorldPos = g.visualObject.transform.position; found = true; break; }
+                }
+                if (found)
+                {
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
+                    yield return StartCoroutine(DroneFlyEffect(startPos, goblinWorldPos, color));
+                    yield return StartCoroutine(DroneGoblinStrikeEffect(goblinWorldPos, color));
+                    if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+                    {
+                        int droneDmg = 2 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
+                            ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus()
+                              + JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetTargetDamageBonus()
+                              + JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDirectHitBonus() : 0);
+                        GoblinSystem.Instance.ApplyDamageAtPosition(goblinPos, droneDmg);
+                        Debug.Log($"[DroneBlockSystem] 드론 분신 타격: ({goblinPos}) {droneDmg} 대미지");
+                    }
+                }
+            }
+            finally
+            {
+                activeDroneCount--;
+            }
         }
 
         /// <summary>
@@ -124,7 +205,11 @@ namespace JewelsHexaPuzzle.Core
         {
             if (droneBlock == null) return;
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
+            {
+                // ★ 발동 직전 드론 블록이 무효화됨(제거/레이스 등) — 조용히 사라지지 않도록 로그로 가시화
+                Debug.LogWarning($"[DroneBlockSystem] 드론 발동 취소 — 블록 데이터 무효 (coord={droneBlock.Coord})");
                 return;
+            }
             Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 사전 할당 타겟 {assignedTarget?.Coord}");
             StartCoroutine(DroneCoroutine(droneBlock, assignedTarget));
         }
@@ -137,7 +222,11 @@ namespace JewelsHexaPuzzle.Core
         {
             if (droneBlock == null) return;
             if (droneBlock.Data == null || droneBlock.Data.specialType != SpecialBlockType.Drone)
+            {
+                // ★ 발동 직전 드론 블록이 무효화됨(제거/레이스 등) — 조용히 사라지지 않도록 로그로 가시화
+                Debug.LogWarning($"[DroneBlockSystem] 드론 발동 취소 — 블록 데이터 무효 (coord={droneBlock.Coord})");
                 return;
+            }
             Debug.Log($"[DroneBlockSystem] Activating drone at {droneBlock.Coord} → 고블린 직접 타격 ({goblinPos})");
             StartCoroutine(DroneGoblinStrikeCoroutine(droneBlock, goblinPos));
         }
@@ -160,6 +249,9 @@ namespace JewelsHexaPuzzle.Core
             if (isFirst)
                 yield return StartCoroutine(PreFireCompression(droneBlock));
 
+            // ★ 드론 자신의 색상도 대응 게이지/리워드에 충전 (제거되는 색상이므로) — ClearData 전에 호출
+            if (droneBlock.Data != null && droneBlock.Data.gemType != GemType.None)
+                GameManager.Instance?.ChargeResourcesForGemWithSoul(droneBlock.Data.gemType, droneBlock.transform.position);
             // 2. 드론 블록 클리어
             droneBlock.ClearData();
 
@@ -197,6 +289,7 @@ namespace JewelsHexaPuzzle.Core
                 OnDroneComplete?.Invoke(150);
                 activeBlocks.Remove(droneBlock);
                 activeDroneCount--;
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnDroneActivated();
                 yield break;
             }
 
@@ -220,8 +313,10 @@ namespace JewelsHexaPuzzle.Core
             // 7. 고블린 직접 대미지 (스킬 보너스 적용)
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                int droneDmg = 1 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
-                    ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus() : 0);
+                int droneDmg = 2 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
+                    ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus()
+                      + JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetTargetDamageBonus()
+                      + JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                 GoblinSystem.Instance.ApplyDamageAtPosition(goblinPos, droneDmg);
                 Debug.Log($"[DroneBlockSystem] 고블린 직접 타격: ({goblinPos}) {droneDmg} 대미지");
             }
@@ -231,6 +326,9 @@ namespace JewelsHexaPuzzle.Core
 
             activeBlocks.Remove(droneBlock);
             activeDroneCount--;
+
+            // 튜토리얼 콜백: 드론 발동 완료
+            JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnDroneActivated();
         }
 
         /// <summary>
@@ -291,6 +389,9 @@ namespace JewelsHexaPuzzle.Core
             if (isFirst)
                 yield return StartCoroutine(PreFireCompression(droneBlock));
 
+            // ★ 드론 자신의 색상도 대응 게이지/리워드에 충전 (제거되는 색상이므로) — ClearData 전에 호출
+            if (droneBlock.Data != null && droneBlock.Data.gemType != GemType.None)
+                GameManager.Instance?.ChargeResourcesForGemWithSoul(droneBlock.Data.gemType, droneBlock.transform.position);
             // 2. 드론 블록 클리어
             droneBlock.ClearData();
 
@@ -307,12 +408,15 @@ namespace JewelsHexaPuzzle.Core
                 OnDroneComplete?.Invoke(150);
                 activeBlocks.Remove(droneBlock);
                 activeDroneCount--;
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnDroneActivated();
                 yield break;
             }
 
             // 타격 전 타겟 정보 캐싱 (타격 후 Data가 변경될 수 있으므로)
             GemType targetGemType = target.Data != null ? target.Data.gemType : GemType.None;
             SpecialBlockType targetSpecialType = target.Data != null ? target.Data.specialType : SpecialBlockType.None;
+            bool targetWasBroken = target.Data != null && (target.Data.isCracked || target.Data.isShell); // ★ 감사 M11
+            bool targetWasShell = GameManager.IsSoulSuppressedBlock(target); // ★ 쉘(빼앗긴 색) 또는 적 점령 → 영혼 미발생
 
             Debug.Log($"[DroneBlockSystem] 타겟 선택: {target.Coord} ({targetGemType}, tier={target.Data?.tier}, special={targetSpecialType})");
 
@@ -321,6 +425,35 @@ namespace JewelsHexaPuzzle.Core
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayDroneSound();
             yield return StartCoroutine(DroneFlyEffect(droneWorldPos, targetWorldPos, droneColor));
+
+            // ★ 비행 중(약 0.4s) 다른 드론이 같은 타겟을 소비했을 수 있음 → 타격 직전 재검증
+            //   (DroneXBlock 콤보 등 다중 드론 동시 발동 시 중복 배정 레이스 방지:
+            //    먼저 도착한 드론이 ClearData 하면 ClearData는 빈 BlockData(gemType=None)를 남기므로
+            //    null 가드만으로는 막히지 않아 뒤 드론이 빈 블록을 타격 → 효과 0%가 됨)
+            if (target == null || target.Data == null || target.Data.gemType == GemType.None)
+            {
+                Debug.LogWarning($"[DroneBlockSystem] 비행 중 타겟 무효화 감지 ({target?.Coord}) → 재타겟 시도");
+                HexBlock retarget = FindTargetBlock(droneBlock);
+                if (retarget != null && retarget.Data != null && retarget.Data.gemType != GemType.None)
+                {
+                    target = retarget;
+                    targetGemType = target.Data.gemType;
+                    targetSpecialType = target.Data.specialType;
+                    targetWasBroken = target.Data.isCracked || target.Data.isShell;
+                    targetWasShell = GameManager.IsSoulSuppressedBlock(target);
+                    targetWorldPos = target.transform.position;
+                    Debug.Log($"[DroneBlockSystem] 재타겟 성공: {target.Coord} ({targetGemType})");
+                }
+                else
+                {
+                    Debug.LogWarning("[DroneBlockSystem] 재타겟 실패 → graceful 종료 (빈 블록 타격/NRE 방지)");
+                    OnDroneComplete?.Invoke(150);
+                    activeBlocks.Remove(droneBlock);
+                    activeDroneCount--;
+                    JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnDroneActivated();
+                    yield break;
+                }
+            }
 
             // 5. 화면 흔들림
             if (isFirst)
@@ -343,8 +476,10 @@ namespace JewelsHexaPuzzle.Core
             {
                 var goblinSystem = GoblinSystem.Instance;
                 var goblinsAtTarget = goblinSystem.GetAliveGoblins();
-                int droneDmg = 1 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
-                    ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus() : 0);
+                int droneDmg = 2 + (JewelsHexaPuzzle.Managers.SkillTreeManager.Instance != null
+                    ? JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDroneTargetDamageBonus()
+                      + JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetTargetDamageBonus()
+                      + JewelsHexaPuzzle.Managers.SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                 foreach (var goblin in goblinsAtTarget)
                 {
                     if (goblin.position == targetCoord)
@@ -362,10 +497,13 @@ namespace JewelsHexaPuzzle.Core
 
             // 9. 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
             if (targetGemType != GemType.None)
-                GameManager.Instance?.OnSingleGemDestroyedForMission(targetGemType);
+                GameManager.Instance?.OnSingleGemDestroyedForMission(targetGemType, targetWasBroken, targetWorldPos, targetWasShell);
 
             activeBlocks.Remove(droneBlock);
             activeDroneCount--;
+
+            // 튜토리얼 콜백: 드론 발동 완료
+            JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnDroneActivated();
         }
 
         // ============================================================
@@ -1075,6 +1213,13 @@ namespace JewelsHexaPuzzle.Core
 
             var data = target.Data;
 
+            // ★ 흙더미 블록 보호 — 드론 효과 무효
+            if (data.dirtMound > 0)
+            {
+                Debug.Log($"[DroneBlockSystem] 흙더미 블록 보호: ({target.Coord}) — 드론 무효");
+                return;
+            }
+
             // 비닐이 있으면 1겹 제거
             if (data.vinylLayer > 0)
             {
@@ -1105,6 +1250,10 @@ namespace JewelsHexaPuzzle.Core
             // Normal 티어면 파괴
             if (data.tier == BlockTier.Normal)
             {
+                // ★ 쉘 블록이면 파편 이펙트 발동
+                if (removalSystem != null && data.isShell)
+                    removalSystem.TryPlayShellBurst(target);
+
                 target.ClearData();
                 Debug.Log("[DroneBlockSystem] Normal 블록 파괴");
                 return;
@@ -1639,13 +1788,12 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>화면 흔들림</summary>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             if (hexGrid == null) { VisualConstants.EndScreenShake(); yield break; }
             Transform gridTrans = hexGrid.transform;
-            Vector3 origPos = Vector3.zero;
+            Vector3 originalPos = gridTrans.localPosition;
             float t = 0f;
 
             try
@@ -1656,13 +1804,13 @@ namespace JewelsHexaPuzzle.Core
                     float decay = 1f - (t / duration);
                     float offsetX = Random.Range(-intensity, intensity) * decay;
                     float offsetY = Random.Range(-intensity, intensity) * decay;
-                    gridTrans.localPosition = origPos + new Vector3(offsetX, offsetY, 0f);
+                    gridTrans.localPosition = originalPos + new Vector3(offsetX, offsetY, 0f);
                     yield return null;
                 }
             }
             finally
             {
-                gridTrans.localPosition = Vector3.zero;
+                gridTrans.localPosition = originalPos;
                 VisualConstants.EndScreenShake();
             }
         }
@@ -1674,7 +1822,19 @@ namespace JewelsHexaPuzzle.Core
         public static Sprite GetDroneIconSprite()
         {
             if (droneIconSprite == null)
-                droneIconSprite = CreateDroneSprite(256);
+            {
+                // 외부 PNG(Resources/Icons/icon_drone_base) 우선 로드, 실패 시 프로시저럴 폴백
+                Texture2D tex = Resources.Load<Texture2D>("Icons/icon_drone_base");
+                if (tex != null)
+                {
+                    droneIconSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+                }
+                else
+                {
+                    Debug.LogWarning("[DroneBlockSystem] Resources/Icons/icon_drone_base 미발견 → 프로시저럴 폴백");
+                    droneIconSprite = CreateDroneSprite(256);
+                }
+            }
             return droneIconSprite;
         }
 

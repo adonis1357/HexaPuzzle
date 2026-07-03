@@ -3,12 +3,13 @@
 // ============================================================================
 //
 // [개요]
-//   드릴은 4개 블록이 일직선으로 매칭되었을 때 생성되는 특수 블록입니다.
+//   드릴은 4개 블록이 "다이아몬드(마름모)" 모양으로 매칭될 때 생성되는 특수 블록입니다.
+//   — 2개의 삼각형 매칭이 공유 변으로 합쳐진 패턴 (일자 4개가 아님!)
 //   발동하면 마치 총알처럼 투사체가 양방향으로 발사되어,
 //   지나가는 경로 위의 블록들을 모두 파괴합니다.
 //
 // [동작 흐름]
-//   1. 4매칭 직선 감지 → CreateDrillBlock()으로 드릴 블록 생성
+//   1. 4매칭 다이아몬드 감지 → CreateDrillBlock()으로 드릴 블록 생성
 //   2. 드릴 블록이 매칭에 포함되면 → ActivateDrill()로 발동
 //   3. 발동 시:
 //      - "쿵!" 하는 압축 애니메이션 (Pre-Fire Compression)
@@ -363,6 +364,9 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
             if (isFirstDrill)
                 StartCoroutine(ZoomPunch(VisualConstants.ZoomPunchScaleSmall));
 
+            // ★ 드릴 자신의 색상도 대응 게이지/리워드에 충전 (제거되는 색상이므로) — ClearData 전에 호출
+            if (drillBlock.Data != null && drillBlock.Data.gemType != GemType.None)
+                GameManager.Instance?.ChargeResourcesForGemWithSoul(drillBlock.Data.gemType, drillBlock.transform.position);
             // [3단계] 드릴 블록 자체의 데이터를 지움 (투사체는 별도로 날아감)
             drillBlock.ClearData();
 
@@ -402,7 +406,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                     // 아래쪽 드릴(positive): 방패 없어짐 → 고블린 본체에 스킬 데미지 (통과)
                     if (GoblinSystem.Instance.HasGoblinAt(startCoord))
                     {
-                        int shieldPassDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                        int shieldPassDmg = 2 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() + SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                         GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, shieldPassDmg);
                         Debug.Log($"[DrillBlockSystem] 아래쪽 드릴 → 고블린 본체에 {shieldPassDmg} 데미지");
                     }
@@ -417,7 +421,7 @@ private IEnumerator DrillCoroutine(HexBlock drillBlock)
                 && GoblinSystem.Instance.HasGoblinAt(startCoord)
                 && !GoblinSystem.Instance.HasShieldGoblinAt(startCoord))
             {
-                int drillDmgPerDir = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                int drillDmgPerDir = 2 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() + SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                 // 양방향 각각 데미지 적용 (위쪽 + 아래쪽 = 2회)
                 GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, drillDmgPerDir);
                 GoblinSystem.Instance.ApplyDamageAtPosition(startCoord, drillDmgPerDir);
@@ -763,6 +767,12 @@ private IEnumerator DrillLineWithProjectile(
             // ★ Heavy 고블린 라인당 1회 데미지 제한 (같은 Heavy의 여러 occupiedCoords를 지나도 1회만)
             HashSet<GoblinData> damagedHeavyThisLine = new HashSet<GoblinData>();
 
+            // ★ 드릴 관통 시스템: 기본 능력치 관통 1마리 + 스킬 리워드로 +1~+3 (최대 4마리)
+            int penetrateMax = 1 + (SkillTreeManager.Instance != null
+                ? SkillTreeManager.Instance.GetDrillPenetrateLevel() : 0);
+            int penetrateCount = 0; // 현재까지 관통한 몬스터 수
+            bool drillStopped = false; // 투사체가 몬스터에 의해 정지됨
+
             // lastDamageCoord를 게임 필드 마지막 유효 좌표로 미리 계산 (exit 애니메이션용)
             // ★ IsInGameField 사용 — advance 루프/쿠션과 동일한 경계 기준
             if (hexGrid != null)
@@ -842,14 +852,18 @@ private IEnumerator DrillLineWithProjectile(
 
                 currentPos = targetPos;
 
-                // ★ 투사체가 고블린 좌표에 도달 시 데미지 (드릴 관통, 스킬 강화 적용)
-                if (pathGoblinPositions.Count > 0 && pathGoblinPositions.Contains(target.Coord)
+                // ★ 영혼 억제 판별을 '고블린 데미지 전'에 캡처 — 드릴이 점령 고블린을 먼저 처치하면
+                //   이후 보고 시점엔 HasGoblinAt이 false가 되어 점령 블록인데도 영혼이 나오던 버그 수정.
+                bool targetSoulSuppressed = GameManager.IsSoulSuppressedBlock(target);
+
+                // ★ 투사체가 고블린 좌표에 도달 시 데미지 + 관통 제한 체크
+                if (!drillStopped && pathGoblinPositions.Count > 0 && pathGoblinPositions.Contains(target.Coord)
                     && !damagedGoblinPositions.Contains(target.Coord))
                 {
                     damagedGoblinPositions.Add(target.Coord);
                     if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
                     {
-                        // ★ 은신 도둑 고블린: 드릴 투사체 회피
+                        // ★ 은신 도둑 고블린: 드릴 투사체 회피 (관통 카운트 소모 안 함)
                         if (GoblinSystem.Instance.IsGoblinStealthAt(target.Coord))
                         {
                             Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피: {target.Coord}");
@@ -860,21 +874,72 @@ private IEnumerator DrillLineWithProjectile(
                             // ★ Heavy 고블린: 같은 라인에서 같은 Heavy의 여러 블록을 지나가도 1회만 데미지
                             var goblinAtCoord = GoblinSystem.Instance.GetGoblinAt(target.Coord);
                             bool shouldDamage = true;
+                            bool isNewHeavyHit = false;
                             if (goblinAtCoord != null && goblinAtCoord.isHeavy)
                             {
                                 if (damagedHeavyThisLine.Contains(goblinAtCoord))
                                     shouldDamage = false; // 이미 이 라인에서 데미지 적용됨
                                 else
+                                {
                                     damagedHeavyThisLine.Add(goblinAtCoord);
+                                    isNewHeavyHit = true;
+                                }
                             }
 
                             if (shouldDamage)
                             {
-                                int drillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                                int drillDmg = 2 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() + SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                                 GoblinSystem.Instance.ApplyDamageAtPosition(target.Coord, drillDmg);
+
+                                // ★ 관통 카운트 증가
+                                // Heavy 고블린: 관통 2회 소모, 잔여 관통 < 2이면 차단
+                                // 일반 고블린: 관통 1회 소모
+                                bool countPenetrate = (goblinAtCoord == null || !goblinAtCoord.isHeavy || isNewHeavyHit);
+                                if (countPenetrate)
+                                {
+                                    int penetrateCost = (goblinAtCoord != null && goblinAtCoord.isHeavy) ? 2 : 1;
+                                    penetrateCount += penetrateCost;
+                                    if (penetrateCount > penetrateMax)
+                                    {
+                                        Debug.Log($"[DrillBlockSystem] 관통 한계 도달 ({penetrateCount}/{penetrateMax}, cost={penetrateCost}) → 투사체 정지 at {target.Coord}");
+                                        drillStopped = true;
+                                        if (projectile != null) ReturnProjectile(projectile);
+                                        projectile = null;
+                                    }
+                                }
                             }
                         }
                     }
+                }
+
+                // ★ 관통 한계로 정지 시 → 이 블록까지는 파괴 후 for 루프 탈출
+                //   (이전 버그: 드릴이 몬스터 타격으로 사라질 때 몬스터가 서있던 블록이 남음)
+                if (drillStopped)
+                {
+                    // 현재 타겟 블록 파괴 — 일반 블록이면 파편 연출 + 미션 카운트, 특수 블록이면 연쇄 발동 예약
+                    if (target != null && target.Data != null && target.Data.gemType != GemType.None)
+                    {
+                        if (IsChainActivatable(target.Data.specialType))
+                        {
+                            if (!pendingSpecialBlocks.Contains(target))
+                            {
+                                pendingSpecialBlocks.Add(target);
+                                target.SetPendingActivation();
+                                target.StartWarningBlink(10f);
+                            }
+                        }
+                        else if (EnemySystem.Instance == null || !EnemySystem.Instance.TryAbsorbSpecialHit(target))
+                        {
+                            GemType destroyedGemType = target.Data.gemType;
+                            bool destroyedBroken = target.Data.isCracked || target.Data.isShell; // ★ 파괴 전 캡처 (감사 M11)
+                            Color blockColor = GemColors.GetColor(destroyedGemType);
+                            float drillAngle = GetDirectionAngle(direction, positive);
+                            destroyCoroutines.Add(StartCoroutine(DestroyBlockWithDebris(target, blockColor, drillAngle, showEffects)));
+                            if (destroyedGemType != GemType.None)
+                                GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType, destroyedBroken, target.transform.position, targetSoulSuppressed);
+                        }
+                    }
+                    break;
                 }
 
                 // 안전 검사: 다른 드릴/폭탄 등이 동시에 이 블록을 처리했을 수 있음
@@ -907,6 +972,7 @@ private IEnumerator DrillLineWithProjectile(
                 {
                     // 일반 블록: 파편과 함께 파괴 애니메이션 실행
                     GemType destroyedGemType = target.Data.gemType;
+                    bool destroyedBroken = target.Data.isCracked || target.Data.isShell; // ★ 파괴 전 캡처 (감사 M11)
                     Color blockColor = GemColors.GetColor(destroyedGemType);
                     float drillAngle = GetDirectionAngle(direction, positive);
                     destroyCoroutines.Add(StartCoroutine(DestroyBlockWithDebris(target, blockColor, drillAngle, showEffects)));
@@ -915,7 +981,7 @@ private IEnumerator DrillLineWithProjectile(
 
                     // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (드릴 파괴 연출과 동기화)
                     if (destroyedGemType != GemType.None)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(destroyedGemType, destroyedBroken, target.transform.position, targetSoulSuppressed);
 
                     // ★ 블록별 즉시 낙하 제거 → 전체 라인 파괴 완료 후 DrillCoroutine에서 일괄 낙하
                 }
@@ -924,16 +990,17 @@ private IEnumerator DrillLineWithProjectile(
                 yield return new WaitForSeconds(drillSpeed);
             }
 
-            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 데미지 적용 (스킬 강화)
-            if (pathGoblinPositions.Count > 0 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
+            // ★ 블록이 없는 위치의 고블린에도 투사체 통과 데미지 적용 (관통 한계 미도달 시만)
+            if (!drillStopped && pathGoblinPositions.Count > 0 && GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
-                int drillDmgPass = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                int drillDmgPass = 2 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() + SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                 foreach (var gPos in pathGoblinPositions)
                 {
+                    if (drillStopped) break; // 관통 한계 초과 시 추가 데미지 없음
                     if (!damagedGoblinPositions.Contains(gPos))
                     {
                         damagedGoblinPositions.Add(gPos);
-                        // ★ 은신 도둑 고블린: 드릴 투사체 회피
+                        // ★ 은신 도둑 고블린: 드릴 투사체 회피 (관통 카운트 소모 안 함)
                         if (GoblinSystem.Instance.IsGoblinStealthAt(gPos))
                         {
                             Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피 (잔여 경로): {gPos}");
@@ -943,16 +1010,38 @@ private IEnumerator DrillLineWithProjectile(
                         // ★ Heavy 고블린: 같은 라인에서 이미 데미지를 줬으면 스킵
                         var goblinAtPos = GoblinSystem.Instance.GetGoblinAt(gPos);
                         bool shouldDamage = true;
+                        bool isNewHeavyHit = false;
                         if (goblinAtPos != null && goblinAtPos.isHeavy)
                         {
                             if (damagedHeavyThisLine.Contains(goblinAtPos))
                                 shouldDamage = false;
                             else
+                            {
                                 damagedHeavyThisLine.Add(goblinAtPos);
+                                isNewHeavyHit = true;
+                            }
                         }
 
                         if (shouldDamage)
+                        {
                             GoblinSystem.Instance.ApplyDamageAtPosition(gPos, drillDmgPass);
+
+                            // ★ 관통 카운트 증가
+                            // Heavy 고블린: 관통 2회 소모
+                            bool countPenetrate = (goblinAtPos == null || !goblinAtPos.isHeavy || isNewHeavyHit);
+                            if (countPenetrate)
+                            {
+                                int penetrateCost = (goblinAtPos != null && goblinAtPos.isHeavy) ? 2 : 1;
+                                penetrateCount += penetrateCost;
+                                if (penetrateCount > penetrateMax)
+                                {
+                                    Debug.Log($"[DrillBlockSystem] 관통 한계 도달 (빈 좌표) ({penetrateCount}/{penetrateMax}, cost={penetrateCost}) → 투사체 정지 at {gPos}");
+                                    drillStopped = true;
+                                    if (projectile != null) ReturnProjectile(projectile);
+                                    projectile = null;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1024,8 +1113,8 @@ private IEnumerator DrillLineWithProjectile(
                         break;
                     }
 
-                    // ★ 일반 몬스터: 데미지 + 관통 (투사체 유지, 루프 계속)
-                    if (hasGoblin)
+                    // ★ 일반 몬스터: 데미지 + 관통 제한 체크
+                    if (hasGoblin && !drillStopped)
                     {
                         // 투사체를 몬스터 위치까지 이동
                         if (projectile != null && hexGrid != null)
@@ -1055,7 +1144,7 @@ private IEnumerator DrillLineWithProjectile(
                         // ★ 중복 데미지 방지: pathGoblinPositions 루프에서 이미 처리된 좌표 스킵
                         if (!damagedGoblinPositions.Contains(advanceCursor))
                         {
-                            // 은신 도둑 고블린 회피
+                            // 은신 도둑 고블린 회피 (관통 카운트 소모 안 함)
                             if (GoblinSystem.Instance.IsGoblinStealthAt(advanceCursor))
                             {
                                 Debug.Log($"[DrillBlockSystem] 은신 도둑 고블린 드릴 회피 (advance): {advanceCursor}");
@@ -1064,13 +1153,28 @@ private IEnumerator DrillLineWithProjectile(
                             }
                             else
                             {
-                                int advDrillDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                                int advDrillDmg = 2 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() + SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                                 GoblinSystem.Instance.ApplyDamageAtPosition(advanceCursor, advDrillDmg);
                                 damagedGoblinPositions.Add(advanceCursor);
-                                Debug.Log($"[DrillBlockSystem] advance 중 몬스터 관통: {advanceCursor} dmg={advDrillDmg}");
+
+                                // ★ 관통 카운트 증가: Heavy 고블린은 2회 소모
+                                var advGoblin = GoblinSystem.Instance.GetGoblinAt(advanceCursor);
+                                int advPenetrateCost = (advGoblin != null && advGoblin.isHeavy) ? 2 : 1;
+                                penetrateCount += advPenetrateCost;
+                                if (penetrateCount > penetrateMax)
+                                {
+                                    Debug.Log($"[DrillBlockSystem] advance 중 관통 한계 ({penetrateCount}/{penetrateMax}, cost={advPenetrateCost}) → 투사체 정지 at {advanceCursor}");
+                                    drillStopped = true;
+                                    if (projectile != null) ReturnProjectile(projectile);
+                                    projectile = null;
+                                    break; // advance 루프 종료
+                                }
+                                else
+                                {
+                                    Debug.Log($"[DrillBlockSystem] advance 중 몬스터 관통: {advanceCursor} dmg={advDrillDmg} ({penetrateCount}/{penetrateMax})");
+                                }
                             }
                         }
-                        // ★ break 없음 — 투사체 관통, 루프 계속 진행
                     }
                 }
 
@@ -1086,6 +1190,13 @@ private IEnumerator DrillLineWithProjectile(
 
             // 방패에 막혔으면 쿠션 없이 즉시 종료
             if (hitShieldDuringAdvance)
+            {
+                onTargetsDestroyed?.Invoke();
+                yield break;
+            }
+
+            // ★ 관통 한계로 정지했으면 쿠션/퇴장 없이 종료
+            if (drillStopped)
             {
                 onTargetsDestroyed?.Invoke();
                 yield break;
@@ -1150,9 +1261,9 @@ private IEnumerator DrillLineWithProjectile(
                 }
             }
 
-            // 반사 불가 → 퇴장
-            if (projectile != null)
-                StartCoroutine(ProjectileExitPhase(projectile, currentPos, lastMoveDir, damagedGoblinPositions));
+            // 반사 불가 → 퇴장 (관통 한계로 정지한 경우 퇴장 없음)
+            if (projectile != null && !drillStopped)
+                StartCoroutine(ProjectileExitPhase(projectile, currentPos, lastMoveDir, damagedGoblinPositions, penetrateCount, penetrateMax));
 
         }
 
@@ -1348,7 +1459,7 @@ private IEnumerator DrillLineWithProjectile(
         /// 투사체 퇴장 애니메이션 (백그라운드 실행 — DrillCoroutine 완료를 차단하지 않음)
         /// 화면 밖으로 이동하면서 고블린 충돌 감지
         /// </summary>
-        private IEnumerator ProjectileExitPhase(GameObject projectile, Vector3 startPos, Vector3 moveDir, HashSet<HexCoord> alreadyDamagedPositions = null)
+        private IEnumerator ProjectileExitPhase(GameObject projectile, Vector3 startPos, Vector3 moveDir, HashSet<HexCoord> alreadyDamagedPositions = null, int currentPenetrateCount = 0, int maxPenetrate = 0)
         {
             float exitElapsed = 0f;
             float exitDuration = 3f;
@@ -1357,6 +1468,9 @@ private IEnumerator DrillLineWithProjectile(
             HashSet<HexCoord> exitDamagedPositions = alreadyDamagedPositions != null
                 ? new HashSet<HexCoord>(alreadyDamagedPositions)
                 : new HashSet<HexCoord>();
+
+            // ★ 관통 카운터 (이전 단계에서 이어받음)
+            int exitPenetrateCount = currentPenetrateCount;
 
             // ★ 고블린 리스트를 루프 밖에서 1회만 조회 (매 프레임 ToList() GC 방지)
             List<GoblinData> cachedGoblins = null;
@@ -1412,15 +1526,14 @@ private IEnumerator DrillLineWithProjectile(
                     }
                     if (shieldBlocked) yield break;
 
-                    // ★ 일반 고블린 데미지 (for 루프 — foreach GC 방지)
+                    // ★ 일반 고블린 데미지 (for 루프 — foreach GC 방지) + 관통 제한
                     for (int gi = 0; gi < cachedGoblins.Count; gi++)
                     {
                         var goblin = cachedGoblins[gi];
                         if (goblin.visualObject == null || !goblin.isAlive) continue;
                         if (goblin.isShielded) continue;
-                        if (goblin.isThief && goblin.isStealth) // 은신 도둑 고블린 회피
+                        if (goblin.isThief && goblin.isStealth) // 은신 도둑 고블린 회피 (관통 카운트 소모 안 함)
                         {
-                            // 투사체가 근접했을 때만 회피 연출 (중복 방지)
                             Vector3 gWP = goblin.visualObject.transform.position;
                             float gDist = Vector2.Distance(projWorld2D, new Vector2(gWP.x, gWP.y));
                             if (gDist < hitRadius && !exitDamagedPositions.Contains(goblin.position))
@@ -1439,9 +1552,20 @@ private IEnumerator DrillLineWithProjectile(
 
                         if (dist < hitRadius)
                         {
-                            int exitDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() : 0);
+                            int exitDmg = 2 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDrillDamageBonus() + SkillTreeManager.Instance.GetTargetDamageBonus() + SkillTreeManager.Instance.GetDirectHitBonus() : 0);
                             GoblinSystem.Instance.ApplyDamageAtPosition(goblin.position, exitDmg);
                             exitDamagedPositions.Add(goblin.position);
+
+                            // ★ 관통 카운트 증가 → 한계 초과 시 투사체 파괴
+                            // Heavy 고블린: 관통 2회 소모
+                            int exitPenetrateCost = goblin.isHeavy ? 2 : 1;
+                            exitPenetrateCount += exitPenetrateCost;
+                            if (exitPenetrateCount > maxPenetrate)
+                            {
+                                Debug.Log($"[DrillBlockSystem] exit phase 관통 한계 ({exitPenetrateCount}/{maxPenetrate}, cost={exitPenetrateCost}) → 투사체 파괴");
+                                if (projectile != null) ReturnProjectile(projectile);
+                                yield break;
+                            }
                         }
                     }
                 }
@@ -1515,16 +1639,34 @@ private GameObject CreateProjectile(Vector3 worldPos, DrillDirection direction, 
         /// 투사체 루트 오브젝트에 시각 파트(Glow, Body, Trail, Coreline)를 생성합니다.
         /// CreateProjectileWithAngle과 GetPooledProjectile 양쪽에서 공용으로 사용합니다.
         /// </summary>
+        // ★ 투사체 스프라이트 색상별 캐시 (감사 M6)
+        //   — 기존: 발사마다 Texture2D 3장+Sprite 3개 생성 후 GameObject만 Destroy → 발동당 ~50KB 영구 누수.
+        //     젬 색상은 유한(6종+α)하므로 색상 키 캐시로 재사용.
+        private static readonly Dictionary<Color, (Sprite drill, Sprite glow, Sprite trail)> _projectileSpriteCache
+            = new Dictionary<Color, (Sprite, Sprite, Sprite)>();
+
         private void BuildProjectileParts(GameObject obj, Color color)
         {
+            // 색 계산은 저렴하므로 항상 수행 (트레일 애니메이션 등에서 사용)
             Color bright = VisualConstants.DrillBrighten(color);
             bright.a = 1f;
             Color dark = VisualConstants.Darken(color);
             dark.a = 1f;
 
-            Sprite drillSprite = GenerateDrillSprite(color, bright, dark);
-            Sprite glowSprite = GenerateCircleSprite(64, new Color(bright.r, bright.g, bright.b, 0.3f));
-            Sprite trailSprite = GenerateTrailSprite(color, bright);
+            Sprite drillSprite, glowSprite, trailSprite;
+            if (_projectileSpriteCache.TryGetValue(color, out var cached) && cached.drill != null)
+            {
+                drillSprite = cached.drill;
+                glowSprite = cached.glow;
+                trailSprite = cached.trail;
+            }
+            else
+            {
+                drillSprite = GenerateDrillSprite(color, bright, dark);
+                glowSprite = GenerateCircleSprite(64, new Color(bright.r, bright.g, bright.b, 0.3f));
+                trailSprite = GenerateTrailSprite(color, bright);
+                _projectileSpriteCache[color] = (drillSprite, glowSprite, trailSprite);
+            }
 
             // 1. Glow
             GameObject glow = new GameObject("Glow");
@@ -1779,8 +1921,19 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         {
             if (block == null) yield break;
 
+            // ★ 흙더미 블록 보호 — 특수블록(드릴) 효과 무효
+            if (block.Data != null && block.Data.dirtMound > 0)
+            {
+                Debug.Log($"[Drill] 흙더미 블록 보호: ({block.Coord}) — 드릴 무효");
+                yield break;
+            }
+
             Vector3 pos = block.transform.position;
             Vector3 origScale = block.transform.localScale;
+
+            // ★ 쉘 블록이면 ClearData 전에 파편 이펙트 발동 (BRS 공개 API)
+            if (removalSystem != null && block.Data != null && block.Data.isShell)
+                removalSystem.TryPlayShellBurst(block);
 
             // ★ 원본 블록 데이터 즉시 클리어 (낙하 시스템이 빈 슬롯으로 인식하도록)
             block.transform.localScale = Vector3.one;
@@ -1811,9 +1964,12 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
                 // 1. 충격파 — 원이 커지면서 퍼져나감
                 StartCoroutine(ImpactWave(pos, blockColor));
 
-                // 블록 파괴 사운드
+                // 블록 파괴 사운드 + 드릴 금속 틱 (재질감 레이어)
                 if (AudioManager.Instance != null)
+                {
                     AudioManager.Instance.PlayBlockDestroySound();
+                    AudioManager.Instance.PlayDrillHitSound();
+                }
 
                 // 2. 파편 생성
                 float cascadeMult = removalSystem != null ? VisualConstants.GetCascadeMultiplier(removalSystem.CurrentCascadeDepth) : 1f;
@@ -2143,28 +2299,17 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
         /// 현재 동시에 실행 중인 화면 흔들림의 개수.
         /// 마지막 흔들림이 끝날 때만 원래 위치로 복귀합니다.
         /// </summary>
-        private int shakeCount = 0;
-
-        /// <summary>
-        /// 흔들림 시작 시 저장한 원래 위치. 흔들림이 끝나면 이 위치로 돌아옵니다.
-        /// </summary>
-        private Vector3 shakeOriginalPos;
-
         /// <summary>
         /// 화면을 랜덤하게 흔드는 코루틴.
         /// 시간이 지날수록 흔들림이 약해지다가(decay) 멈춥니다.
-        /// (비유: 지진이 점점 약해지는 것)
         /// </summary>
-        /// <param name="intensity">흔들림의 최대 세기 (픽셀 단위)</param>
-        /// <param name="duration">흔들림 지속 시간(초)</param>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-            shakeOriginalPos = Vector3.zero;
-            shakeCount++;
+            Vector3 originalPos = target.localPosition;
 
             float elapsed = 0f;
             try
@@ -2176,18 +2321,13 @@ private IEnumerator AnimateTrail(RectTransform rt, UnityEngine.UI.Image img, Col
                     float decay = 1f - VisualConstants.EaseInQuad(t);
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = originalPos + new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                shakeCount--;
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = originalPos;
                 VisualConstants.EndScreenShake();
             }
         }
@@ -2360,8 +2500,8 @@ private float GetDirectionAngle(DrillDirection direction, bool positive)
             if (!VisualConstants.CanHitStop()) yield break;
             VisualConstants.RecordHitStop();
 
-            // 시간을 완전히 멈춤
-            Time.timeScale = 0f;
+            // 시간을 완전히 멈춤 (외부 모달/퍼즈 개입 시 timeScale 쓰기 중단 — 감사 M13)
+            VisualConstants.HitStopSetTimeScale(0f);
             yield return new WaitForSecondsRealtime(stopDuration); // 실제 시간 기준 대기
 
             // 슬로모션에서 정상 속도로 서서히 복구
@@ -2370,10 +2510,10 @@ private float GetDirectionAngle(DrillDirection direction, bool positive)
             {
                 elapsed += Time.unscaledDeltaTime; // 시간이 멈춰도 흐르는 실제 시간 사용
                 float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
-                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                VisualConstants.HitStopSetTimeScale(Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t)));
                 yield return null;
             }
-            Time.timeScale = 1f; // 최종적으로 정상 속도 보장
+            VisualConstants.HitStopSetTimeScale(1f); // 최종적으로 정상 속도 보장
         }
 
         /// <summary>

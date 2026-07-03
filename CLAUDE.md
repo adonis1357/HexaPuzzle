@@ -182,3 +182,19 @@ InputSystem → RotationSystem → MatchingSystem → BlockRemovalSystem → Gam
 | `/아이템 [이름] [효과]` | 아이템 추가/수정 (Item+Gauge 패턴) |
 | `/몬스터 [이름] [행동]` | 몬스터(고블린) 추가/수정 (9단계 체크리스트) |
 | `/레벨디자인 [범위] [설명]` | 스테이지/레벨 추가/수정 (7단계 체크리스트) |
+| `/튜토리얼 [분석\|추가\|검증\|수정]` | 튜토리얼 시퀀스 설계/분석/추가/검증 |
+| `/유니티갱신` | Unity Ctrl+R 갱신 + Ctrl+P 재생 사이클 자동 실행 (코드/에셋 변경 후 자동 호출) |
+
+## Unity 자동화 사이클 자동 실행 정책
+
+**코드(.cs) 또는 Resources 에셋(PNG 등) 변경 시 사용자 명시 요청 없이도 응답 마무리 시점에 Unity 갱신+재생 사이클을 자동 실행한다.**
+
+- **실행 방법 (파일 트리거 — PowerShell/키 입력 불필요)**:
+  ```bash
+  touch ".claude/refresh_trigger"
+  ```
+  Unity 에디터의 `Assets/Scripts/Editor/UnityAutoRefresh.cs`(파일 감시)가 이 파일을 감지해
+  **Play 종료(재생 중이면) → AssetDatabase.Refresh(컴파일) → Play 재시작**을 스스로 수행한다.
+- 사이클당 1회만 실행 (같은 응답 내 다회 수정 시 마지막에만)
+- 단순 `dotnet build`만 한 경우 / 문서 수정만 한 경우는 스킵
+- (구 방식 `Send-UnityKey` PowerShell 키 입력은 권한 차단 + 포커스 불안정으로 폐기됨)

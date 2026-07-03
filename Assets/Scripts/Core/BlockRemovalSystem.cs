@@ -52,7 +52,7 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private MatchingSystem matchingSystem;      // 매칭 감지기 (같은 색 블록 찾기)
         [SerializeField] private DrillBlockSystem drillSystem;       // 드릴 특수 블록 시스템 (한 줄 파괴)
         [SerializeField] private BombBlockSystem bombSystem;         // 폭탄 특수 블록 시스템 (주변 폭발)
-        [SerializeField] private DonutBlockSystem donutSystem;       // 무지개(도넛) 특수 블록 시스템 (같은 색 전체 파괴)
+        [SerializeField] private DonutBlockSystem donutSystem;       // 타겟 레이저 특수 블록 시스템 (같은 색 전체 파괴)
         [SerializeField] private XBlockSystem xBlockSystem;          // 타겟 레이져 특수 블록 시스템 (같은 색 전체 파괴)
         [SerializeField] private DroneBlockSystem droneSystem;       // 드론 특수 블록 시스템 (우선순위 단일 타격)
         private SpecialBlockComboSystem comboSystem;                  // 특수 블록 합성 시스템 (즉시 합성용)
@@ -449,9 +449,10 @@ namespace JewelsHexaPuzzle.Core
             // 발동 직전 데이터 재검증 (동시 발동 중 다른 특수 블록이 이 블록을 파괴했을 수 있음)
             if (block.Data == null || block.Data.gemType == GemType.None || block.Data.specialType == SpecialBlockType.None)
             {
-                Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: block data invalidated before activation (cachedType={cachedType}). Cleaning up.");
-                // 잔존 pending 상태 정리 (깜빡임 정지 + 블록 제거)
+                Debug.LogWarning($"[BRS] ActivateSpecialAndWaitLocal: block data invalidated before activation (cachedType={cachedType}, coord={block.Coord}). Cleaning up.");
+                // 잔존 pending 상태 정리 (깜빡임 정지 + pendingActivation 해제 + 블록 제거)
                 block.StopWarningBlink();
+                if (block.Data != null) block.Data.pendingActivation = false;
                 if (block.Data != null && block.Data.gemType != GemType.None)
                     block.ClearData();
                 yield break;
@@ -462,7 +463,8 @@ namespace JewelsHexaPuzzle.Core
 
             // 특수 블록 자체의 색상도 미션에 기여 (발동 시 소멸되므로 일반 블록 제거와 동일하게 카운팅)
             if (block.Data.gemType != GemType.None)
-                GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType,
+                    block.Data.isCracked || block.Data.isShell);
 
             switch (cachedType)
             {
@@ -721,7 +723,10 @@ namespace JewelsHexaPuzzle.Core
                     if (bombSystem != null)
                         bombSystem.CreateBombBlock(block, gemType);
                     break;
-                // ★ Rainbow(도넛) 생성 제거됨 — 더 이상 사용하지 않음
+                case SpecialBlockType.Rainbow:
+                    if (donutSystem != null)
+                        donutSystem.CreateDonutBlock(block, gemType);
+                    break;
                 case SpecialBlockType.XBlock:
                     if (xBlockSystem != null)
                         xBlockSystem.CreateXBlock(block, gemType);
@@ -1387,6 +1392,320 @@ namespace JewelsHexaPuzzle.Core
             Destroy(flash);
         }
 
+        /// <summary>
+        /// 쉘(회색) 블록 파쇄 연출: 돌조각 느낌의 회색 파편 8개 + 백색 플래시 + 짧은 먼지 확산.
+        /// AnimateCrackedBurst를 쉘 색상으로 변형 — 파편 수를 늘리고 컬러 밝기 편차를 크게 하여 돌/벽돌 파괴감.
+        /// block 전달 직후 ClearData를 호출해도 안전 (첫 프레임에서 position/color 캐싱).
+        /// </summary>
+        /// <summary>
+        /// 외부 시스템(드릴/폭탄/드론/타겟레이저/라인/해머 등)에서 쉘 블록 파괴 직전 호출.
+        /// block.Data.isShell 일 때만 파편 이펙트 재생. ClearData 전에 호출해야 position/color 캐싱 가능.
+        /// </summary>
+        public void TryPlayShellBurst(HexBlock block)
+        {
+
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayShellBreakSound(); // ★ 효과음: 쉘(돌) 파쇄
+            if (block == null || block.Data == null) return;
+            if (!block.Data.isShell) return;
+            StartCoroutine(AnimateShellBurst(block));
+        }
+
+        private IEnumerator AnimateShellBurst(HexBlock block)
+        {
+            if (block == null) yield break;
+
+            Vector3 burstCenter = block.transform.position;
+
+            // 쉘 기본 회색 (HexBlock.cs의 shellGray와 일치)
+            Color shellBase = new Color(0.52f, 0.50f, 0.48f, 1f);
+
+            // ★ 파티클 렌더링 부모: hexGrid.transform (블록과 동일 레벨) — BRS 아래에 두면 캔버스 계층 순서상 가려질 수 있음
+            Transform burstParent = (hexGrid != null) ? hexGrid.transform : transform;
+
+            // 깨짐 사운드 — 돌/벽돌이 부서지는 청각 피드백
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayShellConvertSound();
+
+            Debug.Log($"[BRS] AnimateShellBurst 발동: coord={block.Coord}, pos={burstCenter}, parent={burstParent.name}");
+
+            // 1. 돌조각 파편 8개 — 크기/모양 제각각 (기존 AnimateCrackedShard 재사용, 회색 기반)
+            //    밝기 편차를 넓게 줘서 어두운 돌/밝은 돌조각이 섞이도록 (돌 파괴 느낌)
+            int[] shardShapes = { 3, 4, 5, 3, 4, 5, 3, 4 };
+            for (int i = 0; i < shardShapes.Length; i++)
+            {
+                // 각 파편마다 shellBase에 ±25% 밝기 변화
+                float bright = Random.Range(0.65f, 1.25f);
+                Color shardColor = new Color(
+                    Mathf.Clamp01(shellBase.r * bright),
+                    Mathf.Clamp01(shellBase.g * bright),
+                    Mathf.Clamp01(shellBase.b * bright),
+                    1f);
+                StartCoroutine(AnimateCrackedShard(burstCenter, shardColor, shardShapes[i]));
+            }
+
+            // 1a. 큰 육각 파편 조각 12개 — 블록이 명확히 "조각으로 쪼개지는" 시각을 강화
+            //    블록 크기의 35%인 육각형 조각이 12방향으로 방사상 발사 + 회전 + 중력 낙하
+            int shatterCount = 12;
+            for (int i = 0; i < shatterCount; i++)
+            {
+                float bright = Random.Range(0.55f, 1.20f);
+                Color pieceColor = new Color(
+                    Mathf.Clamp01(shellBase.r * bright),
+                    Mathf.Clamp01(shellBase.g * bright),
+                    Mathf.Clamp01(shellBase.b * bright),
+                    1f);
+                StartCoroutine(AnimateShellShatterPiece(burstCenter, pieceColor, i, shatterCount, burstParent));
+            }
+
+            // 1b. 세밀한 먼지 파티클 24개 — 작은 회색 점이 사방으로 튀며 페이드
+            for (int i = 0; i < 24; i++)
+            {
+                float particleBright = Random.Range(0.55f, 1.15f);
+                Color pColor = new Color(
+                    Mathf.Clamp01(shellBase.r * particleBright),
+                    Mathf.Clamp01(shellBase.g * particleBright),
+                    Mathf.Clamp01(shellBase.b * particleBright),
+                    1f);
+                StartCoroutine(AnimateShellParticle(burstCenter, pColor, burstParent));
+            }
+
+            // 1c. 방사형 크랙 라인 8개 — 중심에서 사방으로 뻗는 얇은 돌금
+            //    "쩍!" 하고 갈라지는 느낌: 짧은 수명(0.15s) + 빠른 페이드
+            for (int i = 0; i < 8; i++)
+            {
+                float angleRad = (360f / 8f) * i * Mathf.Deg2Rad + Random.Range(-0.25f, 0.25f);
+                StartCoroutine(AnimateShellCrackLine(burstCenter, angleRad, shellBase, burstParent));
+            }
+
+            // 2. 백색 플래시 (파쇄 순간 강조) — 알파·크기 강화
+            GameObject flash = new GameObject("ShellBurstFlash");
+            flash.transform.SetParent(burstParent, false);
+            flash.transform.SetAsLastSibling();
+            flash.transform.position = burstCenter;
+            var flashImg = flash.AddComponent<UnityEngine.UI.Image>();
+            flashImg.raycastTarget = false;
+            flashImg.sprite = HexBlock.GetHexFlashSprite();
+            flashImg.color = new Color(1f, 1f, 1f, 0.85f); // 0.6 → 0.85 강화
+            RectTransform flashRt = flash.GetComponent<RectTransform>();
+            float flashSize = hexGrid != null ? hexGrid.HexSize * 1.3f : 65f; // 1.15 → 1.3 확대
+            flashRt.sizeDelta = new Vector2(flashSize, flashSize);
+
+            // 3. 먼지 구름 레이어 (회색, 반투명) — 중심에서 살짝 커지며 페이드
+            GameObject dust = new GameObject("ShellBurstDust");
+            dust.transform.SetParent(burstParent, false);
+            dust.transform.SetAsLastSibling();
+            dust.transform.position = burstCenter;
+            var dustImg = dust.AddComponent<UnityEngine.UI.Image>();
+            dustImg.raycastTarget = false;
+            dustImg.sprite = HexBlock.GetHexFlashSprite();
+            dustImg.color = new Color(shellBase.r, shellBase.g, shellBase.b, 0.55f);
+            RectTransform dustRt = dust.GetComponent<RectTransform>();
+            float dustSize = hexGrid != null ? hexGrid.HexSize * 1.0f : 50f;
+            dustRt.sizeDelta = new Vector2(dustSize, dustSize);
+
+            // 4. 플래시/먼지 확산 페이드아웃 — ★ block.transform은 건드리지 않음
+            //   (shellToRemove 후 ClearData/RestoreBlockToSlot이 즉시 실행되고 블록이 재활용될 수 있음)
+            float duration = 0.16f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+
+                float fScale = 1f + t * 1.6f;
+                flashRt.sizeDelta = new Vector2(flashSize * fScale, flashSize * fScale);
+                flashImg.color = new Color(1f, 1f, 1f, 0.85f * (1f - t));
+
+                float dScale = 1f + t * 2.4f; // 먼지는 더 크게 확산
+                dustRt.sizeDelta = new Vector2(dustSize * dScale, dustSize * dScale);
+                dustImg.color = new Color(shellBase.r, shellBase.g, shellBase.b, 0.55f * (1f - t));
+
+                yield return null;
+            }
+
+            Destroy(flash);
+            Destroy(dust);
+        }
+
+        /// <summary>
+        /// 쉘 파쇄 방사형 크랙 라인 — 중심에서 직선으로 뻗는 얇은 돌금 이펙트.
+        /// "쩍!"하고 순간적으로 갈라지는 느낌을 위해 짧은 수명(0.18s) + 빠른 페이드.
+        /// </summary>
+        private IEnumerator AnimateShellCrackLine(Vector3 center, float angleRad, Color baseColor, Transform parent = null)
+        {
+            GameObject line = new GameObject("ShellCrackLine");
+            line.transform.SetParent(parent != null ? parent : transform, false);
+            line.transform.SetAsLastSibling();
+            line.transform.position = center;
+
+            var image = line.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+            // 어두운 돌금 색상 (기본 회색보다 더 진하게)
+            Color crackCol = new Color(
+                Mathf.Clamp01(baseColor.r * 0.5f),
+                Mathf.Clamp01(baseColor.g * 0.5f),
+                Mathf.Clamp01(baseColor.b * 0.5f),
+                1f);
+            image.color = crackCol;
+
+            RectTransform rt = line.GetComponent<RectTransform>();
+            // Pivot을 한쪽 끝(왼쪽 중앙)에 두어 각도 회전 시 중심에서 뻗어나가는 선
+            rt.pivot = new Vector2(0f, 0.5f);
+
+            float maxLength = hexGrid != null ? hexGrid.HexSize * 1.2f : 60f;
+            float thickness = Random.Range(2.5f, 4.5f);
+            rt.sizeDelta = new Vector2(0f, thickness);
+            rt.localEulerAngles = new Vector3(0f, 0f, angleRad * Mathf.Rad2Deg);
+
+            // 0~40% 구간: 길이 0→최대, 빠른 확장
+            // 40~100% 구간: 페이드아웃
+            float lifetime = 0.18f;
+            float elapsedTime = 0f;
+            while (elapsedTime < lifetime)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsedTime / lifetime);
+
+                float lengthT = Mathf.Clamp01(t / 0.4f);
+                float currentLength = Mathf.Lerp(0f, maxLength, 1f - Mathf.Pow(1f - lengthT, 3f)); // EaseOutCubic
+                rt.sizeDelta = new Vector2(currentLength, thickness);
+
+                float alpha = t < 0.4f ? 1f : (1f - (t - 0.4f) / 0.6f);
+                image.color = new Color(crackCol.r, crackCol.g, crackCol.b, alpha);
+
+                yield return null;
+            }
+
+            Destroy(line);
+        }
+
+        /// <summary>
+        /// 쉘 큰 육각 파편 조각 — 블록이 "조각으로 쪼개지는" 명확한 시각 표현.
+        /// 블록 크기의 35% 크기, 12방향 방사상 발사, 중력 낙하 + 회전 + 점진적 축소/페이드.
+        /// </summary>
+        private IEnumerator AnimateShellShatterPiece(Vector3 center, Color color, int pieceIndex, int totalPieces, Transform parent)
+        {
+            GameObject piece = new GameObject("ShellShatterPiece");
+            piece.transform.SetParent(parent != null ? parent : transform, false);
+            piece.transform.SetAsLastSibling();
+            piece.transform.position = center;
+
+            var image = piece.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+            image.sprite = HexBlock.GetHexFlashSprite(); // 육각 모양
+            image.color = color;
+
+            RectTransform rt = piece.GetComponent<RectTransform>();
+            float blockSize = hexGrid != null ? hexGrid.HexSize : 50f;
+            float size = blockSize * Random.Range(0.30f, 0.42f); // 블록의 30~42%
+            rt.sizeDelta = new Vector2(size, size);
+
+            // 12방향 방사상 분산 (약간의 랜덤 오프셋)
+            float baseAngle = (360f / totalPieces) * pieceIndex;
+            float angleRad = (baseAngle + Random.Range(-12f, 12f)) * Mathf.Deg2Rad;
+            float speed = Random.Range(220f, 380f);
+            Vector2 velocity = new Vector2(Mathf.Cos(angleRad), Mathf.Sin(angleRad)) * speed;
+            float gravity = Random.Range(320f, 520f);
+
+            // 빠른 자전 (조각이 공중에서 회전하는 느낌)
+            float rotSpeed = Random.Range(-900f, 900f);
+            float currentRot = Random.Range(0f, 360f);
+
+            // 수명 — 중력 낙하까지 충분한 시간
+            float lifetime = Random.Range(0.45f, 0.7f);
+            float elapsed = 0f;
+
+            while (elapsed < lifetime)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / lifetime;
+
+                // 이동 + 중력 + 공기저항
+                Vector3 pos = piece.transform.position;
+                pos.x += velocity.x * Time.deltaTime;
+                pos.y += velocity.y * Time.deltaTime;
+                velocity.y -= gravity * Time.deltaTime;
+                velocity.x *= 0.96f;
+                piece.transform.position = pos;
+
+                // 자전
+                currentRot += rotSpeed * Time.deltaTime;
+                piece.transform.localRotation = Quaternion.Euler(0, 0, currentRot);
+
+                // 점진적 축소 + 페이드 (빠른 페이드가 아닌 자연스러운 감쇠)
+                float shrink = 1f - t * 0.45f;
+                rt.localScale = Vector3.one * shrink;
+
+                // 페이드는 후반부에 집중 (초반은 완전 불투명 유지)
+                float alpha = t < 0.5f ? 1f : (1f - (t - 0.5f) * 2f);
+                image.color = new Color(color.r, color.g, color.b, Mathf.Clamp01(alpha));
+
+                yield return null;
+            }
+
+            Destroy(piece);
+        }
+
+        /// <summary>
+        /// 쉘 파쇄 세밀 입자 — 4~8px 회색 사각형이 랜덤 방향으로 튀며 중력 낙하 + 페이드.
+        /// AnimateCrackedShard보다 작고 빠르게 움직여 "먼지 파티클" 느낌 강화.
+        /// </summary>
+        private IEnumerator AnimateShellParticle(Vector3 center, Color color, Transform parent = null)
+        {
+            GameObject particle = new GameObject("ShellParticle");
+            particle.transform.SetParent(parent != null ? parent : transform, false);
+            particle.transform.SetAsLastSibling();
+            particle.transform.position = center;
+
+            var image = particle.AddComponent<UnityEngine.UI.Image>();
+            image.raycastTarget = false;
+            image.color = color;
+
+            RectTransform rt = particle.GetComponent<RectTransform>();
+            float size = Random.Range(3f, 7f);
+            rt.sizeDelta = new Vector2(size, size);
+
+            // 폭발 방향: 사방 랜덤
+            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float speed = Random.Range(120f, 280f);
+            Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+            float gravity = Random.Range(180f, 360f);
+
+            // 약한 자전
+            float rotSpeed = Random.Range(-720f, 720f);
+            float currentRot = Random.Range(0f, 360f);
+
+            float lifetime = Random.Range(0.25f, 0.5f);
+            float elapsedTime = 0f;
+
+            while (elapsedTime < lifetime)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = elapsedTime / lifetime;
+
+                // 이동 + 중력
+                Vector3 pos = particle.transform.position;
+                pos.x += velocity.x * Time.deltaTime;
+                pos.y += velocity.y * Time.deltaTime;
+                velocity.y -= gravity * Time.deltaTime;
+                velocity.x *= 0.95f; // 공기 저항
+                particle.transform.position = pos;
+
+                // 자전
+                currentRot += rotSpeed * Time.deltaTime;
+                particle.transform.localRotation = Quaternion.Euler(0, 0, currentRot);
+
+                // 축소 + 페이드
+                float shrink = Mathf.Max(0.2f, 1f - t * 0.8f);
+                rt.localScale = Vector3.one * shrink;
+                image.color = new Color(color.r, color.g, color.b, 1f - VisualConstants.EaseInQuad(t));
+
+                yield return null;
+            }
+
+            Destroy(particle);
+        }
+
         // ── 금간 블록 파편용 다각형 스프라이트 캐시 ──
         private static Dictionary<int, Sprite> crackedPolygonCache = new Dictionary<int, Sprite>();
 
@@ -1649,7 +1968,9 @@ private IEnumerator CascadeWithPendingLoop()
 
                 // 1. 낙하 처리
                 yield return StartCoroutine(ProcessFalling());
-                yield return new WaitForSeconds(cascadeDelay);
+                // ★ 연쇄(깊이 1+)부터 대기 절반 — 캐스케이드 템포 가속 (플레이테스트 개선 #6).
+                //   첫 매칭의 손맛은 유지하고, 이어지는 연쇄의 기다림만 줄인다.
+                yield return new WaitForSeconds(currentCascadeDepth >= 1 ? cascadeDelay * 0.5f : cascadeDelay);
 
                 // 2. pending 블록 수집
                 List<HexBlock> cascadePending = CollectAndClearPendingSpecials();
@@ -2463,8 +2784,10 @@ private IEnumerator AnimateFall(FallAnimation anim, System.Action onComplete)
                             && currentY <= target.yPos)
                         {
                             hitGoblins.Add(target.goblin);
-                            Debug.Log($"[낙하충돌] 몬스터타입=archer:{target.goblin.isArcher} healer:{target.goblin.isHealer} armored:{target.goblin.isArmored} shield:{target.goblin.isShielded} bomb:{target.goblin.isBomb} heavy:{target.goblin.isHeavy} 위치={target.goblin.position}");
-                            GoblinSystem.Instance.ApplyIndividualFallDamage(target.goblin);
+                            // ★ 점령당한 블록(isShell)은 낙하 데미지 면역 → "면역" 초록 텍스트 표시
+                            bool shellImmune = block != null && block.Data != null && block.Data.isShell;
+                            Debug.Log($"[낙하충돌] 몬스터타입=archer:{target.goblin.isArcher} healer:{target.goblin.isHealer} armored:{target.goblin.isArmored} shield:{target.goblin.isShielded} bomb:{target.goblin.isBomb} heavy:{target.goblin.isHeavy} shell블록:{shellImmune} 위치={target.goblin.position}");
+                            GoblinSystem.Instance.ApplyIndividualFallDamage(target.goblin, shellImmune);
                         }
                     }
                 }
@@ -2732,6 +3055,26 @@ public void TriggerFallOnly()
                     yield return StartCoroutine(ProcessMatchesCoroutine(newMatches));
                     yield break;
                 }
+            }
+
+            // ★ 매칭이 없어도, 콤보 등이 SetPendingActivation으로 표시한 특수블록(드론 등)이 남아 있으면
+            //   반드시 발동시킨다. (이전 버그: 콤보 후 새 매칭이 없으면 pending 드론이 발동 없이 깜빡이다 사라짐)
+            //   CascadeWithPendingLoop가 pending 수집→발동→정리(isProcessing/OnCascadeComplete)까지 담당.
+            bool hasPendingSpecial = false;
+            if (hexGrid != null)
+            {
+                foreach (var b in hexGrid.GetAllBlocks())
+                {
+                    if (b != null && b.Data != null && b.Data.pendingActivation
+                        && b.Data.specialType != SpecialBlockType.None)
+                    { hasPendingSpecial = true; break; }
+                }
+            }
+            if (hasPendingSpecial)
+            {
+                Debug.Log("[BRS] FallOnly: 매칭 없음 — 잔존 pending 특수블록을 CascadeWithPendingLoop로 발동");
+                yield return StartCoroutine(CascadeWithPendingLoop());
+                yield break;
             }
 
             isProcessing = false;
@@ -3091,7 +3434,9 @@ public void TriggerBigBang()
             //     StartCoroutine(MatchPulse(allMatchedBlocks[i], i * VisualConstants.MatchPulseStagger));
             // }
 
-            yield return new WaitForSeconds(matchHighlightDuration);
+            // ★ 연쇄(깊이 1+)부터 하이라이트 40% 단축 — 캐스케이드 템포 가속 (플레이테스트 개선 #6)
+            yield return new WaitForSeconds(currentCascadeDepth >= 1
+                ? matchHighlightDuration * 0.6f : matchHighlightDuration);
 
             // [튜토리얼 Pause Hook 1] 매칭 하이라이트 완료 → 특수 블록 생성 전
             if (TutorialManager.Instance != null)
@@ -3108,6 +3453,24 @@ public void TriggerBigBang()
 
             foreach (var match in matches)
             {
+                // ★ 해금 상태 기반 fallback: 미해금 특수블록 조건이면 해금된 하위 등급으로 변환
+                // (예: 폭탄 미해금 상태에서 5뭉친 매칭 → 그냥 삭제되던 버그 수정 → 드릴 생성)
+                if (match.createdSpecialType != SpecialBlockType.None)
+                {
+                    var fallbackType = ApplyUnlockFallback(match.createdSpecialType);
+                    if (fallbackType != match.createdSpecialType)
+                    {
+                        Debug.Log($"[BRS] 특수블록 fallback: {match.createdSpecialType} → {fallbackType} (해금되지 않아 하위 등급으로 대체)");
+                        match.createdSpecialType = fallbackType;
+                        // 드릴로 fallback되었고 방향이 미설정(기본 Vertical)이면 랜덤 방향 지정
+                        if (fallbackType == SpecialBlockType.Drill)
+                        {
+                            DrillDirection[] dirs = { DrillDirection.Vertical, DrillDirection.Slash, DrillDirection.BackSlash };
+                            match.drillDirection = dirs[UnityEngine.Random.Range(0, dirs.Length)];
+                        }
+                    }
+                }
+
                 Debug.Log($"[BRS] 매칭 처리: count={match.blocks.Count}, specialType={match.createdSpecialType}, spawnBlock={match.specialSpawnBlock?.Coord}");
                 if (match.createdSpecialType != SpecialBlockType.None && match.specialSpawnBlock != null)
                 {
@@ -3129,13 +3492,28 @@ public void TriggerBigBang()
                         // 깨진 블록: 제자리에서 붉은색 폭발 (합체에 참여하지 않음)
                         foreach (var crackedBlock in crackedBlocks)
                         {
-                            StartCoroutine(AnimateCrackedBurst(crackedBlock));
+                            // ★ 게이지 충전용 상태를 ClearData 전에 캡처 (주황→RW, 파랑→MP, 빨/초/보→아이템 게이지)
+                            //   — 특수 생성 매칭에 섞여 파쇄되는 깨진 블록이 기존엔 충전 없이 사라지던 버그 수정.
+                            //   isBroken=true라 미션 미집계, 쉘/적점령은 suppress로 영혼·충전 모두 없음(일반 매칭과 동일).
+                            GemType cGt = crackedBlock.Data != null ? crackedBlock.Data.gemType : GemType.None;
+                            bool cSuppressed = GameManager.IsSoulSuppressedBlock(crackedBlock);
+                            Vector3 cPos = crackedBlock.transform.position;
+
+                            // ★ isShell이면 회색 파편+먼지 입자, 아니면 원본 젬 색상 파편
+                            if (crackedBlock.Data != null && crackedBlock.Data.isShell)
+                                StartCoroutine(AnimateShellBurst(crackedBlock));
+                            else
+                                StartCoroutine(AnimateCrackedBurst(crackedBlock));
                             alreadyRemovedCracked.Add(crackedBlock);
                             // ★ 블록 데이터 즉시 정리: ProcessFalling이 빈 슬롯으로 인식하도록
-                            // AnimateCrackedBurst는 첫 프레임에서 색상을 캐싱하므로 안전
+                            // AnimateCrackedBurst/ShellBurst는 첫 프레임에서 위치/색상을 캐싱하므로 안전
                             crackedBlock.ClearData();
                             crackedBlock.SetMatched(false);
                             RestoreBlockToSlot(crackedBlock);
+
+                            // ★ 게이지 충전 — 깨진 블록 공용 진입점(특수블록 효과 파괴와 동일). 영혼 오브 도착 시 +1.
+                            if (cGt != GemType.None)
+                                GameManager.Instance?.OnSingleGemDestroyedForMission(cGt, true, cPos, cSuppressed);
                         }
                         Debug.Log($"[BRS] 깨진 블록 {crackedBlocks.Count}개 제자리 삭제+데이터 정리, 건강한 블록 {mergeBlocks.Count}개 합체 → {match.createdSpecialType} 생성");
                     }
@@ -3149,10 +3527,27 @@ public void TriggerBigBang()
                     // 미션 시스템에 특수 블록 생성 알림 (타입 + 드릴방향)
                     OnSpecialBlockCreated?.Invoke(match.createdSpecialType, match.drillDirection);
 
-                    // [튜토리얼 Pause Hook 2] 드릴 생성 완료 후
-                    if (match.createdSpecialType == SpecialBlockType.Drill && TutorialManager.Instance != null)
+                    // [튜토리얼 Pause Hook 2] 특수 블록 생성 완료 후
+                    if (TutorialManager.Instance != null)
                     {
-                        TutorialManager.Instance.OnDrillCreated(match.specialSpawnBlock.Coord);
+                        switch (match.createdSpecialType)
+                        {
+                            case SpecialBlockType.Drill:
+                                TutorialManager.Instance.OnDrillCreated(match.specialSpawnBlock.Coord);
+                                break;
+                            case SpecialBlockType.Bomb:
+                                TutorialManager.Instance.OnBombCreated(match.specialSpawnBlock.Coord);
+                                break;
+                            case SpecialBlockType.Drone:
+                                TutorialManager.Instance.OnDroneCreated(match.specialSpawnBlock.Coord);
+                                break;
+                            case SpecialBlockType.Rainbow:
+                                TutorialManager.Instance.OnRainbowCreated(match.specialSpawnBlock.Coord);
+                                break;
+                            case SpecialBlockType.XBlock:
+                                TutorialManager.Instance.OnXBlockCreated(match.specialSpawnBlock.Coord);
+                                break;
+                        }
                         while (TutorialManager.Instance.IsPausedForTutorial)
                             yield return null;
                     }
@@ -3213,6 +3608,22 @@ public void TriggerBigBang()
                         if (newlyCreatedSpecials.Contains(block)) continue;
                         if (!matchSpecialBlocks.Contains(block))
                             matchSpecialBlocks.Add(block);
+                    }
+                    else if (block.Data.dirtMound > 0)
+                    {
+                        // ★ 흙더미 블록: 제거하지 않고 흙더미 레벨만 -1
+                        //   2/3(2) → 1/3(1), 1/3(1) → 0 (흙더미 제거, 블록은 그대로 유지)
+                        int prevDirt = block.Data.dirtMound;
+                        block.Data.dirtMound = Mathf.Max(0, prevDirt - 1);
+                        block.SetMatched(false);
+                        block.UpdateVisuals();
+                        Debug.Log($"[BRS] 흙더미 매칭: ({block.Coord}) → dirtMound = {block.Data.dirtMound}");
+
+                        // 흙더미 완전 제거(1 → 0) 시 미션 진행 발사
+                        if (prevDirt == 1 && block.Data.dirtMound == 0)
+                        {
+                            GameManager.Instance?.OnDirtMoundRemovedForMission();
+                        }
                     }
                     else
                     {
@@ -3324,85 +3735,71 @@ public void TriggerBigBang()
             // ClearData() 전에 호출해야 gemType이 유효함
             // 깨진 블록(isCracked) 및 껍데기 블록(isShell)은 미션 카운트에서 제외
             // + 아이템 게이지 충전
-            Dictionary<GemType, int> gemCountsForGauge = new Dictionary<GemType, int>();
+            // ★ 매칭 정화 → 영혼 오브 연출과 게이지 충전 싱크
+            //   - 미션 보고: 즉시 (미션 판정/게임 진행에 영향)
+            //   - 게이지/마나/리워드 충전: 정화된 영혼이 대응 게이지 UI에 "도착하는 순간"(orbArrived)에 처리
+            //     → 영혼이 통에 흡수되는 타이밍과 수치 증가를 일치시킴 (마나/리워드/망치/스왑/라인)
+            //   - 충전 총량은 기존과 동일: 일반 블록 ×2(+추가 ×2=합 ×4 for 망치/스왑/라인) / 깨진·껍데기 블록 ×1
+            //   - 영혼 도착(약 0.55초 뒤)에는 block.Data가 ClearData될 수 있으므로 현재 색/상태를 로컬 캡처
             foreach (var block in blocksToRemove)
             {
-                if (block != null && block.Data != null && block.Data.gemType != GemType.None)
+                if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
+
+                GemType gt = block.Data.gemType;
+                bool isShell = block.Data.isShell;
+                bool isBroken = block.Data.isCracked || isShell;
+
+                // 미션 보고는 즉시 (일반 블록만 — 깨진/껍데기 블록은 미션 카운트 제외)
+                if (!isBroken)
+                    GameManager.Instance?.ReportGemForMissionOnly(gt);
+
+                // ★ 영혼이 게이지 통에 도착하는 순간 충전 — 연출과 수치 증가 싱크
+                System.Action orbArrived = () =>
                 {
-                    bool isBroken = block.Data.isCracked || block.Data.isShell;
+                    // 마나(파란, 껍데기 제외): 정화 영혼이 마나 통에 들어가는 순간 +1
+                    if (gt == GemType.Blue && !isShell && MPManager.Instance != null)
+                        MPManager.Instance.AddMP(1);
 
                     if (!isBroken)
                     {
-                        // 일반 블록: 미션 보고 + 게이지 +2 (OnSingleGemDestroyedForMission 내부에서)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
-
-                        GemType gt = block.Data.gemType;
-                        if (gemCountsForGauge.ContainsKey(gt))
-                            gemCountsForGauge[gt]++;
-                        else
-                            gemCountsForGauge[gt] = 1;
+                        // 일반 블록: 망치/스왑/라인 +4(=2+2), 주황 리워드, ItemManager +1, ItemGaugeController +1
+                        // ★ 블록당 게이지 +1 (ChargeGaugeForGem). 구: 추가 +2(=매칭정화)로 블록당 총 +4였으나
+                        //   단계 임계값이 10/8/6/4로 낮아져 붉은 블록 3개에 1단계가 다 차던 문제 → 추가 +2 제거(블록당 +1).
+                        GameManager.Instance?.ChargeGaugeForGem(gt);  // 망치/스왑/라인 +1 + 주황 리워드
+                        if (ItemManager.Instance != null)
+                            ItemManager.Instance.AddGauge(gt, 1);
+                        if (JewelsHexaPuzzle.UI.ItemGaugeController.Instance != null)
+                            JewelsHexaPuzzle.UI.ItemGaugeController.Instance.OnBlockRemoved(gt);
                     }
                     else
                     {
-                        // 깨진 블록: 미션 제외, 게이지 +1 (일반의 절반)
-                        GemType gt = block.Data.gemType;
+                        // 깨진/껍데기 블록: 아이템 게이지(+1), 미션 제외
                         if (gt == GemType.Red && JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
                             JewelsHexaPuzzle.Items.HammerGauge.Instance.AddGauge(1);
                         if (gt == GemType.Green && JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
                             JewelsHexaPuzzle.Items.SwapGauge.Instance.AddGauge(1);
                         if (gt == GemType.Purple && JewelsHexaPuzzle.Items.LineGauge.Instance != null)
                             JewelsHexaPuzzle.Items.LineGauge.Instance.AddGauge(1);
+                        if (ItemManager.Instance != null)
+                            ItemManager.Instance.AddGauge(gt, 1);
+                        if (JewelsHexaPuzzle.UI.ItemGaugeController.Instance != null)
+                            JewelsHexaPuzzle.UI.ItemGaugeController.Instance.OnBlockRemoved(gt);
+                        // ★ 리워드(주황): 색을 잃지 않은(쉘 아님) 깨진 주황 블록도 리워드 게이지 충전 (사용자 요청)
+                        //   마나(파란)는 위(orbArrived 진입부)에서 !isShell 조건으로 이미 충전됨.
+                        if (gt == GemType.Orange && !isShell && SkillUpgradeOfferSystem.Instance != null)
+                            SkillUpgradeOfferSystem.Instance.OnOrangeDestroyed();
                     }
-                }
-            }
+                };
 
-            // 아이템 게이지 일괄 충전 (기존 ItemManager + 새 ItemGaugeController 동시)
-            if (ItemManager.Instance != null)
-            {
-                foreach (var kvp in gemCountsForGauge)
-                    ItemManager.Instance.AddGauge(kvp.Key, kvp.Value);
-            }
-
-            // ★ 새 독립 게이지 컨트롤러 연동
-            if (JewelsHexaPuzzle.UI.ItemGaugeController.Instance != null)
-            {
-                foreach (var kvp in gemCountsForGauge)
-                {
-                    for (int gi = 0; gi < kvp.Value; gi++)
-                        JewelsHexaPuzzle.UI.ItemGaugeController.Instance.OnBlockRemoved(kvp.Key);
-                }
-            }
-
-            // ★ 게이지 충전: 일반 블록 ×2, 깨진 블록 ×1
-            int normalBlockCount = 0;
-            int crackedBlockCount = 0;
-            foreach (var block in blocksToRemove)
-            {
-                if (block == null || block.Data == null) continue;
-                if (block.Data.isCracked || block.Data.isShell) crackedBlockCount++;
-                else normalBlockCount++;
-            }
-            int totalGaugePerColor = normalBlockCount * 2 + crackedBlockCount * 1;
-
-            if (JewelsHexaPuzzle.Items.HammerGauge.Instance != null)
-            {
-                int redCount = gemCountsForGauge.ContainsKey(GemType.Red) ? gemCountsForGauge[GemType.Red] : 0;
-                if (redCount > 0)
-                    JewelsHexaPuzzle.Items.HammerGauge.Instance.AddGauge(redCount * 2);
-            }
-
-            if (JewelsHexaPuzzle.Items.SwapGauge.Instance != null)
-            {
-                int greenCount = gemCountsForGauge.ContainsKey(GemType.Green) ? gemCountsForGauge[GemType.Green] : 0;
-                if (greenCount > 0)
-                    JewelsHexaPuzzle.Items.SwapGauge.Instance.AddGauge(greenCount * 2);
-            }
-
-            if (JewelsHexaPuzzle.Items.LineGauge.Instance != null)
-            {
-                int purpleCount = gemCountsForGauge.ContainsKey(GemType.Purple) ? gemCountsForGauge[GemType.Purple] : 0;
-                if (purpleCount > 0)
-                    JewelsHexaPuzzle.Items.LineGauge.Instance.AddGauge(purpleCount * 2);
+                // ★ 영혼 오브 발사 — 블록 위치에서 대응 게이지 UI로 곡선 이동(꼬리+도착 펀치).
+                //   Red→망치 / Green→스왑 / Purple→라인 / Blue→마나 / Orange→리워드.
+                //   매핑 없는 색(Yellow)은 표시 안 함(즉시 orbArrived 콜백 → 충전 누락 방지).
+                // ★ 고블린에게 색을 빼앗긴 쉘 블록(isShell)은 영혼을 내보내지 않는다(빈 껍데기 — 색이 없음).
+                //   충전은 기존대로 즉시 처리(연출만 생략, 게이지 누락 없음).
+                // ★ 쉘(색 빼앗김)/적(고블린) 점령 블록은 플레이어의 것이 아니므로 영혼·게이지 증가 모두 없음.
+                //   (매칭은 쉘 제외하나 점령된 유색 블록은 매칭 가능 → 여기서 억제)
+                if (!GameManager.IsSoulSuppressedBlock(block))
+                    JewelsHexaPuzzle.UI.GaugeOrbEffect.Spawn(block.transform.position, gt, orbArrived);
             }
 
             // 5e. 모든 블록이 깨져서 특수 블록 생성이 차단된 경우 메시지 표시
@@ -3452,6 +3849,13 @@ public void TriggerBigBang()
                 Dictionary<GoblinData, int> goblinDamageMap = new Dictionary<GoblinData, int>();
                 // 방패 내구도 감소 대상 고블린 (일반 블록 직격만 해당)
                 HashSet<GoblinData> shieldDamageGoblins = new HashSet<GoblinData>();
+                // ★ 직접/인접 타격 리워드 보너스 — 직격/인접당한 몬스터를 추적해 몬스터당 1회만 가산.
+                //   직접 타격(매칭 직격): 기본 2 + GetDirectHitBonus(+2/+4/+6) → 2/4/6/8
+                //   인접 타격(매칭 인접): 기본 1 + GetAdjacentHitBonus(+1/+2/+3) → 1/2/3/4
+                HashSet<GoblinData> directHitGoblins = new HashSet<GoblinData>();
+                HashSet<GoblinData> adjacentHitGoblins = new HashSet<GoblinData>();
+                int matchDirectHitBonus = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetDirectHitBonus() : 0;
+                int matchAdjacentHitBonus = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetAdjacentHitBonus() : 0;
 
                 foreach (var block in allRemovedBlocks)
                 {
@@ -3482,9 +3886,10 @@ public void TriggerBigBang()
                             {
                                 hitByThisBlock.Add(directGoblin);
                                 if (goblinDamageMap.ContainsKey(directGoblin))
-                                    goblinDamageMap[directGoblin] += 1;
+                                    goblinDamageMap[directGoblin] += 2; // 직격 기본 데미지 2
                                 else
-                                    goblinDamageMap[directGoblin] = 1;
+                                    goblinDamageMap[directGoblin] = 2;
+                                directHitGoblins.Add(directGoblin);
                                 shieldDamageGoblins.Add(directGoblin);
                                 // 은신 즉시 해제
                                 directGoblin.isStealth = false;
@@ -3497,9 +3902,10 @@ public void TriggerBigBang()
                         {
                             hitByThisBlock.Add(directGoblin);
                             if (goblinDamageMap.ContainsKey(directGoblin))
-                                goblinDamageMap[directGoblin] += 1;
+                                goblinDamageMap[directGoblin] += 2; // 직격 기본 데미지 2
                             else
-                                goblinDamageMap[directGoblin] = 1;
+                                goblinDamageMap[directGoblin] = 2;
+                            directHitGoblins.Add(directGoblin);
 
                             if (!isCracked)
                                 shieldDamageGoblins.Add(directGoblin); // 일반 블록 직격만 방패 내구도 감소
@@ -3524,6 +3930,7 @@ public void TriggerBigBang()
                                     goblinDamageMap[adjGoblin] += 1;
                                 else
                                     goblinDamageMap[adjGoblin] = 1;
+                                adjacentHitGoblins.Add(adjGoblin);
                                 // 인접 데미지는 방패 내구도 감소 없음
                             }
                         }
@@ -3536,6 +3943,9 @@ public void TriggerBigBang()
                 {
                     GoblinData goblin = kvp.Key;
                     int totalDmg = kvp.Value;
+                    // ★ 직접/인접 타격 리워드: 직격당한 몬스터엔 직접 보너스, 인접당한 몬스터엔 인접 보너스를 1회 가산.
+                    if (directHitGoblins.Contains(goblin)) totalDmg += matchDirectHitBonus;
+                    if (adjacentHitGoblins.Contains(goblin)) totalDmg += matchAdjacentHitBonus;
 
                     if (goblin == null || !goblin.isAlive) continue;
 
@@ -3566,8 +3976,12 @@ public void TriggerBigBang()
             {
                 if (block != null)
                 {
-                    // 금간 블록: block.Data.isCracked로 직접 판별 (hasCrackedBlocks 의존 제거)
-                    if (block.Data != null && block.Data.isCracked
+                    // ★ 우선순위: isShell(회색 껍데기) → isCracked(금간 유색) → 일반
+                    //   쉘은 회색 파편 + 먼지 입자, 금간 유색은 원본 젬 색상 파편
+                    if (block.Data != null && block.Data.isShell
+                        && !alreadyRemovedCracked.Contains(block))
+                        shrinkCoroutines.Add(StartCoroutine(AnimateShellBurst(block)));
+                    else if (block.Data != null && block.Data.isCracked
                         && !alreadyRemovedCracked.Contains(block))
                         shrinkCoroutines.Add(StartCoroutine(AnimateCrackedBurst(block)));
                     else
@@ -3660,13 +4074,17 @@ public void TriggerBigBang()
                 {
                     if (shell != null && shell.Data != null)
                     {
+                        // ★ 파쇄 파편 이펙트 — ClearData 전에 시작해 첫 프레임에서 position 캐싱
+                        //   (코루틴은 동기 프레임 실행 후 yield → ClearData 이후까지 자체 트랜스폼으로 동작)
+                        StartCoroutine(AnimateShellBurst(shell));
+
                         shell.ClearData();
                         shell.SetMatched(false);
                         RestoreBlockToSlot(shell);
                         shell.transform.localScale = Vector3.one;
                     }
                 }
-                Debug.Log($"[BRS] 인접 매칭으로 쉘 블록 {shellToRemove.Count}개 제거");
+                Debug.Log($"[BRS] 인접 매칭으로 쉘 블록 {shellToRemove.Count}개 제거 (파편 이펙트 적용)");
             }
 
             // 6. 매칭 특수블록 발동 (매칭에서 직접 생긴 특수 블록만)
@@ -3734,6 +4152,54 @@ public void TriggerBigBang()
                     yield return new WaitForSeconds(cascadeDelay);
                 }
             }
+        }
+
+        // ============================================================
+        // 해금 상태 기반 특수블록 fallback
+        // ============================================================
+
+        /// <summary>
+        /// 특정 특수블록 타입이 해금되지 않았으면 해금된 하위 등급으로 자동 대체.
+        /// 해금 순서: Drill(3) → Bomb(8) → Rainbow(16) → Drone(22) → XBlock(28).
+        /// 각 타입이 미해금이면 다음 하위 등급으로 내려가 시도.
+        /// 모두 미해금이면 SpecialBlockType.None (일반 삭제).
+        /// </summary>
+        private SpecialBlockType ApplyUnlockFallback(SpecialBlockType target)
+        {
+            var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+            if (tm == null || target == SpecialBlockType.None)
+                return target;
+
+            // 이미 해금되었으면 변환 불필요
+            if (tm.IsSpecialBlockUnlocked(target))
+                return target;
+
+            // 타입별 fallback 체인 (현재 타입 → 해금된 하위 등급 순)
+            SpecialBlockType[] chain;
+            switch (target)
+            {
+                case SpecialBlockType.XBlock:
+                    chain = new[] { SpecialBlockType.Drone, SpecialBlockType.Rainbow, SpecialBlockType.Bomb, SpecialBlockType.Drill };
+                    break;
+                case SpecialBlockType.Drone:
+                    chain = new[] { SpecialBlockType.Rainbow, SpecialBlockType.Bomb, SpecialBlockType.Drill };
+                    break;
+                case SpecialBlockType.Rainbow:
+                    chain = new[] { SpecialBlockType.Bomb, SpecialBlockType.Drill };
+                    break;
+                case SpecialBlockType.Bomb:
+                    chain = new[] { SpecialBlockType.Drill };
+                    break;
+                default:
+                    return SpecialBlockType.None;
+            }
+
+            foreach (var t in chain)
+            {
+                if (tm.IsSpecialBlockUnlocked(t))
+                    return t;
+            }
+            return SpecialBlockType.None;
         }
 }
 }

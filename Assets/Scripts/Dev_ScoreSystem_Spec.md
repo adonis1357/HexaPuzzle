@@ -33,7 +33,7 @@
 15. [점수 시뮬레이션 예시](#15-점수-시뮬레이션-예시)
 16. [테스트 체크리스트](#16-테스트-체크리스트)
 
-> **참고:** 도넛과 X블록은 동일한 특수 블록입니다. 생성 조건만 다릅니다 (7+매치 → DonutBlockSystem, 링매치 → XBlockSystem).
+> **참고:** 타겟 레이저과 X블록은 동일한 특수 블록입니다. 생성 조건만 다릅니다 (7+매치 → DonutBlockSystem, 링매치 → XBlockSystem).
 
 ---
 
@@ -98,7 +98,7 @@
 | 4개 | +100 | 드릴(Drill) |
 | 5개 | +250 | 폭탄(Bomb) |
 | 6개 | +400 | 레이저(Laser) |
-| 7개 이상 | +600 | 도넛(Rainbow/XBlock) |
+| 7개 이상 | +600 | 타겟 레이저(Rainbow/XBlock) |
 
 ### 3.2 일반 매치 점수 공식
 
@@ -177,7 +177,7 @@ Debug.Log($"[System] Score={totalScore} (base:{기본점수} + blockTierSum:{blo
 | 드릴 (Drill) | 4개 매치 | **+150** | 가장 쉬운 특수 블록, 기본 보상 |
 | 폭탄 (Bomb) | 5개 매치 | **+300** | 중급 난이도, 범위 공격 가치 |
 | 레이저 (Laser) | 6개 매치 | **+500** | 6방향 관통, 높은 전략 가치 |
-| 도넛 (Donut/XBlock) | 7+매치 또는 링매치 | **+800** | 전체 색상 제거, 최고 가치 |
+| 타겟 레이저 (Donut/XBlock) | 7+매치 또는 링매치 | **+800** | 전체 색상 제거, 최고 가치 |
 
 ### 5.2 복수 생성 보너스
 
@@ -222,7 +222,7 @@ turnCreationBonus = sum(각 생성 가산점) + multiCreationBonus
 |----------|------|------|
 | 일반 매칭 | **x1.0** | 기본 점수 (※ 가시 기생충은 매칭 제거 시 점수 0) |
 | 특수 블록 (드릴/폭탄) | **x1.2** | 전략적 사용 보상 |
-| 특수 블록 (레이저/도넛) | **x1.5** | 고급 특수 블록 보상 |
+| 특수 블록 (레이저/타겟 레이저) | **x1.5** | 고급 특수 블록 보상 |
 | 아이템 사용 | **x0.5** | 아이템은 편의 수단, 점수 메리트 감소 |
 
 ### 6.3 특수 상황 보너스
@@ -230,10 +230,10 @@ turnCreationBonus = sum(각 생성 가산점) + multiCreationBonus
 | 상황 | 추가 점수 | 설명 |
 |------|----------|------|
 | 가시 기생충 무페널티 제거 | **+150** | 특수 블록/아이템으로 페널티 없이 제거 시 |
-| 분열체 무분열 제거 | **+200** | 폭탄/레이저/도넛으로 분열 없이 제거 시 |
+| 분열체 무분열 제거 | **+200** | 폭탄/레이저/타겟 레이저으로 분열 없이 제거 시 |
 | 공명 트윈 동시 제거 | **+500** (쌍 보너스) | 한 턴에 쌍둥이 둘 다 제거 시 추가 |
-| 반사 장막 1회 제거 | **+300** | 도넛/일반 매칭으로 한 방에 제거 시 |
-| 카오스 군주 1회 제거 | **+1000** | 도넛으로 한 방에 제거 시 |
+| 반사 장막 1회 제거 | **+300** | 타겟 레이저/일반 매칭으로 한 방에 제거 시 |
+| 카오스 군주 1회 제거 | **+1000** | 타겟 레이저으로 한 방에 제거 시 |
 
 ### 6.4 멀티킬 보너스 (한 턴에 여러 적군 제거)
 
@@ -527,7 +527,7 @@ public static int CalculateEfficiencyBonus(int turnsUsed, int turnLimit);
 private const int CreationBonusDrill = 150;
 private const int CreationBonusBomb = 300;
 private const int CreationBonusLaser = 500;
-private const int CreationBonusDonut = 800;  // 도넛 = X블록 동일
+private const int CreationBonusDonut = 800;  // 타겟 레이저 = X블록 동일
 
 // 복수 생성 보너스
 private const int MultiCreation2 = 200;
@@ -555,7 +555,7 @@ private const int EnemyScoreChaosOverlord = 1500;
 // 제거 방법 배율
 private const float RemovalMultiplierMatch = 1.0f;
 private const float RemovalMultiplierSpecialBasic = 1.2f;   // 드릴/폭탄
-private const float RemovalMultiplierSpecialAdvanced = 1.5f; // 레이저/도넛
+private const float RemovalMultiplierSpecialAdvanced = 1.5f; // 레이저/타겟 레이저
 private const float RemovalMultiplierItem = 0.5f;
 
 // 특수 상황 보너스
@@ -588,7 +588,7 @@ public enum RemovalMethod
 {
     Match,           // 일반 매칭
     SpecialBasic,    // 드릴/폭탄
-    SpecialAdvanced, // 레이저/도넛
+    SpecialAdvanced, // 레이저/타겟 레이저
     Item             // 아이템 사용
 }
 
@@ -706,7 +706,7 @@ cascade 배율 (depth 1): ×1.2
 → 총 적군 파괴 점수: 2,088점
 ```
 
-### 예시 5: 도넛으로 카오스 군주 1회 제거
+### 예시 5: 타겟 레이저으로 카오스 군주 1회 제거
 
 ```
 기본 파괴 점수: 1,500 × 1.5 = 2,250
@@ -754,7 +754,7 @@ cascade 배율 (depth 1): ×1.2
 ### (나) 특수 블록 생성 가산점
 
 - [ ] 4매치 드릴 생성 시 +150 가산점 확인
-- [ ] 7+매치 도넛 생성 시 +800 가산점 확인
+- [ ] 7+매치 타겟 레이저 생성 시 +800 가산점 확인
 - [ ] 한 턴에 2개 생성 시 +200 복수 생성 보너스 확인
 - [ ] 캐스케이드 중 생성 시 cascade 배율 적용 확인
 
@@ -771,7 +771,7 @@ cascade 배율 (depth 1): ×1.2
 - [ ] 특수 블록으로 가시 기생충 제거 시 200점 + 무페널티 보너스 +150 확인
 - [ ] 폭탄으로 분열체 제거 시 무분열 보너스 +200 확인
 - [ ] 한 턴에 적군 3마리 제거 시 멀티킬 +500 확인
-- [ ] 도넛으로 카오스 군주 1회 제거 시 1회 제거 보너스 +1000 확인
+- [ ] 타겟 레이저으로 카오스 군주 1회 제거 시 1회 제거 보너스 +1000 확인
 
 ### (마) UI
 

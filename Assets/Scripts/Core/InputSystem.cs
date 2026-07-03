@@ -20,6 +20,7 @@ namespace JewelsHexaPuzzle.Core
         [SerializeField] private BombBlockSystem bombSystem;
         [SerializeField] private XBlockSystem xBlockSystem;
         [SerializeField] private DroneBlockSystem droneSystem;
+        [SerializeField] private DonutBlockSystem donutSystem;
         [SerializeField] private BlockRemovalSystem blockRemovalSystem;
 
         // 합성 시스템 참조
@@ -160,6 +161,13 @@ namespace JewelsHexaPuzzle.Core
                     Debug.Log("[InputSystem] DroneBlockSystem auto-found: " + droneSystem.name);
             }
 
+            if (donutSystem == null)
+            {
+                donutSystem = FindObjectOfType<DonutBlockSystem>();
+                if (donutSystem != null)
+                    Debug.Log("[InputSystem] DonutBlockSystem auto-found: " + donutSystem.name);
+            }
+
             if (gameCanvas == null)
             {
                 gameCanvas = FindObjectOfType<Canvas>();
@@ -181,7 +189,7 @@ namespace JewelsHexaPuzzle.Core
             cachedEditorTestSystem = FindObjectOfType<EditorTestSystem>();
         }
 
-private void Update()
+        private void Update()
         {
             if (!isEnabled) return;
             if (hexGrid == null || hexGrid.BlockCount == 0) return;
@@ -190,11 +198,29 @@ private void Update()
             if (bombSystem != null && bombSystem.IsBombing) return;
             if (xBlockSystem != null && xBlockSystem.IsActivating) return;
             if (droneSystem != null && droneSystem.IsActivating) return;
+            if (donutSystem != null && donutSystem.IsActivating) return;
             if (blockRemovalSystem != null && blockRemovalSystem.IsProcessing) return;
             if (comboSystem != null && comboSystem.IsComboActive) return;
 
-            // 구매 팝업 열려있으면 입력 차단
-            if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+            // ★ 팝업/모달 열림 → 입력 차단 + 진행 중 포인터 상태 초기화.
+            //   isPointerDown을 리셋해야 "팝업을 닫는 클릭"이 그리드 회전으로 새지 않는다
+            //   (다운이 팝업 위에서 시작돼도 업 시점에 스테일 다운으로 ExecuteRotation되는 경로 차단).
+            bool popupBlocking =
+                (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) ||                 // 구매 팝업
+                (MPManager.Instance != null && MPManager.Instance.IsManaPurchasePopupOpen) ||                 // 마나 구매 팝업
+                (SkillUpgradeOfferSystem.Instance != null &&
+                    (SkillUpgradeOfferSystem.Instance.IsChoiceModalOpen ||                                    // 리워드 선택 모달
+                     SkillUpgradeOfferSystem.Instance.IsTooltipOpen));                                        // 리워드 설명 팝업
+            if (popupBlocking)
+            {
+                isPointerDown = false;
+                // ★ 진행 중 드래그의 원형 인디케이터/연결선 정리 — 팝업이 업 이벤트를 삼키면
+                //   FinishComboDrag가 영영 안 불려 원형 UI가 잔존하던 버그 방지.
+                if (isDraggingCombo) CancelComboDrag();
+                if (isDraggingDrillMove) CancelDrillMoveDrag();
+                if (isDraggingBombMove) CancelBombMoveDrag();
+                return;
+            }
 
             // 망치/스왑/라인 아이템 UseReady 상태이면 회전 차단 (아이템이 자체 Update로 입력 처리)
             if (JewelsHexaPuzzle.Items.HammerGauge.Instance != null &&
@@ -223,6 +249,19 @@ private void Update()
 
         private void HandleInput()
         {
+            // ★ 스킬트리 페이지 활성 시 그리드 입력 완전 차단.
+            //   스킬 업그레이드 버튼/상세 팝업 탭이 뒤 레이어(그리드 블록 회전 등)로
+            //   전달되는 것을 방지. 진행 중인 포인터 다운 상태도 깔끔히 종료.
+            var gm = GameManager.Instance;
+            if (gm != null && gm.IsSkillTreeVisible)
+            {
+                if (isPointerDown) isPointerDown = false;
+                // ★ 드래그 중이던 원형 인디케이터/연결선도 정리 (잔존 방지 — 팝업 게이트와 동일)
+                if (isDraggingCombo) CancelComboDrag();
+                if (isDraggingDrillMove) CancelDrillMoveDrag();
+                if (isDraggingBombMove) CancelBombMoveDrag();
+                return;
+            }
 #if UNITY_EDITOR || UNITY_STANDALONE
             HandleMouseInput();
 #else
@@ -436,25 +475,37 @@ private void Update()
             HexBlock clickedBlock = GetBlockAtPosition(localPos);
 
             if (clickedBlock == null || clickedBlock.Data == null)
+            {
+                // ★ 튜토리얼 제한 모드 + 빈 공간 탭: 토스트 피드백 트리거
+                if (restrictedMode)
+                    onBlockedClickCallback?.Invoke();
                 return false;
+            }
 
-            // ★ 튜토리얼 제한 모드: 허용 좌표가 아니면 발동 차단
-            if (restrictedMode && allowedCoords.Count > 0 && !allowedCoords.Contains(clickedBlock.Coord))
+            // ★ 튜토리얼 제한 모드: 허용 좌표가 아니면 발동 차단 + 콜백 호출
+            //   allowedCoords가 비어있으면 모든 블록 차단 (전체 입력 막기용)
+            if (restrictedMode && !allowedCoords.Contains(clickedBlock.Coord))
+            {
+                onBlockedClickCallback?.Invoke();
                 return false;
+            }
 
             var specialType = clickedBlock.Data.specialType;
+
+            // ★ 해금되지 않은 특수 블록은 발동 차단 (TutorialManager 없어도 차단)
+            if (specialType != JewelsHexaPuzzle.Data.SpecialBlockType.None)
+            {
+                var tutMgr = TutorialManager.Instance;
+                if (tutMgr == null || !tutMgr.IsSpecialBlockUnlocked(specialType))
+                    return false;
+            }
 
             // 드릴은 일반 클릭 범위
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
-                // ★ MP 체크
-                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill))
-                {
-                    Debug.Log("[InputSystem] MP 부족: Drill 발동 불가");
-                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
-                    return false;
-                }
+                // ★ MP 체크 — 부족 시 이벤트 소비(true 반환)로 회전 차단, 피드백만 표시
+                if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Drill, clickedBlock))
+                    { ClearHighlight(); hasValidCluster = false; return true; }
                 Debug.Log($"[InputSystem] Drill block clicked at {clickedBlock.Coord}");
                 // 발동 시작 시점에 이동횟수 1 차감
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
@@ -474,14 +525,9 @@ private void Update()
                 HexBlock tightBlock = GetBlockAtPositionTight(localPos);
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
-                    // ★ MP 체크
-                    if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb))
-                    {
-                        Debug.Log("[InputSystem] MP 부족: Bomb 발동 불가");
-                        var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                        if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
-                        return false;
-                    }
+                    // ★ MP 체크 — 부족 시 이벤트 소비(true 반환)로 회전 차단, 피드백만 표시
+                    if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb, clickedBlock))
+                        { ClearHighlight(); hasValidCluster = false; return true; }
                     Debug.Log($"[InputSystem] Bomb block clicked at {clickedBlock.Coord}");
                     // 발동 시작 시점에 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
@@ -503,14 +549,9 @@ private void Update()
                 HexBlock tightBlock = GetBlockAtPositionTight(localPos);
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
-                    // ★ MP 체크
-                    if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock))
-                    {
-                        Debug.Log("[InputSystem] MP 부족: XBlock 발동 불가");
-                        var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                        if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
-                        return false;
-                    }
+                    // ★ MP 체크 — 부족 시 이벤트 소비(true 반환)로 회전 차단, 피드백만 표시
+                    if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock, clickedBlock))
+                        { ClearHighlight(); hasValidCluster = false; return true; }
                     Debug.Log($"[InputSystem] X-block clicked at {clickedBlock.Coord}");
                     // 발동 시작 시점에 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
@@ -532,14 +573,9 @@ private void Update()
                 HexBlock tightBlock = GetBlockAtPositionTight(localPos);
                 if (tightBlock != null && tightBlock == clickedBlock)
                 {
-                    // ★ MP 체크
-                    if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drone))
-                    {
-                        Debug.Log("[InputSystem] MP 부족: Drone 발동 불가");
-                        var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                        if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
-                        return false;
-                    }
+                    // ★ MP 체크 — 부족 시 이벤트 소비(true 반환)로 회전 차단, 피드백만 표시
+                    if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Drone, clickedBlock))
+                        { ClearHighlight(); hasValidCluster = false; return true; }
                     Debug.Log($"[InputSystem] Drone block clicked at {clickedBlock.Coord}");
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     // MP 소모
@@ -547,6 +583,29 @@ private void Update()
                         MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drone), clickedBlock.transform.position);
                     if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
                     droneSystem.ActivateDrone(clickedBlock);
+                    ClearHighlight();
+                    hasValidCluster = false;
+                    return true;
+                }
+                return false;
+            }
+
+            // 레인보우타겟 레이저도 좁은 클릭 범위
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Rainbow && donutSystem != null)
+            {
+                HexBlock tightBlock = GetBlockAtPositionTight(localPos);
+                if (tightBlock != null && tightBlock == clickedBlock)
+                {
+                    // ★ MP 체크 (타겟 레이저은 XBlock과 동일 비용) — 부족 시 이벤트 소비(회전 차단)
+                    if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Rainbow, clickedBlock))
+                        { ClearHighlight(); hasValidCluster = false; return true; }
+                    Debug.Log($"[InputSystem] Rainbow(Donut) block clicked at {clickedBlock.Coord}");
+                    if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                    // MP 소모
+                    if (MPManager.Instance != null)
+                        MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Rainbow), clickedBlock.transform.position);
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlayDonutSound();
+                    donutSystem.ActivateDonut(clickedBlock);
                     ClearHighlight();
                     hasValidCluster = false;
                     return true;
@@ -623,12 +682,16 @@ private void Update()
             if (cluster.HasValue)
             {
                 // ★ 튜토리얼 제한 모드: 클러스터의 모든 블록이 허용 좌표에 포함되어야 함
-                if (restrictedMode && allowedCoords.Count > 0)
+                //   allowedCoords가 비어있으면 모든 클러스터 차단 (전체 입력 막기용)
+                //   onBlocked 콜백은 호출하지 않음 — Moved/Stationary 매 프레임 호출되어 토스트 연쇄 방지.
+                //   TouchEnded 시점의 TryActivateSpecialBlock이 클릭 1회당 1번만 콜백 호출.
+                if (restrictedMode)
                 {
                     HexBlock b0 = cluster.Value.Item1, b1 = cluster.Value.Item2, b2 = cluster.Value.Item3;
-                    bool allAllowed = (b0 != null && allowedCoords.Contains(b0.Coord)) &&
-                                     (b1 != null && allowedCoords.Contains(b1.Coord)) &&
-                                     (b2 != null && allowedCoords.Contains(b2.Coord));
+                    bool allAllowed = allowedCoords.Count > 0
+                        && (b0 != null && allowedCoords.Contains(b0.Coord))
+                        && (b1 != null && allowedCoords.Contains(b1.Coord))
+                        && (b2 != null && allowedCoords.Contains(b2.Coord));
                     if (!allAllowed)
                     {
                         hasValidCluster = false;
@@ -665,6 +728,15 @@ private void Update()
             }
             if (rotationSystem == null) return;
             if (currentCluster[0] == null || currentCluster[1] == null || currentCluster[2] == null) return;
+
+            // ★ 몬스터 액션 진행 중이면 회전 차단 + 토스트 안내
+            if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsProcessingTurn)
+            {
+                UIManager.Instance?.ShowToast("몬스터 액션중입니다!");
+                ClearHighlight();
+                hasValidCluster = false;
+                return;
+            }
 
             // ★ Heavy 고블린 점유 좌표와 겹치는 클러스터 회전 차단
             if (GoblinSystem.Instance != null)
@@ -796,8 +868,17 @@ private void Update()
             Vector2 localPos = ScreenToLocalPosition(screenPos);
             HexBlock block = GetBlockAtPosition(localPos);
 
+            // ★ 튜토리얼 제한 모드: 허용 좌표가 아닌 특수블록 합성 드래그 차단
+            //   (빈 공간/일반 블록은 TouchEnded의 TryActivateSpecialBlock에서 콜백 처리)
+            if (restrictedMode && block != null && !allowedCoords.Contains(block.Coord))
+                return;
+
             if (block != null && block.Data != null && IsComboableSpecial(block.Data.specialType))
             {
+                // ★ 해금되지 않은 특수 블록은 합성 드래그 시작 차단
+                var tutMgr = TutorialManager.Instance;
+                if (tutMgr == null || !tutMgr.IsSpecialBlockUnlocked(block.Data.specialType))
+                    return;
                 // 인접에 합성 가능한 특수블록이 있는지 미리 확인
                 bool hasComboNeighbor = false;
                 if (comboSystem != null)
@@ -946,15 +1027,23 @@ private void Update()
                 // 드래그로 타겟까지 이동 → 합성 실행
                 if (comboSystem.CanCombo(comboSource, comboTarget))
                 {
-                    // ★ 합성 MP 체크: 두 블록 비용 중 높은 쪽 적용
+                    // ★ 합성 MP 비용: 두 블록 비용 합산 × 0.7 (30% 할인) — 소수점 버림(Floor)
+                    //   예: Drill(5)+Bomb(6) = 11 × 0.7 = 7.7 → 7
+                    //       Drone(7)+XBlock(10) = 17 × 0.7 = 11.9 → 11
+                    //       Drill(5)+Drill(5) = 10 × 0.7 = 7 → 7
                     if (MPManager.Instance != null)
                     {
                         int sourceCost = MPManager.Instance.GetSpecialBlockCost(comboSource.Data.specialType);
                         int targetCost = MPManager.Instance.GetSpecialBlockCost(comboTarget.Data.specialType);
-                        int comboCost = Mathf.Max(sourceCost, targetCost);
+                        int comboCost = Mathf.FloorToInt((sourceCost + targetCost) * 0.7f);
                         if (comboCost > 0 && !MPManager.Instance.CanAfford(comboCost))
                         {
                             Debug.Log($"[InputSystem] MP 부족: 합성 불가 (필요 {comboCost})");
+                            // 시각적 피드백: 두 블록 모두 흔들기 + 중간 위치에 빨간 팝업 + 게이지 깜빡임
+                            if (comboSource != null) comboSource.PlayInsufficientShake();
+                            if (comboTarget != null) comboTarget.PlayInsufficientShake();
+                            Vector3 comboMidPos = (comboSource.transform.position + comboTarget.transform.position) * 0.5f;
+                            MPManager.Instance.SpawnInsufficientPopup(comboMidPos);
                             var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
                             if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
                             CancelComboDrag();
@@ -971,7 +1060,11 @@ private void Update()
                     // 이동횟수 1 차감
                     if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                     isEnabled = false;
-                    comboSystem.ExecuteCombo(comboSource, comboTarget);
+                    // ★ 원형 인디케이터/연결선을 합성 실행 "전에" 정리 — 합성 코루틴이 블록 비주얼을
+                    //   조작하는 동안 원형이 남아 보이는 프레임 자체를 제거 (참조는 지역 캡처).
+                    HexBlock comboSrc = comboSource, comboTgt = comboTarget;
+                    CancelComboDrag();
+                    comboSystem.ExecuteCombo(comboSrc, comboTgt);
                     // 합성 완료 후 입력 재개는 ComboSystem에서 처리
                     StartCoroutine(WaitComboAndReenableInput());
                 }
@@ -1041,13 +1134,8 @@ private void Update()
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drill && drillSystem != null)
             {
                 // ★ MP 체크
-                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill))
-                {
-                    Debug.Log("[InputSystem] MP 부족: Drill 단독 발동 불가");
-                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Drill, block))
                     return false;
-                }
                 Debug.Log($"[InputSystem] Drill 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                 if (MPManager.Instance != null)
@@ -1062,13 +1150,8 @@ private void Update()
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Bomb && bombSystem != null)
             {
                 // ★ MP 체크
-                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb))
-                {
-                    Debug.Log("[InputSystem] MP 부족: Bomb 단독 발동 불가");
-                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb, block))
                     return false;
-                }
                 Debug.Log($"[InputSystem] Bomb 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                 if (MPManager.Instance != null)
@@ -1083,13 +1166,8 @@ private void Update()
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.XBlock && xBlockSystem != null)
             {
                 // ★ MP 체크
-                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock))
-                {
-                    Debug.Log("[InputSystem] MP 부족: XBlock 단독 발동 불가");
-                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.XBlock, block))
                     return false;
-                }
                 Debug.Log($"[InputSystem] XBlock 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                 if (MPManager.Instance != null)
@@ -1104,19 +1182,30 @@ private void Update()
             if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Drone && droneSystem != null)
             {
                 // ★ MP 체크
-                if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drone))
-                {
-                    Debug.Log("[InputSystem] MP 부족: Drone 단독 발동 불가");
-                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Drone, block))
                     return false;
-                }
                 Debug.Log($"[InputSystem] Drone 단독 발동: {block.Coord}");
                 if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
                 if (MPManager.Instance != null)
                     MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Drone), block.transform.position);
                 if (AudioManager.Instance != null) AudioManager.Instance.PlayDroneSound();
                 droneSystem.ActivateDrone(block);
+                ClearHighlight();
+                hasValidCluster = false;
+                return true;
+            }
+
+            if (specialType == JewelsHexaPuzzle.Data.SpecialBlockType.Rainbow && donutSystem != null)
+            {
+                // ★ MP 체크
+                if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Rainbow, block))
+                    return false;
+                Debug.Log($"[InputSystem] Rainbow(Donut) 단독 발동: {block.Coord}");
+                if (GameManager.Instance != null) GameManager.Instance.UseOneTurn();
+                if (MPManager.Instance != null)
+                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetSpecialBlockCost(JewelsHexaPuzzle.Data.SpecialBlockType.Rainbow), block.transform.position);
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayDonutSound();
+                donutSystem.ActivateDonut(block);
                 ClearHighlight();
                 hasValidCluster = false;
                 return true;
@@ -1144,13 +1233,11 @@ private void Update()
         /// <summary>합성 드래그 취소</summary>
         private void CancelComboDrag()
         {
-            // 드릴 이동 관련 정리 (합성+이동 동시 모드)
-            if (comboAlsoDrillMove)
-            {
-                ClearDrillMoveHighlights();
-                if (drillMoveLineObj != null) { Destroy(drillMoveLineObj); drillMoveLineObj = null; }
-                if (comboDrillMoveTarget != null) comboDrillMoveTarget.SetHighlighted(false);
-            }
+            // 드릴 이동 관련 정리 — 플래그와 무관하게 무조건 수행(빈 리스트면 no-op).
+            //   구: comboAlsoDrillMove 조건부라 플래그가 먼저 꺼진 경로에서 녹색 원형이 잔존할 수 있었음.
+            ClearDrillMoveHighlights();
+            if (drillMoveLineObj != null) { Destroy(drillMoveLineObj); drillMoveLineObj = null; }
+            if (comboDrillMoveTarget != null) comboDrillMoveTarget.SetHighlighted(false);
             comboDrillMoveTarget = null;
             comboAlsoDrillMove = false;
             comboDrillMoveRange = 0;
@@ -1174,14 +1261,12 @@ private void Update()
             rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
             var img = hl.AddComponent<Image>();
-            img.sprite = HexBlock.GetHexFlashSprite();
+            img.sprite = HexBlock.GetCircleIndicatorSprite();
             img.type = Image.Type.Simple;
             img.preserveAspect = true;
             img.raycastTarget = false;
-            // 소스: 노란 글로우, 타겟: 흰색 글로우
-            img.color = isSource
-                ? new Color(1f, 0.9f, 0.3f, 0.5f)
-                : new Color(1f, 1f, 1f, 0.5f);
+            // ★ 소스(처음 지정)=흰색, 타겟(목표)=호박색 — 원형 3색 통일
+            img.color = isSource ? HexBlock.IndicatorInitial : HexBlock.IndicatorTarget;
 
             if (isSource)
                 comboSourceHighlight = hl;
@@ -1359,16 +1444,52 @@ private void Update()
         public bool IsEnabled => isEnabled;
 
         // ============================================================
-        // 튜토리얼 제한 모드 (TutorialManager에서 호출)
+        // ============================================================
+        // MP 부족 피드백 헬퍼
         // ============================================================
 
         /// <summary>
-        /// 제한 모드 설정: enabled=true이면 allowedCoords에 포함된 좌표만 터치 허용
+        /// 특수 블록 발동 가능 여부를 확인하고, 부족 시 통합 피드백을 출력.
+        /// 부족 시: 블록 흔들림 + "마나 부족" 빨간 팝업 + 게이지 깜빡임/흔들림.
         /// </summary>
-        public void SetRestrictedMode(bool enabled, HashSet<HexCoord> coords = null)
+        /// <returns>true=발동 가능, false=발동 불가 (피드백 자동 출력)</returns>
+        private bool CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType type, HexBlock block)
+        {
+            if (MPManager.Instance == null) return true;
+            if (MPManager.Instance.CanActivateSpecialBlock(type)) return true;
+
+            Debug.Log($"[InputSystem] MP 부족: {type} 발동 차단");
+
+            // 블록 흔들림 + 위치 빨간 팝업
+            if (block != null)
+            {
+                block.PlayInsufficientShake();
+                MPManager.Instance.SpawnInsufficientPopup(block.transform.position);
+            }
+
+            // 게이지 빨간 깜빡임 + 흔들림
+            var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+            if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+
+            return false;
+        }
+
+        // ============================================================
+        // 튜토리얼 제한 모드 (TutorialManager에서 호출)
+        // ============================================================
+
+        // 제한된 클릭 시 호출될 콜백 (튜토리얼 토스트 등)
+        private System.Action onBlockedClickCallback = null;
+
+        /// <summary>
+        /// 제한 모드 설정: enabled=true이면 allowedCoords에 포함된 좌표만 터치 허용
+        /// coords가 비어있으면 모든 블록 입력을 차단한다 (onBlocked 콜백 활성 시 피드백).
+        /// </summary>
+        public void SetRestrictedMode(bool enabled, HashSet<HexCoord> coords = null, System.Action onBlocked = null)
         {
             restrictedMode = enabled;
             allowedCoords = coords ?? new HashSet<HexCoord>();
+            onBlockedClickCallback = enabled ? onBlocked : null;
             Debug.Log($"[InputSystem] 제한 모드: {(enabled ? "ON" : "OFF")} (허용 좌표 {allowedCoords.Count}개)");
         }
 
@@ -1396,13 +1517,8 @@ private void Update()
             if (moveRange <= 0) return; // 스킬 미해금
 
             // MP 체크 (드릴 이동은 드릴 발동과 동일 MP 소모)
-            if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Drill))
-            {
-                Debug.Log("[InputSystem] MP 부족: 드릴 이동 불가");
-                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+            if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Drill, drillBlock))
                 return;
-            }
 
             drillMoveSource = drillBlock;
             drillMoveTarget = null;
@@ -1446,10 +1562,10 @@ private void Update()
                 hlRt.sizeDelta = new Vector2(60f, 60f);
 
                 UnityEngine.UI.Image hlImg = highlight.AddComponent<UnityEngine.UI.Image>();
-                hlImg.sprite = HexBlock.GetHexFlashSprite();
+                hlImg.sprite = HexBlock.GetCircleIndicatorSprite();
                 hlImg.type = UnityEngine.UI.Image.Type.Simple;
                 hlImg.preserveAspect = true;
-                hlImg.color = new Color(0.3f, 0.8f, 1f, 0.35f); // 반투명 하늘색
+                hlImg.color = HexBlock.IndicatorMovable; // ★ 이동 가능 — 원형 녹색 통일
                 hlImg.raycastTarget = false;
 
                 drillMoveHighlights.Add(highlight);
@@ -1656,13 +1772,8 @@ private void Update()
 
             if (moveRange <= 0) return;
 
-            if (MPManager.Instance != null && !MPManager.Instance.CanActivateSpecialBlock(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb))
-            {
-                Debug.Log("[InputSystem] MP 부족: 폭탄 이동 불가");
-                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+            if (!CheckMPAndFeedbackForSpecial(JewelsHexaPuzzle.Data.SpecialBlockType.Bomb, bombBlock))
                 return;
-            }
 
             bombMoveSource = bombBlock;
             bombMoveTarget = null;
@@ -1698,10 +1809,10 @@ private void Update()
                 hlRt.sizeDelta = new Vector2(60f, 60f);
 
                 UnityEngine.UI.Image hlImg = highlight.AddComponent<UnityEngine.UI.Image>();
-                hlImg.sprite = HexBlock.GetHexFlashSprite();
+                hlImg.sprite = HexBlock.GetCircleIndicatorSprite();
                 hlImg.type = UnityEngine.UI.Image.Type.Simple;
                 hlImg.preserveAspect = true;
-                hlImg.color = new Color(1f, 0.5f, 0.2f, 0.35f); // 반투명 주황색
+                hlImg.color = HexBlock.IndicatorMovable; // ★ 이동 가능 — 원형 녹색 통일
                 hlImg.raycastTarget = false;
 
                 bombMoveHighlights.Add(highlight);

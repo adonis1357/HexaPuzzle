@@ -29,27 +29,105 @@ namespace JewelsHexaPuzzle.Core
         public int GridRadius => gridRadius;
         public int BlockCount => blocks.Count;
 
+        // ============================================================
+        // 런타임 그리드 재구성 (Stage 1 7블록 2.5배 모드 등)
+        // ============================================================
         /// <summary>
-        /// 특정 q열의 그리드 내 최소 r값 (가장 위쪽 블록의 r좌표)
+        /// 그리드 반경을 런타임 변경. 적용을 위해서는 InitializeGrid()를 재호출해야 함.
+        /// </summary>
+        public void SetGridRadius(int radius)
+        {
+            gridRadius = Mathf.Max(1, radius);
+            Debug.Log($"[HexGrid] gridRadius = {gridRadius} 설정됨 (InitializeGrid 호출 필요)");
+        }
+
+        /// <summary>
+        /// 육각형 크기를 런타임 변경. 적용을 위해서는 InitializeGrid()를 재호출해야 함.
+        /// </summary>
+        public void SetHexSize(float size)
+        {
+            hexSize = Mathf.Max(10f, size);
+            Debug.Log($"[HexGrid] hexSize = {hexSize} 설정됨 (InitializeGrid 호출 필요)");
+        }
+
+        /// <summary>
+        /// 특정 q열의 그리드 내 최소 r값 (가장 위쪽 블록의 r좌표).
+        /// ★ 실제 존재하는 블록 기반 — Stage 1/2/3처럼 외곽 블록을 제거한 컴팩트 그리드도 정확히 처리.
         /// </summary>
         public int GetTopR(int q)
         {
+            int topR = int.MaxValue;
+            bool found = false;
+            foreach (var kvp in blocks)
+            {
+                if (kvp.Key.q != q) continue;
+                found = true;
+                if (kvp.Key.r < topR) topR = kvp.Key.r;
+            }
+            if (found) return topR;
+            // 폴백: 이론적 반경 기반 (호환성 유지)
             return Mathf.Max(-gridRadius, -q - gridRadius);
         }
 
         /// <summary>
+        /// 특정 q열의 그리드 내 최대 r값 (가장 아래쪽 블록의 r좌표).
+        /// 컴팩트 그리드 대응.
+        /// </summary>
+        public int GetBottomR(int q)
+        {
+            int bottomR = int.MinValue;
+            bool found = false;
+            foreach (var kvp in blocks)
+            {
+                if (kvp.Key.q != q) continue;
+                found = true;
+                if (kvp.Key.r > bottomR) bottomR = kvp.Key.r;
+            }
+            if (found) return bottomR;
+            // 폴백: 이론적 반경 기반
+            return Mathf.Min(gridRadius, -q + gridRadius);
+        }
+
+        /// <summary>
+        /// 특정 q열에 블록이 하나라도 있는지 확인.
+        /// 컴팩트 그리드의 외곽 컬럼은 false 반환 → 몬스터 이동·소환 경계 검사 가능.
+        /// </summary>
+        public bool ColumnHasBlocks(int q)
+        {
+            foreach (var kvp in blocks)
+                if (kvp.Key.q == q) return true;
+            return false;
+        }
+
+        /// <summary>
         /// 그리드 상단 빈 공간 3줄의 소환 가능 좌표 목록 반환
-        /// 고블린 소환 위치로 사용
+        /// 고블린 소환 위치로 사용.
+        /// ★ 실제 존재하는 블록(blocks 딕셔너리) 기반으로 동작 →
+        ///    Stage 1/2처럼 외곽 블록을 제거한 컴팩트 그리드에서도
+        ///    필드 최상단 위 2~3칸에 정확히 소환 좌표 생성.
         /// </summary>
         public List<HexCoord> GetExtendedTopCoords()
         {
             var coords = new List<HexCoord>();
-            for (int q = -gridRadius; q <= gridRadius; q++)
+
+            // 각 컬럼의 최상단 r(가장 작은 r) 수집 — 실제 존재하는 블록 기반
+            var topRPerColumn = new Dictionary<int, int>();
+            foreach (var kvp in blocks)
             {
-                int rMin = GetTopR(q);
+                int q = kvp.Key.q;
+                int r = kvp.Key.r;
+                if (!topRPerColumn.ContainsKey(q) || r < topRPerColumn[q])
+                    topRPerColumn[q] = r;
+            }
+
+            // 각 컬럼별로 최상단 위 3줄을 소환 좌표로 추가
+            foreach (var kvp in topRPerColumn)
+            {
+                int q = kvp.Key;
+                int topR = kvp.Value;
                 for (int row = 1; row <= 3; row++)
                 {
-                    coords.Add(new HexCoord(q, rMin - row));
+                    coords.Add(new HexCoord(q, topR - row));
                 }
             }
             return coords;
@@ -65,12 +143,14 @@ namespace JewelsHexaPuzzle.Core
 
         /// <summary>
         /// 블록 필드 + 소환 영역 전체를 포함하는 게임 필드 범위 체크.
-        /// 드릴 쿠션 반사 등에서 "당구대" 경계 판별에 사용.
+        /// 드릴 쿠션 반사, 몬스터 이동 경계 등에서 사용.
+        /// ★ 실제 존재하는 블록 기반 — 컴팩트 그리드(Stage 1/2/3)에서도 정확히 동작.
         /// </summary>
         public bool IsInGameField(HexCoord coord)
         {
             if (blocks.ContainsKey(coord)) return true;
-            if (Mathf.Abs(coord.q) > gridRadius) return false;
+            // 해당 컬럼에 블록이 없으면 게임 필드 밖
+            if (!ColumnHasBlocks(coord.q)) return false;
             int rMin = GetTopR(coord.q);
             if (coord.r >= rMin - 3 && coord.r < rMin) return true;
             return false;
@@ -87,10 +167,14 @@ namespace JewelsHexaPuzzle.Core
                 gridContainer = transform;
 
             // 에디터 테스트 시스템 자동 추가
+            // ★ 에디터/개발 빌드 전용 (감사 H6) — 릴리스 빌드에 치트 패널(블록 설치/몬스터 소환/MP 추가)이
+            //   노출되지 않도록 생성 자체를 차단. 모든 참조처는 null 체크/정적 폴백이 있어 안전.
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (gameObject.GetComponent<EditorTestSystem>() == null)
             {
                 gameObject.AddComponent<EditorTestSystem>();
             }
+#endif
         }
 
         /// <summary>그리드 전체 Y 오프셋 (블록 필드를 아래로 이동)</summary>
@@ -98,6 +182,13 @@ namespace JewelsHexaPuzzle.Core
 
         public void InitializeGrid()
         {
+            // ★ 소환 영역 제한 초기화 (버그 수정): 컴팩트 튜토리얼 스테이지(1~9)가 SetExtendedVisibleArea로
+            //   좁힌 columnRadius/visibleRows가 다음 풀-반경 스테이지(10+)로 새어, 경계 밖(q=±5 등)에 소환된
+            //   고블린이 무효 셀에 갇혀 영영 움직이지 못하던 버그를 차단. (튜토리얼 스테이지는 InitializeGrid
+            //   이후 SetExtendedVisibleArea를 다시 호출하므로 제한이 정상 재적용됨)
+            currentExtendedColumnRadius = -1; // 제한 없음(= gridRadius 전체)
+            currentExtendedVisibleRows = 3;   // 소환 영역 3줄 전체
+
             ClearGrid();
             GenerateGridCoordinates();
             CreateBackgroundGrid();
@@ -214,8 +305,8 @@ namespace JewelsHexaPuzzle.Core
                     float fillAlpha = baseFillAlpha * extendAlphaRatio * fadeMul;
                     float borderAlpha = baseBorderAlpha * extendAlphaRatio * fadeMul;
 
-                    // 셀 컨테이너
-                    GameObject cellObj = new GameObject("BgCellExt");
+                    // 셀 컨테이너 — 이름에 q/row 메타정보 저장 (Stage 1/2 컴팩트 제한 시 분류용)
+                    GameObject cellObj = new GameObject($"BgCellExt_Q{q}_R{row}");
                     cellObj.transform.SetParent(parent, false);
 
                     RectTransform cellRT = cellObj.AddComponent<RectTransform>();
@@ -363,21 +454,33 @@ namespace JewelsHexaPuzzle.Core
                     }
                 }
 
-                // [링(도넛) 매칭 방지] 이 블록을 중심으로 이웃 6칸이 모두 같은 색이면 그 색 금지
+                // [링타겟 레이저 매칭 방지] 이 블록을 중심으로 이웃 6칸이 모두 같은 색이면 그 색 금지
                 // (이 블록이 중심이 되어 링 매칭이 완성되는 것을 방지)
                 ForbidRingCenter(coord, forbidden);
 
-                // [링(도넛) 매칭 방지] 이 블록이 링의 일부가 되는 경우도 방지
+                // [링타겟 레이저 매칭 방지] 이 블록이 링의 일부가 되는 경우도 방지
                 // 각 이웃을 중심으로, 그 중심의 나머지 이웃들이 모두 같은 색이면
                 // 이 블록도 그 색이 되면 링이 완성되므로 금지
                 ForbidRingMember(coord, forbidden);
 
                 // 허용된 색 목록 (Gray 제외)
+                // ★ AllowedColorsOverride가 설정되어 있으면 그 안에서만 선택 (Stage 1 R/G 전용 등)
                 List<GemType> allowed = new List<GemType>();
-                for (int g = 1; g <= GemTypeHelper.ActiveGemTypeCount; g++)
+                if (GemTypeHelper.AllowedColorsOverride != null && GemTypeHelper.AllowedColorsOverride.Length > 0)
                 {
-                    GemType gt = (GemType)g;
-                    if (!forbidden.Contains(gt) && gt != GemType.Gray) allowed.Add(gt);
+                    foreach (var gt in GemTypeHelper.AllowedColorsOverride)
+                    {
+                        if (gt == GemType.Gray || gt == GemType.None) continue;
+                        if (!forbidden.Contains(gt)) allowed.Add(gt);
+                    }
+                }
+                else
+                {
+                    for (int g = 1; g <= GemTypeHelper.ActiveGemTypeCount; g++)
+                    {
+                        GemType gt = (GemType)g;
+                        if (!forbidden.Contains(gt) && gt != GemType.Gray) allowed.Add(gt);
+                    }
                 }
 
                 GemType chosen;
@@ -719,6 +822,230 @@ namespace JewelsHexaPuzzle.Core
         public IEnumerable<HexBlock> GetAllBlocks()
         {
             return blocks.Values;
+        }
+
+        /// <summary>
+        /// 확장 top 영역(소환 지역) 셀들을 현재 실제 블록의 컬럼별 최상단 바로 위로 재배치.
+        /// Stage 2처럼 외곽 블록을 제거해 그리드가 작아진 경우, BgCellExt가 원래 위치(반경 5 기준)에
+        /// 머무르면 필드 상단과 4~6칸 거리가 생김 → 이 메서드로 실제 상단에 부착.
+        ///
+        /// 이름 형식 "BgCellExt_Q{q}_R{row}"에서 q와 row를 파싱.
+        /// 새 좌표: (q, actualTopR(q) - row)에 해당하는 worldPos로 anchoredPosition 재설정.
+        /// </summary>
+        public void RealignExtendedCellsToActualTops()
+        {
+            if (backgroundGridContainer == null) return;
+
+            // 각 컬럼의 실제 최상단 r 수집 (블록 딕셔너리 기반)
+            var topRPerColumn = new Dictionary<int, int>();
+            foreach (var kvp in blocks)
+            {
+                int q = kvp.Key.q;
+                int r = kvp.Key.r;
+                if (!topRPerColumn.ContainsKey(q) || r < topRPerColumn[q])
+                    topRPerColumn[q] = r;
+            }
+
+            int realigned = 0;
+            for (int i = 0; i < backgroundGridContainer.transform.childCount; i++)
+            {
+                var child = backgroundGridContainer.transform.GetChild(i);
+                if (child == null) continue;
+                if (!child.name.StartsWith("BgCellExt_")) continue;
+
+                int q, row;
+                if (!ParseBgCellExtName(child.name, out q, out row)) continue;
+
+                if (!topRPerColumn.ContainsKey(q)) continue; // 해당 컬럼에 블록 없음 → 건드리지 않음
+
+                int newR = topRPerColumn[q] - row;
+                Vector2 newPos = CalculateFlatTopHexPosition(new HexCoord(q, newR));
+                var rt = child as RectTransform ?? child.GetComponent<RectTransform>();
+                if (rt != null)
+                {
+                    rt.anchoredPosition = newPos;
+                    realigned++;
+                }
+            }
+            Debug.Log($"[HexGrid] BgCellExt 재배치: {realigned}개 셀을 실제 필드 상단 바로 위로 이동");
+        }
+
+        /// <summary>
+        /// 확장 top 영역(소환 지역)을 지정한 컬럼 반경 + 줄 수로 제한.
+        /// 필드를 좁힌 스테이지(예: Stage 2 반경 2)에서 소환 영역도 같은 폭으로 모이도록.
+        /// columnRadius: |q| ≤ columnRadius 인 컬럼만 표시 (-1이면 제한 없음)
+        /// visibleRows: 1~3, 1이면 row=1만, 2면 row=1+2, 3이면 모두 표시
+        ///
+        /// ★ BgCellExt 이름 형식: "BgCellExt_Q{q}_R{row}" — 이름에서 q/row 파싱.
+        /// </summary>
+        public void SetExtendedVisibleArea(int columnRadius, int visibleRows)
+        {
+            if (backgroundGridContainer == null) return;
+            if (visibleRows < 0) visibleRows = 0;
+            if (visibleRows > 3) visibleRows = 3;
+
+            // ★ 현재 설정 저장 — GoblinSystem이 이동 경계 검사에 사용
+            currentExtendedColumnRadius = columnRadius;
+            currentExtendedVisibleRows = visibleRows;
+
+            int kept = 0, hidden = 0;
+            for (int i = 0; i < backgroundGridContainer.transform.childCount; i++)
+            {
+                var child = backgroundGridContainer.transform.GetChild(i);
+                if (child == null) continue;
+                if (!child.name.StartsWith("BgCellExt_")) continue;
+
+                // 이름 파싱: "BgCellExt_Q{q}_R{row}"
+                int q, row;
+                if (!ParseBgCellExtName(child.name, out q, out row)) continue;
+
+                bool qOk = (columnRadius < 0) || (Mathf.Abs(q) <= columnRadius);
+                bool rOk = (row >= 1) && (row <= visibleRows);
+                bool show = qOk && rOk;
+                child.gameObject.SetActive(show);
+                if (show) kept++; else hidden++;
+            }
+            Debug.Log($"[HexGrid] 확장 셀 제한 (columnRadius={columnRadius}, rows={visibleRows}): 유지={kept}, 숨김={hidden}");
+        }
+
+        // ============================================================
+        // 소환 영역 현재 설정 (GoblinSystem 이동 경계 검사용)
+        // ============================================================
+
+        /// <summary>현재 소환 영역 컬럼 반경 (-1 = 제한 없음, gridRadius 사용)</summary>
+        private int currentExtendedColumnRadius = -1;
+        /// <summary>현재 소환 영역 가시 줄 수 (기본 3)</summary>
+        private int currentExtendedVisibleRows = 3;
+
+        /// <summary>현재 소환 영역의 컬럼 반경 (-1이면 gridRadius 그대로)</summary>
+        public int CurrentExtendedColumnRadius => currentExtendedColumnRadius;
+        /// <summary>현재 소환 영역의 가시 줄 수 (1~3)</summary>
+        public int CurrentExtendedVisibleRows => currentExtendedVisibleRows;
+
+        /// <summary>
+        /// 좌표가 몬스터 이동에 유효한 칸인지 (블록 필드 + 가시 소환 영역).
+        /// - 블록 필드: 해당 컬럼에 블록이 존재하고 r이 [topR, bottomR] 범위
+        /// - 소환 영역: 컬럼이 columnRadius 내부 + r이 topR-1 ~ topR-visibleRows 범위
+        /// </summary>
+        public bool IsValidMonsterCell(HexCoord coord)
+        {
+            // 컬럼 자체에 블록이 없으면 무효
+            if (!ColumnHasBlocks(coord.q)) return false;
+
+            int topR = GetTopR(coord.q);
+            int bottomR = GetBottomR(coord.q);
+
+            // 블록 필드 내부 (topR ≤ r ≤ bottomR)
+            if (coord.r >= topR && coord.r <= bottomR) return true;
+
+            // 소환 영역 (topR보다 위 — r이 더 작음)
+            // row = topR - coord.r (1이면 가장 가까운 윗줄, visibleRows까지 허용)
+            int rowFromTop = topR - coord.r;
+            if (rowFromTop < 1 || rowFromTop > currentExtendedVisibleRows) return false;
+
+            // 컬럼 반경 제한 (소환 영역 columnRadius)
+            if (currentExtendedColumnRadius >= 0 && Mathf.Abs(coord.q) > currentExtendedColumnRadius)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// "BgCellExt_Q{q}_R{row}" 이름 파싱.
+        /// </summary>
+        private static bool ParseBgCellExtName(string name, out int q, out int row)
+        {
+            q = 0; row = 0;
+            try
+            {
+                // "BgCellExt_Q{q}_R{row}"
+                int qIdx = name.IndexOf("_Q");
+                int rIdx = name.IndexOf("_R", qIdx + 2);
+                if (qIdx < 0 || rIdx < 0) return false;
+                string qStr = name.Substring(qIdx + 2, rIdx - (qIdx + 2));
+                string rStr = name.Substring(rIdx + 2);
+                if (!int.TryParse(qStr, out q)) return false;
+                if (!int.TryParse(rStr, out row)) return false;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// 확장 top 영역(소환 지역)의 가시 줄 수를 조절.
+        /// - 3: 기본 (모든 확장 셀 표시)
+        /// - 2: 가장 위 1줄 숨김 (Stage 2용)
+        /// - 1: 가장 위 2줄 숨김
+        /// - 0: 확장 셀 전부 숨김
+        /// InitializeGrid 호출 후 언제든 런타임 조절 가능. 다음 InitializeGrid 시 원복.
+        /// </summary>
+        public void SetExtendedRowsVisible(int visibleRows)
+        {
+            if (backgroundGridContainer == null) return;
+            if (visibleRows < 0) visibleRows = 0;
+            if (visibleRows > 3) visibleRows = 3;
+
+            // BgCellExt들을 수집해 Y로 정렬
+            var extCells = new List<RectTransform>();
+            for (int i = 0; i < backgroundGridContainer.transform.childCount; i++)
+            {
+                var child = backgroundGridContainer.transform.GetChild(i);
+                if (child != null && child.name == "BgCellExt")
+                {
+                    var rt = child as RectTransform ?? child.GetComponent<RectTransform>();
+                    if (rt != null) extCells.Add(rt);
+                }
+            }
+
+            if (extCells.Count == 0) return;
+
+            // 각 컬럼마다 y가 작을수록(하단) row 1, 클수록(상단) row 3
+            // 각 확장 셀의 row index 판정: 전체 중 고유 Y값들을 오름차순 정렬해 상위/하위 구분
+            var uniqueYs = new List<float>();
+            foreach (var rt in extCells)
+            {
+                float y = rt.anchoredPosition.y;
+                bool exists = false;
+                foreach (var u in uniqueYs)
+                {
+                    if (Mathf.Abs(u - y) < 0.5f) { exists = true; break; }
+                }
+                if (!exists) uniqueYs.Add(y);
+            }
+            uniqueYs.Sort();  // 오름차순: 작은 y가 먼저 (하단 row)
+
+            // 표시 가능 y: 하위 visibleRows 개의 y값
+            var visibleYs = new HashSet<float>();
+            int keepCount = Mathf.Min(visibleRows, uniqueYs.Count);
+            for (int i = 0; i < keepCount; i++)
+                visibleYs.Add(uniqueYs[i]);
+
+            foreach (var rt in extCells)
+            {
+                float y = rt.anchoredPosition.y;
+                bool show = false;
+                foreach (var v in visibleYs)
+                {
+                    if (Mathf.Abs(v - y) < 0.5f) { show = true; break; }
+                }
+                rt.gameObject.SetActive(show);
+            }
+        }
+
+        /// <summary>
+        /// ★ Stage 1 전용: 특정 좌표의 블록을 그리드에서 영구 제거.
+        /// blocks 딕셔너리에서 삭제 + GameObject 파괴. 매칭/낙하/리필 시스템에서 완전히 배제됨.
+        /// 다음 스테이지 진입 시 InitializeGrid → ClearGrid → CreateBlocks로 자동 복원.
+        /// </summary>
+        public void RemoveBlockPermanently(HexCoord coord)
+        {
+            if (blocks.TryGetValue(coord, out HexBlock block))
+            {
+                if (block != null && block.gameObject != null)
+                    Destroy(block.gameObject);
+                blocks.Remove(coord);
+            }
+            allCoords.Remove(coord);
         }
 
         public List<HexBlock> FindBlocksByType(GemType gemType)

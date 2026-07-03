@@ -18,6 +18,10 @@ namespace JewelsHexaPuzzle.Data
         public bool isLocked;                      // 잠금 상태
         public int unlockRequirement;              // 해금 조건 (선행 레벨 ID, 0이면 즉시 해금)
 
+        // 챕터 (로비 여정 경로 섹션 구분 — LevelRegistry.AssignChapters에서 일괄 할당)
+        public int chapterId;                      // 챕터 번호 (1부터, 무한도전=99)
+        public string chapterName;                 // 챕터 표시 이름
+
         // 모드별 설정 (사용하는 모드의 것만 할당)
         public InfiniteConfig infiniteConfig;      // Infinite 모드일 때 사용
 

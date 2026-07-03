@@ -67,12 +67,6 @@ namespace JewelsHexaPuzzle.Core
         /// <summary>이펙트 오브젝트들의 부모 Transform. Canvas 내부에 별도 레이어로 생성.</summary>
         private Transform effectParent;
 
-        /// <summary>화면 흔들림 중첩 관리 카운터. 마지막 흔들림이 끝날 때만 위치 복원.</summary>
-        private int shakeCount = 0;
-
-        /// <summary>흔들림 시작 시 저장한 원래 위치.</summary>
-        private Vector3 shakeOriginalPos;
-
         // ============================================================
         // 상태
         // ============================================================
@@ -172,6 +166,8 @@ namespace JewelsHexaPuzzle.Core
         /// <param name="target">목표 위치의 블록</param>
         public void ExecuteCombo(HexBlock source, HexBlock target)
         {
+
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayComboMergeSound(); // ★ 효과음: 특수블록 합성 융합
             if (isComboActive) return;
             StartCoroutine(ComboCoroutine(source, target));
         }
@@ -197,6 +193,10 @@ namespace JewelsHexaPuzzle.Core
             isComboActive = true;
 
             Debug.Log($"[ComboSystem] === COMBO START === source={source.Coord}({source.Data?.specialType}), target={target.Coord}({target.Data?.specialType})");
+
+            // 튜토리얼 ComboActivated 이벤트 트리거 — 합성 튜토리얼 강제 수행 완료 감지용
+            if (JewelsHexaPuzzle.Managers.TutorialManager.Instance != null)
+                JewelsHexaPuzzle.Managers.TutorialManager.Instance.OnComboActivated();
 
             // [1단계] 합성에 필요한 데이터를 미리 캐싱 (ClearData 후에는 데이터가 사라짐)
             SpecialBlockType sourceType = source.Data.specialType;
@@ -1309,7 +1309,7 @@ namespace JewelsHexaPuzzle.Core
 
                     // 미션 카운팅: DualEasingDestroy(ClearData) 전에 개별 보고
                     if (block.Data.gemType != GemType.None)
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType, block.Data.isCracked || block.Data.isShell, block.transform.position, GameManager.IsSoulSuppressedBlock(block));
 
                     // 플래시 + 파괴 애니메이션
                     Color blockColor = GemColors.GetColor(block.Data.gemType);
@@ -2042,6 +2042,10 @@ namespace JewelsHexaPuzzle.Core
             {
                 int directCount = 0;
                 int blockCount = 0;
+                // ★ 이미 배정된 블록 타겟 추적 — 다중 드론이 같은 블록을 중복 배정받으면
+                //   먼저 도착한 드론이 ClearData → 뒤 드론이 빈 블록 타격(효과 0%)하는 레이스가 발생.
+                //   드론블록 자신도 타격 대상에서 제외(이미 변환된 드론을 다시 노리지 않도록).
+                HashSet<HexBlock> reservedTargets = new HashSet<HexBlock>(droneBlocks);
                 for (int i = 0; i < droneBlocks.Count; i++)
                 {
                     HexBlock drone = droneBlocks[i];
@@ -2056,17 +2060,31 @@ namespace JewelsHexaPuzzle.Core
                     {
                         if (entry.isDirectGoblin)
                         {
+                            // 고블린 직접 타격: 블록을 소비하지 않으므로 중복 배정 무관
                             droneSystem.ActivateDroneToGoblin(drone, entry.goblinPos);
                             directCount++;
                         }
                         else
                         {
-                            droneSystem.ActivateDroneWithTarget(drone, entry.blockTarget);
+                            // 블록 타겟: 이미 배정됐거나 무효한 블록이면 미배정 대체 타겟 탐색
+                            HexBlock blockTarget = entry.blockTarget;
+                            if (blockTarget == null || blockTarget.Data == null ||
+                                blockTarget.Data.gemType == GemType.None ||
+                                reservedTargets.Contains(blockTarget))
+                            {
+                                HexBlock alt = FindUnreservedDamageTarget(damageTargets, reservedTargets);
+                                if (alt == null)
+                                    alt = FindBestDroneComboTarget(pos, reservedTargets);
+                                blockTarget = alt; // 대체 없으면 null → DroneCoroutine 내부 자동탐색 폴백
+                            }
+                            if (blockTarget != null)
+                                reservedTargets.Add(blockTarget);
+                            droneSystem.ActivateDroneWithTarget(drone, blockTarget);
                             blockCount++;
                         }
                     }
                 }
-                Debug.Log($"[ComboSystem] DroneXBlock: {droneBlocks.Count}대 드론 → {damageTargets.Count}개 타겟 순환 (블록:{blockCount}, 고블린직접:{directCount})");
+                Debug.Log($"[ComboSystem] DroneXBlock: {droneBlocks.Count}대 드론 → {damageTargets.Count}개 타겟 (블록:{blockCount}, 고블린직접:{directCount}, 중복배정 방지)");
             }
             else
             {
@@ -2247,6 +2265,25 @@ namespace JewelsHexaPuzzle.Core
             });
 
             return results;
+        }
+
+        /// <summary>
+        /// damageTargets 목록에서 아직 배정되지 않은 유효 블록 타겟을 1개 반환 (없으면 null).
+        /// 드론 다중 발동 시 같은 블록을 두 드론에 중복 배정하지 않도록 대체 타겟 탐색에 사용.
+        /// </summary>
+        private HexBlock FindUnreservedDamageTarget(
+            List<(HexBlock blockTarget, HexCoord goblinPos, bool isDirectGoblin, int totalDamage)> damageTargets,
+            HashSet<HexBlock> reserved)
+        {
+            foreach (var e in damageTargets)
+            {
+                if (e.isDirectGoblin) continue;
+                if (e.blockTarget == null || e.blockTarget.Data == null) continue;
+                if (e.blockTarget.Data.gemType == GemType.None) continue;
+                if (reserved.Contains(e.blockTarget)) continue;
+                return e.blockTarget;
+            }
+            return null;
         }
 
         /// <summary>
@@ -2440,7 +2477,7 @@ namespace JewelsHexaPuzzle.Core
             {
                 // 미션 카운팅: ClearData 전에 개별 보고 (Stage/Infinite 모두 지원)
                 if (data.gemType != GemType.None)
-                    GameManager.Instance?.OnSingleGemDestroyedForMission(data.gemType);
+                    GameManager.Instance?.OnSingleGemDestroyedForMission(data.gemType, data.isCracked || data.isShell, target.transform.position, GameManager.IsSoulSuppressedBlock(target));
                 target.ClearData();
                 return;
             }
@@ -3431,19 +3468,14 @@ namespace JewelsHexaPuzzle.Core
 
         /// <summary>
         /// 화면을 랜덤하게 흔드는 코루틴.
-        /// shakeCount로 중첩을 관리하며, 마지막 흔들림이 끝날 때만 원래 위치로 복원.
         /// </summary>
         private IEnumerator ScreenShake(float intensity, float duration)
         {
-            // 다수 특수 블록 동시 발동 시 필드 바운스는 하나만 실행
             bool isOwner = VisualConstants.TryBeginScreenShake();
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-
-            if (shakeCount == 0)
-                shakeOriginalPos = Vector3.zero;
-            shakeCount++;
+            Vector3 originalPos = target.localPosition;
 
             float elapsed = 0f;
 
@@ -3456,18 +3488,13 @@ namespace JewelsHexaPuzzle.Core
                     float decay = 1f - VisualConstants.EaseInQuad(t);
                     float x = Random.Range(-1f, 1f) * intensity * decay;
                     float y = Random.Range(-1f, 1f) * intensity * decay;
-                    target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
+                    target.localPosition = originalPos + new Vector3(x, y, 0);
                     yield return null;
                 }
             }
             finally
             {
-                shakeCount--;
-                if (shakeCount <= 0)
-                {
-                    shakeCount = 0;
-                    target.localPosition = Vector3.zero;
-                }
+                target.localPosition = originalPos;
                 VisualConstants.EndScreenShake();
             }
         }
@@ -3478,10 +3505,11 @@ namespace JewelsHexaPuzzle.Core
         /// </summary>
         private IEnumerator HitStop(float stopDuration)
         {
+            // CanHitStop이 외부 일시정지(모달/퍼즈)도 검사 — HitStopSetTimeScale은 도중 개입 대비 (감사 M13)
             if (!VisualConstants.CanHitStop()) yield break;
             VisualConstants.RecordHitStop();
 
-            Time.timeScale = 0f;
+            VisualConstants.HitStopSetTimeScale(0f);
             yield return new WaitForSecondsRealtime(stopDuration);
 
             float elapsed = 0f;
@@ -3489,10 +3517,10 @@ namespace JewelsHexaPuzzle.Core
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
-                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                VisualConstants.HitStopSetTimeScale(Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t)));
                 yield return null;
             }
-            Time.timeScale = 1f;
+            VisualConstants.HitStopSetTimeScale(1f);
         }
 
         /// <summary>
@@ -4030,7 +4058,7 @@ namespace JewelsHexaPuzzle.Core
             if (block.Data.gemType == GemType.None) return;
 
             // 미션 카운팅: 블록 파괴 시점에 1개씩 개별 보고 (Stage/Infinite 모두 지원)
-            GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+            GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType, block.Data.isCracked || block.Data.isShell, block.transform.position, GameManager.IsSoulSuppressedBlock(block));
 
             // 기본 블록(GemType 1~5: Red, Blue, Green, Yellow, Purple)만 카운트
             int gemValue = (int)block.Data.gemType;

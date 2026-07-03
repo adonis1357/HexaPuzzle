@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a98a1dbc83f4daef106e0337a980a8b1, type: 3}
+  m_Name: Skill_deploy_bomb
+  m_EditorClassIdentifier: 
+  id: deploy_bomb
+  category: 3
+  nameKo: "\uD3ED\uD0C4 \uC989\uC2DC \uBC30\uCE58"
+  nameEn: Bomb Deploy
+  description: "\uD3ED\uD0C4\uC744 \uBCF4\uB4DC \uBB34\uC791\uC704 \uCE78\uC5D0 \uC989\uC2DC
+    \uBC30\uCE58\uD569\uB2C8\uB2E4."
+  icon: {fileID: 21300000, guid: 4c522ac4df9a58847808a88e7ef154e5, type: 3}
+  levelIcons: []
+  stat: deployBomb
+  baseValue: 0
+  maxLevel: 3
+  levels:
+  - level: 1
+    value: 2
+    label: "\xD72"
+  - level: 2
+    value: 3
+    label: "\xD73"
+  - level: 3
+    value: 4
+    label: "\xD74"
+  powerup: Bomb
+  item: 
+  mix: []

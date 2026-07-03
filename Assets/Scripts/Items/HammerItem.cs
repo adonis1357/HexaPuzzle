@@ -31,10 +31,6 @@ namespace JewelsHexaPuzzle.Items
         // 이펙트 부모
         private Transform effectParent;
 
-        // 화면 흔들림 중첩 관리
-        private int shakeCount = 0;
-        private Vector3 shakeOriginalPos;
-
         // 대기 애니메이션 코루틴 참조
         private Coroutine idleAnimCoroutine;
 
@@ -104,12 +100,11 @@ namespace JewelsHexaPuzzle.Items
                 return;
             }
 
-            // MP 체크
-            if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.Hammer))
+            // ★ 게이지 시스템: HammerGauge가 버튼 활성화를 제어
+            // (HammerGauge.OnHammerButtonClicked가 실제 진입점이며, 이 핸들러는 폴백)
+            if (HammerGauge.Instance != null && HammerGauge.Instance.GaugeLayer < 1)
             {
-                Debug.Log($"[HammerItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.Hammer)}, 현재 {MPManager.Instance.CurrentMP}");
-                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                Debug.Log("[HammerItem] 게이지 부족: 매칭으로 게이지를 채우세요");
                 return;
             }
 
@@ -317,6 +312,10 @@ namespace JewelsHexaPuzzle.Items
         {
             if (!isActive || isProcessing) return;
             if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+            // ★ 마나 구매 팝업/리워드 모달 차단 (감사 H4) — InputSystem과 동일한 3종 게이트.
+            //   누락 시 팝업 버튼 탭이 아이템 타격으로 관통 실행됨.
+            if (MPManager.Instance != null && MPManager.Instance.IsManaPurchasePopupOpen) return;
+            if (SkillUpgradeOfferSystem.Instance != null && SkillUpgradeOfferSystem.Instance.IsChoiceModalOpen) return;
 
             if (Input.GetMouseButtonDown(0))
             {
@@ -339,6 +338,7 @@ namespace JewelsHexaPuzzle.Items
             int gl = HammerGauge.Instance != null ? HammerGauge.Instance.GaugeLayer : 0;
             int hammerLevel = SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0;
 
+            // ★ 게이지는 4단계까지 충전되지만, 실제 사용 레벨(능력)은 리워드(hammerLevel)가 있어야 발생.
             // 거리 0이면 클릭 → 별도 처리 (여기선 해당 안 됨)
             if (axialDist >= 3 && gl >= 4 && hammerLevel >= 3) return 3;
             if (axialDist >= 2 && gl >= 3 && hammerLevel >= 2) return 2;
@@ -405,12 +405,29 @@ namespace JewelsHexaPuzzle.Items
                 es.RaycastAll(pd, results);
                 foreach (var r in results)
                 {
-                    if (r.gameObject == hammerButton?.gameObject)
+                    // ★ 차지바 아이템 버튼/UI 버튼 위 클릭이면 필드 입력 무시 → 버튼 토글과 충돌 방지(구 hammerButton만 검사하던 버그 수정).
+                    if (r.gameObject.GetComponentInParent<HexaPuzzle.ChargeButton>() != null
+                        || r.gameObject.GetComponentInParent<UnityEngine.UI.Button>() != null
+                        || r.gameObject == hammerButton?.gameObject)
                         return;
                 }
             }
 
             HexBlock clickedBlock = FindBlockAtPosition(screenPos);
+
+            // 튜토리얼 망치 타겟 제한: 지정된 블록이 아니면 드래그 시작 안함 + 토스트 + 망치 유지
+            var tm = JewelsHexaPuzzle.Managers.TutorialManager.Instance;
+            if (tm != null && tm.HasHammerTargetRestriction)
+            {
+                bool isTargetValid = clickedBlock != null
+                    && tm.HammerTargetCoord.HasValue
+                    && clickedBlock.Coord.Equals(tm.HammerTargetCoord.Value);
+                if (!isTargetValid)
+                {
+                    tm.ShowHammerWrongClickHint();
+                    return; // Deactivate 호출 안 함 → 망치 활성 유지
+                }
+            }
 
             if (clickedBlock != null && clickedBlock.Data != null && clickedBlock.Data.gemType != GemType.None)
             {
@@ -422,8 +439,39 @@ namespace JewelsHexaPuzzle.Items
             }
             else
             {
+                // ★ 블록 없음 — 소환 영역 몬스터 클릭이면 망치 유지 + 토스트, 그 외엔 정상 취소
+                if (IsClickOnSpawnAreaGoblin(screenPos))
+                {
+                    JewelsHexaPuzzle.Managers.UIManager.Instance?.ShowToast(
+                        "망치는 블록 필드에만 사용이 가능합니다");
+                    return; // Deactivate 호출 안 함 → 망치 활성 유지
+                }
                 Deactivate();
             }
+        }
+
+        /// <summary>
+        /// 클릭 위치가 "소환 영역(블록 없는 곳)의 몬스터" 위인지 판정.
+        /// 블록 필드(블록 존재 칸) 위 몬스터는 FindBlockAtPosition이 블록을 찾으므로
+        /// 이 메서드는 호출되지 않음 — 블록이 없는 좌표에 있는 몬스터만 대상.
+        /// </summary>
+        private bool IsClickOnSpawnAreaGoblin(Vector2 screenPos)
+        {
+            if (GoblinSystem.Instance == null || !GoblinSystem.Instance.IsActive) return false;
+            var goblins = GoblinSystem.Instance.GetAliveGoblins();
+            if (goblins == null) return false;
+
+            foreach (var g in goblins)
+            {
+                if (g == null || g.visualObject == null) continue;
+                RectTransform rt = g.visualObject.GetComponent<RectTransform>();
+                if (rt == null) continue;
+                Vector2 localPoint;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, screenPos, null, out localPoint);
+                if (rt.rect.Contains(localPoint))
+                    return true;
+            }
+            return false;
         }
 
         private void HandleDragUpdate(Vector2 screenPos)
@@ -513,12 +561,38 @@ namespace JewelsHexaPuzzle.Items
                 }
             }
 
-            // 몬스터 직접 타격
+            // ★ MP 체크 먼저 — 부족 시 몬스터 데미지/파괴 모두 차단
+            //   이전 버그: 데미지가 MP 체크 이전에 적용되어 MP 부족 시에도 몬스터에 피해 발생
+            if (MPManager.Instance != null)
+            {
+                int mpCost = MPManager.Instance.GetItemCost(ItemType.Hammer);
+                if (!MPManager.Instance.CanAfford(mpCost))
+                {
+                    Debug.Log($"[HammerItem] MP 부족: 망치 사용 차단 (필요 {mpCost}) — 몬스터 데미지 적용 안 함");
+                    if (centerBlock != null)
+                    {
+                        centerBlock.PlayInsufficientShake();
+                        MPManager.Instance.SpawnInsufficientPopup(centerBlock.transform.position);
+                    }
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+
+                    // UseReady 상태 유지 (Deactivate 안 함) — 사용자가 MP 채운 후 다시 시도 가능
+                    dragCenterBlock = null;
+                    currentDragLevel = 0;
+                    return;
+                }
+            }
+
+            // MP 충분 → 몬스터 직접 타격 + 코루틴 시작
             if (GoblinSystem.Instance != null && GoblinSystem.Instance.IsActive)
             {
+                // ★ 버그수정: 망치 데미지 = 1 + 망치 레벨 (리워드 "망치 데미지 +N" 반영).
+                //   기존엔 ApplyDamageAtPosition(coord, 1)로 하드코딩돼 레벨이 데미지에 전혀 반영되지 않았음(범위만 커짐).
+                int hammerDmg = 1 + (SkillTreeManager.Instance != null ? SkillTreeManager.Instance.GetHammerLevel() : 0);
                 var destructionCoords = GetDestructionCoords(center, level);
                 foreach (var coord in destructionCoords)
-                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, 1);
+                    GoblinSystem.Instance.ApplyDamageAtPosition(coord, hammerDmg);
             }
 
             isProcessing = true;
@@ -607,18 +681,44 @@ namespace JewelsHexaPuzzle.Items
 
         private IEnumerator SmashByLevel(HexBlock centerBlock, int level)
         {
-            isProcessing = true;
-            HexCoord center = centerBlock.Coord;
-            int layerCost = GetLayerCost(level);
-            Debug.Log($"[HammerItem] SmashByLevel {level} at {center} (cost: {layerCost} layers)");
 
-            // MP 소모
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayHammerSound(); // ★ 효과음: 망치 금속 타격
+            HexCoord center = centerBlock != null ? centerBlock.Coord : default;
+            int layerCost = GetLayerCost(level);
+
+            // ★ MP 게이트 — 부족 시 능력 차단 + 시각 피드백
+            //   호출자(OnHammerEndDrag)가 이미 isProcessing=true로 설정 + Deactivate() 호출됨.
+            //   부족으로 yield break 시 isProcessing=false로 복원해야 다음 버튼 클릭이 차단되지 않음.
             if (MPManager.Instance != null)
             {
-                int baseCost = MPManager.Instance.GetItemCost(ItemType.Hammer);
-                int mpCost = baseCost * (level + 1);
-                MPManager.Instance.TryConsumeMP(mpCost, centerBlock.transform.position);
+                int mpCost = MPManager.Instance.GetItemCost(ItemType.Hammer);
+                if (!MPManager.Instance.CanAfford(mpCost))
+                {
+                    Debug.Log($"[HammerItem] MP 부족: 망치 사용 차단 (필요 {mpCost})");
+                    if (centerBlock != null)
+                    {
+                        centerBlock.PlayInsufficientShake();
+                        MPManager.Instance.SpawnInsufficientPopup(centerBlock.transform.position);
+                    }
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+
+                    // ★ 처리 플래그 복원 — 호출자가 set한 isProcessing 리셋
+                    isProcessing = false;
+                    yield break;
+                }
+                // 충분 → 사용 위치에 파란 "-N" 팝업 + 소모
+                Vector3 popupPos = centerBlock != null ? centerBlock.transform.position : Vector3.zero;
+                MPManager.Instance.TryConsumeMP(mpCost, popupPos);
             }
+
+            // ★ 호출자가 이미 set 했지만 명시적으로 표시 (정상 흐름 진입 마커)
+            isProcessing = true;
+            Debug.Log($"[HammerItem] SmashByLevel {level} at {center} (cost: {layerCost} layers)");
+
+            // ★ 게이지 즉시 소모 (아이템 사용 즉시 — 기존엔 SmashByLevel 종료(애니+낙하 후)라 게이지 감소가 늦게 보였음)
+            if (HammerGauge.Instance != null)
+                HammerGauge.Instance.OnHammerUsedWithLevel(layerCost);
 
             // 중심 블록 파괴 애니메이션
             yield return StartCoroutine(SmashAnimation(centerBlock));
@@ -638,10 +738,20 @@ namespace JewelsHexaPuzzle.Items
                     HexBlock block = hexGrid.GetBlock(coord);
                     if (block == null || block.Data == null || block.Data.gemType == GemType.None) continue;
 
+                    // ★ 흙더미 블록 보호 — 망치 효과 무효
+                    if (block.Data.dirtMound > 0)
+                    {
+                        Debug.Log($"[Hammer] 흙더미 블록 보호: ({block.Coord}) — 망치 무효");
+                        continue;
+                    }
+
                     if (block.Data.specialType == SpecialBlockType.None)
                     {
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType, block.Data.isCracked || block.Data.isShell, block.Data.isShell);
                         StartCoroutine(SmashAnimation(block));
+                        // ★ 쉘 블록이면 파편 이펙트 발동
+                        if (blockRemovalSystem != null && block.Data.isShell)
+                            blockRemovalSystem.TryPlayShellBurst(block);
                         block.ClearData();
                         block.transform.localScale = Vector3.one;
                     }
@@ -665,15 +775,23 @@ namespace JewelsHexaPuzzle.Items
                 GameManager.Instance.CurrentState == GameState.Playing)
                 inputSystem.SetEnabled(true);
 
-            // 게이지 레이어 차감
-            if (HammerGauge.Instance != null)
-                HammerGauge.Instance.OnHammerUsedWithLevel(layerCost);
+            // (게이지 레이어 차감은 SmashByLevel 시작 시 이미 처리됨 — 즉시 감소)
+
+            // 튜토리얼 이벤트 알림 (Stage 6 HammerUsed 대기 해제)
+            JewelsHexaPuzzle.Managers.TutorialManager.Instance?.OnHammerUsed();
         }
 
         /// <summary>블록 파괴 헬퍼: 특수 블록이면 드릴 발동, 아니면 일반 파괴</summary>
         private void DestroyBlockAtCoord(HexBlock block)
         {
             if (block == null || block.Data == null) return;
+
+            // ★ 흙더미 블록 보호 — 망치 효과 무효
+            if (block.Data.dirtMound > 0)
+            {
+                Debug.Log($"[Hammer] 흙더미 블록 보호: ({block.Coord}) — 망치 무효");
+                return;
+            }
 
             bool isSpecial = block.Data.specialType != SpecialBlockType.None;
             SpecialBlockType specialType = block.Data.specialType;
@@ -688,7 +806,10 @@ namespace JewelsHexaPuzzle.Items
                         break;
                     default:
                         // 다른 특수 블록은 일반 파괴
-                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                        GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType, block.Data.isCracked || block.Data.isShell, block.Data.isShell);
+                        // ★ 쉘 블록이면 파편 이펙트 발동
+                        if (blockRemovalSystem != null && block.Data.isShell)
+                            blockRemovalSystem.TryPlayShellBurst(block);
                         block.ClearData();
                         block.transform.localScale = Vector3.one;
                         break;
@@ -696,7 +817,10 @@ namespace JewelsHexaPuzzle.Items
             }
             else
             {
-                GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType);
+                GameManager.Instance?.OnSingleGemDestroyedForMission(block.Data.gemType, block.Data.isCracked || block.Data.isShell);
+                // ★ 쉘 블록이면 파편 이펙트 발동
+                if (blockRemovalSystem != null && block.Data.isShell)
+                    blockRemovalSystem.TryPlayShellBurst(block);
                 block.ClearData();
                 block.transform.localScale = Vector3.one;
             }
@@ -787,10 +911,11 @@ namespace JewelsHexaPuzzle.Items
 
         private IEnumerator HitStop(float stopDuration)
         {
+            // CanHitStop이 외부 일시정지(모달/퍼즈)도 검사 — HitStopSetTimeScale은 도중 개입 대비 (감사 M13)
             if (!VisualConstants.CanHitStop()) yield break;
             VisualConstants.RecordHitStop();
 
-            Time.timeScale = 0f;
+            VisualConstants.HitStopSetTimeScale(0f);
             yield return new WaitForSecondsRealtime(stopDuration);
 
             float elapsed = 0f;
@@ -798,10 +923,10 @@ namespace JewelsHexaPuzzle.Items
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / VisualConstants.HitStopSlowMoDuration);
-                Time.timeScale = Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t));
+                VisualConstants.HitStopSetTimeScale(Mathf.Lerp(VisualConstants.HitStopSlowMoScale, 1f, VisualConstants.EaseOutCubic(t)));
                 yield return null;
             }
-            Time.timeScale = 1f;
+            VisualConstants.HitStopSetTimeScale(1f);
         }
 
         // ============================================================
@@ -1003,30 +1128,27 @@ namespace JewelsHexaPuzzle.Items
             if (!isOwner) yield break;
 
             Transform target = hexGrid != null ? hexGrid.transform : transform;
-
-            if (shakeCount == 0)
-                shakeOriginalPos = target.localPosition;
-            shakeCount++;
+            Vector3 originalPos = target.localPosition;
 
             float elapsed = 0f;
-            while (elapsed < duration)
+            try
             {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float decay = 1f - VisualConstants.EaseInQuad(t);
-                float x = Random.Range(-1f, 1f) * intensity * decay;
-                float y = Random.Range(-1f, 1f) * intensity * decay;
-                target.localPosition = shakeOriginalPos + new Vector3(x, y, 0);
-                yield return null;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float decay = 1f - VisualConstants.EaseInQuad(t);
+                    float x = Random.Range(-1f, 1f) * intensity * decay;
+                    float y = Random.Range(-1f, 1f) * intensity * decay;
+                    target.localPosition = originalPos + new Vector3(x, y, 0);
+                    yield return null;
+                }
             }
-
-            shakeCount--;
-            if (shakeCount <= 0)
+            finally
             {
-                shakeCount = 0;
-                target.localPosition = shakeOriginalPos;
+                target.localPosition = originalPos;
+                VisualConstants.EndScreenShake();
             }
-            VisualConstants.EndScreenShake();
         }
 
         // ============================================================

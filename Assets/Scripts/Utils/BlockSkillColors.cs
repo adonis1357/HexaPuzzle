@@ -51,8 +51,11 @@ namespace JewelsHexaPuzzle.Utils
             }
         }
 
-        // === 드론 (공통 색상 사용) ===
-        public static readonly Color DroneBase   = CommonBase;
+        // === 드론 (스킬 레벨은 공통 색상 사용, 기본만 밝게 별도 정의) ===
+        // ★ DroneBase는 회색(0.6) 대신 거의 흰색(0.95)으로 — 드론 스프라이트의
+        //   자연색(민트 본체/하늘색 날개)을 그대로 살려 어둡게 보이지 않도록.
+        //   DrillBase(0.92)와 유사한 밝기로 통일.
+        public static readonly Color DroneBase   = new Color(0.95f, 0.95f, 0.95f, 1f);
         public static readonly Color DroneLevel1 = CommonLevel1;
         public static readonly Color DroneLevel2 = CommonLevel2;
         public static readonly Color DroneLevel3 = CommonLevel3;

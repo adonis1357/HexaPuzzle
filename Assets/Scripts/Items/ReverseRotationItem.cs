@@ -41,6 +41,7 @@ namespace JewelsHexaPuzzle.Items
         private Coroutine activeGlowCoroutine;
 
         public bool IsActive => isActive;
+        public Button ReverseButton => reverseButton;
 
         // ============================================================
         // 초기화
@@ -123,6 +124,9 @@ namespace JewelsHexaPuzzle.Items
             if (GameManager.Instance == null) return;
             if (GameManager.Instance.CurrentState != GameState.Playing) return;
             if (GameManager.Instance.IsPurchasePopupOpen) return;
+            // ★ 마나 구매 팝업/리워드 모달 차단 (감사 H4)
+            if (MPManager.Instance != null && MPManager.Instance.IsManaPurchasePopupOpen) return;
+            if (SkillUpgradeOfferSystem.Instance != null && SkillUpgradeOfferSystem.Instance.IsChoiceModalOpen) return;
 
             // 회전 중이면 무시
             if (rotationSystem != null && rotationSystem.IsRotating) return;
@@ -130,19 +134,25 @@ namespace JewelsHexaPuzzle.Items
             // 활성 상태에서 다시 클릭 → 비활성화 (수량 소모 없음)
             if (isActive)
             {
+                // ★ 튜토리얼 입력 제한 모드 중에는 활성 상태 유지
+                //   (Stage 26 역회전 튜토리얼: 강제 클러스터 회전을 완료하기 전까지 비활성화 차단)
+                if (inputSystem != null && inputSystem.IsRestrictedMode)
+                {
+                    UIManager.Instance?.ShowToast("밝은 곳의 블록을 역회전 시켜주세요!");
+                    return;
+                }
                 Deactivate();
                 return;
             }
 
-            // MP 체크: MP가 부족하면 사용 불가
-            if (MPManager.Instance != null && !MPManager.Instance.CanUseItem(ItemType.ReverseRotation))
+            // ★ 역회전 스택 체크 — 무브수 10회마다 +1, 최대 2 스택 사용 가능.
+            //   스택이 0이면 활성화 차단 + 토스트.
+            if (JewelsHexaPuzzle.Managers.ItemManager.Instance != null &&
+                JewelsHexaPuzzle.Managers.ItemManager.Instance.GetGaugeCount(ItemType.ReverseRotation) < 1)
             {
-                Debug.Log($"[ReverseRotationItem] MP 부족: 필요 {MPManager.Instance.GetItemCost(ItemType.ReverseRotation)}, 현재 {MPManager.Instance.CurrentMP}");
-                var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
-                if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                UIManager.Instance?.ShowToast("역회전 게이지가 충전되지 않았습니다");
                 return;
             }
-
             // 활성화
             Activate();
         }
@@ -155,6 +165,9 @@ namespace JewelsHexaPuzzle.Items
         {
             if (!isActive || isProcessing) return;
             if (GameManager.Instance != null && GameManager.Instance.IsPurchasePopupOpen) return;
+            // ★ 마나 구매 팝업/리워드 모달 차단 (감사 H4)
+            if (MPManager.Instance != null && MPManager.Instance.IsManaPurchasePopupOpen) return;
+            if (SkillUpgradeOfferSystem.Instance != null && SkillUpgradeOfferSystem.Instance.IsChoiceModalOpen) return;
             if (rotationSystem != null && rotationSystem.IsRotating) return;
 
 #if UNITY_EDITOR || UNITY_STANDALONE
@@ -180,6 +193,14 @@ namespace JewelsHexaPuzzle.Items
             // 블록 위 클릭이면 무시 (정상 회전 입력)
             if (FindBlockAtPosition(screenPos) != null) return;
 
+            // ★ 튜토리얼 입력 제한 모드 중에는 빈 공간 탭으로 비활성화 안 함
+            //   (Stage 26 역회전 튜토리얼에서 사용자가 지정 클러스터를 회전시키도록 강제)
+            if (inputSystem != null && inputSystem.IsRestrictedMode)
+            {
+                UIManager.Instance?.ShowToast("밝은 곳의 블록을 역회전 시켜주세요!");
+                return;
+            }
+
             // 빈 공간 클릭 → 비활성화
             Deactivate();
         }
@@ -195,7 +216,10 @@ namespace JewelsHexaPuzzle.Items
             es.RaycastAll(pd, results);
             foreach (var r in results)
             {
-                if (r.gameObject == reverseButton?.gameObject)
+                // ★ 차지바 아이템 버튼/UI 버튼 포함 (구 reverseButton만 검사하던 버그 수정 — 차지바 버튼 클릭 오인 방지).
+                if (r.gameObject.GetComponentInParent<HexaPuzzle.ChargeButton>() != null
+                    || r.gameObject.GetComponentInParent<UnityEngine.UI.Button>() != null
+                    || r.gameObject == reverseButton?.gameObject)
                     return true;
             }
             return false;
@@ -212,7 +236,8 @@ namespace JewelsHexaPuzzle.Items
             es.RaycastAll(pd, results);
             foreach (var r in results)
             {
-                if (r.gameObject.GetComponent<Button>() != null)
+                if (r.gameObject.GetComponentInParent<HexaPuzzle.ChargeButton>() != null
+                    || r.gameObject.GetComponentInParent<Button>() != null)
                     return true;
             }
             return false;
@@ -240,7 +265,28 @@ namespace JewelsHexaPuzzle.Items
 
         public void Activate()
         {
+
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayReverseSound(); // ★ 효과음: 역회전 되감기
             if (isActive || isProcessing) return;
+
+            // ★ MP 게이트 — 부족 시 능력 차단 + 시각 피드백
+            if (MPManager.Instance != null)
+            {
+                int mpCost = MPManager.Instance.GetItemCost(ItemType.ReverseRotation);
+                if (!MPManager.Instance.CanAfford(mpCost))
+                {
+                    Debug.Log($"[ReverseRotationItem] MP 부족: 역회전 차단 (필요 {mpCost})");
+                    // 그리드 중앙에 빨간 "마나 부족" 팝업 + 게이지 피드백
+                    Vector3 feedbackPos;
+                    if (hexGrid != null) feedbackPos = hexGrid.transform.position;
+                    else if (reverseButton != null) feedbackPos = reverseButton.transform.position;
+                    else feedbackPos = Vector3.zero;
+                    MPManager.Instance.SpawnInsufficientPopup(feedbackPos);
+                    var gaugeUI = Object.FindObjectOfType<JewelsHexaPuzzle.UI.MPGaugeUI>();
+                    if (gaugeUI != null) gaugeUI.PlayInsufficientFeedback();
+                    return;
+                }
+            }
 
             // 다른 아이템 비활성화 (오버레이 중첩 방지)
             DeactivateOtherItems();
@@ -276,6 +322,14 @@ namespace JewelsHexaPuzzle.Items
 
             // 활성 상태 글로우 (비활성화될 때까지 유지)
             activeGlowCoroutine = StartCoroutine(ActiveGlow());
+
+            // ★ MP는 매칭 성공 시에만 소모 (OnRotationCompleted(true)에서 처리)
+            //   사용자가 역회전을 활성화만 하고 회전 안 하면 비용 미소모,
+            //   회전했지만 매칭 실패면 비용 미소모. "유효 사용"에만 비용 부과.
+
+            // 튜토리얼 이벤트: ReverseActivated (Stage 26 역회전 튜토리얼에서 사용)
+            if (TutorialManager.Instance != null)
+                TutorialManager.Instance.OnReverseActivated();
 
             Debug.Log("[ReverseRotationItem] 활성화 (역방향 모드 ON)");
         }
@@ -360,7 +414,7 @@ namespace JewelsHexaPuzzle.Items
         }
 
         /// <summary>
-        /// 회전 완료 시 호출. 매칭 성공이면 아이템 소모, 실패면 수량 보존.
+        /// 회전 완료 시 호출. 매칭 성공이면 MP 소모 + 매칭 블록 위치에 팝업, 실패면 비용 미소모.
         /// </summary>
         private void OnRotationCompleted(bool matchFound)
         {
@@ -369,16 +423,30 @@ namespace JewelsHexaPuzzle.Items
 
             if (matchFound)
             {
-                // 매칭 성공 → MP 소모
-                if (MPManager.Instance != null)
-                    MPManager.Instance.TryConsumeMP(MPManager.Instance.GetItemCost(ItemType.ReverseRotation));
-
                 Debug.Log("[ReverseRotationItem] 매칭 성공 → MP 소모");
+
+                // ★ 매칭 성공 시 MP 소모 + 매칭된 블록들의 중심점에 파란 "-N" 팝업
+                if (MPManager.Instance != null && rotationSystem != null)
+                {
+                    int mpCost = MPManager.Instance.GetItemCost(ItemType.ReverseRotation);
+                    Vector3 popupPos = rotationSystem.LastMatchedWorldCenter;
+                    // 안전 폴백: 매칭 중심점이 zero면 그리드/버튼으로
+                    if (popupPos == Vector3.zero)
+                    {
+                        if (hexGrid != null) popupPos = hexGrid.transform.position;
+                        else if (reverseButton != null) popupPos = reverseButton.transform.position;
+                    }
+                    Debug.Log($"[ReverseRotationItem] MP 소모 팝업: pos={popupPos}, cost={mpCost}");
+                    MPManager.Instance.TryConsumeMP(mpCost, popupPos);
+                }
+
+                // ★ 충전바 역회전 게이지 리셋 (유효 사용 시 0으로 → 다시 이동 10회로 충전)
+                if (JewelsHexaPuzzle.Managers.ItemManager.Instance != null)
+                    JewelsHexaPuzzle.Managers.ItemManager.Instance.ResetGauge(ItemType.ReverseRotation);
             }
             else
             {
-                // 매칭 실패 → MP 보존
-                Debug.Log("[ReverseRotationItem] 매칭 실패 → MP 보존");
+                Debug.Log("[ReverseRotationItem] 매칭 실패 — MP 소모 없음 (역회전 무료 회수)");
             }
         }
 
