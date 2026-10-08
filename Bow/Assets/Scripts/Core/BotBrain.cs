@@ -49,6 +49,10 @@ namespace Bow.Core
             float dx = (tFeet.x - sFeet.x) * facing - cfg.bowAnchorX;
             float dy = targetY - (sFeet.y + cfg.bowAnchorY);
             float aLocal = cfg.windAccelFactor * windNow * profile.windAwareness * facing;
+            // 장애물 (로컬 프레임): 사수 기준 전방 거리와 높이
+            float obsDx = (setup.ObstacleX - sFeet.x) * facing - cfg.bowAnchorX;
+            float obsHw = setup.ObstacleHalfWidth;
+            float obsTopRel = setup.ObstacleTop - (sFeet.y + cfg.bowAnchorY);
 
             float bestErr = float.MaxValue;
             float bestAngle = 45f, bestPower = 0.6f;
@@ -66,6 +70,7 @@ namespace Bow.Core
                     float t = (vy + MathF.Sqrt(disc)) / cfg.gravity;
                     if (t <= 0f) continue;
                     float x = vx * t + 0.5f * aLocal * t * t;
+                    if (CrossesObstacle(vx, vy, aLocal, t, obsDx, obsHw, obsTopRel, cfg.gravity)) continue;
                     float err = MathF.Abs(x - dx);
                     // 낮은 각도(빠른 화살)를 약간 선호: 바람 노출 시간이 짧다
                     err += t * 0.05f;
@@ -79,6 +84,19 @@ namespace Bow.Core
             float dev = rng.Gaussian(profile.deviationSigma);
             if (dev < -1f) dev = -1f; if (dev > 1f) dev = 1f;
             return new ShotParams(shooter, angle, power, dev, launchTime, breathEff);
+        }
+
+        /// <summary>상수 바람 가정 탄도가 장애물 사각형을 통과하는지 (0.04s 샘플링)</summary>
+        private static bool CrossesObstacle(float vx, float vy, float a, float tEnd, float obsDx, float obsHw, float obsTopRel, float g)
+        {
+            for (float t = 0f; t <= tEnd; t += 0.04f)
+            {
+                float x = vx * t + 0.5f * a * t * t;
+                if (x < obsDx - obsHw || x > obsDx + obsHw) continue;
+                float y = vy * t - 0.5f * g * t * t;
+                if (y <= obsTopRel) return true;
+            }
+            return false;
         }
 
         /// <summary>다음 사격까지 기다릴 초과 대기 h (호흡 시스템 활용)</summary>

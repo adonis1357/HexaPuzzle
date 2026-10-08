@@ -69,6 +69,13 @@ namespace Bow.Core
                     }
                 }
 
+                // 장애물 (먹 기둥)
+                if (setup.HitsObstacle(pos) || setup.HitsObstacle((prev + pos) * 0.5f))
+                {
+                    result.zone = HitZone.Obstacle; result.hitPoint = pos; result.flightTime = t;
+                    break;
+                }
+
                 // 지면
                 float ground = setup.GroundHeight(pos.x);
                 if (pos.y <= ground && vel.y < 0f)

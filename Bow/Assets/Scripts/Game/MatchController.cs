@@ -122,6 +122,9 @@ namespace Bow.Game
             gsr.sortingOrder = ArtConstants.SortGround;
             gsr.sharedMaterial = ProceduralSprites.SpriteMaterial;
 
+            // 장애물: 먹 기둥 (가운데, 직선 사격 차단)
+            BuildObstacle();
+
             // 궁수
             for (int i = 0; i < 2; i++)
             {
@@ -157,6 +160,56 @@ namespace Bow.Game
                 d.SetActive(false);
             }
             worldBuilt = true;
+        }
+
+        /// <summary>먹 기둥 장애물 비주얼: 본체 + 붓결 줄무늬 + 꼭대기 풀</summary>
+        private void BuildObstacle()
+        {
+            GameObject root = new GameObject("Obstacle");
+            root.transform.SetParent(worldRoot, false);
+            float cx = setup.ObstacleX, hw = setup.ObstacleHalfWidth;
+            float bottom = setup.ObstacleBottom, top = setup.ObstacleTop, h = top - bottom;
+            root.transform.localPosition = new Vector3(cx, bottom, 0f);
+            System.Random rng = new System.Random(setup.Seed ^ 0x0B5);
+
+            MakeRect(root.transform, "body", new Vector2(0f, h * 0.5f), new Vector2(hw * 2f, h), Palette.Ink, ArtConstants.SortArcher - 2);
+            // 울퉁불퉁한 가장자리: 좌우로 삐져나온 작은 덩어리들
+            for (int i = 0; i < 6; i++)
+            {
+                float y = (float)rng.NextDouble() * h * 0.9f + h * 0.05f;
+                float side = i % 2 == 0 ? -1f : 1f;
+                float w = 0.15f + (float)rng.NextDouble() * 0.2f;
+                MakeRect(root.transform, "lump" + i, new Vector2(side * (hw + w * 0.3f), y), new Vector2(w, 0.25f + (float)rng.NextDouble() * 0.4f), Palette.Ink, ArtConstants.SortArcher - 2);
+            }
+            // 붓결(연먹 세로 줄)
+            for (int i = 0; i < 3; i++)
+            {
+                float x = -hw * 0.6f + i * hw * 0.6f;
+                MakeRect(root.transform, "stroke" + i, new Vector2(x, h * 0.5f + (float)rng.NextDouble() * 0.3f), new Vector2(0.06f, h * (0.5f + (float)rng.NextDouble() * 0.4f)), Palette.WithAlpha(Palette.InkL, 0.8f), ArtConstants.SortArcher - 1);
+            }
+            // 꼭대기 풀 터치
+            for (int i = 0; i < 5; i++)
+            {
+                float x = -hw + (float)rng.NextDouble() * hw * 2f;
+                MakeRect(root.transform, "grass" + i, new Vector2(x, h + 0.1f), new Vector2(0.05f, 0.2f + (float)rng.NextDouble() * 0.2f), Palette.Ink, ArtConstants.SortArcher - 1)
+                    .transform.localRotation = Quaternion.Euler(0f, 0f, (float)(rng.NextDouble() - 0.5) * 30f);
+            }
+            // 발밑 그림자
+            MakeRect(root.transform, "shadow", new Vector2(0f, 0.3f), new Vector2(hw * 2f + 0.6f, 0.12f), Palette.WithAlpha(Palette.Ink, 0.25f), ArtConstants.SortGround + 1);
+        }
+
+        private static SpriteRenderer MakeRect(Transform parent, string name, Vector2 pos, Vector2 size, Color color, int order)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(pos.x, pos.y, 0f);
+            go.transform.localScale = new Vector3(size.x, size.y, 1f);
+            SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = ProceduralSprites.WhiteRect();
+            sr.color = color;
+            sr.sortingOrder = order;
+            sr.sharedMaterial = ProceduralSprites.SpriteMaterial;
+            return sr;
         }
 
         private void BuildUi()
@@ -437,6 +490,14 @@ namespace Bow.Game
             {
                 vfx.GroundImpact(hitW);
                 BowAudio.I.Play("miss_ground", 0.6f, 0.9f, 1.1f);
+                return;
+            }
+            if (f.zone == HitZone.Obstacle)
+            {
+                vfx.BodyHit(hitW, SimDirToWorld(dirSim));
+                vfx.ShakePx(3f, 0.08f);
+                BowAudio.I.Play("miss_ground", 0.7f, 1.15f, 1.3f);
+                if (f.shot.shooterId == localId) hud.ShowMessage("막힘", Palette.Grey, 0.4f, 56);
                 return;
             }
             if (f.zone == HitZone.Out) return;

@@ -33,7 +33,7 @@ namespace Bow.Core
         }
     }
 
-    public enum HitZone { None = 0, Head = 1, Body = 2, Ground = 3, Out = 4 }
+    public enum HitZone { None = 0, Head = 1, Body = 2, Ground = 3, Out = 4, Obstacle = 5 }
 
     /// <summary>탄도 시뮬레이션 결과</summary>
     public sealed class ArrowFlight

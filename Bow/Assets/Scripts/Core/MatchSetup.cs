@@ -12,6 +12,13 @@ namespace Bow.Core
         public float Distance { get; private set; }
         public float HeightDiff { get; private set; }
 
+        /// <summary>장애물(먹 기둥) 중심 x, 반폭, 바닥/꼭대기 y</summary>
+        public float ObstacleX { get; private set; }
+        public float ObstacleHalfWidth { get; private set; }
+        public float ObstacleBottom { get; private set; }
+        public float ObstacleTop { get; private set; }
+        public float ObstacleHeight { get { return ObstacleTop - ObstacleBottom; } }
+
         private readonly Vec2[] feet = new Vec2[2];
 
         public MatchSetup(int seed, DuelConfig cfg)
@@ -23,6 +30,20 @@ namespace Bow.Core
             // 지면 기준선(y=0)은 두 궁수 발 높이의 평균 (아트 §2.1)
             feet[0] = new Vec2(-Distance * 0.5f, -HeightDiff * 0.5f);
             feet[1] = new Vec2(Distance * 0.5f, HeightDiff * 0.5f);
+
+            // 장애물: 중앙 부근, 지면에 0.3m 박힌 먹 기둥
+            ObstacleX = rng.Range(-cfg.obstacleXJitter, cfg.obstacleXJitter);
+            ObstacleHalfWidth = cfg.obstacleHalfWidth;
+            float ground = GroundHeight(ObstacleX);
+            ObstacleBottom = ground - 0.3f;
+            ObstacleTop = ground + rng.Range(cfg.obstacleMinHeight, cfg.obstacleMaxHeight);
+        }
+
+        /// <summary>점이 장애물 사각형 안에 있는지</summary>
+        public bool HitsObstacle(Vec2 p)
+        {
+            return p.x >= ObstacleX - ObstacleHalfWidth && p.x <= ObstacleX + ObstacleHalfWidth
+                && p.y >= ObstacleBottom && p.y <= ObstacleTop;
         }
 
         /// <summary>궁수 발 위치</summary>

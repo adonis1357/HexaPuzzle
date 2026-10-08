@@ -19,6 +19,12 @@ namespace Bow.Core
         public float maxDistance = 24f;        // m
         public float maxHeightDiff = 1.5f;     // m (±)
 
+        // ---------- 장애물 (두 궁수 사이 먹 기둥) ----------
+        public float obstacleMinHeight = 3.0f;   // m (지면 위)
+        public float obstacleMaxHeight = 5.5f;
+        public float obstacleHalfWidth = 0.5f;   // 폭 1.0 m
+        public float obstacleXJitter = 2.0f;     // 중앙에서 ±2 m
+
         // ---------- 탄도 ----------
         public float gravity = 9.81f;
         public float minArrowSpeed = 9f;       // 힘 0
