@@ -28,10 +28,10 @@ namespace Bow.Core
         public float maxFlightTime = 8f;
         public float selfHitGraceTime = 0.5f;  // 발사 직후 자기 자신 피격 면제 시간
 
-        // ---------- 바람 ----------
-        public float windAmp1 = 4f, windPeriod1 = 23f;
-        public float windAmp2 = 2f, windPeriod2 = 7f;
-        public float windAmp3 = 1f, windPeriod3 = 2.3f;
+        // ---------- 바람 (구간형: 유지 → 전환) ----------
+        public float windMaxSpeed = 7f;             // 풍속 범위 ±7 m/s
+        public float windHoldSeconds = 8f;          // 한 바람이 유지되는 시간
+        public float windTransitionSeconds = 2.5f;  // 바람이 바뀌는 데 걸리는 시간 (smoothstep)
 
         // ---------- 장전 딜레이 & 호흡(Breath) ----------
         public float baseDelay = 5.0f;         // B

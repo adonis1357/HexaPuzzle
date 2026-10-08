@@ -31,9 +31,9 @@ namespace Bow.UI
         private int lastShownSecond = -1;
 
         // 바람
-        private RectTransform windBar, windHead;
-        private Image windBarImg, windHeadImg;
-        private Text windText;
+        private RectTransform windBar, windHead, nextBar, nextHead;
+        private Image windBarImg, windHeadImg, nextBarImg, nextHeadImg;
+        private Text windText, windNextText;
         private float windLenCur = 20f, windSignCur = 1f;
 
         // 호흡 링
@@ -97,6 +97,12 @@ namespace Bow.UI
             windHeadImg = UiFactory.MakeImage(windRoot, "head", ProceduralSprites.Triangle(), Palette.Ink, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(20f, -28f), new Vector2(28f, 28f));
             windHead = windHeadImg.rectTransform;
             windText = UiFactory.MakeText(windRoot, "windText", "바람 0.0 m/s", 38, Palette.Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -52f), new Vector2(360f, 44f));
+            // 다음 바람 미리보기 (회색, 작게) + 변화까지 남은 초
+            nextBarImg = UiFactory.MakeImage(windRoot, "nextBar", ProceduralSprites.WhiteRect(), Palette.WithAlpha(Palette.Grey, 0.7f), new Vector2(0.5f, 1f), new Vector2(0f, 0.5f), new Vector2(0f, -108f), new Vector2(20f, 5f));
+            nextBar = nextBarImg.rectTransform;
+            nextHeadImg = UiFactory.MakeImage(windRoot, "nextHead", ProceduralSprites.Triangle(), Palette.WithAlpha(Palette.Grey, 0.7f), new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(20f, -108f), new Vector2(18f, 18f));
+            nextHead = nextHeadImg.rectTransform;
+            windNextText = UiFactory.MakeText(windRoot, "windNext", "", 28, Palette.Grey, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -122f), new Vector2(420f, 36f));
 
             // ---- 호흡 링 ----
             ringRoot = UiFactory.Rect(root, "ring");
@@ -210,8 +216,31 @@ namespace Bow.UI
         // ---------------------------------------------------------------
         // 바람 (screenWind: 화면 기준 부호, +는 오른쪽)
         // ---------------------------------------------------------------
-        public void SetWind(float screenWind)
+        /// <param name="screenWind">현재 바람 (화면 기준 부호)</param>
+        /// <param name="nextScreenWind">다음 구간 바람</param>
+        /// <param name="secondsToChange">변화까지 남은 초</param>
+        /// <param name="transitioning">바람 변화 진행 중</param>
+        public void SetWind(float screenWind, float nextScreenWind, float secondsToChange, bool transitioning)
         {
+            // 다음 바람 미리보기
+            float an = Mathf.Abs(nextScreenWind);
+            float nextLen = (20f + 120f * Mathf.Min(an / 7f, 1f)) * 0.6f;
+            float nsign = nextScreenWind >= 0f ? 1f : -1f;
+            nextBar.sizeDelta = new Vector2(nextLen, 5f);
+            nextBar.localScale = new Vector3(nsign, 1f, 1f);
+            nextHead.anchoredPosition = new Vector2(nextLen * nsign, -108f);
+            nextHead.localScale = new Vector3(nsign, 1f, 1f);
+            if (transitioning)
+            {
+                windNextText.text = "바람 변화 중";
+                windNextText.color = Palette.Red;
+            }
+            else
+            {
+                windNextText.text = "다음 " + an.ToString("F1") + " m/s · " + Mathf.CeilToInt(secondsToChange) + "초 후";
+                windNextText.color = secondsToChange <= 3f ? Palette.Red : Palette.Grey;
+            }
+
             float aw = Mathf.Abs(screenWind);
             float targetLen = 20f + 120f * Mathf.Min(aw / 7f, 1f);
             windLenCur = Mathf.Lerp(windLenCur, targetLen, 1f - Mathf.Exp(-10f * Time.unscaledDeltaTime));

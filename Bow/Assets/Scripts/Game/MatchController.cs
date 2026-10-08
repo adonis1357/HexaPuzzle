@@ -211,9 +211,10 @@ namespace Bow.Game
             float dt = Time.unscaledDeltaTime;
             matchTime += dt;
 
-            float w = wind.GetWind(Mathf.Max(0f, matchTime));
+            float wt = Mathf.Max(0f, matchTime);
+            float w = wind.GetWind(wt);
             windField.SetWind(w);
-            hud.SetWind(w * viewSign);
+            hud.SetWind(w * viewSign, wind.GetNextWind(wt) * viewSign, wind.SecondsUntilChange(wt), wind.IsTransitioning(wt));
             BowAudio.I.SetWind(w);
 
             // 카운트다운
