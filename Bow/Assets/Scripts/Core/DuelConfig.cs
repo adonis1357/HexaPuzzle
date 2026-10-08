@@ -55,7 +55,7 @@ namespace Bow.Core
 
         // ---------- 조준 ----------
         public float minAimAngle = -10f;
-        public float maxAimAngle = 85f;
+        public float maxAimAngle = 120f;       // 90° 를 넘어 뒤쪽으로도 사격 가능 (뒤바람 활용)
         public float maxDragPixels = 420f;     // 드래그 길이 → 힘 1.0 (1080px 기준)
         public float minDragPixels = 30f;      // 이하면 취소
 

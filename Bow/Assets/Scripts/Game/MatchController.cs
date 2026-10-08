@@ -327,7 +327,7 @@ namespace Bow.Game
             if (autoTest && state.Phase == MatchPhase.Playing && !metering && !aiming && !archers[localId].IsDead
                 && localBreath.IsReady(matchTime) && localBreath.Overhold(matchTime) >= 1f)
             {
-                meterAngle = Random.Range(30f, 60f);
+                meterAngle = Random.Range(30f, 110f);
                 meterPower = Random.Range(0.35f, 0.8f);
                 archers[localId].SetAim(meterAngle, meterPower);
                 FireLocal(Random.Range(-0.6f, 0.6f), false);

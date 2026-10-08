@@ -56,7 +56,7 @@ namespace Bow.Core
 
             float bestErr = float.MaxValue;
             float bestAngle = 45f, bestPower = 0.6f;
-            for (float ang = 15f; ang <= 75f; ang += 1.5f)
+            for (float ang = 15f; ang <= 115f; ang += 1.5f)
             {
                 float rad = ang * MathF.PI / 180f;
                 for (float pow = 0.15f; pow <= 1.0001f; pow += 0.025f)
