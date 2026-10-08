@@ -13,7 +13,8 @@ namespace Bow.Core
         public int maxHp = 100;
         public int bodyDamage = 25;
         public int headDamage = 40;
-        public float perfectMultiplier = 1.25f;
+        public float accuracyMaxBonus = 0.40f;   // 데미지 보너스 = (1 − |p|)² × 40% (중앙일수록 큼)
+        public float perfectExtraBonus = 0.10f;  // Perfect 추가 보너스 +10% → 최대 ×1.5
         public float matchDuration = 120f;     // 초
         public float minDistance = 16f;        // m
         public float maxDistance = 24f;        // m
@@ -66,6 +67,16 @@ namespace Bow.Core
         public float bodyTopY = 1.48f;
         public float bowAnchorX = 0.40f;       // 발 기준 화살 출발점 (전방)
         public float bowAnchorY = 1.45f;
+
+        /// <summary>정확도(추 오프셋 p)에 따른 데미지 배율: 1 + (1−|p|)²×0.4 (+0.1 Perfect)</summary>
+        public float DamageMultiplier(float deviation)
+        {
+            float a = 1f - Math.Abs(deviation);
+            if (a < 0f) a = 0f;
+            float m = 1f + accuracyMaxBonus * a * a;
+            if (Math.Abs(deviation) < perfectThreshold) m += perfectExtraBonus;
+            return m;
+        }
 
         public float ArrowSpeed(float power01)
         {

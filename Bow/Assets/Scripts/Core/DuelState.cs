@@ -41,11 +41,12 @@ namespace Bow.Core
             if (Phase == MatchPhase.Playing && MatchTime >= cfg.matchDuration) EndByTimeout();
         }
 
-        public int DamageFor(HitZone zone, bool perfect)
+        /// <summary>부위 기본 데미지 × 정확도 배율 (반올림)</summary>
+        public int DamageFor(HitZone zone, float deviation)
         {
             int baseDmg = zone == HitZone.Head ? cfg.headDamage : zone == HitZone.Body ? cfg.bodyDamage : 0;
             if (baseDmg == 0) return 0;
-            return perfect ? (int)MathF.Round(baseDmg * cfg.perfectMultiplier) : baseDmg;
+            return (int)MathF.Round(baseDmg * cfg.DamageMultiplier(deviation));
         }
 
         /// <summary>데미지 적용 후 남은 HP 반환</summary>

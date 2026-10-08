@@ -445,12 +445,13 @@ namespace Bow.Game
                 BowAudio.I.Play("perfect_bell", 0.75f);
                 vfx.GoldRing(LocalNockWorld());
                 hud.Flash(Palette.Gold, 0.22f, ArtConstants.PerfectFlashDuration);
-                hud.ShowMessage("완벽! ×1.25", Palette.GoldL);
+                hud.ShowMessage("완벽! ×1.5", Palette.GoldL);
                 vfx.ShakePx(6f, 0.10f);
             }
             else
             {
-                hud.ShowMessage(Mathf.Abs(p) < 0.4f ? "좋음" : "보통", Mathf.Abs(p) < 0.4f ? Palette.Ink : Palette.Grey, 0.4f, 64);
+                float m = cfg.DamageMultiplier(p);
+                hud.ShowMessage((Mathf.Abs(p) < 0.4f ? "좋음" : "보통") + " ×" + m.ToString("F2"), Mathf.Abs(p) < 0.4f ? Palette.Ink : Palette.Grey, 0.5f, 64);
                 if (meterPower > 0.7f) vfx.ShakePx(4f, 0.08f);
             }
             StartCoroutine(IdleAfter(0.35f, localId));
@@ -533,11 +534,12 @@ namespace Bow.Game
             // 판정 (호스트 권위, 클라이언트는 결정론 시뮬로 선반영 후 Hit 메시지로 보정)
             if (state.Phase == MatchPhase.Playing)
             {
-                int dmg = state.DamageFor(f.zone, f.perfect);
+                int dmg = state.DamageFor(f.zone, f.shot.deviation);
+                float mult = cfg.DamageMultiplier(f.shot.deviation);
                 int hpAfter = state.ApplyDamage(target, dmg);
                 int slot = target == localId ? 0 : 1;
                 hud.SetHp(slot, hpAfter, cfg.maxHp, true);
-                hud.ShowDamage(SimToWorld(f.hitPoint), dmg, f.perfect ? Palette.Gold : head ? Palette.Red : Palette.Ink, head ? 64 : 48);
+                hud.ShowDamage(SimToWorld(f.hitPoint), dmg, mult, f.perfect ? Palette.Gold : head ? Palette.Red : Palette.Ink, head ? 64 : 48);
                 if (head) hud.ShowMessage("급소!", Palette.Red, 0.9f, 80);
                 if (transport.IsHost) transport.Send(NetMessage.Hit(f.shot.shooterId, f.shot.launchTime, target, f.zone, f.perfect, dmg, hpAfter));
                 if (hpAfter <= 0) KillArcher(target, dirSign);

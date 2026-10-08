@@ -502,9 +502,11 @@ namespace Bow.UI
             flash.gameObject.SetActive(false);
         }
 
-        public void ShowDamage(Vector3 worldPos, int damage, Color color, int size)
+        public void ShowDamage(Vector3 worldPos, int damage, float multiplier, Color color, int size)
         {
-            Text t = UiFactory.MakeText(root, "dmg", "-" + damage, size, color, TextAnchor.MiddleCenter, C, C, WorldToCanvas(worldPos), new Vector2(240f, 80f), true);
+            string label = "-" + damage;
+            if (multiplier > 1.02f) label += "  ×" + multiplier.ToString("F2");
+            Text t = UiFactory.MakeText(root, "dmg", label, size, color, TextAnchor.MiddleCenter, C, C, WorldToCanvas(worldPos), new Vector2(320f, 80f), true);
             StartCoroutine(DamageRise(t, color));
         }
 
