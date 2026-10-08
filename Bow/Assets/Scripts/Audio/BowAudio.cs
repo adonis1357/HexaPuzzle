@@ -34,7 +34,7 @@ namespace Bow.Audio
         private AudioSource bgmA, bgmB;
         private AudioSource windSrc;
         private AudioLowPassFilter windLp;
-        private AudioLowPassFilter bgmLpA, bgmLpB;
+        private AudioLowPassFilter bgmLpA;
         private bool bgmUsingA = true;
         private string currentBgm = "";
         private readonly Dictionary<string, AudioClip> fileCache = new Dictionary<string, AudioClip>();
@@ -48,7 +48,6 @@ namespace Bow.Audio
             bgmA = bgmGo.AddComponent<AudioSource>(); bgmA.loop = true; bgmA.playOnAwake = false;
             bgmB = bgmGo.AddComponent<AudioSource>(); bgmB.loop = true; bgmB.playOnAwake = false;
             bgmLpA = bgmGo.AddComponent<AudioLowPassFilter>(); bgmLpA.cutoffFrequency = 22000f;
-            bgmLpB = bgmLpA;
 
             GameObject windGo = new GameObject("Wind"); windGo.transform.SetParent(transform, false);
             windSrc = windGo.AddComponent<AudioSource>(); windSrc.loop = true; windSrc.playOnAwake = false;

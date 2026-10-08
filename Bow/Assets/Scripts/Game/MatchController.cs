@@ -54,7 +54,6 @@ namespace Bow.Game
         private float aimAngle, aimPower;
         private bool metering;
         private float meterAngle, meterPower;
-        private float lastTickP = -2f;
         private AudioSource drawLoop, tensionLoop;
 
         // 통계
@@ -346,7 +345,6 @@ namespace Bow.Game
             metering = true;
             meterAngle = angle; meterPower = power;
             meter.Start(matchTime, localBreath.MeterPeriod(matchTime));
-            lastTickP = -2f;
         }
 
         private void OnTap()
