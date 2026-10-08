@@ -100,6 +100,21 @@ namespace Bow.EditorTools
             Application.logMessageReceived += OnLog;
             EditorApplication.update -= Tick;
             EditorApplication.update += Tick;
+            EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+            EditorApplication.playModeStateChanged += OnPlayModeChanged;
+        }
+
+        /// <summary>Play 종료 시 도메인 리로드가 없어도(Enter Play Mode Options) 마무리가 호출되도록 보강</summary>
+        private static void OnPlayModeChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.EnteredEditMode && SessionState.GetInt(KeyPhase, 0) == 2)
+                EditorApplication.delayCall += Finish;
+            else if (state == PlayModeStateChange.EnteredPlayMode && SessionState.GetInt(KeyPhase, 0) == 1
+                     && SessionState.GetFloat(KeyStart, -1f) < 0f)
+            {
+                SessionState.SetFloat(KeyStart, (float)EditorApplication.timeSinceStartup);
+                Append("[PlayTest] Play 모드 진입 확인");
+            }
         }
 
         private static void Tick()
@@ -132,8 +147,11 @@ namespace Bow.EditorTools
 
         private static void Finish()
         {
+            if (!SessionState.GetBool(KeyActive, false)) return; // 중복 호출 방지
+            SessionState.SetBool(KeyActive, false);
             Application.logMessageReceived -= OnLog;
             EditorApplication.update -= Tick;
+            EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             PlayerPrefs.DeleteKey("hwal_autotest");
             PlayerPrefs.Save();
             Append("[PlayTest] 완료 — Error " + errorCount + " / Exception " + exceptionCount + " / Warning " + warningCount);
