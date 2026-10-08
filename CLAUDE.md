@@ -149,3 +149,11 @@ InputSystem → RotationSystem → MatchingSystem → BlockRemovalSystem → Gam
 - Unity 프로젝트 (솔루션: `Hexa puzzle project.sln`)
 - Unity 에디터에서 Play로 테스트
 - 컴파일 검증: VS Code 진단 또는 Unity 콘솔 에러 확인
+
+## 서브 프로젝트: 「활」(Bow/) — 실시간 1:1 궁수 대전
+
+`Bow/` 는 **별도의 Unity 프로젝트**(2022.3.62f2)다. HexaPuzzle 코드와 네임스페이스/에셋을 공유하지 않는다.
+- 진입점: `Bow/Assets/Scenes/BowDuel.unity` → `BowBootstrap`
+- 네임스페이스: `Bow.Core`(순수 C#) / `Bow.Net` / `Bow.Game` / `Bow.Art` / `Bow.UI` / `Bow.Audio`
+- 문서: `Bow/Docs/` (브리프, GDD, 아트 사양서, 사운드/Suno 사양서), `Bow/README.md`
+- 규칙: 코어 로직(`Bow.Core`)은 UnityEngine 비의존·결정론 유지(네트워크 동기화 전제). 그래픽은 전부 프로시저럴, BGM은 Suno AI 파일(`Resources/Audio/BGM`).

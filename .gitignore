@@ -97,3 +97,15 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# ---- Bow (활) 서브 프로젝트 Unity 생성물 ----
+Bow/[Ll]ibrary/
+Bow/[Tt]emp/
+Bow/[Oo]bj/
+Bow/[Bb]uild/
+Bow/[Bb]uilds/
+Bow/[Ll]ogs/
+Bow/[Uu]ser[Ss]ettings/
+Bow/*.csproj
+Bow/*.sln
+Bow/.vs/
