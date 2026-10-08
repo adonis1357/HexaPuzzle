@@ -43,9 +43,11 @@ namespace Bow.UI
         private bool ringWasReady, ringWasPeak;
 
         // 추 미터
-        private RectTransform meterRoot, pendulum, pendulumString, autoLine;
-        private Image pendulumImg, meterBorder;
+        private RectTransform meterRoot, pendulum, pendulumString, autoLine, lastMarker;
+        private Image pendulumImg, meterBorder, lastMarkerImg;
         private CanvasGroup meterGroup;
+        private float meterFrozenUntil = -1f, meterFrozenP = 0f;
+        private bool meterFrozenPerfect;
 
         // 조준
         private Text aimText;
@@ -131,6 +133,10 @@ namespace Bow.UI
             pendulumImg = UiFactory.MakeImage(meterRoot, "pendulum", ProceduralSprites.Circle(), Palette.Ink, C, C, Vector2.zero, new Vector2(44f, 44f));
             pendulum = pendulumImg.rectTransform;
             autoLine = UiFactory.MakeImage(meterRoot, "autoLine", ProceduralSprites.WhiteRect(), Palette.Ink, new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, -8f), new Vector2(800f, 4f)).rectTransform;
+            // 마지막 발사 지점 표시선 (다음 조준 때까지 유지)
+            lastMarkerImg = UiFactory.MakeImage(meterRoot, "lastMarker", ProceduralSprites.WhiteRect(), Palette.Red, C, C, Vector2.zero, new Vector2(6f, 72f));
+            lastMarker = lastMarkerImg.rectTransform;
+            lastMarker.gameObject.SetActive(false);
 
             // ---- 조준 텍스트 ----
             aimText = UiFactory.MakeText(root, "aim", "", 36, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(240f, 50f));
@@ -370,8 +376,49 @@ namespace Bow.UI
         // ---------------------------------------------------------------
         // 추 미터
         // ---------------------------------------------------------------
+        /// <summary>발사 순간의 추 위치를 holdSeconds 동안 고정 표시 (이후 마지막 지점 표시선만 남김)</summary>
+        public void FreezeMeter(float p, bool perfect, float holdSeconds)
+        {
+            meterFrozenUntil = Time.unscaledTime + holdSeconds;
+            meterFrozenP = p; meterFrozenPerfect = perfect;
+            lastMarker.gameObject.SetActive(true);
+            lastMarker.anchoredPosition = new Vector2(p * 400f, 0f);
+            lastMarkerImg.color = perfect ? Palette.Gold : (Mathf.Abs(p) < 0.4f ? Palette.Red : Palette.Grey);
+        }
+
         public void SetMeter(bool active, float p, bool perfectNow, float timeoutFraction, float efficiency)
         {
+            if (active)
+            {
+                meterFrozenUntil = -1f;
+                lastMarker.gameObject.SetActive(false);
+            }
+            else if (Time.unscaledTime < meterFrozenUntil)
+            {
+                // 발사 직후: 추를 탭한 위치에 고정, 완전 표시
+                p = meterFrozenP; perfectNow = meterFrozenPerfect;
+                meterGroup.alpha = 1f;
+                float fx = p * 400f;
+                pendulum.anchoredPosition = new Vector2(fx, 0f);
+                pendulumString.anchoredPosition = new Vector2(fx, 0f);
+                pendulumImg.color = perfectNow ? Palette.Gold : Palette.Ink;
+                float fs = perfectNow ? 1.15f : 1f;
+                pendulum.localScale = new Vector3(fs, fs, 1f);
+                autoLine.sizeDelta = new Vector2(0f, 4f);
+                return;
+            }
+            else if (meterFrozenUntil > 0f)
+            {
+                // 고정 시간 종료 후 0.4초 동안 서서히 흐려짐
+                float fade = Mathf.Clamp01((Time.unscaledTime - meterFrozenUntil) / 0.4f);
+                meterGroup.alpha = Mathf.Lerp(1f, 0.25f, fade);
+                float fx = meterFrozenP * 400f;
+                pendulum.anchoredPosition = new Vector2(fx, 0f);
+                pendulumString.anchoredPosition = new Vector2(fx, 0f);
+                autoLine.sizeDelta = new Vector2(0f, 4f);
+                if (fade >= 1f) meterFrozenUntil = -1f;
+                return;
+            }
             meterGroup.alpha = active ? 1f : 0.25f;
             float x = p * 400f;
             pendulum.anchoredPosition = new Vector2(x, 0f);

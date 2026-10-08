@@ -432,7 +432,7 @@ namespace Bow.Game
             shotsFired++;
             bool perfect = Mathf.Abs(p) < cfg.perfectThreshold;
             hud.BreathFired();
-            hud.SetMeter(false, p, perfect, 0f, 0f);
+            hud.FreezeMeter(p, perfect, 1.5f);
             archers[localId].Fire();
             transport.Send(NetMessage.Shot(s));
             SpawnArrow(s);
