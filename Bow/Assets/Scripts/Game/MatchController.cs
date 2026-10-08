@@ -62,6 +62,9 @@ namespace Bow.Game
 
         public bool IsRunning { get { return worldBuilt && !ended; } }
 
+        /// <summary>자동 테스트: 장전될 때마다 임의 각도/힘/오차로 사격 (PlayTestRunner용)</summary>
+        public bool autoTest;
+
         // ---------------------------------------------------------------
         // 시작
         // ---------------------------------------------------------------
@@ -265,6 +268,16 @@ namespace Bow.Game
                 if (meter.IsTimedOut(matchTime)) FireLocal(p, true);
             }
             else hud.SetMeter(false, 0f, false, 0f, eff);
+
+            // 자동 테스트 사격
+            if (autoTest && state.Phase == MatchPhase.Playing && !metering && !aiming && !archers[localId].IsDead
+                && localBreath.IsReady(matchTime) && localBreath.Overhold(matchTime) >= 1f)
+            {
+                meterAngle = Random.Range(30f, 60f);
+                meterPower = Random.Range(0.35f, 0.8f);
+                archers[localId].SetAim(meterAngle, meterPower);
+                FireLocal(Random.Range(-0.6f, 0.6f), false);
+            }
 
             // 봇
             if (bot != null && state.Phase == MatchPhase.Playing)

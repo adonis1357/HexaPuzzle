@@ -56,6 +56,22 @@ namespace Bow.Game
             lobby.OnHost = HostLan;
             lobby.OnJoin = JoinLan;
             bgm.PlayBgm("bgm_lobby");
+
+            // 자동 플레이 테스트 (Editor/PlayTestRunner가 PlayerPrefs로 지시): 1.5초 뒤 봇 대전 자동 시작
+            if (PlayerPrefs.GetInt("hwal_autotest", 0) == 1)
+            {
+                autoTest = true;
+                Debug.Log("[활] 자동 테스트 모드: 봇 대전(보통) 자동 시작");
+                Invoke("AutoTestStart", 1.5f);
+            }
+        }
+
+        private bool autoTest;
+
+        private void AutoTestStart()
+        {
+            StartBot(BotProfile.Normal());
+            if (match != null) match.autoTest = true;
         }
 
         private void Update()
