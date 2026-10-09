@@ -395,6 +395,7 @@ namespace Bow.Game
             aimAngle = angle; aimPower = power;
             archers[localId].SetAim(angle, power);
             hud.SetAimInfo(true, SimToWorld(new Vec2(setup.Feet(localId).x, setup.Feet(localId).y + 1.91f + 1.2f)), angle, power);
+            hud.SetDrag(true, input.DragStartScreen, input.DragCurrentScreen, angle, power, input.maxPullPx, input.deadZonePx);
             Vec2[] pts = ArrowSimulator.PreviewNoWind(localId, angle, power, setup, cfg, 0.5f, 3);
             for (int i = 0; i < 3; i++) previewDots[i].transform.localPosition = new Vector3(pts[i].x, pts[i].y, 0f);
             if (drawLoop != null) { drawLoop.volume = 0.2f + 0.3f * power; drawLoop.pitch = 0.9f + 0.35f * power; }
@@ -412,6 +413,7 @@ namespace Bow.Game
             aiming = false;
             StopDrawLoops();
             hud.SetAimInfo(false, Vector3.zero, 0f, 0f);
+            hud.SetDrag(false, Vector2.zero, Vector2.zero, 0f, 0f, 0f, 0f);
             for (int i = 0; i < 3; i++) previewDots[i].gameObject.SetActive(false);
             archers[localId].SetIdle();
         }
@@ -421,6 +423,7 @@ namespace Bow.Game
             aiming = false;
             StopDrawLoops();
             hud.SetAimInfo(false, Vector3.zero, 0f, 0f);
+            hud.SetDrag(false, Vector2.zero, Vector2.zero, 0f, 0f, 0f, 0f);
             for (int i = 0; i < 3; i++) previewDots[i].gameObject.SetActive(false);
             if (!localBreath.IsReady(matchTime))
             {

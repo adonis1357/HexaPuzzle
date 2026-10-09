@@ -9,7 +9,7 @@ namespace Bow.Art
     /// </summary>
     public static class ProceduralSprites
     {
-        private static Sprite whiteRect, circle64, softCircle32, ring256, stroke64, inkBlob, triangle32, button, enso;
+        private static Sprite whiteRect, circle64, softCircle32, ring256, thinRing256, stroke64, inkBlob, triangle32, button, enso;
         private static Sprite[] arrowByTeam = new Sprite[3];
         private static Material spriteMat;
 
@@ -130,6 +130,26 @@ namespace Bow.Art
             t.SetPixels(px); t.Apply();
             ring256 = Make(t, 100f, new Vector2(0.5f, 0.5f));
             return ring256;
+        }
+
+        /// <summary>256×256 얇은 링 (두께 4 texel) — 조준 반경 표시용</summary>
+        public static Sprite ThinRing()
+        {
+            if (thinRing256 != null) return thinRing256;
+            int s = 256; float ro = 127f, ri = 123f;
+            Texture2D t = NewTex(s, s);
+            Color[] px = new Color[s * s];
+            for (int y = 0; y < s; y++)
+                for (int x = 0; x < s; x++)
+                {
+                    float dx = x + 0.5f - 128f, dy = y + 0.5f - 128f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float a = Mathf.Clamp01(ro - d) * Mathf.Clamp01(d - ri);
+                    px[y * s + x] = new Color(1f, 1f, 1f, a);
+                }
+            t.SetPixels(px); t.Apply();
+            thinRing256 = Make(t, 100f, new Vector2(0.5f, 0.5f));
+            return thinRing256;
         }
 
         /// <summary>64×4 양끝 테이퍼 먹선 (바람 입자). ppu 64 → 길이 1m</summary>

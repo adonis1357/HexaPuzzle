@@ -52,6 +52,11 @@ namespace Bow.UI
         // 조준
         private Text aimText;
         private RectTransform aimRt;
+        // 드래그 조준 UI (아트 §2.7 + UX 보강)
+        private RectTransform dragRoot, dragStart, dragMaxRing, dragDeadRing, dragDirLine, dragDirHead, dragPowerRing;
+        private Image dragPowerImg, dragDirLineImg, dragDirHeadImg;
+        private Text dragInfo, dragHint;
+        private RectTransform[] dragDashes = new RectTransform[28];
 
         // 메시지/섬광/카운트다운
         private Text message, countdown, statusText;
@@ -142,6 +147,26 @@ namespace Bow.UI
             aimText = UiFactory.MakeText(root, "aim", "", 36, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(240f, 50f));
             aimRt = aimText.rectTransform;
             aimText.gameObject.SetActive(false);
+
+            // ---- 드래그 조준 UI ----
+            dragRoot = UiFactory.Rect(root, "drag");
+            UiFactory.Stretch(dragRoot);
+            Color teamC = Palette.Team(0);
+            dragMaxRing = UiFactory.MakeImage(dragRoot, "maxRing", ProceduralSprites.ThinRing(), Palette.WithAlpha(Palette.Ink, 0.18f), C, C, Vector2.zero, new Vector2(600f, 600f)).rectTransform;
+            dragDeadRing = UiFactory.MakeImage(dragRoot, "deadRing", ProceduralSprites.ThinRing(), Palette.WithAlpha(Palette.Ink, 0.25f), C, C, Vector2.zero, new Vector2(80f, 80f)).rectTransform;
+            dragPowerImg = UiFactory.MakeImage(dragRoot, "powerRing", ProceduralSprites.Ring(), Palette.WithAlpha(teamC, 0.85f), C, C, Vector2.zero, new Vector2(120f, 120f));
+            dragPowerImg.type = Image.Type.Filled; dragPowerImg.fillMethod = Image.FillMethod.Radial360; dragPowerImg.fillOrigin = (int)Image.Origin360.Top; dragPowerImg.fillClockwise = true; dragPowerImg.fillAmount = 0f;
+            dragPowerRing = dragPowerImg.rectTransform;
+            dragStart = UiFactory.MakeImage(dragRoot, "start", ProceduralSprites.Circle(), Palette.WithAlpha(Palette.Ink, 0.55f), C, C, Vector2.zero, new Vector2(28f, 28f)).rectTransform;
+            for (int i = 0; i < dragDashes.Length; i++)
+                dragDashes[i] = UiFactory.MakeImage(dragRoot, "dash" + i, ProceduralSprites.WhiteRect(), Palette.WithAlpha(Palette.Ink, 0.5f), C, C, Vector2.zero, new Vector2(14f, 4f)).rectTransform;
+            dragDirLineImg = UiFactory.MakeImage(dragRoot, "dirLine", ProceduralSprites.WhiteRect(), teamC, C, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(150f, 6f));
+            dragDirLine = dragDirLineImg.rectTransform;
+            dragDirHeadImg = UiFactory.MakeImage(dragRoot, "dirHead", ProceduralSprites.Triangle(), teamC, C, C, Vector2.zero, new Vector2(30f, 30f));
+            dragDirHead = dragDirHeadImg.rectTransform;
+            dragInfo = UiFactory.MakeText(dragRoot, "dragInfo", "", 40, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(300f, 50f), true);
+            dragHint = UiFactory.MakeText(dragRoot, "dragHint", "놓으면 추 미터 시작 · 중앙에서 탭", 28, Palette.Grey, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(600f, 36f));
+            dragRoot.gameObject.SetActive(false);
 
             // ---- 메시지 / 카운트다운 / 섬광 / 상태 ----
             message = UiFactory.MakeText(root, "message", "", 96, Palette.Gold, TextAnchor.MiddleCenter, C, C, new Vector2(0f, 300f), new Vector2(900f, 120f), true);
@@ -439,6 +464,64 @@ namespace Bow.UI
             if (!visible) return;
             aimRt.anchoredPosition = WorldToCanvas(worldPos);
             aimText.text = Mathf.RoundToInt(angle) + "° · " + Mathf.RoundToInt(power * 100f) + "%";
+        }
+
+        /// <summary>드래그 조준 표시. startScreen/currentScreen은 스크린 px, angle은 전방 기준 °, power 0~1</summary>
+        public void SetDrag(bool visible, Vector2 startScreen, Vector2 currentScreen, float angle, float power, float maxPullPx, float deadZonePx)
+        {
+            dragRoot.gameObject.SetActive(visible);
+            if (!visible) return;
+            Vector2 s0 = ScreenToCanvas(startScreen);
+            Vector2 s1 = ScreenToCanvas(currentScreen);
+
+            dragStart.anchoredPosition = s0;
+            dragMaxRing.anchoredPosition = s0;
+            dragMaxRing.sizeDelta = Vector2.one * (2f * maxPullPx);
+            dragDeadRing.anchoredPosition = s0;
+            dragDeadRing.sizeDelta = Vector2.one * (2f * deadZonePx);
+            dragPowerRing.anchoredPosition = s0;
+            dragPowerImg.fillAmount = power;
+            dragPowerImg.color = Palette.WithAlpha(power >= 0.999f ? Palette.Gold : Palette.Team(0), 0.85f);
+
+            // 점선: 시작점 → 현재 손가락
+            Vector2 d = s1 - s0;
+            float len = d.magnitude;
+            float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+            float step = 24f;
+            int count = Mathf.Min(dragDashes.Length, Mathf.FloorToInt(len / step));
+            for (int i = 0; i < dragDashes.Length; i++)
+            {
+                bool on = i < count;
+                dragDashes[i].gameObject.SetActive(on);
+                if (!on) continue;
+                float t = (i + 0.5f) * step;
+                dragDashes[i].anchoredPosition = s0 + d.normalized * t;
+                dragDashes[i].localRotation = Quaternion.Euler(0f, 0f, ang);
+            }
+
+            // 발사 방향 화살표 (시작점에서 당긴 반대 방향, 길이 = 힘)
+            float dirAng = len > 1f ? ang + 180f : angle;
+            float arrowLen = 90f + 150f * power;
+            dragDirLine.anchoredPosition = s0;
+            dragDirLine.localRotation = Quaternion.Euler(0f, 0f, dirAng);
+            dragDirLine.sizeDelta = new Vector2(arrowLen, 6f);
+            Vector2 dirV = new Vector2(Mathf.Cos(dirAng * Mathf.Deg2Rad), Mathf.Sin(dirAng * Mathf.Deg2Rad));
+            dragDirHead.anchoredPosition = s0 + dirV * arrowLen;
+            dragDirHead.localRotation = Quaternion.Euler(0f, 0f, dirAng);
+
+            // 수치: 화살표 끝 너머에 표시, 힌트는 시작점 아래
+            dragInfo.text = Mathf.RoundToInt(angle) + "°  힘 " + Mathf.RoundToInt(power * 100f) + "%";
+            dragInfo.rectTransform.anchoredPosition = s0 + dirV * (arrowLen + 70f);
+            dragInfo.color = angle > 90f ? Palette.Red : Palette.Ink;
+            dragHint.rectTransform.anchoredPosition = s0 + new Vector2(0f, -(deadZonePx + 40f));
+            dragHint.text = len < deadZonePx ? "더 당기면 조준 시작 (놓으면 취소)" : (angle > 90f ? "뒤로 쏨 · 놓으면 추 미터 시작" : "놓으면 추 미터 시작 · 중앙에서 탭");
+        }
+
+        public Vector2 ScreenToCanvas(Vector2 screen)
+        {
+            Vector2 local;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(root, screen, null, out local);
+            return local;
         }
 
         public Vector2 WorldToCanvas(Vector3 world)
