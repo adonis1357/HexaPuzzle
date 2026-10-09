@@ -26,6 +26,14 @@ namespace Bow.Game
         private LineRenderer bow, bowString;
         private SpriteRenderer shadow;
 
+        // 캐릭터 꾸밈
+        private CharacterDef def;
+        private Transform headTr;
+        private Color bodyC, bodyDark, bodyLight;
+        private float bowR0 = 0.85f, bowR1 = 0.72f, bowWidth = 0.07f;
+        private int bowPoints = 24;
+        public CharacterDef Character { get { return def; } }
+
         private float aimAngle = 20f, targetAngle = 20f;
         private float draw = 0f, targetDraw = 0f;
         private float bodyTilt = 0f, bodyTiltTarget = 0f;
@@ -41,43 +49,146 @@ namespace Bow.Game
         public Vector2 NockLocal { get { return nockLocal; } }
         public float AimAngle { get { return aimAngle; } }
 
-        public void Build(int team, int facingDir)
+        public void Build(int team, int facingDir) { Build(team, facingDir, null); }
+
+        /// <summary>골격 생성 + 캐릭터 꾸밈 적용. character가 null이면 기본 먹 궁수.</summary>
+        public void Build(int team, int facingDir, CharacterDef character)
         {
             teamId = team; facing = facingDir;
+            def = character ?? CharacterCatalog.DefaultDef();
             transform.localScale = new Vector3(facing, 1f, 1f);
             Color teamC = Palette.Team(team);
+            bodyC = def.Body;
+            bodyDark = Color.Lerp(bodyC, Color.black, 0.2f);
+            bodyLight = Color.Lerp(bodyC, Palette.Paper, 0.25f);
+            ApplyBowStyle();
 
             shadow = MakeSprite("shadow", ProceduralSprites.SoftCircle(), Palette.WithAlpha(Palette.Ink, 0.25f), new Vector2(0f, 0.02f), new Vector2(0.9f, 0.18f), ArtConstants.SortArcher - 1, false);
 
-            MakePart("legFront", new Vector2(0.20f, 0.80f), new Vector2(0.10f, 0.80f), new Vector2(0f, -0.40f), Palette.Ink, 6f);
-            MakePart("legBack", new Vector2(0.20f, 0.80f), new Vector2(-0.10f, 0.80f), new Vector2(0f, -0.40f), Palette.InkD, -6f);
+            MakePart("legFront", new Vector2(0.20f, 0.80f), new Vector2(0.10f, 0.80f), new Vector2(0f, -0.40f), bodyC, 6f);
+            MakePart("legBack", new Vector2(0.20f, 0.80f), new Vector2(-0.10f, 0.80f), new Vector2(0f, -0.40f), bodyDark, -6f);
 
             bodyGroup = new GameObject("bodyGroup").transform;
             bodyGroup.SetParent(transform, false);
             bodyGroup.localPosition = new Vector3(0f, 0.80f, 0f);
-            MakePart(bodyGroup, "torso", new Vector2(0.50f, 0.66f), new Vector2(0f, 0f), new Vector2(0f, 0.33f), Palette.Ink, 0f);
+            MakePart(bodyGroup, "torso", new Vector2(0.50f, 0.66f), new Vector2(0f, 0f), new Vector2(0f, 0.33f), bodyC, 0f);
             MakePart(bodyGroup, "belt", new Vector2(0.52f, 0.07f), new Vector2(0f, 0.30f), Vector2.zero, teamC, 0f);
-            SpriteRenderer head = MakeSprite("head", ProceduralSprites.Circle(), Palette.Ink, new Vector2(0.03f, 0.92f), new Vector2(0.42f, 0.42f), ArtConstants.SortArcher, true);
+
+            // 머리 (모양/배율은 캐릭터 정의)
+            Sprite headSprite = ProceduralSprites.Circle();
+            Vector2 headSize = new Vector2(0.42f, 0.42f);
+            float headRot = 0f;
+            switch (def.headShape)
+            {
+                case "oval": headSize = new Vector2(0.40f, 0.50f); break;
+                case "square": headSprite = ProceduralSprites.WhiteRect(); headSize = new Vector2(0.40f, 0.40f); break;
+                case "tri": headSprite = ProceduralSprites.Triangle(); headSize = new Vector2(0.52f, 0.50f); headRot = 90f; break;
+            }
+            headSize = Vector2.Scale(headSize, def.HeadScale);
+            SpriteRenderer head = MakeSprite("head", headSprite, bodyC, new Vector2(0.03f, 0.92f), headSize, ArtConstants.SortArcher, true);
             head.transform.SetParent(bodyGroup, false);
             head.transform.localPosition = new Vector3(0.03f, 0.92f, 0f);
-            MakePart(bodyGroup, "headband", new Vector2(0.44f, 0.05f), new Vector2(0.03f, 0.96f), Vector2.zero, teamC, 0f);
+            head.transform.localRotation = Quaternion.Euler(0f, 0f, headRot);
+            // 파트 앵커용 머리 트랜스폼 (회전/스케일 영향 없이)
+            headTr = new GameObject("headAnchor").transform;
+            headTr.SetParent(bodyGroup, false);
+            headTr.localPosition = new Vector3(0.03f, 0.92f, 0f);
+            MakePart(bodyGroup, "headband", new Vector2(0.44f * def.HeadScale.x, 0.05f), new Vector2(0.03f, 0.96f), Vector2.zero, teamC, 0f);
 
             // 활 그룹 (떨림 오프셋 적용용)
             bowGroup = new GameObject("bowGroup").transform;
             bowGroup.SetParent(transform, false);
 
-            bowArm = MakePart(bowGroup, "bowArm", new Vector2(0.11f, 0.62f), Shoulder, new Vector2(0f, -0.31f), Palette.Ink, 0f);
-            drawArm = MakePart(bowGroup, "drawArm", new Vector2(0.11f, 1f), Shoulder2, new Vector2(0f, -0.5f), Palette.InkL, 0f);
+            bowArm = MakePart(bowGroup, "bowArm", new Vector2(0.11f, 0.62f), Shoulder, new Vector2(0f, -0.31f), bodyC, 0f);
+            drawArm = MakePart(bowGroup, "drawArm", new Vector2(0.11f, 1f), Shoulder2, new Vector2(0f, -0.5f), bodyLight, 0f);
 
-            bow = MakeLine("bow", 24, Palette.Ink, ArtConstants.SortBow);
-            AnimationCurve wc = new AnimationCurve(new Keyframe(0f, 0.03f), new Keyframe(0.5f, 0.07f), new Keyframe(1f, 0.03f));
+            Color bowC = def.Resolve(def.bowColor, teamC);
+            bow = MakeLine("bow", bowPoints, bowC, ArtConstants.SortBow);
+            float k = bowWidth / 0.07f;
+            AnimationCurve wc = new AnimationCurve(new Keyframe(0f, 0.03f * k), new Keyframe(0.5f, 0.07f * k), new Keyframe(1f, 0.03f * k));
             bow.widthCurve = wc; bow.widthMultiplier = 1f;
             bowString = MakeLine("string", 3, Palette.WithAlpha(Palette.Ink, 0.7f), ArtConstants.SortBow - 1);
             bowString.widthMultiplier = 0.04f;
             grip = MakePart(bowGroup, "grip", new Vector2(0.08f, 0.14f), Vector2.zero, Vector2.zero, teamC, 0f);
             GetSprite(grip).sortingOrder = ArtConstants.SortBow + 1;
 
+            ApplyParts(teamC);
             UpdatePose();
+        }
+
+        /// <summary>캐릭터를 바꿔 다시 생성 (네트워크 Pick 수신 등)</summary>
+        public void Rebuild(CharacterDef character)
+        {
+            StopAllCoroutines();
+            for (int i = transform.childCount - 1; i >= 0; i--) Destroy(transform.GetChild(i).gameObject);
+            parts.Clear(); partColors.Clear();
+            shakeOffset = Vector2.zero; flash = 0f; bodyTilt = 0f; trembleAmp = 0f; stringSnap = 0f; bowKick = 0f;
+            transform.localRotation = Quaternion.identity;
+            IsDead = false;
+            Build(teamId, facing, character);
+        }
+
+        private void ApplyBowStyle()
+        {
+            switch (def.bowStyle)
+            {
+                case "recurve": bowR0 = 0.65f; bowR1 = 0.58f; bowWidth = 0.09f; bowPoints = 24; break;
+                case "longbow": bowR0 = 1.05f; bowR1 = 0.90f; bowWidth = 0.05f; bowPoints = 24; break;
+                case "mech": bowR0 = 0.80f; bowR1 = 0.70f; bowWidth = 0.09f; bowPoints = 5; break;
+                default: bowR0 = 0.85f; bowR1 = 0.72f; bowWidth = 0.07f; bowPoints = 24; break;
+            }
+        }
+
+        /// <summary>DSL 파트 생성 (Docs/05_캐릭터_파트_DSL.md)</summary>
+        private void ApplyParts(Color teamC)
+        {
+            if (def.parts == null) return;
+            foreach (CharacterPart p in def.parts)
+            {
+                if (p == null) continue;
+                MakeDecoration(p, teamC, false);
+                if (p.mirrorX) MakeDecoration(p, teamC, true);
+            }
+        }
+
+        private void MakeDecoration(CharacterPart p, Color teamC, bool mirrored)
+        {
+            Transform parent; Vector2 basePos; int baseOrder = ArtConstants.SortArcher;
+            switch (p.anchor)
+            {
+                case "feet": parent = transform; basePos = Vector2.zero; break;
+                case "belt": parent = transform; basePos = new Vector2(0f, 1.10f); break;
+                case "back": parent = bodyGroup; basePos = new Vector2(-0.25f, 0.40f); break;
+                case "head": parent = headTr; basePos = Vector2.zero; break;
+                case "bow": parent = grip; basePos = Vector2.zero; baseOrder = ArtConstants.SortBow; break;
+                default: parent = bodyGroup; basePos = new Vector2(0f, 0.33f); break; // torso
+            }
+            Sprite sprite;
+            switch (p.kind)
+            {
+                case "circle": sprite = ProceduralSprites.Circle(); break;
+                case "tri": sprite = ProceduralSprites.Triangle(); break;
+                case "soft": sprite = ProceduralSprites.SoftCircle(); break;
+                case "ring": sprite = ProceduralSprites.Ring(); break;
+                default: sprite = ProceduralSprites.WhiteRect(); break;
+            }
+            float sx = mirrored ? -p.x : p.x;
+            float rot = mirrored ? -p.rot : p.rot;
+            GameObject go = new GameObject("part_" + (string.IsNullOrEmpty(p.name) ? p.kind : p.name));
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(basePos.x + sx, basePos.y + p.y, 0f);
+            go.transform.localRotation = Quaternion.Euler(0f, 0f, rot);
+            // Ring 스프라이트는 ppu 100 (지름 2.56m) → 보정
+            float unit = p.kind == "ring" ? 1f / 2.56f : 1f;
+            go.transform.localScale = new Vector3((mirrored ? -p.w : p.w) * unit, p.h * unit, 1f);
+            SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            Color c = def.Resolve(p.color, teamC);
+            c.a *= Mathf.Clamp01(p.alpha);
+            sr.color = c;
+            sr.sortingOrder = baseOrder + Mathf.Clamp(p.order, -3, 3);
+            sr.sharedMaterial = ProceduralSprites.SpriteMaterial;
+            parts.Add(sr); partColors.Add(c);
         }
 
         private SpriteRenderer MakeSprite(string name, Sprite sprite, Color color, Vector2 pos, Vector2 size, int order, bool tintable)
@@ -265,18 +376,19 @@ namespace Bow.Game
             // 활 든 팔
             bowArm.localRotation = Quaternion.Euler(0f, 0f, aimAngle + bowKick + 90f);
             Vector2 G = Shoulder + dir * 0.62f;
-            float R = Mathf.Lerp(0.85f, 0.72f, draw);
+            float R = Mathf.Lerp(bowR0, bowR1, draw);
             float alpha = Mathf.Lerp(55f, 70f, draw) * Mathf.Deg2Rad;
             Vector2 C = G - dir * R;
-            for (int i = 0; i < 24; i++)
+            int n = bowPoints;
+            for (int i = 0; i < n; i++)
             {
-                float th = Mathf.Lerp(-alpha, alpha, i / 23f);
+                float th = Mathf.Lerp(-alpha, alpha, i / (float)(n - 1));
                 float c = Mathf.Cos(th), s = Mathf.Sin(th);
                 Vector2 rd = new Vector2(dir.x * c - dir.y * s, dir.x * s + dir.y * c);
                 Vector2 p = C + rd * R;
                 bow.SetPosition(i, new Vector3(p.x, p.y, 0f));
             }
-            Vector3 tipA = bow.GetPosition(0), tipB = bow.GetPosition(23);
+            Vector3 tipA = bow.GetPosition(0), tipB = bow.GetPosition(n - 1);
             Vector2 nock = G - dir * (0.15f + 0.60f * draw + stringSnap);
             nockLocal = nock;
             bowString.SetPosition(0, tipA);

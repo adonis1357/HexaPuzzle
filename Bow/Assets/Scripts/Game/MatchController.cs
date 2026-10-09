@@ -25,6 +25,7 @@ namespace Bow.Game
         private bool isBotMatch;
         private int localId, remoteId;
         private float viewSign = 1f;
+        private readonly CharacterDef[] chars = new CharacterDef[2];
 
         private MatchSetup setup;
         private WindModel wind;
@@ -83,9 +84,21 @@ namespace Bow.Game
             meter = new AccuracyMeter(cfg);
             if (isBotMatch) bot = new BotController(remoteId, botProfile, cfg, setup, wind, seed, 0f);
 
+            // 캐릭터: 로컬은 로비 선택, 봇은 seed로 랜덤(로컬과 다른 것), LAN 상대는 Pick 수신 전까지 기본
+            chars[localId] = CharacterCatalog.Get(LobbyView.SelectedCharacterId);
+            if (isBotMatch)
+            {
+                int n = CharacterCatalog.Count;
+                int pick = new DeterministicRandom(seed ^ 0xC4A7).Range(0, n);
+                if (n > 1 && CharacterCatalog.At(pick).id == chars[localId].id) pick = (pick + 1) % n;
+                chars[remoteId] = CharacterCatalog.At(pick);
+            }
+            else chars[remoteId] = CharacterCatalog.DefaultDef();
+
             transport.OnMessage += HandleMessage;
             transport.OnDisconnected += HandleDisconnect;
             if (transport.IsHost && !isBotMatch) transport.Send(NetMessage.Start(seed, -CountdownSeconds));
+            if (!isBotMatch) transport.Send(NetMessage.Pick(localId, chars[localId].id));
 
             BuildWorld();
             BuildUi();
@@ -133,7 +146,7 @@ namespace Bow.Game
                 Vec2 f = setup.Feet(i);
                 a.transform.localPosition = new Vector3(f.x, f.y, 0f);
                 archers[i] = a.AddComponent<ArcherView>();
-                archers[i].Build(i, MatchSetup.Facing(i));
+                archers[i].Build(i, MatchSetup.Facing(i), chars[i]);
                 archers[i].SetIdle();
             }
 
@@ -212,12 +225,19 @@ namespace Bow.Game
             return sr;
         }
 
+        private void RefreshNames()
+        {
+            string me = "나 · " + chars[localId].name;
+            string op = (isBotMatch ? "봇(" + botProfile.name + ") · " : "상대 · ") + chars[remoteId].name;
+            hud.SetNames(me, op);
+        }
+
         private void BuildUi()
         {
             hud = new GameObject("HudView").AddComponent<HudView>();
             hud.transform.SetParent(transform, false);
             hud.Build(cam);
-            hud.SetNames("나", isBotMatch ? "봇 (" + botProfile.name + ")" : "상대");
+            RefreshNames();
             hud.SetStatus(transport.Status + " · 사거리 " + setup.Distance.ToString("F0") + "m");
             hud.OnExitPressed = () => app.ReturnToLobby();
             hud.SetHp(0, cfg.maxHp, cfg.maxHp, false);
@@ -603,6 +623,16 @@ namespace Bow.Game
                     float est = m.Float(1) + rtt * 0.5f;
                     float delta = est - matchTime;
                     if (Mathf.Abs(delta) > 0.02f) matchTime += delta * 0.5f;
+                    break;
+                }
+                case NetMsgType.Pick:
+                {
+                    int pid = m.Int(0);
+                    if (pid == localId || m.args.Length < 2) break;
+                    CharacterDef d = CharacterCatalog.Get(m.args[1]);
+                    chars[pid] = d;
+                    if (archers[pid] != null && !archers[pid].IsDead) archers[pid].Rebuild(d);
+                    RefreshNames();
                     break;
                 }
                 case NetMsgType.Leave:

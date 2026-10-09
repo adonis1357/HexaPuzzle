@@ -14,7 +14,8 @@ namespace Bow.Net
         End = 4,     // 경기 종료 (winner, draw)
         Ping = 5,    // 클라이언트 로컬시간
         Pong = 6,    // (클라이언트 로컬시간, 호스트 경기시간)
-        Leave = 7
+        Leave = 7,
+        Pick = 8     // (playerId, characterId) 캐릭터 선택 동기화
     }
 
     /// <summary>
@@ -93,6 +94,11 @@ namespace Bow.Net
         public static NetMessage End(int winner, bool draw)
         {
             return new NetMessage(NetMsgType.End, winner.ToString(CultureInfo.InvariantCulture), draw ? "1" : "0");
+        }
+
+        public static NetMessage Pick(int playerId, string characterId)
+        {
+            return new NetMessage(NetMsgType.Pick, playerId.ToString(CultureInfo.InvariantCulture), characterId ?? "default");
         }
 
         public static NetMessage Ping(float clientLocalTime) { return new NetMessage(NetMsgType.Ping, F(clientLocalTime)); }

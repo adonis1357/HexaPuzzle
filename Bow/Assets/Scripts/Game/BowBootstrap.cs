@@ -55,6 +55,7 @@ namespace Bow.Game
             lobby.OnBotMatch = StartBot;
             lobby.OnHost = HostLan;
             lobby.OnJoin = JoinLan;
+            lobby.OnCharacterPreview = ShowPreview;
             bgm.PlayBgm("bgm_lobby");
 
             // 자동 플레이 테스트 (Editor/PlayTestRunner가 PlayerPrefs로 지시): 1.5초 뒤 봇 대전 자동 시작
@@ -67,6 +68,25 @@ namespace Bow.Game
         }
 
         private bool autoTest;
+        private ArcherView preview;
+
+        /// <summary>로비 캐릭터 선택 미리보기: 월드에 3배 크기 궁수를 세운다 (null이면 제거)</summary>
+        private void ShowPreview(CharacterDef def)
+        {
+            if (preview != null) { Destroy(preview.gameObject); preview = null; }
+            if (def == null) return;
+            GameObject go = new GameObject("Preview");
+            go.transform.SetParent(transform, false);
+            // 발 위치 = 화면 위에서 980px 지점 (3배 궁수가 450~980px 영역에 서도록)
+            float ortho = cam.orthographicSize;
+            float feetY = cam.transform.position.y + ortho - 980f / 1920f * 2f * ortho;
+            go.transform.position = new Vector3(0f, feetY, 0f);
+            go.transform.localScale = new Vector3(3f, 3f, 1f);
+            preview = go.AddComponent<ArcherView>();
+            preview.Build(0, 1, def);
+            preview.SetAim(35f, 0.55f);
+            preview.transform.localScale = new Vector3(3f, 3f, 1f);
+        }
 
         private void AutoTestStart()
         {
@@ -178,6 +198,7 @@ namespace Bow.Game
         private void StartMatch(IMatchTransport transport, BotProfile bot, int seed)
         {
             if (match != null) { match.Teardown(); match = null; }
+            ShowPreview(null);
             lobby.SetVisible(false);
             GameObject go = new GameObject("Match");
             match = go.AddComponent<MatchController>();
@@ -187,6 +208,7 @@ namespace Bow.Game
         public void ReturnToLobby()
         {
             if (match != null) { match.Teardown(); match = null; }
+            ShowPreview(null);
             CancelPending();
             BowAudio.I.StopWind(0.3f);
             ConfigureBackdrop(10f);

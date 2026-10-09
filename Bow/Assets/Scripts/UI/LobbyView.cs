@@ -12,6 +12,14 @@ namespace Bow.UI
         public System.Action<BotProfile> OnBotMatch;
         public System.Action OnHost;
         public System.Action<string> OnJoin;
+        /// <summary>캐릭터 선택 패널에서 미리보기 대상이 바뀜 (null = 패널 닫힘)</summary>
+        public System.Action<CharacterDef> OnCharacterPreview;
+
+        private RectTransform charPanel;
+        private Text charName, charTheme, charDesc, charIndexText;
+        private Button charButton;
+        private int charIndex;
+        private RectTransform titleGroup;
 
         private Canvas canvas;
         private RectTransform root;
@@ -32,13 +40,15 @@ namespace Bow.UI
             Image bottom = UiFactory.MakeImage(root, "inkBand", ProceduralSprites.WhiteRect(), Palette.WithAlpha(Palette.Ink, 0.25f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(1080f, 240f));
             bottom.rectTransform.anchorMin = new Vector2(0f, 0f); bottom.rectTransform.anchorMax = new Vector2(1f, 0f); bottom.rectTransform.sizeDelta = new Vector2(0f, 240f);
 
-            // 엔소 + 타이틀
-            enso = UiFactory.MakeImage(root, "enso", ProceduralSprites.Enso(), Palette.Ink, TC, C, new Vector2(0f, -560f), new Vector2(560f, 560f));
+            // 엔소 + 타이틀 (캐릭터 선택 시 숨김)
+            titleGroup = UiFactory.Rect(root, "titleGroup");
+            UiFactory.Stretch(titleGroup);
+            enso = UiFactory.MakeImage(titleGroup, "enso", ProceduralSprites.Enso(), Palette.Ink, TC, C, new Vector2(0f, -560f), new Vector2(560f, 560f));
             enso.type = Image.Type.Filled; enso.fillMethod = Image.FillMethod.Radial360; enso.fillOrigin = (int)Image.Origin360.Left; enso.fillClockwise = false; enso.fillAmount = 0f;
-            titleText = UiFactory.MakeText(root, "title", "활", 220, Palette.WithAlpha(Palette.Ink, 0f), TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -560f), new Vector2(560f, 300f), true);
-            Image seal = UiFactory.MakeImage(root, "seal", ProceduralSprites.WhiteRect(), Palette.Red, TC, C, new Vector2(200f, -760f), new Vector2(96f, 96f));
+            titleText = UiFactory.MakeText(titleGroup, "title", "활", 220, Palette.WithAlpha(Palette.Ink, 0f), TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -560f), new Vector2(560f, 300f), true);
+            Image seal = UiFactory.MakeImage(titleGroup, "seal", ProceduralSprites.WhiteRect(), Palette.Red, TC, C, new Vector2(200f, -760f), new Vector2(96f, 96f));
             UiFactory.MakeText(seal.transform, "sealText", "활", 56, Palette.PaperL, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(96f, 96f), true);
-            UiFactory.MakeText(root, "subtitle", "실시간 궁수 대전 · 프로토타입", 36, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -900f), new Vector2(800f, 50f));
+            UiFactory.MakeText(titleGroup, "subtitle", "실시간 궁수 대전 · 프로토타입", 36, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -900f), new Vector2(800f, 50f));
 
             // 메인 버튼
             mainButtons = UiFactory.Rect(root, "mainButtons");
@@ -46,6 +56,22 @@ namespace Bow.UI
             UiFactory.MakeButton(mainButtons, "봇 대전", TC, C, new Vector2(0f, -1070f), new Vector2(560f, 140f), true, () => ShowPanel(difficultyPanel));
             UiFactory.MakeButton(mainButtons, "LAN 호스트", TC, C, new Vector2(0f, -1242f), new Vector2(560f, 140f), false, () => { if (OnHost != null) OnHost(); });
             UiFactory.MakeButton(mainButtons, "LAN 참가", TC, C, new Vector2(0f, -1414f), new Vector2(560f, 140f), false, () => ShowPanel(lanPanel));
+            charButton = UiFactory.MakeButton(mainButtons, "캐릭터", TC, C, new Vector2(0f, -1574f), new Vector2(560f, 120f), false, () => OpenCharacterPanel());
+            charButton.GetComponentInChildren<Text>().fontSize = 44;
+            RefreshCharButtonLabel();
+
+            // 캐릭터 선택 패널 (미리보기는 월드의 ArcherView가 담당)
+            charPanel = UiFactory.Rect(root, "charPanel");
+            UiFactory.Stretch(charPanel);
+            UiFactory.MakeText(charPanel, "label", "캐릭터 선택", 44, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -200f), new Vector2(600f, 50f));
+            charName = UiFactory.MakeText(charPanel, "name", "", 96, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -290f), new Vector2(900f, 110f), true);
+            charTheme = UiFactory.MakeText(charPanel, "theme", "", 34, Palette.Red, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -370f), new Vector2(900f, 40f));
+            charDesc = UiFactory.MakeText(charPanel, "desc", "", 38, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1020f), new Vector2(900f, 50f));
+            charIndexText = UiFactory.MakeText(charPanel, "index", "", 32, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1080f), new Vector2(300f, 40f));
+            UiFactory.MakeButton(charPanel, "◀", new Vector2(0f, 1f), C, new Vector2(120f, -700f), new Vector2(140f, 140f), false, () => StepCharacter(-1));
+            UiFactory.MakeButton(charPanel, "▶", new Vector2(1f, 1f), C, new Vector2(-120f, -700f), new Vector2(140f, 140f), false, () => StepCharacter(1));
+            UiFactory.MakeButton(charPanel, "이 캐릭터로", TC, C, new Vector2(0f, -1180f), new Vector2(560f, 130f), true, () => CloseCharacterPanel());
+            charPanel.gameObject.SetActive(false);
 
             // 난이도 패널
             difficultyPanel = UiFactory.Rect(root, "difficulty");
@@ -85,6 +111,58 @@ namespace Bow.UI
             mainButtons.gameObject.SetActive(panel == mainButtons);
             difficultyPanel.gameObject.SetActive(panel == difficultyPanel);
             lanPanel.gameObject.SetActive(panel == lanPanel);
+            if (charPanel != null) charPanel.gameObject.SetActive(false);
+            if (titleGroup != null) titleGroup.gameObject.SetActive(true);
+        }
+
+        // ---------------------------------------------------------------
+        // 캐릭터 선택
+        // ---------------------------------------------------------------
+        public static string SelectedCharacterId
+        {
+            get { return PlayerPrefs.GetString("hwal_char_id", CharacterCatalog.At(0).id); }
+            set { PlayerPrefs.SetString("hwal_char_id", value); PlayerPrefs.Save(); }
+        }
+
+        private void RefreshCharButtonLabel()
+        {
+            if (charButton == null) return;
+            charButton.GetComponentInChildren<Text>().text = "캐릭터: " + CharacterCatalog.Get(SelectedCharacterId).name;
+        }
+
+        private void OpenCharacterPanel()
+        {
+            charIndex = CharacterCatalog.IndexOf(SelectedCharacterId);
+            mainButtons.gameObject.SetActive(false);
+            difficultyPanel.gameObject.SetActive(false);
+            lanPanel.gameObject.SetActive(false);
+            titleGroup.gameObject.SetActive(false);
+            charPanel.gameObject.SetActive(true);
+            ShowCharacter();
+        }
+
+        private void StepCharacter(int delta)
+        {
+            charIndex = ((charIndex + delta) % CharacterCatalog.Count + CharacterCatalog.Count) % CharacterCatalog.Count;
+            ShowCharacter();
+        }
+
+        private void ShowCharacter()
+        {
+            CharacterDef d = CharacterCatalog.At(charIndex);
+            charName.text = d.name;
+            charTheme.text = d.theme + " · 활: " + d.bowStyle;
+            charDesc.text = d.desc;
+            charIndexText.text = (charIndex + 1) + " / " + CharacterCatalog.Count;
+            if (OnCharacterPreview != null) OnCharacterPreview(d);
+        }
+
+        private void CloseCharacterPanel()
+        {
+            SelectedCharacterId = CharacterCatalog.At(charIndex).id;
+            RefreshCharButtonLabel();
+            if (OnCharacterPreview != null) OnCharacterPreview(null);
+            ShowPanel(mainButtons);
         }
 
         private IEnumerator Intro()
