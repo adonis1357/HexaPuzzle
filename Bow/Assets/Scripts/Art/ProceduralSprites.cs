@@ -291,6 +291,97 @@ namespace Bow.Art
         }
 
         // ---------------------------------------------------------------
+        // 능력치 육각형 차트 (캐릭터 선택 화면)
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// 값(1~max) 배열로 육각형 레이더 차트 텍스처를 그린다 (격자 3단 + 축 + 채움 다각형 + 외곽선 + 꼭짓점).
+        /// 첫 축은 12시, 반시계 방향. 크기 size px, 반지름은 size×0.36.
+        /// </summary>
+        public static Sprite RadarChart(int[] values, int max, int size, Color fill, Color line, Color grid)
+        {
+            int n = values.Length;
+            float cx = size * 0.5f, cy = size * 0.5f, R = size * 0.36f;
+            Vector2[] axis = new Vector2[n];
+            Vector2[] pts = new Vector2[n];
+            for (int i = 0; i < n; i++)
+            {
+                float a = (90f + 360f * i / n) * Mathf.Deg2Rad;
+                axis[i] = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                float v = Mathf.Clamp(values[i], 0, max) / (float)max;
+                pts[i] = new Vector2(cx, cy) + axis[i] * (R * v);
+            }
+            Texture2D t = NewTex(size, size);
+            Color[] px = new Color[size * size];
+            Color clear = new Color(0, 0, 0, 0);
+            float lineW = size * 0.012f, gridW = size * 0.004f, dotR = size * 0.016f;
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x + 0.5f, y + 0.5f);
+                    Color c = clear;
+                    // 격자 링 (1/3, 2/3, 3/3) + 축선
+                    float gd = float.MaxValue;
+                    for (int ring = 1; ring <= 3; ring++)
+                    {
+                        float r = R * ring / 3f;
+                        for (int i = 0; i < n; i++)
+                        {
+                            Vector2 a = new Vector2(cx, cy) + axis[i] * r, b = new Vector2(cx, cy) + axis[(i + 1) % n] * r;
+                            gd = Mathf.Min(gd, DistToSeg(p, a, b));
+                        }
+                    }
+                    for (int i = 0; i < n; i++) gd = Mathf.Min(gd, DistToSeg(p, new Vector2(cx, cy), new Vector2(cx, cy) + axis[i] * R));
+                    if (gd < gridW + 0.7f) c = Blend(c, grid, Mathf.Clamp01(gridW + 0.7f - gd));
+                    // 채움 (중심 기준 부채꼴 삼각형 내부 판정)
+                    if (InsideFan(p, new Vector2(cx, cy), pts)) c = Blend(c, fill, 1f);
+                    // 외곽선 + 꼭짓점
+                    float od = float.MaxValue;
+                    for (int i = 0; i < n; i++) od = Mathf.Min(od, DistToSeg(p, pts[i], pts[(i + 1) % n]));
+                    if (od < lineW + 0.7f) c = Blend(c, line, Mathf.Clamp01(lineW + 0.7f - od));
+                    for (int i = 0; i < n; i++)
+                    {
+                        float dd = Vector2.Distance(p, pts[i]);
+                        if (dd < dotR + 0.7f) c = Blend(c, line, Mathf.Clamp01(dotR + 0.7f - dd));
+                    }
+                    px[y * size + x] = c;
+                }
+            t.SetPixels(px); t.Apply();
+            return Make(t, 100f, new Vector2(0.5f, 0.5f));
+        }
+
+        private static float DistToSeg(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float len2 = ab.sqrMagnitude;
+            float u = len2 > 1e-6f ? Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2) : 0f;
+            return Vector2.Distance(p, a + ab * u);
+        }
+
+        private static bool InsideFan(Vector2 p, Vector2 c, Vector2[] pts)
+        {
+            int n = pts.Length;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = pts[i], b = pts[(i + 1) % n];
+                if (Cross(a - c, p - c) >= 0f && Cross(b - a, p - a) >= 0f && Cross(c - b, p - b) >= 0f) return true;
+            }
+            return false;
+        }
+
+        private static float Cross(Vector2 a, Vector2 b) { return a.x * b.y - a.y * b.x; }
+
+        private static Color Blend(Color under, Color over, float a)
+        {
+            a *= over.a;
+            float outA = a + under.a * (1f - a);
+            if (outA <= 0f) return new Color(0, 0, 0, 0);
+            Color c = (over * a + under * under.a * (1f - a)) / outA;
+            c.a = outA;
+            return c;
+        }
+
+        // ---------------------------------------------------------------
         // 배경류 (경기당 1회 생성)
         // ---------------------------------------------------------------
 

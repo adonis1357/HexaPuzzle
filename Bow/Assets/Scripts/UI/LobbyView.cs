@@ -17,8 +17,16 @@ namespace Bow.UI
 
         private RectTransform charPanel;
         private Text charName, charTheme, charDesc, charIndexText, charTrait;
-        private RadarGraphic radar;
+        private Image radarImg;
         private Text[] radarLabels, radarValues;
+        private readonly System.Collections.Generic.Dictionary<string, Sprite> radarCache = new System.Collections.Generic.Dictionary<string, Sprite>();
+        private const float RadarR = 160f;
+
+        private static Vector2 AxisPoint(int i, int n, float r)
+        {
+            float a = (90f + 360f * i / n) * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
+        }
         private Image[,] statBlocks;   // [6, 5]
         private Text[] statNums;
         private Button charButton;
@@ -73,16 +81,12 @@ namespace Bow.UI
             // 능력치 육각형 (오른쪽), 미리보기 궁수는 월드(왼쪽)
             RectTransform radarRt = UiFactory.Rect(charPanel, "radar");
             UiFactory.Place(radarRt, TC, C, new Vector2(250f, -720f), new Vector2(440f, 440f));
-            radar = radarRt.gameObject.AddComponent<RadarGraphic>();
-            radar.raycastTarget = false;
-            radar.radius = 160f;
-            radar.fillColor = Palette.WithAlpha(Palette.Red, 0.55f);
-            radar.lineColor = Palette.Ink;
-            radar.gridColor = Palette.WithAlpha(Palette.Ink, 0.18f);
+            // 차트 본체: 프로시저럴 텍스처 (반지름 160px = 텍스처 크기 × 0.36 → 444px)
+            radarImg = UiFactory.MakeImage(radarRt, "chart", null, Color.white, C, C, Vector2.zero, new Vector2(RadarR / 0.36f, RadarR / 0.36f));
             radarLabels = new Text[6]; radarValues = new Text[6];
             for (int i = 0; i < 6; i++)
             {
-                Vector2 pt = radar.AxisPoint(i, 160f + 46f);
+                Vector2 pt = AxisPoint(i, 6, RadarR + 46f);
                 radarLabels[i] = UiFactory.MakeText(radarRt, "lbl" + i, CharacterStats.Labels[i], 28, Palette.Ink, TextAnchor.MiddleCenter, C, C, pt + new Vector2(0f, 12f), new Vector2(160f, 34f));
                 radarValues[i] = UiFactory.MakeText(radarRt, "val" + i, "3", 30, Palette.Red, TextAnchor.MiddleCenter, C, C, pt + new Vector2(0f, -20f), new Vector2(160f, 34f), true);
             }
@@ -190,7 +194,13 @@ namespace Bow.UI
             charDesc.text = d.desc;
             CharacterStats st = d.stats ?? new CharacterStats();
             int[] v = st.Values;
-            radar.SetValues(v);
+            Sprite chart;
+            if (!radarCache.TryGetValue(d.id, out chart))
+            {
+                chart = ProceduralSprites.RadarChart(v, 5, 256, Palette.WithAlpha(Palette.Red, 0.55f), Palette.Ink, Palette.WithAlpha(Palette.Ink, 0.22f));
+                radarCache[d.id] = chart;
+            }
+            radarImg.sprite = chart;
             for (int i = 0; i < 6; i++)
             {
                 Color vc = v[i] >= 4 ? Palette.Red : (v[i] <= 2 ? Palette.Grey : Palette.Ink);
