@@ -314,7 +314,7 @@ namespace Bow.Art
             Texture2D t = NewTex(size, size);
             Color[] px = new Color[size * size];
             Color clear = new Color(0, 0, 0, 0);
-            float lineW = size * 0.012f, gridW = size * 0.004f, dotR = size * 0.016f;
+            float lineW = size * 0.0055f, gridW = size * 0.0022f, dotR = size * 0.011f;
             for (int y = 0; y < size; y++)
                 for (int x = 0; x < size; x++)
                 {

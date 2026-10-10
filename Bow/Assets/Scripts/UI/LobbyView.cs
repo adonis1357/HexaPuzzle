@@ -27,8 +27,7 @@ namespace Bow.UI
             float a = (90f + 360f * i / n) * Mathf.Deg2Rad;
             return new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
         }
-        private Image[,] statBlocks;   // [6, 5]
-        private Text[] statNums;
+
         private Button charButton;
         private int charIndex;
         private RectTransform titleGroup;
@@ -90,26 +89,12 @@ namespace Bow.UI
                 radarLabels[i] = UiFactory.MakeText(radarRt, "lbl" + i, CharacterStats.Labels[i], 28, Palette.Ink, TextAnchor.MiddleCenter, C, C, pt + new Vector2(0f, 12f), new Vector2(160f, 34f));
                 radarValues[i] = UiFactory.MakeText(radarRt, "val" + i, "3", 30, Palette.Red, TextAnchor.MiddleCenter, C, C, pt + new Vector2(0f, -20f), new Vector2(160f, 34f), true);
             }
-            // 능력치 표: 항목 | ■■■□□ | 수치 (6행)
-            RectTransform table = UiFactory.Rect(charPanel, "statTable");
-            UiFactory.Place(table, TC, new Vector2(0.5f, 1f), new Vector2(0f, -990f), new Vector2(720f, 6 * 40f + 16f));
-            Image tableBg = UiFactory.MakeImage(table, "bg", ProceduralSprites.WhiteRect(), Palette.WithAlpha(Palette.PaperL, 0.6f), C, C, Vector2.zero, new Vector2(720f, 6 * 40f + 16f));
-            UiFactory.MakeImage(table, "border", ProceduralSprites.RoundedBox(), Palette.WithAlpha(Palette.Ink, 0.6f), C, C, Vector2.zero, new Vector2(720f, 6 * 40f + 16f)).type = Image.Type.Sliced;
-            statBlocks = new Image[6, 5]; statNums = new Text[6];
-            for (int i = 0; i < 6; i++)
-            {
-                float y = -8f - 20f - i * 40f;
-                UiFactory.MakeText(table, "lbl" + i, CharacterStats.Labels[i], 30, Palette.Ink, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(28f, y), new Vector2(160f, 36f));
-                for (int k = 0; k < 5; k++)
-                    statBlocks[i, k] = UiFactory.MakeImage(table, "blk" + i + "_" + k, ProceduralSprites.WhiteRect(), Palette.WithAlpha(Palette.Ink, 0.12f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(200f + k * 78f, y), new Vector2(70f, 24f));
-                statNums[i] = UiFactory.MakeText(table, "num" + i, "3", 32, Palette.Ink, TextAnchor.MiddleRight, new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(-28f, y), new Vector2(80f, 36f), true);
-            }
-            charTrait = UiFactory.MakeText(charPanel, "trait", "", 32, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1270f), new Vector2(1000f, 44f), true);
-            charDesc = UiFactory.MakeText(charPanel, "desc", "", 34, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1318f), new Vector2(900f, 46f));
-            charIndexText = UiFactory.MakeText(charPanel, "index", "", 30, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1362f), new Vector2(300f, 40f));
-            UiFactory.MakeButton(charPanel, "◀", new Vector2(0f, 1f), C, new Vector2(90f, -1450f), new Vector2(130f, 130f), false, () => StepCharacter(-1));
-            UiFactory.MakeButton(charPanel, "▶", new Vector2(1f, 1f), C, new Vector2(-90f, -1450f), new Vector2(130f, 130f), false, () => StepCharacter(1));
-            UiFactory.MakeButton(charPanel, "이 캐릭터로", TC, C, new Vector2(0f, -1450f), new Vector2(560f, 130f), true, () => CloseCharacterPanel());
+            charTrait = UiFactory.MakeText(charPanel, "trait", "", 32, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1010f), new Vector2(1000f, 44f), true);
+            charDesc = UiFactory.MakeText(charPanel, "desc", "", 34, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1060f), new Vector2(900f, 46f));
+            charIndexText = UiFactory.MakeText(charPanel, "index", "", 30, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1106f), new Vector2(300f, 40f));
+            UiFactory.MakeButton(charPanel, "◀", new Vector2(0f, 1f), C, new Vector2(90f, -1200f), new Vector2(130f, 130f), false, () => StepCharacter(-1));
+            UiFactory.MakeButton(charPanel, "▶", new Vector2(1f, 1f), C, new Vector2(-90f, -1200f), new Vector2(130f, 130f), false, () => StepCharacter(1));
+            UiFactory.MakeButton(charPanel, "이 캐릭터로", TC, C, new Vector2(0f, -1200f), new Vector2(560f, 130f), true, () => CloseCharacterPanel());
             charPanel.gameObject.SetActive(false);
 
             // 난이도 패널
@@ -197,7 +182,7 @@ namespace Bow.UI
             Sprite chart;
             if (!radarCache.TryGetValue(d.id, out chart))
             {
-                chart = ProceduralSprites.RadarChart(v, 5, 256, Palette.WithAlpha(Palette.Red, 0.55f), Palette.Ink, Palette.WithAlpha(Palette.Ink, 0.22f));
+                chart = ProceduralSprites.RadarChart(v, 5, 320, Palette.WithAlpha(Palette.Red, 0.32f), Palette.RedD, Palette.WithAlpha(Palette.Grey, 0.55f));
                 radarCache[d.id] = chart;
             }
             radarImg.sprite = chart;
@@ -206,10 +191,6 @@ namespace Bow.UI
                 Color vc = v[i] >= 4 ? Palette.Red : (v[i] <= 2 ? Palette.Grey : Palette.Ink);
                 radarValues[i].text = v[i].ToString();
                 radarValues[i].color = vc;
-                statNums[i].text = v[i].ToString();
-                statNums[i].color = vc;
-                for (int k = 0; k < 5; k++)
-                    statBlocks[i, k].color = k < v[i] ? vc : Palette.WithAlpha(Palette.Ink, 0.12f);
             }
             charTrait.text = "특징: " + st.Highlights()
                 + "  ·  체력 " + st.MaxHp(100) + "  속도 ×" + st.SpeedMul.ToString("F2") + "  바람 ×" + st.WindMul.ToString("F2")
