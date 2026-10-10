@@ -14,6 +14,14 @@
       ],
       "bowStyle": "recurve",
       "bowColor": "body",
+      "stats": {
+        "hp": 2,
+        "power": 3,
+        "wind": 3,
+        "reload": 4,
+        "breath": 4,
+        "accuracy": 2
+      },
       "parts": [
         {
           "kind": "tri",
@@ -149,6 +157,14 @@
       ],
       "bowStyle": "recurve",
       "bowColor": "body",
+      "stats": {
+        "hp": 5,
+        "power": 4,
+        "wind": 3,
+        "reload": 2,
+        "breath": 2,
+        "accuracy": 2
+      },
       "parts": [
         {
           "kind": "circle",
@@ -296,6 +312,14 @@
       ],
       "bowStyle": "longbow",
       "bowColor": "#1E1B18",
+      "stats": {
+        "hp": 2,
+        "power": 2,
+        "wind": 5,
+        "reload": 3,
+        "breath": 3,
+        "accuracy": 3
+      },
       "parts": [
         {
           "kind": "tri",
@@ -417,6 +441,14 @@
       ],
       "bowStyle": "classic",
       "bowColor": "body",
+      "stats": {
+        "hp": 5,
+        "power": 2,
+        "wind": 4,
+        "reload": 2,
+        "breath": 2,
+        "accuracy": 3
+      },
       "parts": [
         {
           "kind": "circle",
@@ -552,6 +584,14 @@
       ],
       "bowStyle": "mech",
       "bowColor": "accent",
+      "stats": {
+        "hp": 4,
+        "power": 5,
+        "wind": 2,
+        "reload": 2,
+        "breath": 2,
+        "accuracy": 3
+      },
       "parts": [
         {
           "kind": "circle",
@@ -726,6 +766,14 @@
       ],
       "bowStyle": "mech",
       "bowColor": "accent",
+      "stats": {
+        "hp": 2,
+        "power": 3,
+        "wind": 3,
+        "reload": 5,
+        "breath": 3,
+        "accuracy": 2
+      },
       "parts": [
         {
           "kind": "soft",
@@ -888,6 +936,14 @@
       ],
       "bowStyle": "longbow",
       "bowColor": "body",
+      "stats": {
+        "hp": 2,
+        "power": 3,
+        "wind": 2,
+        "reload": 3,
+        "breath": 3,
+        "accuracy": 5
+      },
       "parts": [
         {
           "kind": "circle",
@@ -1011,6 +1067,14 @@
       ],
       "bowStyle": "recurve",
       "bowColor": "accent",
+      "stats": {
+        "hp": 4,
+        "power": 4,
+        "wind": 4,
+        "reload": 2,
+        "breath": 2,
+        "accuracy": 2
+      },
       "parts": [
         {
           "kind": "rect",
@@ -1172,6 +1236,14 @@
       ],
       "bowStyle": "classic",
       "bowColor": "accent",
+      "stats": {
+        "hp": 3,
+        "power": 5,
+        "wind": 2,
+        "reload": 3,
+        "breath": 4,
+        "accuracy": 1
+      },
       "parts": [
         {
           "kind": "tri",
@@ -1332,6 +1404,14 @@
       ],
       "bowStyle": "classic",
       "bowColor": "accent",
+      "stats": {
+        "hp": 3,
+        "power": 2,
+        "wind": 5,
+        "reload": 2,
+        "breath": 5,
+        "accuracy": 1
+      },
       "parts": [
         {
           "kind": "tri",

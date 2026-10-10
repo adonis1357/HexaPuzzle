@@ -37,6 +37,13 @@ namespace Bow.Core
         public static ShotParams Plan(int shooterId, BotProfile profile, MatchSetup setup, float windNow,
                                       DeterministicRandom rng, DuelConfig cfg, float launchTime, float breathEff)
         {
+            return Plan(shooterId, profile, setup, windNow, rng, cfg, launchTime, breathEff, 1f, 1f, 1f);
+        }
+
+        public static ShotParams Plan(int shooterId, BotProfile profile, MatchSetup setup, float windNow,
+                                      DeterministicRandom rng, DuelConfig cfg, float launchTime, float breathEff,
+                                      float speedMul, float windMul, float errorMul)
+        {
             int shooter = shooterId == 0 ? 0 : 1;
             int target = 1 - shooter;
             int facing = MatchSetup.Facing(shooter);
@@ -48,7 +55,7 @@ namespace Bow.Core
             float targetY = tFeet.y + (aimHead ? cfg.headCenterY : (cfg.bodyBottomY + cfg.bodyTopY) * 0.5f);
             float dx = (tFeet.x - sFeet.x) * facing - cfg.bowAnchorX;
             float dy = targetY - (sFeet.y + cfg.bowAnchorY);
-            float aLocal = cfg.windAccelFactor * windNow * profile.windAwareness * facing;
+            float aLocal = cfg.windAccelFactor * windNow * windMul * profile.windAwareness * facing;
             // 장애물 (로컬 프레임): 사수 기준 전방 거리와 높이
             float obsDx = (setup.ObstacleX - sFeet.x) * facing - cfg.bowAnchorX;
             float obsHw = setup.ObstacleHalfWidth;
@@ -61,7 +68,7 @@ namespace Bow.Core
                 float rad = ang * MathF.PI / 180f;
                 for (float pow = 0.15f; pow <= 1.0001f; pow += 0.025f)
                 {
-                    float v = cfg.ArrowSpeed(pow);
+                    float v = cfg.ArrowSpeed(pow) * speedMul;
                     float vy = v * MathF.Sin(rad);
                     float vx = v * MathF.Cos(rad);
                     // 0.5 g t² − vy t + dy = 0 → 하강 중 교차 시각
@@ -83,7 +90,7 @@ namespace Bow.Core
             if (power < 0f) power = 0f; if (power > 1f) power = 1f;
             float dev = rng.Gaussian(profile.deviationSigma);
             if (dev < -1f) dev = -1f; if (dev > 1f) dev = 1f;
-            return new ShotParams(shooter, angle, power, dev, launchTime, breathEff);
+            return new ShotParams(shooter, angle, power, dev, launchTime, breathEff, speedMul, windMul, errorMul);
         }
 
         /// <summary>상수 바람 가정 탄도가 장애물 사각형을 통과하는지 (0.04s 샘플링)</summary>

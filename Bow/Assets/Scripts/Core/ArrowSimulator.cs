@@ -20,9 +20,11 @@ namespace Bow.Core
 
             // 추 미터 오차 적용: p × 6° × (1 − 0.3·E)  (호흡 효율이 높을수록 오차 감소)
             float eff = shot.breathEff < 0f ? 0f : (shot.breathEff > 1f ? 1f : shot.breathEff);
-            float angleError = shot.deviation * cfg.meterMaxAngleError * (1f - cfg.breathAccuracyBonus * eff);
+            float errMul = shot.errorMul <= 0f ? 1f : shot.errorMul;
+            float angleError = shot.deviation * cfg.meterMaxAngleError * (1f - cfg.breathAccuracyBonus * eff) * errMul;
             float angle = cfg.ClampAngle(shot.angleDeg + angleError);
-            float speed = cfg.ArrowSpeed(shot.power);
+            float speed = cfg.ArrowSpeed(shot.power) * (shot.speedMul <= 0f ? 1f : shot.speedMul);
+            float windMul = shot.windMul < 0f ? 1f : shot.windMul;
             Vec2 vel = new Vec2(facing * MathF.Cos(angle * MathF.PI / 180f) * speed,
                                 MathF.Sin(angle * MathF.PI / 180f) * speed);
             bool perfect = MathF.Abs(shot.deviation) < cfg.perfectThreshold;
@@ -44,7 +46,7 @@ namespace Bow.Core
             for (int i = 1; i < maxSteps; i++)
             {
                 float matchTime = shot.launchTime + t;
-                float ax = wind.GetWindAccel(matchTime);
+                float ax = wind.GetWindAccel(matchTime) * windMul;
                 vel.x += ax * dt;
                 vel.y -= cfg.gravity * dt;
                 Vec2 prev = pos;
@@ -124,13 +126,13 @@ namespace Bow.Core
         /// <summary>
         /// 조준 가이드용: 바람 무시, 초기 duration초 동안의 궤적 점들 (HUD 점 3개 표시용).
         /// </summary>
-        public static Vec2[] PreviewNoWind(int shooterId, float angleDeg, float power, MatchSetup setup, DuelConfig cfg, float duration, int count)
+        public static Vec2[] PreviewNoWind(int shooterId, float angleDeg, float power, MatchSetup setup, DuelConfig cfg, float duration, int count, float speedMul = 1f)
         {
             int shooter = shooterId == 0 ? 0 : 1;
             int facing = MatchSetup.Facing(shooter);
             Vec2 feet = setup.Feet(shooter);
             Vec2 origin = new Vec2(feet.x + facing * cfg.bowAnchorX, feet.y + cfg.bowAnchorY);
-            float speed = cfg.ArrowSpeed(power);
+            float speed = cfg.ArrowSpeed(power) * speedMul;
             float a = cfg.ClampAngle(angleDeg) * MathF.PI / 180f;
             Vec2 v = new Vec2(facing * MathF.Cos(a) * speed, MathF.Sin(a) * speed);
             Vec2[] pts = new Vec2[count];

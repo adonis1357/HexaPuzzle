@@ -15,8 +15,15 @@ namespace Bow.Core
         public float deviation;    // 추 미터 오프셋 p ∈ [-1, 1]
         public float launchTime;   // 경기 시간 (초)
         public float breathEff;    // 발사 시 호흡 효율 E (오차 감소용, 0~1)
+        public float speedMul;     // 캐릭터 파워 배율 (화살 속도)
+        public float windMul;      // 캐릭터 바람 영향 배율 (낮을수록 저항↑)
+        public float errorMul;     // 캐릭터 정확 배율 (각도 오차)
 
         public ShotParams(int shooterId, float angleDeg, float power, float deviation, float launchTime, float breathEff)
+            : this(shooterId, angleDeg, power, deviation, launchTime, breathEff, 1f, 1f, 1f) { }
+
+        public ShotParams(int shooterId, float angleDeg, float power, float deviation, float launchTime, float breathEff,
+                          float speedMul, float windMul, float errorMul)
         {
             this.shooterId = shooterId;
             this.angleDeg = angleDeg;
@@ -24,6 +31,9 @@ namespace Bow.Core
             this.deviation = deviation;
             this.launchTime = launchTime;
             this.breathEff = breathEff;
+            this.speedMul = speedMul <= 0f ? 1f : speedMul;
+            this.windMul = windMul < 0f ? 1f : windMul;
+            this.errorMul = errorMul <= 0f ? 1f : errorMul;
         }
 
         public override string ToString()

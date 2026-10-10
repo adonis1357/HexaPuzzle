@@ -20,11 +20,18 @@ namespace Bow.Game
         private bool planned;
         private ShotParams plan;
 
+        private readonly float speedMul, windMul, errorMul;
+
         public BotController(int botId, BotProfile profile, DuelConfig cfg, MatchSetup setup, WindModel wind, int seed, float matchStartTime)
+            : this(botId, profile, cfg, setup, wind, seed, matchStartTime, 1f, 0f, 1f, 1f, 1f) { }
+
+        public BotController(int botId, BotProfile profile, DuelConfig cfg, MatchSetup setup, WindModel wind, int seed, float matchStartTime,
+                             float delayMul, float reductionBonus, float speedMul, float windMul, float errorMul)
         {
             this.botId = botId; this.profile = profile; this.cfg = cfg; this.setup = setup; this.wind = wind;
+            this.speedMul = speedMul; this.windMul = windMul; this.errorMul = errorMul;
             rng = new DeterministicRandom(seed ^ 0x0B07);
-            Breath = new BreathSystem(cfg, matchStartTime);
+            Breath = new BreathSystem(cfg, matchStartTime, delayMul, reductionBonus);
             targetOverhold = BotBrain.PickOverhold(profile, rng);
             planned = false;
         }
@@ -42,13 +49,13 @@ namespace Bow.Game
             if (!planned && h >= targetOverhold - 0.8f)
             {
                 float launchAt = Breath.ReadyTime + targetOverhold;
-                plan = BotBrain.Plan(botId, profile, setup, wind.GetWind(launchAt), rng, cfg, launchAt, Breath.Efficiency(targetOverhold));
+                plan = BotBrain.Plan(botId, profile, setup, wind.GetWind(launchAt), rng, cfg, launchAt, Breath.Efficiency(targetOverhold), speedMul, windMul, errorMul);
                 planned = true;
             }
             if (planned && h >= targetOverhold)
             {
                 if (!Breath.TryFire(matchTime)) return false;
-                shot = new ShotParams(botId, plan.angleDeg, plan.power, plan.deviation, matchTime, Breath.LastEfficiency);
+                shot = new ShotParams(botId, plan.angleDeg, plan.power, plan.deviation, matchTime, Breath.LastEfficiency, speedMul, windMul, errorMul);
                 planned = false;
                 targetOverhold = BotBrain.PickOverhold(profile, rng);
                 return true;

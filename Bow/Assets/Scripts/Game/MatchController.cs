@@ -80,9 +80,7 @@ namespace Bow.Game
 
             setup = new MatchSetup(seed, cfg);
             wind = new WindModel(seed, cfg);
-            state = new DuelState(cfg);
             meter = new AccuracyMeter(cfg);
-            if (isBotMatch) bot = new BotController(remoteId, botProfile, cfg, setup, wind, seed, 0f);
 
             // 캐릭터: 로컬은 로비 선택, 봇은 seed로 랜덤(로컬과 다른 것), LAN 상대는 Pick 수신 전까지 기본
             chars[localId] = CharacterCatalog.Get(LobbyView.SelectedCharacterId);
@@ -94,6 +92,14 @@ namespace Bow.Game
                 chars[remoteId] = CharacterCatalog.At(pick);
             }
             else chars[remoteId] = CharacterCatalog.DefaultDef();
+
+            // 능력치 반영: 최대 HP, 봇 호흡/탄도 배율
+            state = new DuelState(cfg, Stats(0).MaxHp(cfg.maxHp), Stats(1).MaxHp(cfg.maxHp));
+            if (isBotMatch)
+            {
+                CharacterStats bs = Stats(remoteId);
+                bot = new BotController(remoteId, botProfile, cfg, setup, wind, seed, 0f, bs.DelayMul, bs.ReductionBonus, bs.SpeedMul, bs.WindMul, bs.ErrorMul);
+            }
 
             transport.OnMessage += HandleMessage;
             transport.OnDisconnected += HandleDisconnect;
@@ -225,6 +231,12 @@ namespace Bow.Game
             return sr;
         }
 
+        private CharacterStats Stats(int playerId)
+        {
+            CharacterDef d = chars[playerId == 0 ? 0 : 1];
+            return (d != null && d.stats != null) ? d.stats : new CharacterStats();
+        }
+
         private void RefreshNames()
         {
             string me = "나 · " + chars[localId].name;
@@ -240,8 +252,8 @@ namespace Bow.Game
             RefreshNames();
             hud.SetStatus(transport.Status + " · 사거리 " + setup.Distance.ToString("F0") + "m");
             hud.OnExitPressed = () => app.ReturnToLobby();
-            hud.SetHp(0, cfg.maxHp, cfg.maxHp, false);
-            hud.SetHp(1, cfg.maxHp, cfg.maxHp, false);
+            hud.SetHp(0, state.Hp(localId), state.MaxHp(localId), false);
+            hud.SetHp(1, state.Hp(remoteId), state.MaxHp(remoteId), false);
             hud.SetTimer(cfg.matchDuration);
 
             result = new GameObject("ResultView").AddComponent<ResultView>();
@@ -370,7 +382,7 @@ namespace Bow.Game
         {
             playing = true;
             state.BeginPlay();
-            localBreath = new BreathSystem(cfg, 0f);
+            localBreath = new BreathSystem(cfg, 0f, Stats(localId).DelayMul, Stats(localId).ReductionBonus);
             hud.SetCountdown("시작!", true);
             BowAudio.I.Play("countdown_go", 0.9f);
             input.SetMode(AimInput.Mode.Idle);
@@ -396,7 +408,7 @@ namespace Bow.Game
             archers[localId].SetAim(angle, power);
             hud.SetAimInfo(true, SimToWorld(new Vec2(setup.Feet(localId).x, setup.Feet(localId).y + 1.91f + 1.2f)), angle, power);
             hud.SetDrag(true, input.DragStartScreen, input.DragCurrentScreen, angle, power, input.maxPullPx, input.deadZonePx);
-            Vec2[] pts = ArrowSimulator.PreviewNoWind(localId, angle, power, setup, cfg, 0.5f, 3);
+            Vec2[] pts = ArrowSimulator.PreviewNoWind(localId, angle, power, setup, cfg, 0.5f, 3, Stats(localId).SpeedMul);
             for (int i = 0; i < 3; i++) previewDots[i].transform.localPosition = new Vector3(pts[i].x, pts[i].y, 0f);
             if (drawLoop != null) { drawLoop.volume = 0.2f + 0.3f * power; drawLoop.pitch = 0.9f + 0.35f * power; }
             if (tensionLoop != null) { tensionLoop.volume = 0.12f + 0.25f * power; tensionLoop.pitch = 1f + 1f * power; }
@@ -435,7 +447,7 @@ namespace Bow.Game
             }
             metering = true;
             meterAngle = angle; meterPower = power;
-            meter.Start(matchTime, localBreath.MeterPeriod(matchTime));
+            meter.Start(matchTime, localBreath.MeterPeriod(matchTime) * Stats(localId).MeterPeriodMul);
         }
 
         private void OnTap()
@@ -451,7 +463,8 @@ namespace Bow.Game
             input.SetMode(AimInput.Mode.Idle);
             if (auto && Mathf.Abs(p) < cfg.perfectThreshold) p = cfg.perfectThreshold * (p < 0f ? -1f : 1f); // 자동 발사는 Perfect 불가
             if (!localBreath.TryFire(matchTime)) { archers[localId].SetIdle(); return; }
-            ShotParams s = new ShotParams(localId, meterAngle, meterPower, p, matchTime, localBreath.LastEfficiency);
+            CharacterStats ls = Stats(localId);
+            ShotParams s = new ShotParams(localId, meterAngle, meterPower, p, matchTime, localBreath.LastEfficiency, ls.SpeedMul, ls.WindMul, ls.ErrorMul);
             if (localBreath.LastEfficiency > maxEff) maxEff = localBreath.LastEfficiency;
             shotsFired++;
             bool perfect = Mathf.Abs(p) < cfg.perfectThreshold;
@@ -562,7 +575,7 @@ namespace Bow.Game
                 float mult = cfg.DamageMultiplier(f.shot.deviation);
                 int hpAfter = state.ApplyDamage(target, dmg);
                 int slot = target == localId ? 0 : 1;
-                hud.SetHp(slot, hpAfter, cfg.maxHp, true);
+                hud.SetHp(slot, hpAfter, state.MaxHp(target), true);
                 hud.ShowDamage(SimToWorld(f.hitPoint), dmg, mult, f.perfect ? Palette.Gold : head ? Palette.Red : Palette.Ink, head ? 64 : 48);
                 if (head) hud.ShowMessage("급소!", Palette.Red, 0.9f, 80);
                 if (transport.IsHost) transport.Send(NetMessage.Hit(f.shot.shooterId, f.shot.launchTime, target, f.zone, f.perfect, dmg, hpAfter));
@@ -604,7 +617,7 @@ namespace Bow.Game
                     if (state.Hp(target) != hpAfter)
                     {
                         state.ForceHp(target, hpAfter);
-                        hud.SetHp(target == localId ? 0 : 1, hpAfter, cfg.maxHp, true);
+                        hud.SetHp(target == localId ? 0 : 1, hpAfter, state.MaxHp(target), true);
                         if (hpAfter <= 0) KillArcher(target, target == 0 ? 1 : -1);
                     }
                     break;
@@ -636,6 +649,12 @@ namespace Bow.Game
                     CharacterDef d = CharacterCatalog.Get(m.args[1]);
                     chars[pid] = d;
                     if (archers[pid] != null && !archers[pid].IsDead) archers[pid].Rebuild(d);
+                    if (!playing)
+                    {
+                        state = new DuelState(cfg, Stats(0).MaxHp(cfg.maxHp), Stats(1).MaxHp(cfg.maxHp));
+                        hud.SetHp(0, state.Hp(localId), state.MaxHp(localId), false);
+                        hud.SetHp(1, state.Hp(remoteId), state.MaxHp(remoteId), false);
+                    }
                     RefreshNames();
                     break;
                 }

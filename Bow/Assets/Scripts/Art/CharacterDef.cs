@@ -20,6 +20,40 @@ namespace Bow.Art
         public string name = "";
     }
 
+    /// <summary>
+    /// 캐릭터 능력치 (1~5, 기본 3). 모든 캐릭터 합계 18로 밸런스.
+    /// 체력: 최대 HP / 파워: 화살 속도 / 바람저항: 바람 영향 감소 / 장전: 기본 딜레이 단축
+    /// 호흡: 호흡 효율 보너스(최대 감소율↑) / 정확: 추 미터 느림 + 각도 오차 감소
+    /// </summary>
+    [Serializable]
+    public class CharacterStats
+    {
+        public int hp = 3, power = 3, wind = 3, reload = 3, breath = 3, accuracy = 3;
+
+        public static readonly string[] Labels = { "체력", "파워", "바람저항", "장전", "호흡", "정확" };
+        public int[] Values { get { return new[] { hp, power, wind, reload, breath, accuracy }; } }
+        public int Total { get { return hp + power + wind + reload + breath + accuracy; } }
+
+        private static int C(int v) { return v < 1 ? 1 : (v > 5 ? 5 : v); }
+
+        public int MaxHp(int baseHp) { return baseHp + (C(hp) - 3) * 15; }            // 70 ~ 130
+        public float SpeedMul { get { return 1f + (C(power) - 3) * 0.06f; } }          // 0.88 ~ 1.12
+        public float WindMul { get { return 1f - (C(wind) - 3) * 0.12f; } }            // 1.24 ~ 0.76 (낮을수록 바람 영향 적음)
+        public float DelayMul { get { return 1f - (C(reload) - 3) * 0.08f; } }         // 1.16 ~ 0.84
+        public float ReductionBonus { get { return (C(breath) - 3) * 0.04f; } }        // −0.08 ~ +0.08 (최대 감소율 0.62~0.78)
+        public float MeterPeriodMul { get { return 1f + (C(accuracy) - 3) * 0.08f; } } // 0.84 ~ 1.16 (높을수록 추가 느림)
+        public float ErrorMul { get { return 1f - (C(accuracy) - 3) * 0.08f; } }       // 1.16 ~ 0.84
+
+        /// <summary>가장 높은 능력치 1~2개 이름 (특징 표시용)</summary>
+        public string Highlights()
+        {
+            int[] v = Values; string a = "", b = ""; int ba = -1, bb = -1;
+            for (int i = 0; i < v.Length; i++) if (v[i] > ba) { bb = ba; b = a; ba = v[i]; a = Labels[i]; } else if (v[i] > bb) { bb = v[i]; b = Labels[i]; }
+            if (bb >= 4 && ba >= 4) return a + " · " + b;
+            return a;
+        }
+    }
+
     /// <summary>캐릭터 정의 (characters.json 한 항목)</summary>
     [Serializable]
     public class CharacterDef
@@ -34,6 +68,7 @@ namespace Bow.Art
         public float[] headScale = null;     // [sx, sy]
         public string bowStyle = "classic";  // classic | recurve | longbow | mech
         public string bowColor = "body";
+        public CharacterStats stats = new CharacterStats();
         public CharacterPart[] parts = new CharacterPart[0];
 
         public Color Body { get { return Palette.Hex(bodyColor); } }

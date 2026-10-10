@@ -80,7 +80,9 @@ namespace Bow.Game
             // 발 위치 = 화면 위에서 980px 지점 (3배 궁수가 450~980px 영역에 서도록)
             float ortho = cam.orthographicSize;
             float feetY = cam.transform.position.y + ortho - 980f / 1920f * 2f * ortho;
-            go.transform.position = new Vector3(0f, feetY, 0f);
+            // 오른쪽에는 능력치 육각형이 오므로 궁수는 왼쪽 (화면 x −270px ≈ −2.8m @ ortho 10)
+            float px2m = 2f * ortho * cam.aspect / Screen.width * (Screen.width / 1080f);
+            go.transform.position = new Vector3(-270f * px2m, feetY, 0f);
             go.transform.localScale = new Vector3(3f, 3f, 1f);
             preview = go.AddComponent<ArcherView>();
             preview.Build(0, 1, def);

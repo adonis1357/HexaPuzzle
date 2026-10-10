@@ -12,6 +12,7 @@ namespace Bow.Core
     {
         private readonly DuelConfig cfg;
         private readonly int[] hp = new int[2];
+        private readonly int[] maxHp = new int[2];
 
         public MatchPhase Phase { get; private set; }
         /// <summary>승자 id. 무승부/미종료면 -1</summary>
@@ -20,17 +21,21 @@ namespace Bow.Core
         public float MatchTime { get; private set; }
         public float TimeRemaining { get { float r = cfg.matchDuration - MatchTime; return r > 0f ? r : 0f; } }
 
-        public DuelState(DuelConfig config)
+        public DuelState(DuelConfig config) : this(config, config.maxHp, config.maxHp) { }
+
+        public DuelState(DuelConfig config, int maxHp0, int maxHp1)
         {
             cfg = config;
-            hp[0] = cfg.maxHp; hp[1] = cfg.maxHp;
+            maxHp[0] = maxHp0 > 0 ? maxHp0 : cfg.maxHp; maxHp[1] = maxHp1 > 0 ? maxHp1 : cfg.maxHp;
+            hp[0] = maxHp[0]; hp[1] = maxHp[1];
             Phase = MatchPhase.Countdown;
             Winner = -1;
             MatchTime = 0f;
         }
 
         public int Hp(int playerId) { return hp[playerId == 0 ? 0 : 1]; }
-        public float HpRatio(int playerId) { return (float)Hp(playerId) / cfg.maxHp; }
+        public int MaxHp(int playerId) { return maxHp[playerId == 0 ? 0 : 1]; }
+        public float HpRatio(int playerId) { return (float)Hp(playerId) / MaxHp(playerId); }
 
         public void BeginPlay() { Phase = MatchPhase.Playing; MatchTime = 0f; }
 

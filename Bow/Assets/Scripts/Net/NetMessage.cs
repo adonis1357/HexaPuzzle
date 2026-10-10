@@ -75,12 +75,16 @@ namespace Bow.Net
         public static NetMessage Shot(ShotParams s)
         {
             return new NetMessage(NetMsgType.Shot, s.shooterId.ToString(CultureInfo.InvariantCulture),
-                F(s.angleDeg), F(s.power), F(s.deviation), F(s.launchTime), F(s.breathEff));
+                F(s.angleDeg), F(s.power), F(s.deviation), F(s.launchTime), F(s.breathEff), F(s.speedMul), F(s.windMul), F(s.errorMul));
         }
 
         public ShotParams ToShot()
         {
-            return new ShotParams(Int(0), Float(1), Float(2), Float(3), Float(4), args.Length > 5 ? Float(5) : 0f);
+            float eff = args.Length > 5 ? Float(5) : 0f;
+            float sm = args.Length > 6 ? Float(6) : 1f;
+            float wm = args.Length > 7 ? Float(7) : 1f;
+            float em = args.Length > 8 ? Float(8) : 1f;
+            return new ShotParams(Int(0), Float(1), Float(2), Float(3), Float(4), eff, sm, wm, em);
         }
 
         public static NetMessage Hit(int shooterId, float launchTime, int targetId, HitZone zone, bool perfect, int damage, int hpAfter)

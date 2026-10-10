@@ -25,11 +25,18 @@ namespace Bow.Core
         public float LastOverhold { get; private set; }
         public int ShotCount { get; private set; }
 
-        public BreathSystem(DuelConfig config, float matchStartTime)
+        private readonly float delayMul;        // 캐릭터 장전 배율
+        private readonly float reductionBonus;  // 캐릭터 호흡 보너스 (최대 감소율 가산)
+
+        public BreathSystem(DuelConfig config, float matchStartTime) : this(config, matchStartTime, 1f, 0f) { }
+
+        public BreathSystem(DuelConfig config, float matchStartTime, float delayMultiplier, float reductionBonus)
         {
             cfg = config;
+            delayMul = delayMultiplier <= 0f ? 1f : delayMultiplier;
+            this.reductionBonus = reductionBonus;
             // 경기 시작 직후 초기 장전 3초 (바람을 읽을 시간)
-            CurrentDelay = 3.0f;
+            CurrentDelay = 3.0f * delayMul;
             LastFireTime = matchStartTime - 1e-3f;
             ReadyTime = matchStartTime + CurrentDelay;
             LastEfficiency = 0f;
@@ -85,7 +92,9 @@ namespace Bow.Core
         public float ComputeNextDelay(float overhold)
         {
             float e = Efficiency(overhold);
-            return cfg.baseDelay * (1f - cfg.maxDelayReduction * e);
+            float red = cfg.maxDelayReduction + reductionBonus;
+            if (red < 0.3f) red = 0.3f; if (red > 0.85f) red = 0.85f;
+            return cfg.baseDelay * delayMul * (1f - red * e);
         }
 
         /// <summary>현재 호흡 효율에 따른 추 미터 주기 (높을수록 느려짐 = 쉬움)</summary>
