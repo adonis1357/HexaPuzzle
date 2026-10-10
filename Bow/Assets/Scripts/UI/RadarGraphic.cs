@@ -15,7 +15,7 @@ namespace Bow.UI
         public Color fillColor = new Color(0.71f, 0.19f, 0.17f, 0.35f);
         public Color lineColor = new Color(0.12f, 0.11f, 0.09f, 1f);
         public Color gridColor = new Color(0.12f, 0.11f, 0.09f, 0.18f);
-        public float outlineWidth = 5f;
+        public float outlineWidth = 7f;
         public float gridWidth = 2f;
 
         public void SetValues(int[] v) { values = v; SetVerticesDirty(); }
