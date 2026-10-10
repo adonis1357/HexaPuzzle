@@ -70,24 +70,62 @@ namespace Bow.Game
         private bool autoTest;
         private ArcherView preview;
 
-        /// <summary>로비 캐릭터 선택 미리보기: 월드에 3배 크기 궁수를 세운다 (null이면 제거)</summary>
-        private void ShowPreview(CharacterDef def)
+        /// <summary>
+        /// 로비 캐릭터 선택 미리보기: 월드에 3배 크기 궁수를 세운다 (null이면 제거).
+        /// dir ≠ 0 이면 이전 궁수는 dir 반대쪽으로 미끄러져 나가며 흐려지고, 새 궁수는 dir 쪽에서 들어온다.
+        /// </summary>
+        private void ShowPreview(CharacterDef def, int dir)
         {
-            if (preview != null) { Destroy(preview.gameObject); preview = null; }
+            float ortho = cam.orthographicSize;
+            float feetY = cam.transform.position.y + ortho - 980f / 1920f * 2f * ortho;
+            float px2m = 2f * ortho * cam.aspect / Screen.width * (Screen.width / 1080f);
+            Vector3 home = new Vector3(-270f * px2m, feetY, 0f);
+            float slide = 520f * px2m;
+
+            if (preview != null)
+            {
+                ArcherView old = preview; preview = null;
+                if (def == null || dir == 0) Destroy(old.gameObject);
+                else StartCoroutine(SlideOut(old, home - new Vector3(dir * slide, 0f, 0f)));
+            }
             if (def == null) return;
             GameObject go = new GameObject("Preview");
             go.transform.SetParent(transform, false);
-            // 발 위치 = 화면 위에서 980px 지점 (3배 궁수가 450~980px 영역에 서도록)
-            float ortho = cam.orthographicSize;
-            float feetY = cam.transform.position.y + ortho - 980f / 1920f * 2f * ortho;
-            // 오른쪽에는 능력치 육각형이 오므로 궁수는 왼쪽 (화면 x −270px ≈ −2.8m @ ortho 10)
-            float px2m = 2f * ortho * cam.aspect / Screen.width * (Screen.width / 1080f);
-            go.transform.position = new Vector3(-270f * px2m, feetY, 0f);
-            go.transform.localScale = new Vector3(3f, 3f, 1f);
+            go.transform.position = dir == 0 ? home : home + new Vector3(dir * slide, 0f, 0f);
             preview = go.AddComponent<ArcherView>();
             preview.Build(0, 1, def);
             preview.SetAim(35f, 0.55f);
             preview.transform.localScale = new Vector3(3f, 3f, 1f);
+            if (dir != 0) StartCoroutine(SlideIn(preview, home));
+        }
+
+        private System.Collections.IEnumerator SlideOut(ArcherView v, Vector3 to)
+        {
+            Vector3 from = v.transform.position; float t = 0f;
+            while (t < 0.22f && v != null)
+            {
+                t += Time.unscaledDeltaTime;
+                float u = Ease.InQuad(t / 0.22f);
+                v.transform.position = Vector3.Lerp(from, to, u);
+                v.SetAlpha(1f - u);
+                yield return null;
+            }
+            if (v != null) Destroy(v.gameObject);
+        }
+
+        private System.Collections.IEnumerator SlideIn(ArcherView v, Vector3 to)
+        {
+            Vector3 from = v.transform.position; float t = 0f;
+            v.SetAlpha(0f);
+            while (t < 0.32f && v != null)
+            {
+                t += Time.unscaledDeltaTime;
+                float u = Ease.OutBack(t / 0.32f);
+                v.transform.position = Vector3.LerpUnclamped(from, to, u);
+                v.SetAlpha(Mathf.Clamp01(t / 0.18f));
+                yield return null;
+            }
+            if (v != null) { v.transform.position = to; v.SetAlpha(1f); }
         }
 
         private void AutoTestStart()
@@ -200,7 +238,7 @@ namespace Bow.Game
         private void StartMatch(IMatchTransport transport, BotProfile bot, int seed)
         {
             if (match != null) { match.Teardown(); match = null; }
-            ShowPreview(null);
+            ShowPreview(null, 0);
             lobby.SetVisible(false);
             GameObject go = new GameObject("Match");
             match = go.AddComponent<MatchController>();
@@ -210,7 +248,7 @@ namespace Bow.Game
         public void ReturnToLobby()
         {
             if (match != null) { match.Teardown(); match = null; }
-            ShowPreview(null);
+            ShowPreview(null, 0);
             CancelPending();
             BowAudio.I.StopWind(0.3f);
             ConfigureBackdrop(10f);

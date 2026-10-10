@@ -13,14 +13,18 @@ namespace Bow.UI
         public System.Action OnHost;
         public System.Action<string> OnJoin;
         /// <summary>캐릭터 선택 패널에서 미리보기 대상이 바뀜 (null = 패널 닫힘)</summary>
-        public System.Action<CharacterDef> OnCharacterPreview;
+        public System.Action<CharacterDef, int> OnCharacterPreview;  // (캐릭터, 넘김 방향 −1/0/+1), null = 닫힘
 
         private RectTransform charPanel;
         private Text charName, charTheme, charDesc, charIndexText, charTrait;
-        private Image radarImg;
+        private Image radarGridImg, radarPolyImg;
         private Text[] radarLabels, radarValues;
-        private readonly System.Collections.Generic.Dictionary<string, Sprite> radarCache = new System.Collections.Generic.Dictionary<string, Sprite>();
         private const float RadarR = 160f;
+        private const int PolySize = 192;
+        private float[] radarCur = { 0.6f, 0.6f, 0.6f, 0.6f, 0.6f, 0.6f };
+        private Coroutine morphRoutine;
+        private CanvasGroup infoGroup;
+        private Coroutine infoFadeRoutine;
 
         private static Vector2 AxisPoint(int i, int n, float r)
         {
@@ -75,13 +79,18 @@ namespace Bow.UI
             charPanel = UiFactory.Rect(root, "charPanel");
             UiFactory.Stretch(charPanel);
             UiFactory.MakeText(charPanel, "label", "캐릭터 선택", 44, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -200f), new Vector2(600f, 50f));
-            charName = UiFactory.MakeText(charPanel, "name", "", 96, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -290f), new Vector2(900f, 110f), true);
-            charTheme = UiFactory.MakeText(charPanel, "theme", "", 34, Palette.Red, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -370f), new Vector2(900f, 40f));
+            RectTransform info = UiFactory.Rect(charPanel, "info");
+            UiFactory.Stretch(info);
+            infoGroup = info.gameObject.AddComponent<CanvasGroup>();
+            charName = UiFactory.MakeText(info, "name", "", 96, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -290f), new Vector2(900f, 110f), true);
+            charTheme = UiFactory.MakeText(info, "theme", "", 34, Palette.Red, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -370f), new Vector2(900f, 40f));
             // 능력치 육각형 (오른쪽), 미리보기 궁수는 월드(왼쪽)
             RectTransform radarRt = UiFactory.Rect(charPanel, "radar");
             UiFactory.Place(radarRt, TC, C, new Vector2(250f, -720f), new Vector2(440f, 440f));
-            // 차트 본체: 프로시저럴 텍스처 (반지름 160px = 텍스처 크기 × 0.36 → 444px)
-            radarImg = UiFactory.MakeImage(radarRt, "chart", null, Color.white, C, C, Vector2.zero, new Vector2(RadarR / 0.36f, RadarR / 0.36f));
+            // 차트: 정적 격자 + 모핑되는 능력치 다각형 (둘 다 반지름 = 텍스처 × 0.36 → 같은 픽셀 크기로 겹침)
+            Vector2 chartPx = new Vector2(RadarR / 0.36f, RadarR / 0.36f);
+            radarGridImg = UiFactory.MakeImage(radarRt, "grid", ProceduralSprites.RadarGrid(6, 320, Palette.WithAlpha(Palette.Grey, 0.55f)), Color.white, C, C, Vector2.zero, chartPx);
+            radarPolyImg = UiFactory.MakeImage(radarRt, "poly", null, Color.white, C, C, Vector2.zero, chartPx);
             radarLabels = new Text[6]; radarValues = new Text[6];
             for (int i = 0; i < 6; i++)
             {
@@ -89,8 +98,8 @@ namespace Bow.UI
                 radarLabels[i] = UiFactory.MakeText(radarRt, "lbl" + i, CharacterStats.Labels[i], 28, Palette.Ink, TextAnchor.MiddleCenter, C, C, pt + new Vector2(0f, 12f), new Vector2(160f, 34f));
                 radarValues[i] = UiFactory.MakeText(radarRt, "val" + i, "3", 30, Palette.Red, TextAnchor.MiddleCenter, C, C, pt + new Vector2(0f, -20f), new Vector2(160f, 34f), true);
             }
-            charTrait = UiFactory.MakeText(charPanel, "trait", "", 32, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1010f), new Vector2(1000f, 44f), true);
-            charDesc = UiFactory.MakeText(charPanel, "desc", "", 34, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1060f), new Vector2(900f, 46f));
+            charTrait = UiFactory.MakeText(info, "trait", "", 32, Palette.Ink, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1010f), new Vector2(1000f, 44f), true);
+            charDesc = UiFactory.MakeText(info, "desc", "", 34, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1060f), new Vector2(900f, 46f));
             charIndexText = UiFactory.MakeText(charPanel, "index", "", 30, Palette.Grey, TextAnchor.MiddleCenter, TC, C, new Vector2(0f, -1106f), new Vector2(300f, 40f));
             UiFactory.MakeButton(charPanel, "◀", new Vector2(0f, 1f), C, new Vector2(90f, -1200f), new Vector2(130f, 130f), false, () => StepCharacter(-1));
             UiFactory.MakeButton(charPanel, "▶", new Vector2(1f, 1f), C, new Vector2(-90f, -1200f), new Vector2(130f, 130f), false, () => StepCharacter(1));
@@ -162,30 +171,30 @@ namespace Bow.UI
             lanPanel.gameObject.SetActive(false);
             titleGroup.gameObject.SetActive(false);
             charPanel.gameObject.SetActive(true);
-            ShowCharacter();
+            ShowCharacter(0);
         }
 
         private void StepCharacter(int delta)
         {
             charIndex = ((charIndex + delta) % CharacterCatalog.Count + CharacterCatalog.Count) % CharacterCatalog.Count;
-            ShowCharacter();
+            Bow.Audio.BowAudio.I.Play("ui_click", 0.4f, 1.05f, 1.1f);
+            ShowCharacter(delta);
         }
 
-        private void ShowCharacter()
+        private void ShowCharacter(int dir)
         {
             CharacterDef d = CharacterCatalog.At(charIndex);
+            if (infoFadeRoutine != null) StopCoroutine(infoFadeRoutine);
+            infoFadeRoutine = StartCoroutine(FadeInfo());
             charName.text = d.name;
             charTheme.text = d.theme + " · 활: " + d.bowStyle;
             charDesc.text = d.desc;
             CharacterStats st = d.stats ?? new CharacterStats();
             int[] v = st.Values;
-            Sprite chart;
-            if (!radarCache.TryGetValue(d.id, out chart))
-            {
-                chart = ProceduralSprites.RadarChart(v, 5, 320, Palette.WithAlpha(Palette.Red, 0.32f), Palette.RedD, Palette.WithAlpha(Palette.Grey, 0.55f));
-                radarCache[d.id] = chart;
-            }
-            radarImg.sprite = chart;
+            float[] target = new float[6];
+            for (int i = 0; i < 6; i++) target[i] = v[i] / 5f;
+            if (morphRoutine != null) StopCoroutine(morphRoutine);
+            morphRoutine = StartCoroutine(MorphRadar(target, dir == 0 ? 0.01f : 0.4f));
             for (int i = 0; i < 6; i++)
             {
                 Color vc = v[i] >= 4 ? Palette.Red : (v[i] <= 2 ? Palette.Grey : Palette.Ink);
@@ -196,14 +205,54 @@ namespace Bow.UI
                 + "  ·  체력 " + st.MaxHp(100) + "  속도 ×" + st.SpeedMul.ToString("F2") + "  바람 ×" + st.WindMul.ToString("F2")
                 + "  장전 ×" + st.DelayMul.ToString("F2");
             charIndexText.text = (charIndex + 1) + " / " + CharacterCatalog.Count;
-            if (OnCharacterPreview != null) OnCharacterPreview(d);
+            if (OnCharacterPreview != null) OnCharacterPreview(d, dir);
+        }
+
+        /// <summary>능력치 다각형을 현재 값 → 목표 값으로 부드럽게 변형 (매 프레임 작은 텍스처 재생성)</summary>
+        private IEnumerator MorphRadar(float[] target, float duration)
+        {
+            float[] from = (float[])radarCur.Clone();
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.unscaledDeltaTime;
+                float u = Ease.OutCubic(t / duration);
+                // 살짝 넘치는 탄성 느낌
+                float ov = 1f + 0.08f * Mathf.Sin(u * Mathf.PI);
+                for (int i = 0; i < 6; i++) radarCur[i] = Mathf.Lerp(from[i], target[i], u) * (i % 2 == 0 ? ov : 1f);
+                ApplyRadarSprite();
+                yield return null;
+            }
+            for (int i = 0; i < 6; i++) radarCur[i] = target[i];
+            ApplyRadarSprite();
+            morphRoutine = null;
+        }
+
+        private void ApplyRadarSprite()
+        {
+            Sprite old = radarPolyImg.sprite;
+            radarPolyImg.sprite = ProceduralSprites.RadarPolygon(radarCur, PolySize, Palette.WithAlpha(Palette.Red, 0.32f), Palette.RedD);
+            ProceduralSprites.Release(old);
+        }
+
+        private IEnumerator FadeInfo()
+        {
+            infoGroup.alpha = 0f;
+            float t = 0f;
+            while (t < 0.25f)
+            {
+                t += Time.unscaledDeltaTime;
+                infoGroup.alpha = Ease.OutCubic(t / 0.25f);
+                yield return null;
+            }
+            infoGroup.alpha = 1f;
         }
 
         private void CloseCharacterPanel()
         {
             SelectedCharacterId = CharacterCatalog.At(charIndex).id;
             RefreshCharButtonLabel();
-            if (OnCharacterPreview != null) OnCharacterPreview(null);
+            if (OnCharacterPreview != null) OnCharacterPreview(null, 0);
             ShowPanel(mainButtons);
         }
 

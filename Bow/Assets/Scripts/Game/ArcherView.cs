@@ -43,7 +43,17 @@ namespace Bow.Game
         private Vector2 shakeOffset;
         private float trembleAmp = 0f;
         private float flash = 0f;
+        private float globalAlpha = 1f;
         private Vector2 nockLocal;
+
+        /// <summary>전체 투명도 (로비 전환 연출용)</summary>
+        public void SetAlpha(float a)
+        {
+            globalAlpha = Mathf.Clamp01(a);
+            if (shadow != null) shadow.color = Palette.WithAlpha(Palette.Ink, 0.25f * globalAlpha);
+            if (bow != null) { Color bc = bow.startColor; bc.a = globalAlpha; bow.startColor = bc; bow.endColor = bc; }
+            if (bowString != null) { Color sc = Palette.WithAlpha(Palette.Ink, 0.7f * globalAlpha); bowString.startColor = sc; bowString.endColor = sc; }
+        }
 
         /// <summary>현재 노크(화살 출발) 위치 — 루트 로컬(m)</summary>
         public Vector2 NockLocal { get { return nockLocal; } }
@@ -409,9 +419,13 @@ namespace Bow.Game
             bodyGroup.localRotation = Quaternion.Euler(0f, 0f, bodyTilt);
             bodyGroup.localPosition = new Vector3(shakeOffset.x, 0.80f + shakeOffset.y, 0f);
 
-            // 백색 플래시
-            if (flash > 0f) for (int i = 0; i < parts.Count; i++) parts[i].color = Color.Lerp(partColors[i], Color.white, flash);
-            else for (int i = 0; i < parts.Count; i++) if (parts[i].color != partColors[i]) parts[i].color = partColors[i];
+            // 백색 플래시 / 전체 알파
+            for (int i = 0; i < parts.Count; i++)
+            {
+                Color c = flash > 0f ? Color.Lerp(partColors[i], Color.white, flash) : partColors[i];
+                c.a *= globalAlpha;
+                if (parts[i].color != c) parts[i].color = c;
+            }
         }
     }
 }

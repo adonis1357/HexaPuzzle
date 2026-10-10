@@ -294,60 +294,87 @@ namespace Bow.Art
         // 능력치 육각형 차트 (캐릭터 선택 화면)
         // ---------------------------------------------------------------
 
-        /// <summary>
-        /// 값(1~max) 배열로 육각형 레이더 차트 텍스처를 그린다 (격자 3단 + 축 + 채움 다각형 + 외곽선 + 꼭짓점).
-        /// 첫 축은 12시, 반시계 방향. 크기 size px, 반지름은 size×0.36.
-        /// </summary>
-        public static Sprite RadarChart(int[] values, int max, int size, Color fill, Color line, Color grid)
+        private static Vector2[] RadarAxes(int n)
         {
-            int n = values.Length;
-            float cx = size * 0.5f, cy = size * 0.5f, R = size * 0.36f;
             Vector2[] axis = new Vector2[n];
-            Vector2[] pts = new Vector2[n];
             for (int i = 0; i < n; i++)
             {
-                float a = (90f + 360f * i / n) * Mathf.Deg2Rad;
+                float a = (90f + 360f * i / n) * Mathf.Deg2Rad; // 첫 축 12시, 반시계
                 axis[i] = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
-                float v = Mathf.Clamp(values[i], 0, max) / (float)max;
-                pts[i] = new Vector2(cx, cy) + axis[i] * (R * v);
             }
+            return axis;
+        }
+
+        /// <summary>레이더 격자 (3단 링 + 축선). 정적이라 1회 생성. 반지름 = size×0.36</summary>
+        public static Sprite RadarGrid(int n, int size, Color grid)
+        {
+            float cx = size * 0.5f, cy = size * 0.5f, R = size * 0.36f;
+            Vector2[] axis = RadarAxes(n);
+            Vector2 c0 = new Vector2(cx, cy);
             Texture2D t = NewTex(size, size);
             Color[] px = new Color[size * size];
             Color clear = new Color(0, 0, 0, 0);
-            float lineW = size * 0.0055f, gridW = size * 0.0022f, dotR = size * 0.011f;
+            float gridW = size * 0.0022f;
             for (int y = 0; y < size; y++)
                 for (int x = 0; x < size; x++)
                 {
                     Vector2 p = new Vector2(x + 0.5f, y + 0.5f);
-                    Color c = clear;
-                    // 격자 링 (1/3, 2/3, 3/3) + 축선
                     float gd = float.MaxValue;
                     for (int ring = 1; ring <= 3; ring++)
                     {
                         float r = R * ring / 3f;
                         for (int i = 0; i < n; i++)
-                        {
-                            Vector2 a = new Vector2(cx, cy) + axis[i] * r, b = new Vector2(cx, cy) + axis[(i + 1) % n] * r;
-                            gd = Mathf.Min(gd, DistToSeg(p, a, b));
-                        }
+                            gd = Mathf.Min(gd, DistToSeg(p, c0 + axis[i] * r, c0 + axis[(i + 1) % n] * r));
                     }
-                    for (int i = 0; i < n; i++) gd = Mathf.Min(gd, DistToSeg(p, new Vector2(cx, cy), new Vector2(cx, cy) + axis[i] * R));
-                    if (gd < gridW + 0.7f) c = Blend(c, grid, Mathf.Clamp01(gridW + 0.7f - gd));
-                    // 채움 (중심 기준 부채꼴 삼각형 내부 판정)
-                    if (InsideFan(p, new Vector2(cx, cy), pts)) c = Blend(c, fill, 1f);
-                    // 외곽선 + 꼭짓점
+                    for (int i = 0; i < n; i++) gd = Mathf.Min(gd, DistToSeg(p, c0, c0 + axis[i] * R));
+                    px[y * size + x] = gd < gridW + 0.7f ? Blend(clear, grid, Mathf.Clamp01(gridW + 0.7f - gd)) : clear;
+                }
+            t.SetPixels(px); t.Apply();
+            return Make(t, 100f, new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>
+        /// 레이더 능력치 다각형 (채움 + 외곽선 + 꼭짓점). values01은 0~1 정규화 값(모핑 중 소수 허용).
+        /// 반지름 = size×0.36 (격자와 같은 비율로 겹쳐 쓴다). 매 프레임 재생성 가능하도록 가볍게 유지.
+        /// </summary>
+        public static Sprite RadarPolygon(float[] values01, int size, Color fill, Color line)
+        {
+            int n = values01.Length;
+            float cx = size * 0.5f, cy = size * 0.5f, R = size * 0.36f;
+            Vector2[] axis = RadarAxes(n);
+            Vector2 c0 = new Vector2(cx, cy);
+            Vector2[] pts = new Vector2[n];
+            for (int i = 0; i < n; i++) pts[i] = c0 + axis[i] * (R * Mathf.Clamp01(values01[i]));
+            Texture2D t = NewTex(size, size);
+            Color[] px = new Color[size * size];
+            Color clear = new Color(0, 0, 0, 0);
+            float lineW = size * 0.0055f, dotR = size * 0.011f;
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    Vector2 p = new Vector2(x + 0.5f, y + 0.5f);
+                    Color c = clear;
+                    if (InsideFan(p, c0, pts)) c = fill;
                     float od = float.MaxValue;
                     for (int i = 0; i < n; i++) od = Mathf.Min(od, DistToSeg(p, pts[i], pts[(i + 1) % n]));
                     if (od < lineW + 0.7f) c = Blend(c, line, Mathf.Clamp01(lineW + 0.7f - od));
                     for (int i = 0; i < n; i++)
                     {
                         float dd = Vector2.Distance(p, pts[i]);
-                        if (dd < dotR + 0.7f) c = Blend(c, line, Mathf.Clamp01(dotR + 0.7f - dd));
+                        if (dd < dotR + 0.7f) { c = Blend(c, line, Mathf.Clamp01(dotR + 0.7f - dd)); break; }
                     }
                     px[y * size + x] = c;
                 }
             t.SetPixels(px); t.Apply();
             return Make(t, 100f, new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>스프라이트와 텍스처 해제 (모핑 중 매 프레임 생성분 정리)</summary>
+        public static void Release(Sprite sp)
+        {
+            if (sp == null) return;
+            if (sp.texture != null) UnityEngine.Object.Destroy(sp.texture);
+            UnityEngine.Object.Destroy(sp);
         }
 
         private static float DistToSeg(Vector2 p, Vector2 a, Vector2 b)
