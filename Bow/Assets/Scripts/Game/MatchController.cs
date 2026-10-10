@@ -416,6 +416,7 @@ namespace Bow.Game
             hud.SetDrag(false, Vector2.zero, Vector2.zero, 0f, 0f, 0f, 0f);
             for (int i = 0; i < 3; i++) previewDots[i].gameObject.SetActive(false);
             archers[localId].SetIdle();
+            hud.ShowMessage("취소", Palette.Grey, 0.25f, 48);
         }
 
         private void OnDragRelease(float angle, float power)

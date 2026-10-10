@@ -14,6 +14,7 @@ namespace Bow.Game
 
         public float maxPullPx = 300f;   // 1080px 기준
         public float deadZonePx = 40f;
+        public float minFirePower = 0.05f; // 이 미만의 힘으로 놓으면 발사 취소 → 즉시 재조준 가능
         public float minAngle = -10f, maxAngle = 85f;
 
         public Mode CurrentMode { get; private set; }
@@ -80,8 +81,9 @@ namespace Bow.Game
                 }
                 else
                 {
-                    if (len < deadZonePx)
+                    if (len < deadZonePx || power < minFirePower)
                     {
+                        // 힘 0 → 취소. 바로 다음 터치로 새 지점에서 조준 가능
                         CurrentMode = Mode.Idle;
                         if (OnDragCancel != null) OnDragCancel();
                     }

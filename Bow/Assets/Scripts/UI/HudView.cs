@@ -514,7 +514,12 @@ namespace Bow.UI
             dragInfo.rectTransform.anchoredPosition = s0 + dirV * (arrowLen + 70f);
             dragInfo.color = angle > 90f ? Palette.Red : Palette.Ink;
             dragHint.rectTransform.anchoredPosition = s0 + new Vector2(0f, -(deadZonePx + 40f));
-            dragHint.text = len < deadZonePx ? "더 당기면 조준 시작 (놓으면 취소)" : (angle > 90f ? "뒤로 쏨 · 놓으면 추 미터 시작" : "놓으면 추 미터 시작 · 중앙에서 탭");
+            bool willCancel = power < 0.05f;
+            dragHint.text = willCancel ? "더 당기면 조준 시작 (지금 놓으면 취소)" : (angle > 90f ? "뒤로 쏨 · 놓으면 추 미터 시작" : "놓으면 추 미터 시작 · 중앙에서 탭");
+            dragHint.color = willCancel ? Palette.Red : Palette.Grey;
+            dragDirLine.gameObject.SetActive(!willCancel);
+            dragDirHead.gameObject.SetActive(!willCancel);
+            dragInfo.gameObject.SetActive(!willCancel);
         }
 
         public Vector2 ScreenToCanvas(Vector2 screen)
