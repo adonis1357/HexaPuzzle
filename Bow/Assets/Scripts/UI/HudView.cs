@@ -54,7 +54,7 @@ namespace Bow.UI
         private RectTransform aimRt;
         // 드래그 조준 UI (아트 §2.7 + UX 보강)
         private RectTransform dragRoot, dragStart, dragMaxRing, dragDeadRing, dragDirLine, dragDirHead, dragPowerRing;
-        private Image dragPowerImg, dragDirLineImg, dragDirHeadImg;
+        private Image dragPowerImg, dragDirLineImg, dragDirHeadImg, dragInfoPlate;
         private Text dragInfo, dragHint;
         private RectTransform[] dragDashes = new RectTransform[28];
 
@@ -144,9 +144,12 @@ namespace Bow.UI
             lastMarker.gameObject.SetActive(false);
 
             // ---- 조준 텍스트 ----
-            aimText = UiFactory.MakeText(root, "aim", "", 36, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(240f, 50f));
-            aimRt = aimText.rectTransform;
-            aimText.gameObject.SetActive(false);
+            // 조준 텍스트: 먹색 기둥/궁수 위에서도 읽히도록 한지색 판 + 외곽선
+            Image aimPlate = MakePlate(root, "aimPlate", new Vector2(260f, 56f));
+            aimRt = aimPlate.rectTransform;
+            aimText = UiFactory.MakeText(aimPlate.transform, "aim", "", 36, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(260f, 56f));
+            AddPaperOutline(aimText);
+            aimRt.gameObject.SetActive(false);
 
             // ---- 드래그 조준 UI ----
             dragRoot = UiFactory.Rect(root, "drag");
@@ -164,8 +167,11 @@ namespace Bow.UI
             dragDirLine = dragDirLineImg.rectTransform;
             dragDirHeadImg = UiFactory.MakeImage(dragRoot, "dirHead", ProceduralSprites.Triangle(), teamC, C, C, Vector2.zero, new Vector2(30f, 30f));
             dragDirHead = dragDirHeadImg.rectTransform;
-            dragInfo = UiFactory.MakeText(dragRoot, "dragInfo", "", 40, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(300f, 50f), true);
+            dragInfoPlate = MakePlate(dragRoot, "dragInfoPlate", new Vector2(320f, 60f));
+            dragInfo = UiFactory.MakeText(dragInfoPlate.transform, "dragInfo", "", 40, Palette.Ink, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(320f, 60f), true);
+            AddPaperOutline(dragInfo);
             dragHint = UiFactory.MakeText(dragRoot, "dragHint", "놓으면 추 미터 시작 · 중앙에서 탭", 28, Palette.Grey, TextAnchor.MiddleCenter, C, C, Vector2.zero, new Vector2(600f, 36f));
+            AddPaperOutline(dragHint);
             dragRoot.gameObject.SetActive(false);
 
             // ---- 메시지 / 카운트다운 / 섬광 / 상태 ----
@@ -460,10 +466,27 @@ namespace Bow.UI
         // ---------------------------------------------------------------
         public void SetAimInfo(bool visible, Vector3 worldPos, float angle, float power)
         {
-            aimText.gameObject.SetActive(visible);
+            aimRt.gameObject.SetActive(visible);
             if (!visible) return;
             aimRt.anchoredPosition = WorldToCanvas(worldPos);
             aimText.text = Mathf.RoundToInt(angle) + "° · " + Mathf.RoundToInt(power * 100f) + "%";
+        }
+
+        /// <summary>한지색 반투명 판 (텍스트 가독성용)</summary>
+        private Image MakePlate(Transform parent, string name, Vector2 size)
+        {
+            Image plate = UiFactory.MakeImage(parent, name, ProceduralSprites.WhiteRect(), Palette.WithAlpha(Palette.PaperL, 0.85f), C, C, Vector2.zero, size);
+            plate.raycastTarget = false;
+            return plate;
+        }
+
+        /// <summary>글자 외곽선 (한지색) — 먹색 배경 위에서도 읽히게</summary>
+        private static void AddPaperOutline(Text t)
+        {
+            Outline o = t.gameObject.AddComponent<Outline>();
+            o.effectColor = Palette.WithAlpha(Palette.PaperL, 0.9f);
+            o.effectDistance = new Vector2(2f, -2f);
+            o.useGraphicAlpha = true;
         }
 
         /// <summary>드래그 조준 표시. startScreen/currentScreen은 스크린 px, angle은 전방 기준 °, power 0~1</summary>
@@ -511,7 +534,7 @@ namespace Bow.UI
 
             // 수치: 화살표 끝 너머에 표시, 힌트는 시작점 아래
             dragInfo.text = Mathf.RoundToInt(angle) + "°  힘 " + Mathf.RoundToInt(power * 100f) + "%";
-            dragInfo.rectTransform.anchoredPosition = s0 + dirV * (arrowLen + 70f);
+            dragInfoPlate.rectTransform.anchoredPosition = s0 + dirV * (arrowLen + 70f);
             dragInfo.color = angle > 90f ? Palette.Red : Palette.Ink;
             dragHint.rectTransform.anchoredPosition = s0 + new Vector2(0f, -(deadZonePx + 40f));
             bool willCancel = power < 0.05f;
@@ -519,7 +542,7 @@ namespace Bow.UI
             dragHint.color = willCancel ? Palette.Red : Palette.Grey;
             dragDirLine.gameObject.SetActive(!willCancel);
             dragDirHead.gameObject.SetActive(!willCancel);
-            dragInfo.gameObject.SetActive(!willCancel);
+            dragInfoPlate.gameObject.SetActive(!willCancel);
         }
 
         public Vector2 ScreenToCanvas(Vector2 screen)
